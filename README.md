@@ -193,6 +193,48 @@ Or set environment variable: `export OPENROUTER_API_KEY=sk-or-...`
 }
 ```
 
+## MCP Server Integration
+
+succ can run as an MCP server, allowing Claude to call search/index tools directly.
+
+### Setup
+
+Add to your Claude Code MCP config (`~/.claude/mcp_servers.json`):
+
+```json
+{
+  "mcpServers": {
+    "succ": {
+      "command": "succ-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Or if running from source:
+
+```json
+{
+  "mcpServers": {
+    "succ": {
+      "command": "node",
+      "args": ["/path/to/succ/dist/mcp-server.js"]
+    }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `succ_search` | Semantic search in brain vault |
+| `succ_index` | Index/reindex files |
+| `succ_status` | Get index statistics |
+
+Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project.
+
 ## How It Works
 
 **Analysis** (uses Claude CLI):
