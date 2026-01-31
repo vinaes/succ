@@ -22,7 +22,10 @@ npm install -g succ
 cd your-project
 succ init
 
-# Index your codebase
+# Analyze project with Claude agents (generates brain vault)
+succ analyze
+
+# Index for semantic search
 succ index
 
 # Search semantically
@@ -62,6 +65,45 @@ Add a single file to the index.
 
 Show index statistics and configuration.
 
+### `succ analyze`
+
+**The magic command.** Spawns multiple Claude Code agents to analyze your project and generate a complete brain vault:
+
+```bash
+succ analyze              # Run agents in parallel (faster)
+succ analyze --sequential # Run agents one by one
+succ analyze --openrouter # Use OpenRouter API instead of Claude CLI
+```
+
+**What it creates:**
+
+```
+.claude/brain/
+├── CLAUDE.md                    # Navigation hub
+├── .obsidian/graph.json         # Graph colors config
+├── .meta/learnings.md           # Lessons learned
+├── 01_Projects/{project}/
+│   ├── {project}.md             # Project index
+│   └── Technical/
+│       ├── Architecture Overview.md
+│       ├── API Reference.md
+│       ├── Conventions.md
+│       └── Dependencies.md
+├── 02_Knowledge/                # For research notes
+└── 03_Archive/                  # Old/superseded
+```
+
+**Agents run:**
+1. **Architecture** — structure, entry points, data flow
+2. **API** — endpoints, routes, schemas
+3. **Conventions** — naming, patterns, style
+4. **Dependencies** — key libraries and their purposes
+
+Each agent writes directly to brain vault with proper:
+- YAML frontmatter (description, type, relevance)
+- Wikilinks ([[note-name]])
+- Parent links for graph hierarchy
+
 ## Configuration
 
 Create `~/.succ/config.json`:
@@ -92,16 +134,43 @@ export OPENROUTER_API_KEY=sk-or-...
 ```
 your-project/
 └── .claude/
-    ├── brain/           # Markdown knowledge base
-    │   ├── decisions/   # Architecture decisions
-    │   ├── learnings/   # Bug fixes, discoveries
-    │   └── index.md     # Codebase overview
+    ├── brain/                      # Obsidian-compatible vault
+    │   ├── CLAUDE.md               # Navigation hub
+    │   ├── .obsidian/graph.json    # Graph colors
+    │   ├── .meta/learnings.md      # Lessons learned
+    │   ├── 01_Projects/{name}/     # Project knowledge
+    │   │   ├── Technical/          # Architecture, API, patterns
+    │   │   ├── Decisions/          # ADRs
+    │   │   └── Features/           # Feature specs
+    │   ├── 02_Knowledge/           # Research, competitors
+    │   └── 03_Archive/             # Old/superseded
     ├── hooks/
-    │   ├── session-start.cjs  # Context injection
-    │   └── session-stop.cjs   # Auto-capture reminder
-    ├── settings.json    # Hooks config
-    └── succ.db          # Vector database
+    │   └── session-start.cjs       # Context injection
+    ├── settings.json               # Hooks config
+    └── succ.db                     # Vector database
 ```
+
+## Brain Vault Conventions
+
+Following Obsidian best practices for graph connectivity:
+
+**Naming:**
+- Use Title Case with spaces: `Architecture Overview.md`
+- NOT kebab-case: ~~`architecture-overview.md`~~
+
+**Structure:**
+- Every note has YAML frontmatter with `description`, `type`, `relevance`
+- Every note has `**Parent:** [[Parent Note]]` link
+- Related notes connected with `**Related:** [[Note A]] | [[Note B]]`
+
+**Graph colors** (configured in `.obsidian/graph.json`):
+- Red: CLAUDE.md (hub)
+- Orange: Project index
+- Blue: Technical docs
+- Purple: Decisions
+- Green: Features
+- Yellow: Knowledge
+- Gray: Archive
 
 ## vs Supermemory
 

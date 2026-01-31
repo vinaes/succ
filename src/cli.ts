@@ -5,6 +5,7 @@ import { init } from './commands/init.js';
 import { index } from './commands/index.js';
 import { search } from './commands/search.js';
 import { status } from './commands/status.js';
+import { analyze } from './commands/analyze.js';
 
 const program = new Command();
 
@@ -43,6 +44,18 @@ program
   .description('Add a single file to the index')
   .action(async (file: string) => {
     await index(file, { recursive: false, pattern: '*' });
+  });
+
+program
+  .command('analyze')
+  .description('Analyze project with Claude agents and generate brain vault')
+  .option('--sequential', 'Run agents sequentially instead of parallel')
+  .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
+  .action((options) => {
+    analyze({
+      parallel: !options.sequential,
+      openrouter: options.openrouter,
+    });
   });
 
 program.parse();
