@@ -78,15 +78,20 @@ ${query}`;
     prompt = query;
   }
 
-  // Call Claude CLI
+  // Call Claude CLI with prompt via stdin (avoids shell escaping issues)
   if (verbose) {
     console.log('Calling Claude CLI...\n');
   }
 
-  const claude = spawn('claude', ['-p', prompt, '--no-config'], {
-    stdio: ['inherit', 'inherit', 'inherit'],
+  // Use --print for non-interactive output, pipe prompt via stdin
+  const claude = spawn('claude', ['--print'], {
+    stdio: ['pipe', 'inherit', 'inherit'],
     shell: true,
   });
+
+  // Write prompt to stdin
+  claude.stdin.write(prompt);
+  claude.stdin.end();
 
   claude.on('error', (error) => {
     console.error('Failed to start Claude CLI:', error.message);
