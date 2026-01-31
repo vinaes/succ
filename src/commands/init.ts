@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { getProjectRoot, getClaudeDir } from '../lib/config.js';
 
 interface InitOptions {
@@ -113,11 +114,68 @@ Lessons learned during development.
     console.log('Created settings.json');
   }
 
+  // Add MCP server to Claude Code config
+  const mcpAdded = addMcpServer(projectRoot);
+
   console.log('\nsucc initialized successfully!');
+  if (mcpAdded) {
+    console.log('MCP server added to Claude Code config.');
+  }
   console.log('\nNext steps:');
   console.log('  1. Run `succ analyze` to generate brain documentation');
   console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
   console.log('  3. Run `succ search <query>` to find relevant content');
+  if (mcpAdded) {
+    console.log('  4. Restart Claude Code to enable succ tools');
+  }
+}
+
+/**
+ * Add succ MCP server to Claude Code config
+ */
+function addMcpServer(projectRoot: string): boolean {
+  // Claude Code MCP config location
+  const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp_servers.json');
+
+  try {
+    // Read existing config or create new
+    let mcpConfig: Record<string, any> = {};
+    if (fs.existsSync(mcpConfigPath)) {
+      const content = fs.readFileSync(mcpConfigPath, 'utf-8');
+      mcpConfig = JSON.parse(content);
+    }
+
+    // Initialize mcpServers if not exists
+    if (!mcpConfig.mcpServers) {
+      mcpConfig.mcpServers = {};
+    }
+
+    // Check if already configured
+    if (mcpConfig.mcpServers.succ) {
+      return false; // Already exists
+    }
+
+    // Add succ MCP server
+    // Use npx to run from anywhere, or direct path if installed globally
+    mcpConfig.mcpServers.succ = {
+      command: 'npx',
+      args: ['succ-mcp'],
+      cwd: projectRoot,
+    };
+
+    // Ensure ~/.claude directory exists
+    const claudeConfigDir = path.dirname(mcpConfigPath);
+    if (!fs.existsSync(claudeConfigDir)) {
+      fs.mkdirSync(claudeConfigDir, { recursive: true });
+    }
+
+    // Write config
+    fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+    return true;
+  } catch (error) {
+    // Failed to add MCP config, continue silently
+    return false;
+  }
 }
 
 function getSessionStartHook(): string {
