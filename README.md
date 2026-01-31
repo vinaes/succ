@@ -70,15 +70,15 @@ Show index statistics and configuration.
 **The magic command.** Analyzes your project and generates a complete brain vault:
 
 ```bash
-succ analyze                      # Run via Claude CLI (parallel)
+succ analyze                      # Run via Claude CLI (recommended)
 succ analyze --sequential         # Run agents one by one
-succ analyze --openrouter         # Use OpenRouter API (faster, recommended)
-succ analyze --openrouter --background  # Run in background (for large projects)
+succ analyze --background         # Run in background (for large projects)
+succ analyze --openrouter         # Use OpenRouter API (if no Claude subscription)
 ```
 
 **Modes:**
-- **Claude CLI mode** — spawns Claude Code agents, uses tool calls (slow, may timeout)
-- **OpenRouter mode** — direct API calls, much faster (~30s per agent)
+- **Claude CLI mode (default)** — uses your Claude subscription, no extra API costs
+- **OpenRouter mode** — for users without Claude subscription (pay per API call)
 - **Background mode** — runs detached, check status with `succ status`
 
 **What it creates:**
@@ -112,11 +112,14 @@ Each agent writes directly to brain vault with proper:
 
 ## Configuration
 
+OpenRouter API key is **only needed for semantic search** (`succ index`, `succ search`).
+The `analyze` command uses Claude CLI by default (your Claude subscription).
+
 Create `~/.succ/config.json`:
 
 ```json
 {
-  "openrouter_api_key": "sk-or-...",
+  "openrouter_api_key": "sk-or-...",      // Required for: index, search
   "embedding_model": "openai/text-embedding-3-small",
   "chunk_size": 500,
   "chunk_overlap": 50
@@ -130,6 +133,11 @@ export OPENROUTER_API_KEY=sk-or-...
 
 ## How It Works
 
+**Analysis** (no API key needed):
+- `succ analyze` uses Claude CLI to generate brain vault documentation
+- Uses your existing Claude subscription
+
+**Semantic Search** (requires OpenRouter API key):
 1. **Indexing**: Files are split into chunks, each chunk is embedded via OpenRouter
 2. **Storage**: Embeddings stored in SQLite with cosine similarity search
 3. **Retrieval**: Query is embedded, similar chunks retrieved
