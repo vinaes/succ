@@ -51,10 +51,12 @@ program
   .description('Analyze project with Claude agents and generate brain vault')
   .option('--sequential', 'Run agents sequentially instead of parallel')
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
+  .option('--background', 'Run analysis in background (detached process)')
   .action((options) => {
     analyze({
       parallel: !options.sequential,
       openrouter: options.openrouter,
+      background: options.background,
     });
   });
 

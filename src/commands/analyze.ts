@@ -1,11 +1,13 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { getProjectRoot, getClaudeDir } from '../lib/config.js';
+import { glob } from 'glob';
+import { getProjectRoot, getClaudeDir, getConfig } from '../lib/config.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
   openrouter?: boolean;
+  background?: boolean;
 }
 
 interface Agent {
@@ -18,15 +20,53 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false } = options;
+  const { parallel = true, openrouter = false, background = false } = options;
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
   const brainDir = path.join(claudeDir, 'brain');
+
+  // Background mode: spawn detached process and exit
+  if (background) {
+    const logFile = path.join(claudeDir, 'analyze.log');
+    const args = ['analyze'];
+    if (!parallel) args.push('--sequential');
+    if (openrouter) args.push('--openrouter');
+
+    // Spawn detached process
+    const child = spawn(process.execPath, [process.argv[1], ...args], {
+      detached: true,
+      stdio: ['ignore', fs.openSync(logFile, 'w'), fs.openSync(logFile, 'a')],
+      cwd: projectRoot,
+    });
+
+    child.unref();
+
+    console.log('🚀 Analysis started in background');
+    console.log(`   Log file: ${logFile}`);
+    console.log(`   Check progress: tail -f "${logFile}"`);
+    console.log(`   Or run: succ status`);
+    return;
+  }
+
+  // Write progress file
+  const progressFile = path.join(claudeDir, 'analyze.progress.json');
+  const writeProgress = (status: string, completed: number, total: number, current?: string) => {
+    fs.writeFileSync(progressFile, JSON.stringify({
+      status,
+      completed,
+      total,
+      current,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, null, 2));
+  };
 
   console.log('🧠 Analyzing project with Claude agents...\n');
   console.log(`Project: ${projectRoot}`);
   console.log(`Mode: ${parallel ? 'parallel' : 'sequential'}`);
   console.log(`Backend: ${openrouter ? 'OpenRouter API' : 'Claude Code CLI'}\n`);
+
+  writeProgress('starting', 0, 4);
 
   // Ensure brain structure exists
   await ensureBrainStructure(brainDir, projectRoot);
@@ -36,8 +76,14 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const agents = getAgents(brainDir, projectName);
 
   if (openrouter) {
-    // Use OpenRouter API (fallback)
-    console.log('OpenRouter mode not yet implemented. Use Claude CLI mode.');
+    await runAgentsOpenRouter(agents, projectRoot, writeProgress);
+    await generateIndexFiles(brainDir, projectName);
+    writeProgress('completed', agents.length, agents.length);
+    console.log('\n✅ Brain vault generated!');
+    console.log(`\nNext steps:`);
+    console.log(`  1. Review generated docs in .claude/brain/`);
+    console.log(`  2. Run \`succ index\` to create embeddings`);
+    console.log(`  3. Open in Obsidian for graph view`);
     return;
   }
 
@@ -61,128 +107,54 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 function getAgents(brainDir: string, projectName: string): Agent[] {
   const projectDir = path.join(brainDir, '01_Projects', projectName);
 
+  // Shorter prompts for faster execution
+  const frontmatter = (desc: string, rel: string = 'high') =>
+    `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: technical\nrelevance: ${rel}\n---\n\n`;
+
   return [
     {
       name: 'architecture',
       outputPath: path.join(projectDir, 'Technical', 'Architecture Overview.md'),
-      prompt: `Analyze this project's architecture. Create a markdown document with:
+      prompt: `${frontmatter('High-level architecture overview')}Create "# Architecture Overview" document.
 
-1. YAML frontmatter:
-\`\`\`yaml
----
-description: "High-level architecture overview"
-project: ${projectName}
-type: technical
-relevance: high
----
-\`\`\`
+Add "**Parent:** [[${projectName}]]" after title.
 
-2. Title: # Architecture Overview
+Include sections: Overview, Tech Stack, Directory Structure, Entry Points, Data Flow.
 
-3. **Parent:** [[${projectName}]]
-
-4. Sections:
-- ## Overview (2-3 sentences about the system)
-- ## Tech Stack (list with brief descriptions)
-- ## Directory Structure (key folders explained)
-- ## Entry Points (main files, how to run)
-- ## Data Flow (how data moves through the system)
-- ## Key Components (important modules/packages)
-
-5. Add [[wikilinks]] to related concepts.
-
-Output ONLY the markdown content, no explanations.`,
+Use [[wikilinks]] for related concepts. Output ONLY markdown.`,
     },
     {
       name: 'api',
       outputPath: path.join(projectDir, 'Technical', 'API Reference.md'),
-      prompt: `Analyze this project's API endpoints/routes. Create a markdown document with:
+      prompt: `${frontmatter('API endpoints and interfaces')}Create "# API Reference" document.
 
-1. YAML frontmatter:
-\`\`\`yaml
----
-description: "API endpoints and routes reference"
-project: ${projectName}
-type: technical
-relevance: high
----
-\`\`\`
+Add "**Parent:** [[Architecture Overview]]" after title.
 
-2. Title: # API Reference
+List all API endpoints, CLI commands, or main public functions with their parameters and return types.
 
-3. **Parent:** [[Architecture Overview]]
-
-4. For each endpoint/route:
-- Method and path
-- Brief description
-- Key parameters
-- Response format
-
-5. Group by resource/domain.
-
-If no API found, document CLI commands or main functions instead.
-
-Output ONLY the markdown content, no explanations.`,
+Output ONLY markdown.`,
     },
     {
       name: 'conventions',
       outputPath: path.join(projectDir, 'Technical', 'Conventions.md'),
-      prompt: `Analyze this project's coding conventions and patterns. Create a markdown document with:
+      prompt: `${frontmatter('Coding conventions and patterns', 'medium')}Create "# Conventions" document.
 
-1. YAML frontmatter:
-\`\`\`yaml
----
-description: "Coding conventions, patterns, and style guide"
-project: ${projectName}
-type: technical
-relevance: medium
----
-\`\`\`
+Add "**Parent:** [[Architecture Overview]]" after title.
 
-2. Title: # Conventions
+Document: naming conventions, file organization, common patterns, error handling approach.
 
-3. **Parent:** [[Architecture Overview]]
-
-4. Sections:
-- ## Naming Conventions (files, functions, variables)
-- ## File Organization (how code is structured)
-- ## Patterns Used (common patterns in the codebase)
-- ## Error Handling (how errors are handled)
-- ## Testing (test structure if present)
-
-5. Include code examples where helpful.
-
-Output ONLY the markdown content, no explanations.`,
+Output ONLY markdown.`,
     },
     {
       name: 'dependencies',
       outputPath: path.join(projectDir, 'Technical', 'Dependencies.md'),
-      prompt: `Analyze this project's key dependencies. Create a markdown document with:
+      prompt: `${frontmatter('Key dependencies and their purposes', 'medium')}Create "# Dependencies" document.
 
-1. YAML frontmatter:
-\`\`\`yaml
----
-description: "Key dependencies and their purposes"
-project: ${projectName}
-type: technical
-relevance: medium
----
-\`\`\`
+Add "**Parent:** [[Architecture Overview]]" after title.
 
-2. Title: # Dependencies
+List important dependencies with: name, purpose, where used. Group by category.
 
-3. **Parent:** [[Architecture Overview]]
-
-4. For each important dependency:
-- Name and version
-- What it's used for
-- Where it's used in the codebase
-
-5. Group by category (framework, database, utils, dev tools).
-
-Focus on the important ones, not every tiny package.
-
-Output ONLY the markdown content, no explanations.`,
+Output ONLY markdown.`,
     },
   ];
 }
@@ -228,23 +200,34 @@ function runClaudeAgent(agent: Agent): Promise<void> {
     const outputDir = path.dirname(agent.outputPath);
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // Run claude CLI
-    const proc = spawn('claude', ['-p', agent.prompt, '--output', agent.outputPath], {
+    // Run claude CLI with -p (print mode), fast model, and capture stdout
+    const proc = spawn('claude', [
+      '-p', agent.prompt,
+      '--permission-mode', 'bypassPermissions',
+      '--model', 'haiku',
+    ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,
     });
 
+    let stdout = '';
     let stderr = '';
+
+    proc.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
 
     proc.stderr?.on('data', (data) => {
       stderr += data.toString();
     });
 
     proc.on('close', (code) => {
-      if (code === 0) {
+      if (code === 0 && stdout.trim()) {
+        // Write output to file
+        fs.writeFileSync(agent.outputPath, stdout.trim());
         resolve();
       } else {
-        reject(new Error(stderr || `Exit code ${code}`));
+        reject(new Error(stderr || `Exit code ${code}, no output`));
       }
     });
 
@@ -252,12 +235,127 @@ function runClaudeAgent(agent: Agent): Promise<void> {
       reject(err);
     });
 
-    // Timeout after 2 minutes
+    // Timeout after 3 minutes per agent
     setTimeout(() => {
       proc.kill();
-      reject(new Error('Timeout'));
-    }, 120000);
+      reject(new Error('Timeout (3 min)'));
+    }, 180000);
   });
+}
+
+type ProgressFn = (status: string, completed: number, total: number, current?: string) => void;
+
+/**
+ * Run agents using OpenRouter API directly (faster, no tool calls)
+ */
+async function runAgentsOpenRouter(
+  agents: Agent[],
+  projectRoot: string,
+  writeProgress: ProgressFn
+): Promise<void> {
+  console.log(`Running ${agents.length} agents via OpenRouter API...\n`);
+
+  // Gather project context
+  writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
+  const context = await gatherProjectContext(projectRoot);
+
+  let config;
+  try {
+    config = getConfig();
+  } catch {
+    console.error('Error: OPENROUTER_API_KEY not set');
+    console.error('Set it via env var or ~/.succ/config.json');
+    process.exit(1);
+  }
+
+  let completed = 0;
+  for (const agent of agents) {
+    writeProgress('running', completed, agents.length, agent.name);
+    console.log(`  ${agent.name}...`);
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.openrouter_api_key}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/cpz/succ',
+          'X-Title': 'succ',
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3-5-haiku-latest',
+          messages: [
+            {
+              role: 'user',
+              content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
+            },
+          ],
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API error: ${response.status} - ${error}`);
+      }
+
+      const data = (await response.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const content = data.choices[0]?.message?.content;
+
+      if (content) {
+        const outputDir = path.dirname(agent.outputPath);
+        fs.mkdirSync(outputDir, { recursive: true });
+        fs.writeFileSync(agent.outputPath, content.trim());
+        completed++;
+        console.log(`  ✓ ${agent.name}`);
+      } else {
+        console.log(`  ✗ ${agent.name}: No content returned`);
+      }
+    } catch (error) {
+      console.log(`  ✗ ${agent.name}: ${error}`);
+    }
+  }
+}
+
+/**
+ * Gather project context for OpenRouter analysis
+ */
+async function gatherProjectContext(projectRoot: string): Promise<string> {
+  const parts: string[] = [];
+
+  // Get file tree
+  const files = await glob('**/*.{ts,js,go,py,md,json}', {
+    cwd: projectRoot,
+    ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/vendor/**'],
+    nodir: true,
+  });
+
+  parts.push('## File Structure\n```');
+  parts.push(files.slice(0, 50).join('\n'));
+  if (files.length > 50) parts.push(`... and ${files.length - 50} more files`);
+  parts.push('```\n');
+
+  // Read key files
+  const keyFiles = ['package.json', 'go.mod', 'pyproject.toml', 'Cargo.toml', 'README.md'];
+  for (const keyFile of keyFiles) {
+    const filePath = path.join(projectRoot, keyFile);
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8').slice(0, 2000);
+      parts.push(`## ${keyFile}\n\`\`\`\n${content}\n\`\`\`\n`);
+    }
+  }
+
+  // Read a few source files
+  const sourceFiles = files.filter(f => f.endsWith('.ts') || f.endsWith('.go') || f.endsWith('.py')).slice(0, 5);
+  for (const sourceFile of sourceFiles) {
+    const filePath = path.join(projectRoot, sourceFile);
+    const content = fs.readFileSync(filePath, 'utf-8').slice(0, 1500);
+    parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
+  }
+
+  return parts.join('\n');
 }
 
 async function ensureBrainStructure(brainDir: string, projectRoot: string): Promise<void> {

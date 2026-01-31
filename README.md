@@ -67,13 +67,19 @@ Show index statistics and configuration.
 
 ### `succ analyze`
 
-**The magic command.** Spawns multiple Claude Code agents to analyze your project and generate a complete brain vault:
+**The magic command.** Analyzes your project and generates a complete brain vault:
 
 ```bash
-succ analyze              # Run agents in parallel (faster)
-succ analyze --sequential # Run agents one by one
-succ analyze --openrouter # Use OpenRouter API instead of Claude CLI
+succ analyze                      # Run via Claude CLI (parallel)
+succ analyze --sequential         # Run agents one by one
+succ analyze --openrouter         # Use OpenRouter API (faster, recommended)
+succ analyze --openrouter --background  # Run in background (for large projects)
 ```
+
+**Modes:**
+- **Claude CLI mode** — spawns Claude Code agents, uses tool calls (slow, may timeout)
+- **OpenRouter mode** — direct API calls, much faster (~30s per agent)
+- **Background mode** — runs detached, check status with `succ status`
 
 **What it creates:**
 
@@ -181,6 +187,26 @@ Following Obsidian best practices for graph connectivity:
 | Cost | $20+/mo subscription | Pay per embedding |
 | Graph | Proprietary | Obsidian-compatible |
 | Versioning | None | Git-tracked |
+
+## Distribution Models (Roadmap)
+
+### Self-hosted (Current)
+- You run `succ` locally
+- You pay for OpenRouter API calls
+- Full privacy — data never leaves your machine
+
+### Hosted Plugin (Future)
+Like [happy.engineering](https://happy.engineering) — install a Claude Code plugin and go:
+- We provide the API backend
+- Embeddings cached server-side (cheaper)
+- One-click setup, no configuration
+- Free tier + paid plans
+
+**Cost optimization strategies:**
+- Embedding cache with TTL
+- Batch processing
+- Smaller embedding models for initial indexing
+- Progressive enhancement (cheap → expensive models)
 
 ## License
 
