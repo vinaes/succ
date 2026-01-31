@@ -1,7 +1,7 @@
 {
   "name": "succ",
   "version": "0.1.0",
-  "description": "Local memory system for Claude Code - RAG with OpenRouter embeddings",
+  "description": "Local memory system for Claude Code - RAG with local or API embeddings",
   "type": "module",
   "bin": {
     "succ": "./dist/cli.js"
@@ -22,8 +22,9 @@
   "author": "cpz",
   "license": "MIT",
   "dependencies": {
-    "commander": "^12.0.0",
+    "@huggingface/transformers": "^3.0.0",
     "better-sqlite3": "^11.0.0",
+    "commander": "^12.0.0",
     "glob": "^10.0.0",
     "gray-matter": "^4.0.3"
   },

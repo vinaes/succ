@@ -115,9 +115,9 @@ Lessons learned during development.
 
   console.log('\nsucc initialized successfully!');
   console.log('\nNext steps:');
-  console.log('  1. Set OPENROUTER_API_KEY environment variable');
-  console.log('  2. Add content to .claude/brain/');
-  console.log('  3. Run `succ index` to create embeddings');
+  console.log('  1. Run `succ analyze` to generate brain documentation');
+  console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
+  console.log('  3. Run `succ search <query>` to find relevant content');
 }
 
 function getSessionStartHook(): string {

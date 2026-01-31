@@ -1,4 +1,4 @@
-import { getConfig } from './config.js';
+import { getConfig, getConfigWithApiKey } from './config.js';
 
 export interface EmbeddingResponse {
   data: Array<{
@@ -11,11 +11,44 @@ export interface EmbeddingResponse {
   };
 }
 
+// Lazy-loaded local embedding pipeline
+let localPipeline: any = null;
+
+/**
+ * Get local embedding pipeline (lazy loaded)
+ */
+async function getLocalPipeline() {
+  if (!localPipeline) {
+    // Dynamic import to avoid loading transformers.js if not needed
+    const { pipeline } = await import('@huggingface/transformers');
+    const config = getConfig();
+    console.log(`Loading local embedding model: ${config.embedding_model}...`);
+    localPipeline = await pipeline('feature-extraction', config.embedding_model);
+    console.log('Model loaded.');
+  }
+  return localPipeline;
+}
+
+/**
+ * Get embeddings using local model
+ */
+async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
+  const pipe = await getLocalPipeline();
+  const results: number[][] = [];
+
+  for (const text of texts) {
+    const output = await pipe(text, { pooling: 'mean', normalize: true });
+    results.push(Array.from(output.data));
+  }
+
+  return results;
+}
+
 /**
  * Get embeddings from OpenRouter API
  */
-export async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfig();
+async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
+  const config = getConfigWithApiKey();
 
   const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
     method: 'POST',
@@ -38,6 +71,19 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
 
   const data = (await response.json()) as EmbeddingResponse;
   return data.data.map((d) => d.embedding);
+}
+
+/**
+ * Get embeddings (auto-selects local or OpenRouter based on config)
+ */
+export async function getEmbeddings(texts: string[]): Promise<number[][]> {
+  const config = getConfig();
+
+  if (config.embedding_mode === 'local') {
+    return getLocalEmbeddings(texts);
+  } else {
+    return getOpenRouterEmbeddings(texts);
+  }
 }
 
 /**

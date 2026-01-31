@@ -31,7 +31,7 @@ program
   .command('search <query>')
   .description('Semantic search across indexed content')
   .option('-n, --limit <number>', 'Number of results', '5')
-  .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.5')
+  .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.2')
   .action(search);
 
 program

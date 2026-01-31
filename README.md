@@ -112,17 +112,28 @@ Each agent writes directly to brain vault with proper:
 
 ## Configuration
 
-OpenRouter API key is **only needed for semantic search** (`succ index`, `succ search`).
-The `analyze` command uses Claude CLI by default (your Claude subscription).
+**No API key required by default!** succ uses local embeddings via [Transformers.js](https://huggingface.co/docs/transformers.js).
 
-Create `~/.succ/config.json`:
+Optional `~/.succ/config.json`:
 
 ```json
 {
-  "openrouter_api_key": "sk-or-...",      // Required for: index, search
-  "embedding_model": "openai/text-embedding-3-small",
+  "embedding_mode": "local",                        // "local" (default) or "openrouter"
+  "embedding_model": "Xenova/all-MiniLM-L6-v2",    // Local model (384 dimensions)
   "chunk_size": 500,
   "chunk_overlap": 50
+}
+```
+
+### Using OpenRouter API (optional)
+
+If you prefer cloud embeddings:
+
+```json
+{
+  "embedding_mode": "openrouter",
+  "embedding_model": "openai/text-embedding-3-small",
+  "openrouter_api_key": "sk-or-..."
 }
 ```
 
@@ -133,15 +144,19 @@ export OPENROUTER_API_KEY=sk-or-...
 
 ## How It Works
 
-**Analysis** (no API key needed):
+**Analysis** (uses Claude CLI):
 - `succ analyze` uses Claude CLI to generate brain vault documentation
 - Uses your existing Claude subscription
 
-**Semantic Search** (requires OpenRouter API key):
-1. **Indexing**: Files are split into chunks, each chunk is embedded via OpenRouter
+**Semantic Search** (local by default, no API needed):
+1. **Indexing**: Files are split into chunks, embedded locally via Transformers.js
 2. **Storage**: Embeddings stored in SQLite with cosine similarity search
 3. **Retrieval**: Query is embedded, similar chunks retrieved
 4. **Injection**: SessionStart hook injects relevant context into Claude
+
+**Embedding modes:**
+- **Local** (default): Uses `all-MiniLM-L6-v2` model, runs on CPU, ~384 dimensions
+- **OpenRouter**: Uses cloud API, more models available, requires API key
 
 ## Architecture
 
@@ -192,7 +207,8 @@ Following Obsidian best practices for graph connectivity:
 |---------|-------------|------|
 | Hosting | Cloud (their servers) | Local (your machine) |
 | Privacy | Data sent to cloud | Everything local |
-| Cost | $20+/mo subscription | Pay per embedding |
+| Cost | $20+/mo subscription | Free (local) or pay per API call |
+| Embeddings | Cloud API | Local or API (your choice) |
 | Graph | Proprietary | Obsidian-compatible |
 | Versioning | None | Git-tracked |
 
