@@ -6,6 +6,9 @@ import { index } from './commands/index.js';
 import { search } from './commands/search.js';
 import { status } from './commands/status.js';
 import { analyze } from './commands/analyze.js';
+import { chat } from './commands/chat.js';
+import { watch } from './commands/watch.js';
+import { config } from './commands/config.js';
 
 const program = new Command();
 
@@ -22,9 +25,10 @@ program
 
 program
   .command('index [path]')
-  .description('Index files for semantic search')
+  .description('Index files for semantic search (incremental by default)')
   .option('-r, --recursive', 'Index recursively', true)
   .option('--pattern <glob>', 'File pattern to match', '**/*.md')
+  .option('-f, --force', 'Force reindex all files (ignore cache)')
   .action(index);
 
 program
@@ -59,5 +63,30 @@ program
       background: options.background,
     });
   });
+
+program
+  .command('chat <query>')
+  .description('RAG chat - search context and ask Claude')
+  .option('-n, --limit <number>', 'Number of context chunks', '5')
+  .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.2')
+  .option('-v, --verbose', 'Show search results before asking')
+  .action((query, options) => {
+    chat(query, {
+      limit: parseInt(options.limit, 10),
+      threshold: parseFloat(options.threshold),
+      verbose: options.verbose,
+    });
+  });
+
+program
+  .command('watch [path]')
+  .description('Watch for file changes and auto-reindex')
+  .option('--pattern <glob>', 'File pattern to match', '**/*.md')
+  .action(watch);
+
+program
+  .command('config')
+  .description('Interactive configuration wizard')
+  .action(config);
 
 program.parse();
