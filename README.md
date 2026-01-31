@@ -6,8 +6,8 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 
 ## Features
 
-- **Local-first** — all data stays on your machine
-- **RAG with embeddings** — semantic search via OpenRouter API
+- **Local-first** — all data stays on your machine, no API keys required
+- **RAG with embeddings** — semantic search via local model (or API)
 - **Brain vault** — Obsidian-compatible markdown knowledge base
 - **Auto-hooks** — context injection at session start
 - **Zero config** — works out of the box
@@ -47,7 +47,7 @@ Creates `.claude/` structure in your project:
 Indexes files for semantic search:
 - Reads markdown files from `brain/` by default
 - Can index any directory: `succ index ./docs`
-- Creates embeddings via OpenRouter API
+- Creates embeddings locally (no API needed) or via API
 - Stores vectors in local SQLite database
 
 ### `succ search <query>`
@@ -112,23 +112,30 @@ Each agent writes directly to brain vault with proper:
 
 ## Configuration
 
-**No API key required by default!** succ uses local embeddings via [Transformers.js](https://huggingface.co/docs/transformers.js).
+**No API key required!** succ uses local embeddings by default via [Transformers.js](https://huggingface.co/docs/transformers.js).
 
 Optional `~/.succ/config.json`:
 
 ```json
 {
-  "embedding_mode": "local",                        // "local" (default) or "openrouter"
+  "embedding_mode": "local",                        // "local" (default), "openrouter", or "custom"
   "embedding_model": "Xenova/all-MiniLM-L6-v2",    // Local model (384 dimensions)
   "chunk_size": 500,
   "chunk_overlap": 50
 }
 ```
 
-### Using OpenRouter API (optional)
+### Embedding Modes
 
-If you prefer cloud embeddings:
+**1. Local (default)** — runs on your CPU, no API key needed:
+```json
+{
+  "embedding_mode": "local",
+  "embedding_model": "Xenova/all-MiniLM-L6-v2"
+}
+```
 
+**2. OpenRouter** — cloud embeddings via OpenRouter API:
 ```json
 {
   "embedding_mode": "openrouter",
@@ -137,9 +144,16 @@ If you prefer cloud embeddings:
 }
 ```
 
-Or set environment variable:
-```bash
-export OPENROUTER_API_KEY=sk-or-...
+Or set environment variable: `export OPENROUTER_API_KEY=sk-or-...`
+
+**3. Custom API** — use any OpenAI-compatible endpoint (llama.cpp, LM Studio, Ollama, etc.):
+```json
+{
+  "embedding_mode": "custom",
+  "custom_api_url": "http://localhost:1234/v1/embeddings",
+  "custom_api_key": "optional-key",
+  "embedding_model": "your-model-name"
+}
 ```
 
 ## How It Works
@@ -155,8 +169,9 @@ export OPENROUTER_API_KEY=sk-or-...
 4. **Injection**: SessionStart hook injects relevant context into Claude
 
 **Embedding modes:**
-- **Local** (default): Uses `all-MiniLM-L6-v2` model, runs on CPU, ~384 dimensions
-- **OpenRouter**: Uses cloud API, more models available, requires API key
+- **Local** (default): Uses `all-MiniLM-L6-v2` model, runs on CPU, 384 dimensions
+- **OpenRouter**: Cloud API via OpenRouter, requires API key
+- **Custom**: Any OpenAI-compatible endpoint (llama.cpp, LM Studio, Ollama)
 
 ## Architecture
 
@@ -216,7 +231,7 @@ Following Obsidian best practices for graph connectivity:
 
 ### Self-hosted (Current)
 - You run `succ` locally
-- You pay for OpenRouter API calls
+- Local embeddings = free, or pay per API call
 - Full privacy — data never leaves your machine
 
 ### Hosted Plugin (Future)

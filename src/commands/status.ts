@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDbPath, getClaudeDir, getProjectRoot } from '../lib/config.js';
+import { getDbPath, getClaudeDir, getProjectRoot, getConfig, LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
 import { getStats, closeDb } from '../lib/db.js';
 
 export async function status(): Promise<void> {
@@ -74,13 +74,21 @@ export async function status(): Promise<void> {
     console.log(`Total chunks:         ${stats.total_documents}`);
     console.log(`Last indexed:         ${stats.last_indexed || 'Never'}`);
 
-    // Check for API key
-    const hasApiKey = !!process.env.OPENROUTER_API_KEY;
+    // Show embedding config
     console.log();
-    console.log(`OpenRouter API key:   ${hasApiKey ? 'Set' : 'Not set'}`);
+    try {
+      const config = getConfig();
+      console.log(`Embedding mode:       ${config.embedding_mode}`);
+      console.log(`Embedding model:      ${config.embedding_model}`);
 
-    if (!hasApiKey) {
-      console.log('\nWarning: Set OPENROUTER_API_KEY to enable indexing and search.');
+      if (config.embedding_mode === 'openrouter') {
+        console.log(`OpenRouter API key:   ${config.openrouter_api_key ? 'Set' : 'Not set'}`);
+      } else if (config.embedding_mode === 'custom') {
+        console.log(`Custom API URL:       ${config.custom_api_url || 'Not set'}`);
+      }
+    } catch (error: any) {
+      // Config validation failed - show the issue
+      console.log(`Config status:        ${error.message}`);
     }
   } catch (error) {
     console.error('Error reading database:', error);

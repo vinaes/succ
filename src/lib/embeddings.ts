@@ -1,11 +1,11 @@
-import { getConfig, getConfigWithApiKey } from './config.js';
+import { getConfig } from './config.js';
 
 export interface EmbeddingResponse {
   data: Array<{
     embedding: number[];
     index: number;
   }>;
-  usage: {
+  usage?: {
     prompt_tokens: number;
     total_tokens: number;
   };
@@ -48,7 +48,10 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
  * Get embeddings from OpenRouter API
  */
 async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfigWithApiKey();
+  const config = getConfig();
+  if (!config.openrouter_api_key) {
+    throw new Error('OpenRouter API key required');
+  }
 
   const response = await fetch('https://openrouter.ai/api/v1/embeddings', {
     method: 'POST',
@@ -74,15 +77,58 @@ async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
 }
 
 /**
- * Get embeddings (auto-selects local or OpenRouter based on config)
+ * Get embeddings from custom API (llama.cpp, LM Studio, Ollama, etc.)
+ * Expects OpenAI-compatible /v1/embeddings endpoint
+ */
+async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
+  const config = getConfig();
+  if (!config.custom_api_url) {
+    throw new Error('Custom API URL required');
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add API key if provided
+  if (config.custom_api_key) {
+    headers['Authorization'] = `Bearer ${config.custom_api_key}`;
+  }
+
+  const response = await fetch(config.custom_api_url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: config.embedding_model,
+      input: texts,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Custom API error: ${response.status} - ${error}`);
+  }
+
+  const data = (await response.json()) as EmbeddingResponse;
+  return data.data.map((d) => d.embedding);
+}
+
+/**
+ * Get embeddings (auto-selects based on config mode)
+ * Priority: local (default) → openrouter → custom
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
   const config = getConfig();
 
-  if (config.embedding_mode === 'local') {
-    return getLocalEmbeddings(texts);
-  } else {
-    return getOpenRouterEmbeddings(texts);
+  switch (config.embedding_mode) {
+    case 'local':
+      return getLocalEmbeddings(texts);
+    case 'openrouter':
+      return getOpenRouterEmbeddings(texts);
+    case 'custom':
+      return getCustomApiEmbeddings(texts);
+    default:
+      return getLocalEmbeddings(texts);
   }
 }
 
