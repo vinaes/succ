@@ -44,18 +44,55 @@ Creates `.claude/` structure in your project:
 
 ### `succ index [path]`
 
-Indexes files for semantic search:
+Indexes files for semantic search (incremental by default):
 - Reads markdown files from `brain/` by default
 - Can index any directory: `succ index ./docs`
-- Creates embeddings locally (no API needed) or via API
-- Stores vectors in local SQLite database
+- **Incremental**: skips unchanged files (uses content hash)
+- Use `-f` to force reindex all files
+
+```bash
+succ index                 # Incremental index
+succ index -f              # Force reindex all
+succ index ./docs          # Index specific directory
+```
 
 ### `succ search <query>`
 
 Semantic search across indexed content:
 - Returns top-5 most relevant chunks
 - Shows file paths and similarity scores
-- Can be used by hooks for context injection
+
+### `succ chat <query>`
+
+**RAG chat** — search context and ask Claude:
+- Finds relevant chunks from your brain vault
+- Injects context into Claude CLI prompt
+- No API key needed (uses your Claude subscription)
+
+```bash
+succ chat "how does auth work?"           # Ask with context
+succ chat "explain the API" -v            # Verbose - show found chunks
+succ chat "question" -n 10 -t 0.3         # Custom limit and threshold
+```
+
+### `succ watch [path]`
+
+Watch for file changes and auto-reindex:
+- Monitors brain vault (or specified path)
+- Automatically reindexes on add/change/delete
+- Uses debouncing to avoid rapid re-triggers
+
+```bash
+succ watch                 # Watch brain vault
+succ watch ./docs          # Watch specific directory
+```
+
+### `succ config`
+
+Interactive configuration wizard:
+- Choose embedding mode (local/openrouter/custom)
+- Set API keys and model names
+- Configure chunk size and overlap
 
 ### `succ add <file>`
 
