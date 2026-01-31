@@ -6,7 +6,7 @@ import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { getEmbeddings } from '../lib/embeddings.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import {
-  upsertDocument,
+  upsertDocumentsBatch,
   deleteDocumentsByPath,
   getFileHash,
   setFileHash,
@@ -53,17 +53,16 @@ async function indexFile(filePath: string, relativePath: string): Promise<void> 
   const texts = chunks.map((c) => c.content);
   const embeddings = await getEmbeddings(texts);
 
-  // Store
-  for (let i = 0; i < chunks.length; i++) {
-    upsertDocument(
-      relativePath,
-      i,
-      chunks[i].content,
-      chunks[i].startLine,
-      chunks[i].endLine,
-      embeddings[i]
-    );
-  }
+  // Store (batch transaction)
+  const documents = chunks.map((chunk, i) => ({
+    filePath: relativePath,
+    chunkIndex: i,
+    content: chunk.content,
+    startLine: chunk.startLine,
+    endLine: chunk.endLine,
+    embedding: embeddings[i],
+  }));
+  upsertDocumentsBatch(documents);
 
   setFileHash(relativePath, hash);
   console.log(`  Indexed: ${relativePath} (${chunks.length} chunks)`);

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "succ": {
+      "command": "npx",
+      "args": ["succ-mcp"]
+    }
+  }
+}

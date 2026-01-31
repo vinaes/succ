@@ -110,3 +110,11 @@ export function getClaudeDir(): string {
 export function getDbPath(): string {
   return path.join(getClaudeDir(), 'succ.db');
 }
+
+export function getGlobalDbPath(): string {
+  const globalDir = path.join(os.homedir(), '.succ');
+  if (!fs.existsSync(globalDir)) {
+    fs.mkdirSync(globalDir, { recursive: true });
+  }
+  return path.join(globalDir, 'global.db');
+}

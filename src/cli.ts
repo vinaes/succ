@@ -9,6 +9,11 @@ import { analyze } from './commands/analyze.js';
 import { chat } from './commands/chat.js';
 import { watch } from './commands/watch.js';
 import { config } from './commands/config.js';
+import { memories, remember, forget } from './commands/memories.js';
+import { indexCode } from './commands/index-code.js';
+import { benchmark } from './commands/benchmark.js';
+import { clear } from './commands/clear.js';
+import { soul } from './commands/soul.js';
 
 const program = new Command();
 
@@ -88,5 +93,109 @@ program
   .command('config')
   .description('Interactive configuration wizard')
   .action(config);
+
+program
+  .command('memories')
+  .description('List and search memories')
+  .option('--recent <number>', 'Show N most recent memories')
+  .option('-s, --search <query>', 'Search memories semantically')
+  .option('--tags <tags>', 'Filter by tags (comma-separated)')
+  .option('-n, --limit <number>', 'Maximum number of results', '10')
+  .option('-g, --global', 'Use global memory (shared across projects)')
+  .action((options) => {
+    memories({
+      recent: options.recent ? parseInt(options.recent, 10) : undefined,
+      search: options.search,
+      tags: options.tags,
+      limit: parseInt(options.limit, 10),
+      global: options.global,
+    });
+  });
+
+program
+  .command('remember <content>')
+  .description('Save something to memory')
+  .option('--tags <tags>', 'Tags (comma-separated)')
+  .option('--source <source>', 'Source context')
+  .option('-g, --global', 'Save to global memory (shared across projects)')
+  .action((content, options) => {
+    remember(content, {
+      tags: options.tags,
+      source: options.source,
+      global: options.global,
+    });
+  });
+
+program
+  .command('index-code [path]')
+  .description('Index source code for semantic search')
+  .option(
+    '--patterns <patterns>',
+    'File patterns (comma-separated)',
+    '**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.py,**/*.go'
+  )
+  .option('--ignore <patterns>', 'Ignore patterns (comma-separated)')
+  .option('-f, --force', 'Force reindex all files')
+  .option('--max-size <kb>', 'Max file size in KB', '500')
+  .action((targetPath, options) => {
+    indexCode(targetPath, {
+      patterns: options.patterns?.split(','),
+      ignore: options.ignore?.split(','),
+      force: options.force,
+      maxFileSize: parseInt(options.maxSize, 10),
+    });
+  });
+
+program
+  .command('forget')
+  .description('Delete memories')
+  .option('--id <id>', 'Delete memory by ID')
+  .option('--older-than <date>', 'Delete memories older than (e.g., "30d", "1w", "3m")')
+  .option('--tag <tag>', 'Delete memories with tag')
+  .option('--all', 'Delete ALL memories')
+  .action((options) => {
+    forget({
+      id: options.id ? parseInt(options.id, 10) : undefined,
+      olderThan: options.olderThan,
+      tag: options.tag,
+      all: options.all,
+    });
+  });
+
+program
+  .command('benchmark')
+  .description('Run performance benchmarks')
+  .option('-n, --iterations <number>', 'Number of iterations per test', '10')
+  .action((options) => {
+    benchmark({
+      iterations: parseInt(options.iterations, 10),
+    });
+  });
+
+program
+  .command('clear')
+  .description('Clear index and/or memories')
+  .option('--index-only', 'Clear only document index')
+  .option('--memories-only', 'Clear only memories')
+  .option('--code-only', 'Clear only code index (keeps brain docs)')
+  .option('-f, --force', 'Confirm deletion (required)')
+  .action((options) => {
+    clear({
+      indexOnly: options.indexOnly,
+      memoriesOnly: options.memoriesOnly,
+      codeOnly: options.codeOnly,
+      force: options.force,
+    });
+  });
+
+program
+  .command('soul')
+  .description('Generate personalized soul.md from project analysis')
+  .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
+  .action((options) => {
+    soul({
+      openrouter: options.openrouter,
+    });
+  });
 
 program.parse();
