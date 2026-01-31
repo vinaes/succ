@@ -283,7 +283,7 @@ async function runAgentsOpenRouter(
           'X-Title': 'succ',
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3-5-haiku-latest',
+          model: 'anthropic/claude-3.5-haiku',
           messages: [
             {
               role: 'user',
