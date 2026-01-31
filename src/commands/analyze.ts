@@ -75,8 +75,12 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const projectName = path.basename(projectRoot);
   const agents = getAgents(brainDir, projectName);
 
+  // Gather project context (used by both modes now)
+  writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
+  const context = await gatherProjectContext(projectRoot);
+
   if (openrouter) {
-    await runAgentsOpenRouter(agents, projectRoot, writeProgress);
+    await runAgentsOpenRouter(agents, context, writeProgress);
     await generateIndexFiles(brainDir, projectName);
     writeProgress('completed', agents.length, agents.length);
     console.log('\n✅ Brain vault generated!');
@@ -87,11 +91,11 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     return;
   }
 
-  // Use Claude Code CLI
+  // Use Claude Code CLI (with tools disabled, context passed in prompt)
   if (parallel) {
-    await runAgentsParallel(agents);
+    await runAgentsParallel(agents, context);
   } else {
-    await runAgentsSequential(agents);
+    await runAgentsSequential(agents, context);
   }
 
   // Generate index files
@@ -159,10 +163,10 @@ Output ONLY markdown.`,
   ];
 }
 
-async function runAgentsParallel(agents: Agent[]): Promise<void> {
+async function runAgentsParallel(agents: Agent[], context: string): Promise<void> {
   console.log(`Starting ${agents.length} agents in parallel...\n`);
 
-  const promises = agents.map((agent) => runClaudeAgent(agent));
+  const promises = agents.map((agent) => runClaudeAgent(agent, context));
   const results = await Promise.allSettled(promises);
 
   let succeeded = 0;
@@ -181,12 +185,12 @@ async function runAgentsParallel(agents: Agent[]): Promise<void> {
   console.log(`\nCompleted: ${succeeded}/${agents.length} agents`);
 }
 
-async function runAgentsSequential(agents: Agent[]): Promise<void> {
+async function runAgentsSequential(agents: Agent[], context: string): Promise<void> {
   console.log(`Running ${agents.length} agents sequentially...\n`);
 
   for (const agent of agents) {
     try {
-      await runClaudeAgent(agent);
+      await runClaudeAgent(agent, context);
       console.log(`✓ ${agent.name}`);
     } catch (error) {
       console.log(`✗ ${agent.name}: ${error}`);
@@ -194,21 +198,42 @@ async function runAgentsSequential(agents: Agent[]): Promise<void> {
   }
 }
 
-function runClaudeAgent(agent: Agent): Promise<void> {
+function runClaudeAgent(agent: Agent, context: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // Ensure output directory exists
     const outputDir = path.dirname(agent.outputPath);
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // Run claude CLI with -p (print mode), fast model, and capture stdout
+    // Build prompt with context
+    const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:
+
+${context}
+
+---
+
+${agent.prompt}`;
+
+    // Write prompt to temp file to avoid command line length issues
+    const tempPromptFile = path.join(outputDir, `.${agent.name}-prompt.txt`);
+    fs.writeFileSync(tempPromptFile, fullPrompt);
+
+    // Run claude CLI with:
+    // - --tools "" to disable all tools (no file reading, just generate from context)
+    // - --model haiku for speed
+    // - -p for print mode
+    // - Read prompt from stdin via cat
     const proc = spawn('claude', [
-      '-p', agent.prompt,
-      '--permission-mode', 'bypassPermissions',
+      '-p',
+      '--tools', '',
       '--model', 'haiku',
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,
     });
+
+    // Send prompt via stdin
+    proc.stdin?.write(fullPrompt);
+    proc.stdin?.end();
 
     let stdout = '';
     let stderr = '';
@@ -222,6 +247,9 @@ function runClaudeAgent(agent: Agent): Promise<void> {
     });
 
     proc.on('close', (code) => {
+      // Clean up temp file
+      try { fs.unlinkSync(tempPromptFile); } catch {}
+
       if (code === 0 && stdout.trim()) {
         // Write output to file
         fs.writeFileSync(agent.outputPath, stdout.trim());
@@ -232,14 +260,16 @@ function runClaudeAgent(agent: Agent): Promise<void> {
     });
 
     proc.on('error', (err) => {
+      try { fs.unlinkSync(tempPromptFile); } catch {}
       reject(err);
     });
 
-    // Timeout after 3 minutes per agent
+    // Timeout after 1 minute (should be fast without tools)
     setTimeout(() => {
       proc.kill();
-      reject(new Error('Timeout (3 min)'));
-    }, 180000);
+      try { fs.unlinkSync(tempPromptFile); } catch {}
+      reject(new Error('Timeout (1 min)'));
+    }, 60000);
   });
 }
 
@@ -250,14 +280,10 @@ type ProgressFn = (status: string, completed: number, total: number, current?: s
  */
 async function runAgentsOpenRouter(
   agents: Agent[],
-  projectRoot: string,
+  context: string,
   writeProgress: ProgressFn
 ): Promise<void> {
   console.log(`Running ${agents.length} agents via OpenRouter API...\n`);
-
-  // Gather project context
-  writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
-  const context = await gatherProjectContext(projectRoot);
 
   let config;
   try {
