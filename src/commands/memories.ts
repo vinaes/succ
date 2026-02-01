@@ -26,13 +26,14 @@ interface MemoriesOptions {
   tags?: string;
   limit?: number;
   global?: boolean;
+  json?: boolean;
 }
 
 /**
  * List and manage memories
  */
 export async function memories(options: MemoriesOptions = {}): Promise<void> {
-  const { recent, search, tags, limit = 10, global: useGlobal } = options;
+  const { recent, search, tags, limit = 10, global: useGlobal, json: outputJson } = options;
 
   try {
     // Show recent memories
@@ -45,8 +46,17 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         closeGlobalDb();
 
         if (globalMemories.length === 0) {
-          console.log('No global memories stored yet.');
-          console.log('\nUse `succ remember --global <content>` to add global memories.');
+          if (outputJson) {
+            console.log('[]');
+          } else {
+            console.log('No global memories stored yet.');
+            console.log('\nUse `succ remember --global <content>` to add global memories.');
+          }
+          return;
+        }
+
+        if (outputJson) {
+          console.log(JSON.stringify(globalMemories, null, 2));
           return;
         }
 
@@ -69,8 +79,17 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
       closeDb();
 
       if (recentMemories.length === 0) {
-        console.log('No memories stored yet.');
-        console.log('\nUse succ_remember MCP tool or `succ remember <content>` to add memories.');
+        if (outputJson) {
+          console.log('[]');
+        } else {
+          console.log('No memories stored yet.');
+          console.log('\nUse succ_remember MCP tool or `succ remember <content>` to add memories.');
+        }
+        return;
+      }
+
+      if (outputJson) {
+        console.log(JSON.stringify(recentMemories, null, 2));
         return;
       }
 
@@ -166,21 +185,31 @@ export async function remember(content: string, options: RememberOptions = {}): 
     if (useGlobal) {
       // Save to global memory with project name
       const projectName = path.basename(getProjectRoot());
-      const id = saveGlobalMemory(content, embedding, tagList, source, projectName);
+      const result = saveGlobalMemory(content, embedding, tagList, source, projectName);
       closeGlobalDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
-      console.log(`✓ Remembered globally (id: ${id})${tagStr}`);
-      console.log(`  Project: ${projectName}`);
-      console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+      if (result.isDuplicate) {
+        console.log(`⚠ Similar global memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
+        console.log(`  Skipped duplicate.`);
+      } else {
+        console.log(`✓ Remembered globally (id: ${result.id})${tagStr}`);
+        console.log(`  Project: ${projectName}`);
+        console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+      }
     } else {
       // Save to local memory
-      const id = saveMemory(content, embedding, tagList, source);
+      const result = saveMemory(content, embedding, tagList, source);
       closeDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
-      console.log(`✓ Remembered (id: ${id})${tagStr}`);
-      console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+      if (result.isDuplicate) {
+        console.log(`⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
+        console.log(`  Skipped duplicate.`);
+      } else {
+        console.log(`✓ Remembered (id: ${result.id})${tagStr}`);
+        console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+      }
     }
   } catch (error: any) {
     console.error('Error saving memory:', error.message);
