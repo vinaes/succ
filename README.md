@@ -187,6 +187,19 @@ Add a single file to the index.
 
 Show index statistics and configuration.
 
+### `succ graph <action>`
+
+Knowledge graph operations for memories:
+
+```bash
+succ graph export                 # Export to Obsidian format (default)
+succ graph export --format json   # Export to JSON
+succ graph export -o ./output     # Custom output directory
+succ graph stats                  # Show graph statistics
+succ graph auto-link              # Auto-link similar memories
+succ graph auto-link -t 0.8       # Custom similarity threshold
+```
+
 ### `succ analyze`
 
 **The magic command.** Analyzes your project and generates a complete brain vault:
@@ -246,14 +259,23 @@ succ analyze --sandbox-stop
 ├── CLAUDE.md                    # Navigation hub
 ├── .obsidian/graph.json         # Graph colors config
 ├── .meta/learnings.md           # Lessons learned
+├── 00_Inbox/                    # Session notes, unprocessed items
 ├── 01_Projects/{project}/
 │   ├── {project}.md             # Project index
-│   └── Technical/
-│       ├── Architecture Overview.md
-│       ├── API Reference.md
-│       ├── Conventions.md
-│       └── Dependencies.md
-├── 02_Knowledge/                # For research notes
+│   ├── Technical/
+│   │   ├── Architecture Overview.md
+│   │   ├── API Reference.md
+│   │   ├── Conventions.md
+│   │   └── Dependencies.md
+│   ├── Systems/                 # Individual system docs
+│   │   ├── Systems Overview.md
+│   │   └── {System Name}.md
+│   ├── Strategy/
+│   │   └── Project Strategy.md
+│   └── Features/                # Individual feature docs
+│       ├── Features Overview.md
+│       └── {Feature Name}.md
+├── 02_Knowledge/                # Research notes
 └── 03_Archive/                  # Old/superseded
 ```
 
@@ -262,6 +284,9 @@ succ analyze --sandbox-stop
 2. **API** — endpoints, routes, schemas
 3. **Conventions** — naming, patterns, style
 4. **Dependencies** — key libraries and their purposes
+5. **Systems** — core systems/modules (creates multiple files)
+6. **Strategy** — project goals, target users, differentiators
+7. **Features** — implemented features (creates multiple files)
 
 Each agent writes directly to brain vault with proper:
 - YAML frontmatter (description, type, relevance)
@@ -430,6 +455,8 @@ Or if running from source:
 | `succ_remember` | Save to memory (supports `global` flag for cross-project) |
 | `succ_recall` | Recall memories (searches both local and global) |
 | `succ_forget` | Delete memories by id, age, or tag |
+| `succ_link` | Create/manage links between memories (knowledge graph) |
+| `succ_explore` | Explore knowledge graph from a memory |
 | `succ_status` | Get index and memory statistics |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
@@ -829,7 +856,7 @@ For development or customization:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/succ.git
+git clone https://github.com/vinaes/succ.git
 cd succ
 
 # Install dependencies
@@ -914,16 +941,19 @@ succ/
 │   │   ├── index-code.ts   # succ index-code
 │   │   ├── search.ts       # succ search
 │   │   ├── memories.ts     # succ remember/memories/forget
-│   │   ├── analyze.ts      # succ analyze
+│   │   ├── analyze.ts      # succ analyze (+ sandbox mode)
+│   │   ├── graph.ts        # succ graph (export, stats, auto-link)
 │   │   ├── benchmark.ts    # succ benchmark
 │   │   ├── clear.ts        # succ clear
 │   │   └── ...
 │   └── lib/
-│       ├── db.ts           # SQLite database (batch transactions, memory)
+│       ├── db.ts           # SQLite database (documents, memories, links)
 │       ├── embeddings.ts   # Embeddings with cache, retry, timeout
 │       ├── chunker.ts      # Text/code chunking
 │       ├── config.ts       # Configuration management
-│       └── indexer.ts      # Shared indexing logic with progress bar
+│       ├── indexer.ts      # Shared indexing logic with progress bar
+│       ├── lock.ts         # File-based locking for sandbox mode
+│       └── graph-export.ts # Export memories to Obsidian/JSON
 ├── dist/                   # Compiled JavaScript (generated)
 ├── package.json
 ├── eslint.config.js        # ESLint flat config
