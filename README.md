@@ -203,6 +203,42 @@ succ analyze --openrouter         # Use OpenRouter API (if no Claude subscriptio
 - **OpenRouter mode** — for users without Claude subscription (pay per API call)
 - **Background mode** — runs detached, check status with `succ status`
 
+#### Sandbox Mode (Continuous Analysis)
+
+Sandbox mode runs as a background daemon that continuously analyzes your project at regular intervals:
+
+```bash
+# Start sandbox daemon (default: every 30 minutes)
+succ analyze --sandbox
+
+# Custom interval (in minutes)
+succ analyze --sandbox --interval 60
+
+# Check sandbox status
+succ analyze --sandbox-status
+
+# Stop running sandbox daemon
+succ analyze --sandbox-stop
+```
+
+**How sandbox mode works:**
+1. Starts a detached background process
+2. Runs initial analysis immediately
+3. Re-analyzes at configured intervals
+4. Uses file-based locking to prevent concurrent runs
+5. Logs output to `.claude/sandbox-analyze.log`
+
+**Use cases:**
+- Keep brain vault up-to-date as code changes
+- Run overnight for large codebases
+- Continuous documentation generation
+
+**Sandbox daemon features:**
+- **File-based locking** — prevents multiple sandbox instances
+- **Graceful shutdown** — responds to stop signal
+- **Status tracking** — check if running, PID, last run time
+- **Auto-cleanup** — lock files auto-expire after 2 hours
+
 **What it creates:**
 
 ```
@@ -274,9 +310,82 @@ Or set environment variable: `export OPENROUTER_API_KEY=sk-or-...`
   "embedding_mode": "custom",
   "custom_api_url": "http://localhost:1234/v1/embeddings",
   "custom_api_key": "optional-key",
-  "embedding_model": "your-model-name"
+  "embedding_model": "your-model-name",
+  "custom_batch_size": 32,
+  "embedding_dimensions": 768
 }
 ```
+
+### GPU Acceleration with llama.cpp
+
+For GPU-accelerated embeddings, use llama.cpp server with CUDA/ROCm/Metal:
+
+**1. Install llama.cpp:**
+```bash
+# Option A: Download pre-built binaries (recommended)
+# https://github.com/ggerganov/llama.cpp/releases
+# Get the CUDA/ROCm/Metal version for your platform
+
+# Option B: Build from source with CUDA
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+cmake -B build -DLLAMA_CUDA=ON
+cmake --build build --config Release
+```
+
+**2. Download an embedding model (GGUF format):**
+```bash
+# Recommended: BGE-M3 (1024d, 8192 token context, multilingual)
+curl -L -o bge-m3-Q8_0.gguf \
+  "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf"
+
+# Alternative: nomic-embed-text (768d, 2048 token context)
+curl -L -o nomic-embed-text-v1.5.Q8_0.gguf \
+  "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf"
+```
+
+**3. Start llama-server:**
+```bash
+./llama-server \
+  -m bge-m3-Q8_0.gguf \
+  --embeddings \
+  --port 8078 \
+  -ngl 99 \
+  -b 8192 -ub 8192  # Increase batch size for long contexts
+```
+
+**4. Configure succ:**
+```json
+{
+  "embedding_mode": "custom",
+  "custom_api_url": "http://localhost:8078/v1/embeddings",
+  "embedding_model": "bge-m3",
+  "custom_batch_size": 64,
+  "embedding_dimensions": 1024
+}
+```
+
+**Recommended models:**
+
+| Model | Dimensions | Context | Size | Quality | Notes |
+|-------|------------|---------|------|---------|-------|
+| **bge-m3** | 1024 | 8192 | 635MB | State-of-art | Best for code, multilingual |
+| nomic-embed-text-v1.5 | 768 | 2048 | 140MB | Excellent | Good balance |
+| bge-large-en-v1.5 | 1024 | 512 | 341MB | State-of-art | Short context only |
+| all-MiniLM-L6-v2 | 384 | 512 | 90MB | Good | Fast, small |
+
+**Benchmark results (500 texts, RTX 4070):**
+
+| Mode | Model | Time | Rate | Speedup |
+|------|-------|------|------|---------|
+| GPU (llama.cpp) | BGE-M3 1024d | 2339ms | 214/s | **1.72x** |
+| CPU (transformers.js) | MiniLM 384d | 4024ms | 124/s | baseline |
+
+**Batch size recommendations:**
+- llama.cpp: 32-128 (GPU memory dependent)
+- For BGE-M3: use `-b 8192 -ub 8192` to support full context
+- LM Studio: 16-32
+- Ollama: 16-32
 
 ## MCP Server Integration
 
@@ -490,11 +599,37 @@ Learn more: [soul.md](https://soul.md/)
 
 ## Auto-Summarization
 
-The session-end hook automatically saves session summaries to memory:
-- Triggers when Claude Code session ends
-- Extracts key learnings and decisions
+The session-end hook automatically preserves knowledge from every session:
+
+**1. SQLite Memory** — session summaries saved via `succ remember`
 - Auto-tags based on content (bugfix, feature, refactor, decision)
-- Truncates long summaries to 2000 chars
+- Searchable with `succ memories -s "query"`
+
+**2. Learnings Extraction** — Claude analyzes session and extracts learnings to `.claude/brain/.meta/learnings.md`
+- Uses Claude CLI (haiku) to intelligently extract:
+  - Bug fixes: what was wrong and how it was fixed
+  - Technical discoveries: APIs, patterns, gotchas
+  - Architecture decisions and rationale
+  - Workarounds for specific problems
+- Skips routine work with no meaningful learnings
+- Appends dated entries automatically
+
+**3. Session Notes** — full session note created in `.claude/brain/00_Inbox/`
+- Filename: `Session {date} {title}.md`
+- YAML frontmatter with tags and type
+- Ready for processing in Obsidian Inbox
+
+**What triggers it:**
+- Claude Code session ends (Stop hook)
+- Session must have at least 50 chars of summary
+
+**4. Idle Reflections** — triggered when Claude has been idle (~60 seconds)
+- Uses Claude CLI (haiku) to generate meaningful reflection
+- Analyzes recent transcript context
+- Writes introspective notes to `.claude/brain/.self/reflections.md`
+- Considers: what was accomplished, challenges, things worth remembering
+
+**Note:** Idle detection uses the `Notification` hook with `idle_prompt` matcher. This fires after ~60 seconds of inactivity (Claude Code default), not a configurable 30-minute timeout.
 
 ## Performance
 
@@ -509,28 +644,79 @@ The session-end hook automatically saves session summaries to memory:
 
 ### Benchmarks
 
-Run `succ benchmark` to measure performance:
+Run `succ benchmark` to measure performance. The benchmark automatically tests both local and OpenRouter modes (if API key is configured):
+
+```bash
+succ benchmark           # Run with 10 iterations per mode
+succ benchmark -n 25     # More iterations for accuracy
+```
+
+**Example output:**
 
 ```
+═══════════════════════════════════════════════════════════
+                     SUCC BENCHMARK
+═══════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────┐
+│ LOCAL EMBEDDINGS (Xenova/all-MiniLM-L6-v2)                   │
+└─────────────────────────────────────────────────────────────┘
+  [1/5] Embedding generation...
+  [2/5] Memory save...
+  [3/5] Memory recall...
+  [4/5] DB search...
+  [5/5] Accuracy test...
+
+┌─────────────────────────────────────────────────────────────┐
+│ OPENROUTER API (openai/text-embedding-3-small)              │
+└─────────────────────────────────────────────────────────────┘
+  [1/5] Embedding generation...
+  ...
+
+═══════════════════════════════════════════════════════════
+                        SUMMARY
+═══════════════════════════════════════════════════════════
+
+LOCAL (Xenova/all-MiniLM-L6-v2, 384d):
 ┌─────────────────────────┬──────────┬──────────┬──────────┐
 │ Operation               │ Avg (ms) │ Min (ms) │ Max (ms) │
 ├─────────────────────────┼──────────┼──────────┼──────────┤
-│ Embedding generation    │      8.8 │      0.0 │     37.0 │
-│ Memory save (full)      │      5.3 │      3.0 │     23.0 │
-│ Memory recall (full)    │      6.2 │      0.0 │     40.0 │
-│ DB search only          │      0.8 │      0.0 │      3.0 │
+│ Embedding generation    │     22.6 │     14.0 │     35.0 │
+│ Memory save (full)      │     34.5 │     20.0 │     54.0 │
+│ Memory recall (full)    │     19.5 │     13.0 │     34.0 │
+│ DB search only          │      0.7 │      0.0 │      4.0 │
 └─────────────────────────┴──────────┴──────────┴──────────┘
+  Throughput: 44.2 embed/sec
+  Accuracy: 100% (10/10)
 
-Throughput:
-- Embedding generation: 114 ops/sec
-- Memory save: 188 ops/sec
-- Memory recall: 162 ops/sec
-- DB search: 1309 ops/sec
+OPENROUTER (openai/text-embedding-3-small, 1536d):
+┌─────────────────────────┬──────────┬──────────┬──────────┐
+│ Operation               │ Avg (ms) │ Min (ms) │ Max (ms) │
+├─────────────────────────┼──────────┼──────────┼──────────┤
+│ Embedding generation    │    612.2 │    515.0 │    742.0 │
+│ Memory save (full)      │    680.5 │    516.0 │    979.0 │
+│ Memory recall (full)    │    654.5 │    481.0 │   1191.0 │
+│ DB search only          │      1.8 │      1.0 │      3.0 │
+└─────────────────────────┴──────────┴──────────┴──────────┘
+  Throughput: 1.6 embed/sec
+  Accuracy: 100% (10/10)
 
-Semantic search accuracy: 100% (10/10)
+─────────────────────────────────────────────────────────────
+COMPARISON:
+  Local embedding:     22.6ms avg
+  OpenRouter embedding: 612.2ms avg
+  → Local is 27.1x faster (no network latency)
+  → Both achieve 100% semantic accuracy
 ```
 
-*Average of 25 benchmark runs. Model: Xenova/all-MiniLM-L6-v2 (384 dimensions)*
+**When to use each mode:**
+
+| Mode | Best for | Trade-offs |
+|------|----------|------------|
+| **Local** (default) | Speed, privacy, offline use | Smaller model (384d) |
+| **OpenRouter API** | Higher-dimension embeddings (1536d) | Network latency, API costs |
+
+*Note: If no OpenRouter API key is configured, only the local benchmark runs.*
 
 ## vs Supermemory
 
@@ -660,6 +846,44 @@ npm run lint:fix         # Auto-fix issues
 npm run format           # Format all files
 npm run format:check     # Check formatting
 ```
+
+### Testing
+
+succ has comprehensive test coverage using [Vitest](https://vitest.dev/). Tests cover all core functionality:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm test -- --watch
+
+# Run specific test file
+npm test -- src/lib/lock.test.ts
+
+# Run tests with coverage
+npm test -- --coverage
+```
+
+**Test coverage includes:**
+
+| Module | Tests | Coverage |
+|--------|-------|----------|
+| `lib/lock.ts` | 14 | Lock acquisition, release, concurrency, stale detection |
+| `lib/chunker.ts` | 27 | Text/code chunking for TS, JS, Python, Go, Rust |
+| `lib/config.ts` | 15 | Configuration loading, paths, overrides |
+| `lib/db.ts` | 23 | Documents, memories, knowledge graph, global DB |
+| `lib/graph-export.ts` | 11 | JSON/Obsidian export, wiki-links |
+| `commands/analyze.ts` | 13 | Multi-file output, sandbox state, brain structure |
+| Integration | 9 | CLI commands, MCP server, sandbox daemon |
+
+**Total: 112 tests**
+
+Tests are designed to:
+- Use isolated temp directories to avoid affecting real data
+- Mock heavy dependencies (embeddings, external APIs)
+- Test concurrent scenarios and race conditions
+- Verify Windows compatibility (file locking, paths)
 
 ### Project Structure
 
