@@ -102,7 +102,7 @@ Generated with [Claude Code](https://claude.ai/code)
 powered by [succ](https://github.com/vinaes/succ)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
-Co-Authored-By: succ <noreply@succ.dev>
+Co-Authored-By: succ <mindpalace@succ.ai>
 </commit-guidelines>`);
 
     // ============================================
