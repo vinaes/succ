@@ -145,13 +145,13 @@ describe('Integration Tests', () => {
     });
   });
 
-  describe('Sandbox Daemon', { timeout: INTEGRATION_TIMEOUT }, () => {
+  describe('Analyze Daemon', { timeout: INTEGRATION_TIMEOUT }, () => {
     let tempDir: string;
     let originalCwd: string;
 
     beforeEach(() => {
       originalCwd = process.cwd();
-      tempDir = path.join(os.tmpdir(), `succ-sandbox-test-${Date.now()}`);
+      tempDir = path.join(os.tmpdir(), `succ-daemon-test-${Date.now()}`);
       fs.mkdirSync(tempDir, { recursive: true });
 
       // Create minimal project structure
@@ -178,8 +178,8 @@ describe('Integration Tests', () => {
 
       // Clean up
       if (fs.existsSync(tempDir)) {
-        // Stop any running sandbox
-        const pidFile = path.join(tempDir, '.claude', 'sandbox.pid');
+        // Stop any running daemon
+        const pidFile = path.join(tempDir, '.claude', 'daemon.pid');
         if (fs.existsSync(pidFile)) {
           try {
             const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
@@ -192,27 +192,27 @@ describe('Integration Tests', () => {
       }
     });
 
-    it('should show sandbox status when not running', () => {
-      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--sandbox-status'], {
+    it('should show daemon status when not running', () => {
+      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--status'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
         shell: true,
       });
 
-      expect(result).toContain('Sandbox Status');
+      expect(result).toContain('Daemon Status');
       expect(result).toContain('Stopped');
     });
 
-    it('should handle --sandbox-stop when not running', () => {
-      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--sandbox-stop'], {
+    it('should handle --stop when not running', () => {
+      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--stop'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
         shell: true,
       });
 
-      expect(result).toContain('No sandbox daemon running');
+      expect(result).toContain('No daemon running');
     });
   });
 
@@ -283,9 +283,9 @@ describe('Integration Tests', () => {
     });
   });
 
-  describe('Concurrent CLI and Sandbox', { timeout: INTEGRATION_TIMEOUT }, () => {
+  describe('Concurrent CLI and Daemon', { timeout: INTEGRATION_TIMEOUT }, () => {
     it('should serialize database operations with lock', async () => {
-      // Simulate what happens when sandbox writes while CLI reads
+      // Simulate what happens when daemon writes while CLI reads
       const operations: string[] = [];
 
       // Simulate lock-protected operations
@@ -296,8 +296,8 @@ describe('Integration Tests', () => {
       };
 
       // Simulate concurrent operations
-      const sandboxWrite = withMockLock('sandbox', async () => {
-        operations.push('sandbox:write');
+      const daemonWrite = withMockLock('daemon', async () => {
+        operations.push('daemon:write');
         await new Promise((r) => setTimeout(r, 50));
       });
 
@@ -306,10 +306,10 @@ describe('Integration Tests', () => {
         await new Promise((r) => setTimeout(r, 30));
       });
 
-      await Promise.all([sandboxWrite, cliRead]);
+      await Promise.all([daemonWrite, cliRead]);
 
       // Both should complete
-      expect(operations).toContain('sandbox:write');
+      expect(operations).toContain('daemon:write');
       expect(operations).toContain('cli:read');
     });
   });

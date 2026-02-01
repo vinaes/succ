@@ -63,28 +63,28 @@ program
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
   .option('--local', 'Use local LLM API (Ollama, LM Studio, llama.cpp)')
   .option('--background', 'Run analysis in background (detached process)')
-  .option('--sandbox', 'Start sandbox daemon (continuous background analysis)')
-  .option('--sandbox-stop', 'Stop sandbox daemon')
-  .option('--sandbox-status', 'Show sandbox daemon status')
-  .option('--sandbox-worker', 'Internal: run sandbox worker (used by daemon)')
-  .option('--interval <minutes>', 'Interval for sandbox mode in minutes', '30')
+  .option('--daemon', 'Start daemon (continuous background analysis)')
+  .option('--stop', 'Stop daemon')
+  .option('--status', 'Show daemon status')
+  .option('--daemon-worker', 'Internal: run daemon worker')
+  .option('--interval <minutes>', 'Interval for daemon mode in minutes', '30')
   .action(async (options) => {
-    // Import sandbox control functions
-    const { stopSandboxDaemon, sandboxStatus, runSandboxWorker } = await import('./commands/analyze.js');
+    // Import daemon control functions
+    const { stopAnalyzeDaemon, analyzeDaemonStatus, runDaemonWorker } = await import('./commands/analyze.js');
 
-    if (options.sandboxStop) {
-      await stopSandboxDaemon();
+    if (options.stop) {
+      await stopAnalyzeDaemon();
       return;
     }
 
-    if (options.sandboxStatus) {
-      await sandboxStatus();
+    if (options.status) {
+      await analyzeDaemonStatus();
       return;
     }
 
-    if (options.sandboxWorker) {
+    if (options.daemonWorker) {
       // Internal: called by daemon process
-      await runSandboxWorker(parseInt(options.interval, 10), options.openrouter || options.local);
+      await runDaemonWorker(parseInt(options.interval, 10), options.openrouter || options.local);
       return;
     }
 
@@ -93,7 +93,7 @@ program
       openrouter: options.openrouter,
       local: options.local,
       background: options.background,
-      sandbox: options.sandbox,
+      daemon: options.daemon,
       interval: parseInt(options.interval, 10),
     });
   });
@@ -116,7 +116,34 @@ program
   .command('watch [path]')
   .description('Watch for file changes and auto-reindex')
   .option('--pattern <glob>', 'File pattern to match', '**/*.md')
-  .action(watch);
+  .option('--daemon', 'Start as background daemon')
+  .option('--stop', 'Stop watch daemon')
+  .option('--status', 'Show watch daemon status')
+  .option('--daemon-worker', 'Internal: run daemon worker')
+  .action(async (targetPath, options) => {
+    const { stopWatchDaemon, watchDaemonStatus, runWatchDaemonWorker } = await import('./commands/watch.js');
+
+    if (options.stop) {
+      await stopWatchDaemon();
+      return;
+    }
+
+    if (options.status) {
+      await watchDaemonStatus();
+      return;
+    }
+
+    if (options.daemonWorker) {
+      // Internal: called by daemon process
+      await runWatchDaemonWorker(targetPath, options.pattern);
+      return;
+    }
+
+    watch(targetPath, {
+      pattern: options.pattern,
+      daemon: options.daemon,
+    });
+  });
 
 program
   .command('config')

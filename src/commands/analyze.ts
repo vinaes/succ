@@ -10,8 +10,8 @@ interface AnalyzeOptions {
   openrouter?: boolean;
   local?: boolean;  // Use local LLM API
   background?: boolean;
-  sandbox?: boolean;  // Continuous background analysis mode
-  interval?: number;  // Interval in minutes for sandbox mode (default: 30)
+  daemon?: boolean;  // Continuous background analysis mode
+  interval?: number;  // Interval in minutes for daemon mode (default: 30)
 }
 
 interface Agent {
@@ -24,7 +24,7 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, local = false, background = false, sandbox = false, interval = 30 } = options;
+  const { parallel = true, openrouter = false, local = false, background = false, daemon = false, interval = 30 } = options;
 
   // Determine mode from options or config
   const config = getConfig();
@@ -40,9 +40,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const claudeDir = getClaudeDir();
   const brainDir = path.join(claudeDir, 'brain');
 
-  // Sandbox mode: continuous background analysis as separate daemon
-  if (sandbox) {
-    await manageSandboxDaemon(projectRoot, claudeDir, brainDir, interval, openrouter);
+  // Daemon mode: continuous background analysis as separate daemon
+  if (daemon) {
+    await manageDaemon(projectRoot, claudeDir, brainDir, interval, openrouter);
     return;
   }
 
@@ -472,10 +472,10 @@ function parseMultiFileOutput(content: string, baseDir: string): Array<{ path: s
 /**
  * Write agent output, handling multi-file outputs
  * Note: File writes are atomic (fs.writeFileSync), but we use lock
- * to prevent sandbox from writing while CLI might be reading
+ * to prevent daemon from writing while CLI might be reading
  */
 async function writeAgentOutput(agent: Agent, content: string): Promise<void> {
-  await withLock('sandbox-write', async () => {
+  await withLock('daemon-write', async () => {
     const outputDir = path.dirname(agent.outputPath);
     fs.mkdirSync(outputDir, { recursive: true });
 
@@ -510,26 +510,26 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
 }
 
 /**
- * Manage sandbox daemon - start, stop, or check status
+ * Manage daemon - start, stop, or check status
  */
-async function manageSandboxDaemon(
+async function manageDaemon(
   projectRoot: string,
   claudeDir: string,
   brainDir: string,
   intervalMinutes: number,
   openrouter: boolean
 ): Promise<void> {
-  const pidFile = path.join(claudeDir, 'sandbox.pid');
-  const logFile = path.join(claudeDir, 'sandbox.log');
+  const pidFile = path.join(claudeDir, 'daemon.pid');
+  const logFile = path.join(claudeDir, 'daemon.log');
 
   // Check if daemon is already running
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
     if (isProcessRunning(pid)) {
-      console.log(`🔄 Sandbox daemon already running (PID: ${pid})`);
+      console.log(`🔄 Daemon already running (PID: ${pid})`);
       console.log(`   Log: ${logFile}`);
-      console.log(`   Stop: succ analyze --sandbox-stop`);
-      console.log(`   Status: succ analyze --sandbox-status`);
+      console.log(`   Stop: succ analyze --stop`);
+      console.log(`   Status: succ analyze --status`);
       return;
     } else {
       // Stale pid file, remove it
@@ -537,31 +537,31 @@ async function manageSandboxDaemon(
     }
   }
 
-  console.log('🚀 Starting sandbox daemon...');
+  console.log('🚀 Starting daemon...');
 
-  // Spawn detached process that runs the actual sandbox loop
+  // Spawn detached process that runs the actual daemon loop
   const child = spawn(process.execPath, [
     process.argv[1],
     'analyze',
-    '--sandbox-worker',
+    '--daemon-worker',
     '--interval', String(intervalMinutes),
     ...(openrouter ? ['--openrouter'] : [])
   ], {
     detached: true,
     stdio: ['ignore', fs.openSync(logFile, 'a'), fs.openSync(logFile, 'a')],
     cwd: projectRoot,
-    env: { ...process.env, SUCC_SANDBOX_DAEMON: '1' }
+    env: { ...process.env, SUCC_DAEMON: '1' }
   });
 
   // Write PID file
   fs.writeFileSync(pidFile, String(child.pid));
   child.unref();
 
-  console.log(`✅ Sandbox daemon started (PID: ${child.pid})`);
+  console.log(`✅ Daemon started (PID: ${child.pid})`);
   console.log(`   Log: ${logFile}`);
   console.log(`   Interval: ${intervalMinutes} minutes`);
-  console.log(`\n   Stop:   succ analyze --sandbox-stop`);
-  console.log(`   Status: succ analyze --sandbox-status`);
+  console.log(`\n   Stop:   succ analyze --stop`);
+  console.log(`   Status: succ analyze --status`);
 }
 
 /**
@@ -577,14 +577,14 @@ function isProcessRunning(pid: number): boolean {
 }
 
 /**
- * Stop sandbox daemon
+ * Stop daemon
  */
-export async function stopSandboxDaemon(): Promise<void> {
+export async function stopAnalyzeDaemon(): Promise<void> {
   const claudeDir = getClaudeDir();
-  const pidFile = path.join(claudeDir, 'sandbox.pid');
+  const pidFile = path.join(claudeDir, 'daemon.pid');
 
   if (!fs.existsSync(pidFile)) {
-    console.log('No sandbox daemon running');
+    console.log('No daemon running');
     return;
   }
 
@@ -593,27 +593,27 @@ export async function stopSandboxDaemon(): Promise<void> {
   if (isProcessRunning(pid)) {
     try {
       process.kill(pid, 'SIGTERM');
-      console.log(`✅ Sandbox daemon stopped (PID: ${pid})`);
+      console.log(`✅ Daemon stopped (PID: ${pid})`);
     } catch (e) {
       console.error(`Failed to stop daemon: ${e}`);
     }
   } else {
-    console.log('Sandbox daemon not running (stale PID file)');
+    console.log('Daemon not running (stale PID file)');
   }
 
   fs.unlinkSync(pidFile);
 }
 
 /**
- * Show sandbox daemon status
+ * Show daemon status
  */
-export async function sandboxStatus(): Promise<void> {
+export async function analyzeDaemonStatus(): Promise<void> {
   const claudeDir = getClaudeDir();
-  const pidFile = path.join(claudeDir, 'sandbox.pid');
-  const stateFile = path.join(claudeDir, 'sandbox.state.json');
-  const logFile = path.join(claudeDir, 'sandbox.log');
+  const pidFile = path.join(claudeDir, 'daemon.pid');
+  const stateFile = path.join(claudeDir, 'daemon.state.json');
+  const logFile = path.join(claudeDir, 'daemon.log');
 
-  console.log('📊 Sandbox Status\n');
+  console.log('📊 Daemon Status\n');
 
   // Check daemon
   if (fs.existsSync(pidFile)) {
@@ -638,7 +638,7 @@ export async function sandboxStatus(): Promise<void> {
   // Check state
   if (fs.existsSync(stateFile)) {
     try {
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as SandboxState;
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as DaemonState;
       console.log(`\nRuns completed: ${state.runsCompleted}`);
       console.log(`Memories created: ${state.memoriesCreated}`);
       console.log(`Documents updated: ${state.documentsUpdated}`);
@@ -654,18 +654,18 @@ export async function sandboxStatus(): Promise<void> {
 }
 
 /**
- * Internal: Run sandbox worker (called by daemon process)
+ * Internal: Run daemon worker (called by daemon process)
  */
-export async function runSandboxWorker(intervalMinutes: number, openrouter: boolean): Promise<void> {
+export async function runDaemonWorker(intervalMinutes: number, openrouter: boolean): Promise<void> {
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
   const brainDir = path.join(claudeDir, 'brain');
 
-  await runSandboxMode(projectRoot, claudeDir, brainDir, intervalMinutes, openrouter);
+  await runDaemonMode(projectRoot, claudeDir, brainDir, intervalMinutes, openrouter);
 }
 
 interface RunAgentOptions {
-  noTimeout?: boolean;  // For sandbox mode - no timeout
+  noTimeout?: boolean;  // For daemon mode - no timeout
 }
 
 function runClaudeAgent(agent: Agent, context: string, options: RunAgentOptions = {}): Promise<void> {
@@ -736,7 +736,7 @@ ${agent.prompt}`;
       reject(err);
     });
 
-    // Timeout only for non-sandbox mode (3 minutes for multi-file agents)
+    // Timeout only for non-daemon mode (3 minutes for multi-file agents)
     if (!noTimeout) {
       setTimeout(() => {
         proc.kill();
@@ -960,10 +960,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
 }
 
 /**
- * Sandbox mode: continuous background analysis
+ * Daemon mode: continuous background analysis
  * Runs periodically to discover new patterns, update docs, save to memory
  */
-async function runSandboxMode(
+async function runDaemonMode(
   projectRoot: string,
   claudeDir: string,
   brainDir: string,
@@ -971,8 +971,8 @@ async function runSandboxMode(
   openrouter: boolean
 ): Promise<void> {
   const { execFileSync } = await import('child_process');
-  const logFile = path.join(claudeDir, 'sandbox.log');
-  const stateFile = path.join(claudeDir, 'sandbox.state.json');
+  const logFile = path.join(claudeDir, 'daemon.log');
+  const stateFile = path.join(claudeDir, 'daemon.state.json');
 
   const log = (msg: string) => {
     const timestamp = new Date().toISOString();
@@ -981,12 +981,12 @@ async function runSandboxMode(
     console.log(msg);
   };
 
-  log(`🔄 Starting sandbox mode (interval: ${intervalMinutes} min)`);
+  log(`🔄 Starting daemon mode (interval: ${intervalMinutes} min)`);
   log(`   Log: ${logFile}`);
   log(`   Stop: kill the process or Ctrl+C`);
 
   // Load or initialize state
-  let state: SandboxState = {
+  let state: DaemonState = {
     lastRun: null,
     runsCompleted: 0,
     memoriesCreated: 0,
@@ -1026,7 +1026,7 @@ async function runSandboxMode(
 
   // Run analysis loop
   const runAnalysis = async (forceFullAnalysis: boolean = false) => {
-    log(`\n--- Sandbox run #${state.runsCompleted + 1} ---`);
+    log(`\n--- Daemon run #${state.runsCompleted + 1} ---`);
 
     try {
       // Check if codebase changed since last run
@@ -1122,7 +1122,7 @@ async function runSandboxMode(
 
       log(`Run completed. Total: ${state.memoriesCreated} memories, ${state.documentsUpdated} docs updated`);
     } catch (error) {
-      log(`Error in sandbox run: ${error}`);
+      log(`Error in daemon run: ${error}`);
     }
   };
 
@@ -1137,7 +1137,7 @@ async function runSandboxMode(
   log(`\nNext run in ${intervalMinutes} minutes. Press Ctrl+C to stop.`);
 }
 
-interface SandboxState {
+interface DaemonState {
   lastRun: string | null;
   runsCompleted: number;
   memoriesCreated: number;
@@ -1248,7 +1248,7 @@ Output ONLY the JSON array, no other text.`;
  */
 async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
   try {
-    return await withLock('sandbox-memory', async () => {
+    return await withLock('daemon-memory', async () => {
       // Check for duplicates using semantic similarity
       const { saveMemory, searchMemories } = await import('../lib/db.js');
       const { getEmbedding } = await import('../lib/embeddings.js');
@@ -1268,12 +1268,12 @@ async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
       }
 
       // Save new memory with the embedding we already have
-      const memoryTags = discovery.tags.length > 0 ? discovery.tags : ['sandbox'];
+      const memoryTags = discovery.tags.length > 0 ? discovery.tags : ['daemon'];
       saveMemory(
         discovery.content,
         embedding,
         memoryTags,
-        `sandbox-${discovery.type}`,
+        `daemon-${discovery.type}`,
         {
           type: discovery.type as 'observation' | 'decision' | 'learning' | 'error' | 'pattern',
           deduplicate: false, // Already checked above
