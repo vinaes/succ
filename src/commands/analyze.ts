@@ -3,11 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { getProjectRoot, getClaudeDir, getConfig } from '../lib/config.js';
+import { withLock, getLockStatus } from '../lib/lock.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
   openrouter?: boolean;
   background?: boolean;
+  sandbox?: boolean;  // Continuous background analysis mode
+  interval?: number;  // Interval in minutes for sandbox mode (default: 30)
 }
 
 interface Agent {
@@ -20,10 +23,16 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, background = false } = options;
+  const { parallel = true, openrouter = false, background = false, sandbox = false, interval = 30 } = options;
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
   const brainDir = path.join(claudeDir, 'brain');
+
+  // Sandbox mode: continuous background analysis as separate daemon
+  if (sandbox) {
+    await manageSandboxDaemon(projectRoot, claudeDir, brainDir, interval, openrouter);
+    return;
+  }
 
   // Background mode: spawn detached process and exit
   if (background) {
@@ -111,11 +120,12 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 function getAgents(brainDir: string, projectName: string): Agent[] {
   const projectDir = path.join(brainDir, '01_Projects', projectName);
 
-  // Shorter prompts for faster execution
-  const frontmatter = (desc: string, rel: string = 'high') =>
-    `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: technical\nrelevance: ${rel}\n---\n\n`;
+  // Helper for frontmatter
+  const frontmatter = (desc: string, type: string = 'technical', rel: string = 'high') =>
+    `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: ${type}\nrelevance: ${rel}\n---\n\n`;
 
   return [
+    // Technical documentation
     {
       name: 'architecture',
       outputPath: path.join(projectDir, 'Technical', 'Architecture Overview.md'),
@@ -141,7 +151,7 @@ Output ONLY markdown.`,
     {
       name: 'conventions',
       outputPath: path.join(projectDir, 'Technical', 'Conventions.md'),
-      prompt: `${frontmatter('Coding conventions and patterns', 'medium')}Create "# Conventions" document.
+      prompt: `${frontmatter('Coding conventions and patterns', 'technical', 'medium')}Create "# Conventions" document.
 
 Add "**Parent:** [[Architecture Overview]]" after title.
 
@@ -152,13 +162,190 @@ Output ONLY markdown.`,
     {
       name: 'dependencies',
       outputPath: path.join(projectDir, 'Technical', 'Dependencies.md'),
-      prompt: `${frontmatter('Key dependencies and their purposes', 'medium')}Create "# Dependencies" document.
+      prompt: `${frontmatter('Key dependencies and their purposes', 'technical', 'medium')}Create "# Dependencies" document.
 
 Add "**Parent:** [[Architecture Overview]]" after title.
 
 List important dependencies with: name, purpose, where used. Group by category.
 
 Output ONLY markdown.`,
+    },
+
+    // Systems documentation - creates individual files for each detected system
+    {
+      name: 'systems-overview',
+      outputPath: path.join(projectDir, 'Systems', 'Systems Overview.md'),
+      prompt: `${frontmatter('Core systems and their interactions', 'systems')}Analyze this codebase and identify DISTINCT SYSTEMS/MODULES.
+
+Your task has TWO parts:
+
+## PART 1: Create Systems Overview (MOC)
+Create "# Systems Overview" as a Map of Content linking to individual system files.
+
+Format:
+\`\`\`
+# Systems Overview
+
+**Parent:** [[${projectName}]]
+
+## Core Systems
+
+| System | Description | Key Files |
+|--------|-------------|-----------|
+| [[Embedding System]] | Handles vector embeddings | embeddings.ts |
+| [[Database System]] | SQLite storage layer | db.js |
+...
+
+## System Interactions
+
+[Describe how systems interact with each other]
+\`\`\`
+
+## PART 2: Create Individual System Files
+After the MOC, output EACH system as a separate document using this delimiter:
+
+===FILE: {System Name}.md===
+
+Each system file should have:
+- YAML frontmatter with description, project: ${projectName}, type: system
+- Title matching filename
+- **Parent:** [[Systems Overview]]
+- Sections: Purpose, Key Components, Key Files, Dependencies, API/Interface
+
+Example output structure:
+\`\`\`
+---
+description: "Core systems and their interactions"
+...
+---
+
+# Systems Overview
+...table with [[wikilinks]]...
+
+===FILE: Embedding System.md===
+---
+description: "Vector embedding generation and management"
+project: ${projectName}
+type: system
+---
+
+# Embedding System
+
+**Parent:** [[Systems Overview]]
+
+## Purpose
+...
+
+===FILE: Database System.md===
+---
+description: "SQLite storage layer"
+...
+\`\`\`
+
+IMPORTANT:
+- Only create files for systems that ACTUALLY EXIST in this codebase
+- Use [[wikilinks]] to link between systems
+- Each system file must start with ===FILE: {name}.md===
+- Output ONLY markdown, no explanations`,
+    },
+
+    // Strategy (if business logic exists)
+    {
+      name: 'strategy',
+      outputPath: path.join(projectDir, 'Strategy', 'Project Strategy.md'),
+      prompt: `${frontmatter('Project goals and strategic direction', 'strategy')}Create "# Project Strategy" document.
+
+Add "**Parent:** [[${projectName}]]" after title.
+
+Based on the codebase, describe:
+- What problem this project solves
+- Target users/audience
+- Key differentiators
+- Current capabilities
+- Potential growth areas
+
+If this is a library/tool, focus on its use cases. Output ONLY markdown.`,
+    },
+
+    // Features (from actual code) - creates individual files for major features
+    {
+      name: 'features',
+      outputPath: path.join(projectDir, 'Features', 'Features Overview.md'),
+      prompt: `${frontmatter('Implemented features and capabilities', 'features')}Analyze this codebase and identify MAJOR FEATURES.
+
+Your task has TWO parts:
+
+## PART 1: Create Features Overview (MOC)
+Create "# Features Overview" as a Map of Content linking to individual feature files.
+
+Format:
+\`\`\`
+# Features Overview
+
+**Parent:** [[${projectName}]]
+
+## Core Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| [[Memory System]] | Persistent semantic memory | Implemented |
+| [[Search]] | Vector similarity search | Implemented |
+...
+
+## Feature Categories
+
+- **Core**: Main functionality
+- **Integration**: External integrations
+- **CLI**: Command-line interface
+\`\`\`
+
+## PART 2: Create Individual Feature Files
+After the MOC, output MAJOR features as separate documents using this delimiter:
+
+===FILE: {Feature Name}.md===
+
+Each feature file should have:
+- YAML frontmatter with description, project: ${projectName}, type: feature
+- Title matching filename
+- **Parent:** [[Features Overview]]
+- Sections: Overview, Capabilities, Key Files, Usage Examples, Related Features
+
+Example:
+\`\`\`
+---
+description: "Implemented features and capabilities"
+...
+---
+
+# Features Overview
+...table with [[wikilinks]]...
+
+===FILE: Memory System.md===
+---
+description: "Persistent semantic memory storage"
+project: ${projectName}
+type: feature
+---
+
+# Memory System
+
+**Parent:** [[Features Overview]]
+
+## Overview
+...
+
+## Capabilities
+- Save observations, decisions, learnings
+- Semantic search across memories
+...
+\`\`\`
+
+IMPORTANT:
+- Only create files for MAJOR features (not every small function)
+- Group related small features into one file
+- Use [[wikilinks]] to link between features and systems
+- Each feature file must start with ===FILE: {name}.md===
+- Output ONLY markdown, no explanations`,
     },
   ];
 }
@@ -185,6 +372,99 @@ async function runAgentsParallel(agents: Agent[], context: string): Promise<void
   console.log(`\nCompleted: ${succeeded}/${agents.length} agents`);
 }
 
+/**
+ * Clean markdown output by removing code fences and preamble text that LLMs sometimes add
+ */
+function cleanMarkdownOutput(content: string): string {
+  let cleaned = content.trim();
+
+  // Remove leading ```markdown or ```md
+  if (/^```(?:markdown|md)?\s*\n/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^```(?:markdown|md)?\s*\n/i, '');
+  }
+
+  // Remove trailing ```
+  if (/\n```\s*$/.test(cleaned)) {
+    cleaned = cleaned.replace(/\n```\s*$/, '');
+  }
+
+  // Remove any preamble text before YAML frontmatter (LLMs sometimes add explanations)
+  // Look for the YAML frontmatter start and remove everything before it
+  const yamlMatch = cleaned.match(/^[\s\S]*?(---\n[\s\S]*?\n---)/);
+  if (yamlMatch && yamlMatch[1]) {
+    const yamlStart = cleaned.indexOf('---\n');
+    if (yamlStart > 0) {
+      // There's text before the frontmatter, remove it
+      cleaned = cleaned.substring(yamlStart);
+    }
+  }
+
+  return cleaned.trim();
+}
+
+/**
+ * Parse multi-file output from agents that create multiple files
+ * Format: ===FILE: filename.md===\ncontent\n===FILE: next.md===
+ */
+function parseMultiFileOutput(content: string, baseDir: string): Array<{ path: string; content: string }> {
+  const files: Array<{ path: string; content: string }> = [];
+  const cleaned = cleanMarkdownOutput(content);
+
+  // Split by ===FILE: marker
+  const parts = cleaned.split(/\n?===FILE:\s*/i);
+
+  // First part is the main file content (before any ===FILE: markers)
+  const mainContent = parts[0].trim();
+  if (mainContent) {
+    files.push({ path: '', content: mainContent }); // Empty path = use agent's outputPath
+  }
+
+  // Remaining parts are additional files
+  for (let i = 1; i < parts.length; i++) {
+    const part = parts[i];
+    const match = part.match(/^([^=\n]+\.md)===\s*\n?([\s\S]*)/i);
+    if (match) {
+      const filename = match[1].trim();
+      const fileContent = cleanMarkdownOutput(match[2]);
+      if (fileContent) {
+        files.push({
+          path: path.join(baseDir, filename),
+          content: fileContent
+        });
+      }
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Write agent output, handling multi-file outputs
+ * Note: File writes are atomic (fs.writeFileSync), but we use lock
+ * to prevent sandbox from writing while CLI might be reading
+ */
+async function writeAgentOutput(agent: Agent, content: string): Promise<void> {
+  await withLock('sandbox-write', async () => {
+    const outputDir = path.dirname(agent.outputPath);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Check if this is multi-file output
+    if (content.includes('===FILE:')) {
+      const files = parseMultiFileOutput(content, outputDir);
+
+      for (const file of files) {
+        const filePath = file.path || agent.outputPath;
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, file.content);
+      }
+    } else {
+      // Single file output
+      const cleanedOutput = cleanMarkdownOutput(content);
+      fs.writeFileSync(agent.outputPath, cleanedOutput);
+    }
+  });
+}
+
 async function runAgentsSequential(agents: Agent[], context: string): Promise<void> {
   console.log(`Running ${agents.length} agents sequentially...\n`);
 
@@ -198,7 +478,168 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
   }
 }
 
-function runClaudeAgent(agent: Agent, context: string): Promise<void> {
+/**
+ * Manage sandbox daemon - start, stop, or check status
+ */
+async function manageSandboxDaemon(
+  projectRoot: string,
+  claudeDir: string,
+  brainDir: string,
+  intervalMinutes: number,
+  openrouter: boolean
+): Promise<void> {
+  const pidFile = path.join(claudeDir, 'sandbox.pid');
+  const logFile = path.join(claudeDir, 'sandbox.log');
+
+  // Check if daemon is already running
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (isProcessRunning(pid)) {
+      console.log(`🔄 Sandbox daemon already running (PID: ${pid})`);
+      console.log(`   Log: ${logFile}`);
+      console.log(`   Stop: succ analyze --sandbox-stop`);
+      console.log(`   Status: succ analyze --sandbox-status`);
+      return;
+    } else {
+      // Stale pid file, remove it
+      fs.unlinkSync(pidFile);
+    }
+  }
+
+  console.log('🚀 Starting sandbox daemon...');
+
+  // Spawn detached process that runs the actual sandbox loop
+  const child = spawn(process.execPath, [
+    process.argv[1],
+    'analyze',
+    '--sandbox-worker',
+    '--interval', String(intervalMinutes),
+    ...(openrouter ? ['--openrouter'] : [])
+  ], {
+    detached: true,
+    stdio: ['ignore', fs.openSync(logFile, 'a'), fs.openSync(logFile, 'a')],
+    cwd: projectRoot,
+    env: { ...process.env, SUCC_SANDBOX_DAEMON: '1' }
+  });
+
+  // Write PID file
+  fs.writeFileSync(pidFile, String(child.pid));
+  child.unref();
+
+  console.log(`✅ Sandbox daemon started (PID: ${child.pid})`);
+  console.log(`   Log: ${logFile}`);
+  console.log(`   Interval: ${intervalMinutes} minutes`);
+  console.log(`\n   Stop:   succ analyze --sandbox-stop`);
+  console.log(`   Status: succ analyze --sandbox-status`);
+}
+
+/**
+ * Check if a process is running by PID
+ */
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stop sandbox daemon
+ */
+export async function stopSandboxDaemon(): Promise<void> {
+  const claudeDir = getClaudeDir();
+  const pidFile = path.join(claudeDir, 'sandbox.pid');
+
+  if (!fs.existsSync(pidFile)) {
+    console.log('No sandbox daemon running');
+    return;
+  }
+
+  const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+
+  if (isProcessRunning(pid)) {
+    try {
+      process.kill(pid, 'SIGTERM');
+      console.log(`✅ Sandbox daemon stopped (PID: ${pid})`);
+    } catch (e) {
+      console.error(`Failed to stop daemon: ${e}`);
+    }
+  } else {
+    console.log('Sandbox daemon not running (stale PID file)');
+  }
+
+  fs.unlinkSync(pidFile);
+}
+
+/**
+ * Show sandbox daemon status
+ */
+export async function sandboxStatus(): Promise<void> {
+  const claudeDir = getClaudeDir();
+  const pidFile = path.join(claudeDir, 'sandbox.pid');
+  const stateFile = path.join(claudeDir, 'sandbox.state.json');
+  const logFile = path.join(claudeDir, 'sandbox.log');
+
+  console.log('📊 Sandbox Status\n');
+
+  // Check daemon
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (isProcessRunning(pid)) {
+      console.log(`Daemon: ✅ Running (PID: ${pid})`);
+    } else {
+      console.log('Daemon: ⚠️  Not running (stale PID file)');
+    }
+  } else {
+    console.log('Daemon: ⏹️  Stopped');
+  }
+
+  // Check lock status
+  const lockStatus = getLockStatus();
+  if (lockStatus.locked && lockStatus.info) {
+    console.log(`Lock: 🔒 Held by PID ${lockStatus.info.pid} (${lockStatus.info.operation})`);
+  } else {
+    console.log('Lock: 🔓 Free');
+  }
+
+  // Check state
+  if (fs.existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as SandboxState;
+      console.log(`\nRuns completed: ${state.runsCompleted}`);
+      console.log(`Memories created: ${state.memoriesCreated}`);
+      console.log(`Documents updated: ${state.documentsUpdated}`);
+      if (state.lastRun) {
+        console.log(`Last run: ${state.lastRun}`);
+      }
+    } catch {
+      console.log('\nState: Unable to read');
+    }
+  }
+
+  console.log(`\nLog file: ${logFile}`);
+}
+
+/**
+ * Internal: Run sandbox worker (called by daemon process)
+ */
+export async function runSandboxWorker(intervalMinutes: number, openrouter: boolean): Promise<void> {
+  const projectRoot = getProjectRoot();
+  const claudeDir = getClaudeDir();
+  const brainDir = path.join(claudeDir, 'brain');
+
+  await runSandboxMode(projectRoot, claudeDir, brainDir, intervalMinutes, openrouter);
+}
+
+interface RunAgentOptions {
+  noTimeout?: boolean;  // For sandbox mode - no timeout
+}
+
+function runClaudeAgent(agent: Agent, context: string, options: RunAgentOptions = {}): Promise<void> {
+  const { noTimeout = false } = options;
+
   return new Promise((resolve, reject) => {
     // Ensure output directory exists
     const outputDir = path.dirname(agent.outputPath);
@@ -246,13 +687,13 @@ ${agent.prompt}`;
       stderr += data.toString();
     });
 
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
       // Clean up temp file
       try { fs.unlinkSync(tempPromptFile); } catch {}
 
       if (code === 0 && stdout.trim()) {
-        // Write output to file
-        fs.writeFileSync(agent.outputPath, stdout.trim());
+        // Write output (handles both single and multi-file)
+        await writeAgentOutput(agent, stdout.trim());
         resolve();
       } else {
         reject(new Error(stderr || `Exit code ${code}, no output`));
@@ -264,12 +705,14 @@ ${agent.prompt}`;
       reject(err);
     });
 
-    // Timeout after 1 minute (should be fast without tools)
-    setTimeout(() => {
-      proc.kill();
-      try { fs.unlinkSync(tempPromptFile); } catch {}
-      reject(new Error('Timeout (1 min)'));
-    }, 60000);
+    // Timeout only for non-sandbox mode (3 minutes for multi-file agents)
+    if (!noTimeout) {
+      setTimeout(() => {
+        proc.kill();
+        try { fs.unlinkSync(tempPromptFile); } catch {}
+        reject(new Error('Timeout (3 min)'));
+      }, 180000);
+    }
   });
 }
 
@@ -331,9 +774,8 @@ async function runAgentsOpenRouter(
       const content = data.choices[0]?.message?.content;
 
       if (content) {
-        const outputDir = path.dirname(agent.outputPath);
-        fs.mkdirSync(outputDir, { recursive: true });
-        fs.writeFileSync(agent.outputPath, content.trim());
+        // Write output (handles both single and multi-file)
+        await writeAgentOutput(agent, content);
         completed++;
         console.log(`  ✓ ${agent.name}`);
       } else {
@@ -382,6 +824,367 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
   }
 
   return parts.join('\n');
+}
+
+/**
+ * Sandbox mode: continuous background analysis
+ * Runs periodically to discover new patterns, update docs, save to memory
+ */
+async function runSandboxMode(
+  projectRoot: string,
+  claudeDir: string,
+  brainDir: string,
+  intervalMinutes: number,
+  openrouter: boolean
+): Promise<void> {
+  const { execFileSync } = await import('child_process');
+  const logFile = path.join(claudeDir, 'sandbox.log');
+  const stateFile = path.join(claudeDir, 'sandbox.state.json');
+
+  const log = (msg: string) => {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] ${msg}\n`;
+    fs.appendFileSync(logFile, line);
+    console.log(msg);
+  };
+
+  log(`🔄 Starting sandbox mode (interval: ${intervalMinutes} min)`);
+  log(`   Log: ${logFile}`);
+  log(`   Stop: kill the process or Ctrl+C`);
+
+  // Load or initialize state
+  let state: SandboxState = {
+    lastRun: null,
+    runsCompleted: 0,
+    memoriesCreated: 0,
+    documentsUpdated: 0,
+    lastGitCommit: null,
+  };
+
+  if (fs.existsSync(stateFile)) {
+    try {
+      state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+    } catch {
+      // Invalid state, use default
+    }
+  }
+
+  const saveState = () => {
+    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  };
+
+  // Get current git commit safely
+  const getCurrentCommit = (): string | null => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        timeout: 5000,
+      }).trim();
+    } catch {
+      return null;
+    }
+  };
+
+  // Check if this is the first run (no brain vault exists yet)
+  const projectName = path.basename(projectRoot);
+  const systemsOverviewPath = path.join(brainDir, '01_Projects', projectName, 'Systems', 'Systems Overview.md');
+  const isFirstRun = !fs.existsSync(systemsOverviewPath);
+
+  // Run analysis loop
+  const runAnalysis = async (forceFullAnalysis: boolean = false) => {
+    log(`\n--- Sandbox run #${state.runsCompleted + 1} ---`);
+
+    try {
+      // Check if codebase changed since last run
+      const currentCommit = getCurrentCommit();
+      const codeChanged = currentCommit !== state.lastGitCommit;
+
+      // Gather context
+      const context = await gatherProjectContext(projectRoot);
+
+      // First run or force full: run all 7 agents to create brain vault
+      if (forceFullAnalysis || (isFirstRun && state.runsCompleted === 0)) {
+        log('🧠 Running full analysis (first run or forced)...');
+
+        // Ensure brain structure exists
+        await ensureBrainStructure(brainDir, projectRoot);
+
+        const agents = getAgents(brainDir, projectName);
+
+        for (const agent of agents) {
+          try {
+            log(`  Running ${agent.name}...`);
+            if (openrouter) {
+              await runAgentOpenRouter(agent, context);
+            } else {
+              await runClaudeAgent(agent, context, { noTimeout: true });
+            }
+            state.documentsUpdated++;
+            log(`  ✓ ${agent.name}`);
+          } catch (e) {
+            log(`  ✗ ${agent.name}: ${e}`);
+          }
+        }
+
+        // Generate index files
+        await generateIndexFiles(brainDir, projectName);
+        log('✅ Full brain vault generated');
+      } else {
+        // Incremental analysis
+        if (!codeChanged && state.lastRun) {
+          log('No code changes detected, running discovery only...');
+        }
+
+        // Run discovery agent to find new patterns/learnings
+        const discoveries = await runDiscoveryAgent(context, openrouter);
+
+        if (discoveries.length > 0) {
+          log(`Found ${discoveries.length} discoveries`);
+
+          // Save discoveries to memory (with deduplication)
+          for (const discovery of discoveries) {
+            const saved = await saveDiscoveryToMemory(discovery);
+            if (saved) {
+              state.memoriesCreated++;
+              log(`  + Saved: ${discovery.title.substring(0, 50)}...`);
+            } else {
+              log(`  ~ Skipped (duplicate): ${discovery.title.substring(0, 30)}...`);
+            }
+          }
+        } else {
+          log('No new discoveries found');
+        }
+
+        // Update technical docs if code changed significantly
+        if (codeChanged) {
+          log('Code changed, updating documentation...');
+          const agents = getAgents(brainDir, projectName);
+          // Update architecture, api, systems-overview, features on code change
+          const agentsToUpdate = agents.filter(a =>
+            ['architecture', 'api', 'systems-overview', 'features'].includes(a.name)
+          );
+
+          for (const agent of agentsToUpdate) {
+            try {
+              log(`  Updating ${agent.name}...`);
+              if (openrouter) {
+                await runAgentOpenRouter(agent, context);
+              } else {
+                await runClaudeAgent(agent, context, { noTimeout: true });
+              }
+              state.documentsUpdated++;
+              log(`  ✓ Updated ${agent.name}`);
+            } catch (e) {
+              log(`  ✗ Failed ${agent.name}: ${e}`);
+            }
+          }
+        }
+      }
+
+      state.lastRun = new Date().toISOString();
+      state.lastGitCommit = currentCommit;
+      state.runsCompleted++;
+      saveState();
+
+      log(`Run completed. Total: ${state.memoriesCreated} memories, ${state.documentsUpdated} docs updated`);
+    } catch (error) {
+      log(`Error in sandbox run: ${error}`);
+    }
+  };
+
+  // Initial run (full analysis if first time)
+  await runAnalysis(isFirstRun);
+
+  // Schedule periodic runs (incremental)
+  const intervalMs = intervalMinutes * 60 * 1000;
+  setInterval(() => runAnalysis(false), intervalMs);
+
+  // Keep process alive
+  log(`\nNext run in ${intervalMinutes} minutes. Press Ctrl+C to stop.`);
+}
+
+interface SandboxState {
+  lastRun: string | null;
+  runsCompleted: number;
+  memoriesCreated: number;
+  documentsUpdated: number;
+  lastGitCommit: string | null;
+}
+
+interface Discovery {
+  type: 'learning' | 'pattern' | 'decision' | 'observation';
+  title: string;
+  content: string;
+  tags: string[];
+}
+
+/**
+ * Run a discovery agent to find patterns, learnings, and insights
+ */
+async function runDiscoveryAgent(
+  context: string,
+  openrouter: boolean
+): Promise<Discovery[]> {
+  const prompt = `You are analyzing a software project to discover patterns, learnings, and insights worth remembering.
+
+Project context:
+${context}
+
+---
+
+Analyze this codebase and identify:
+1. **Patterns** - Recurring code patterns, architectural patterns, design decisions
+2. **Learnings** - Interesting techniques, workarounds, solutions to problems
+3. **Observations** - Notable things about code quality, structure, dependencies
+
+Output a JSON array of discoveries. Each discovery should have:
+- type: "learning" | "pattern" | "observation"
+- title: Short title (max 60 chars)
+- content: Detailed description (2-4 sentences)
+- tags: Array of relevant tags
+
+Example output:
+[
+  {
+    "type": "pattern",
+    "title": "Command pattern for CLI",
+    "content": "Uses command pattern with separate files per command in src/commands/. Each exports an async function matching the command name.",
+    "tags": ["architecture", "cli", "patterns"]
+  }
+]
+
+Output ONLY the JSON array, no other text.`;
+
+  try {
+    let response: string;
+
+    if (openrouter) {
+      const config = getConfig();
+      const result = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.openrouter_api_key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3.5-haiku',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 2048,
+        }),
+      });
+      const data = await result.json() as { choices: Array<{ message: { content: string } }> };
+      response = data.choices[0]?.message?.content || '[]';
+    } else {
+      // Use Claude CLI via spawn (safer than exec)
+      response = await new Promise<string>((resolve, reject) => {
+        const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
+        });
+
+        proc.stdin?.write(prompt);
+        proc.stdin?.end();
+
+        let stdout = '';
+        proc.stdout?.on('data', (data) => { stdout += data.toString(); });
+        proc.on('close', (code) => {
+          if (code === 0) resolve(stdout);
+          else reject(new Error(`Exit code ${code}`));
+        });
+        proc.on('error', reject);
+
+        setTimeout(() => { proc.kill(); reject(new Error('Timeout')); }, 60000);
+      });
+    }
+
+    // Parse JSON from response
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save discovery to memory with deduplication
+ * Uses file-based locking to prevent race conditions with CLI
+ */
+async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
+  try {
+    return await withLock('sandbox-memory', async () => {
+      // Check for duplicates using semantic similarity
+      const { saveMemory, searchMemories } = await import('../lib/db.js');
+      const { getEmbedding } = await import('../lib/embeddings.js');
+
+      // Generate embedding for the discovery
+      const searchText = discovery.title + ' ' + discovery.content;
+      const embedding = await getEmbedding(searchText);
+
+      // Search for similar memories
+      const similar = searchMemories(embedding, 3, 0.3);
+
+      // If very similar memory exists (>0.85 similarity), skip
+      for (const mem of similar) {
+        if (mem.similarity > 0.85) {
+          return false; // Duplicate found
+        }
+      }
+
+      // Save new memory with the embedding we already have
+      const memoryTags = discovery.tags.length > 0 ? discovery.tags : ['sandbox'];
+      saveMemory(
+        discovery.content,
+        embedding,
+        memoryTags,
+        `sandbox-${discovery.type}`,
+        {
+          type: discovery.type as 'observation' | 'decision' | 'learning' | 'error' | 'pattern',
+          deduplicate: false, // Already checked above
+        }
+      );
+
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run single agent via OpenRouter
+ */
+async function runAgentOpenRouter(agent: Agent, context: string): Promise<void> {
+  const config = getConfig();
+  const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`;
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.openrouter_api_key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'anthropic/claude-3.5-haiku',
+      messages: [{ role: 'user', content: fullPrompt }],
+      max_tokens: 4096,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+  const content = data.choices[0]?.message?.content;
+
+  if (content) {
+    // Write output (handles both single and multi-file)
+    await writeAgentOutput(agent, content);
+  }
 }
 
 async function ensureBrainStructure(brainDir: string, projectRoot: string): Promise<void> {
