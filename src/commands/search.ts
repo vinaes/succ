@@ -1,5 +1,8 @@
 import { getEmbedding } from '../lib/embeddings.js';
-import { searchDocuments, closeDb } from '../lib/db.js';
+import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/db.js';
+import { getConfig } from '../lib/config.js';
+import inquirer from 'inquirer';
+import { index as indexBrain } from './index.js';
 
 interface SearchOptions {
   limit?: string;
@@ -17,6 +20,46 @@ export async function search(
   console.log(`Limit: ${limit}, Threshold: ${threshold}\n`);
 
   try {
+    // Check for dimension mismatch before searching
+    const storedDimension = getStoredEmbeddingDimension();
+    if (storedDimension !== null) {
+      // Get a test embedding to check current dimension
+      const testEmbedding = await getEmbedding('test');
+      const currentDimension = testEmbedding.length;
+
+      if (storedDimension !== currentDimension) {
+        const config = getConfig();
+        console.log(`\n⚠️  Embedding dimension mismatch detected!`);
+        console.log(`   Stored embeddings: ${storedDimension} dimensions`);
+        console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
+
+        const { action } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'action',
+            message: 'What would you like to do?',
+            choices: [
+              { name: 'Reindex now (clear old index and reindex with current model)', value: 'reindex' },
+              { name: 'Cancel search', value: 'cancel' },
+            ],
+          },
+        ]);
+
+        if (action === 'cancel') {
+          console.log('Search cancelled.');
+          return;
+        }
+
+        if (action === 'reindex') {
+          console.log('\nClearing old index...');
+          clearDocuments();
+          console.log('Reindexing with current model...\n');
+          await indexBrain(undefined, { force: true });
+          console.log('\n--- Continuing search ---\n');
+        }
+      }
+    }
+
     // Get query embedding
     const queryEmbedding = await getEmbedding(query);
 

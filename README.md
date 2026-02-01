@@ -369,10 +369,10 @@ Or set environment variable: `export OPENROUTER_API_KEY=sk-or-...`
 ```json
 {
   "embedding_mode": "custom",
-  "custom_api_url": "http://localhost:1234/v1/embeddings",
-  "custom_api_key": "optional-key",
+  "embedding_api_url": "http://localhost:1234/v1/embeddings",
+  "embedding_api_key": "optional-key",
   "embedding_model": "your-model-name",
-  "custom_batch_size": 32,
+  "embedding_batch_size": 32,
   "embedding_dimensions": 768
 }
 ```
@@ -419,9 +419,9 @@ curl -L -o nomic-embed-text-v1.5.Q8_0.gguf \
 ```json
 {
   "embedding_mode": "custom",
-  "custom_api_url": "http://localhost:8078/v1/embeddings",
+  "embedding_api_url": "http://localhost:8078/v1/embeddings",
   "embedding_model": "bge-m3",
-  "custom_batch_size": 64,
+  "embedding_batch_size": 64,
   "embedding_dimensions": 1024
 }
 ```
@@ -870,6 +870,35 @@ Local embeddings download the model (~80MB) on first use. Subsequent runs are fa
 1. Check index exists: `succ status`
 2. Reindex if needed: `succ index -f` or `succ index-code -f`
 3. Lower threshold: `succ search "query" -t 0.1`
+
+### Embedding model changed / dimension mismatch
+
+If you change the embedding model (e.g., from local to Ollama, or between different models), you'll get a "Vectors must have same length" error because existing embeddings have different dimensions.
+
+**Fix:** Clear the index and reindex:
+
+```bash
+# Clear document index
+succ clear --index-only -f
+
+# Clear code index
+succ clear --code-only -f
+
+# Reindex
+succ index
+succ index-code
+```
+
+**Common dimension sizes:**
+
+| Model | Dimensions |
+|-------|------------|
+| `Xenova/all-MiniLM-L6-v2` (local default) | 384 |
+| `nomic-embed-text` (Ollama) | 768 |
+| `bge-m3` (llama.cpp) | 1024 |
+| `text-embedding-3-small` (OpenAI/OpenRouter) | 1536 |
+
+succ will warn you when the model changes: `⚠️ Embedding model changed: old → new`
 
 ### Database locked errors
 

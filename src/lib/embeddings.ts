@@ -335,13 +335,13 @@ async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
  */
 export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: string }> {
   const config = getConfigWithOverride();
-  if (!config.custom_api_url) {
+  if (!config.embedding_api_url) {
     return { ok: false, error: 'Custom API URL not configured' };
   }
 
   try {
     // Try to get the base URL (without /embeddings) for health check
-    const baseUrl = config.custom_api_url.replace(/\/embeddings\/?$/, '');
+    const baseUrl = config.embedding_api_url.replace(/\/embeddings\/?$/, '');
     const healthUrl = `${baseUrl}/health`;
 
     const response = await fetchWithTimeout(healthUrl, { method: 'GET' }, 5000);
@@ -352,12 +352,12 @@ export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: str
 
     // Some servers don't have /health, try a minimal embedding request
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (config.custom_api_key) {
-      headers['Authorization'] = `Bearer ${config.custom_api_key}`;
+    if (config.embedding_api_key) {
+      headers['Authorization'] = `Bearer ${config.embedding_api_key}`;
     }
 
     const testResponse = await fetchWithTimeout(
-      config.custom_api_url,
+      config.embedding_api_url,
       {
         method: 'POST',
         headers,
@@ -386,7 +386,7 @@ export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: str
  */
 async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
   const config = getConfigWithOverride();
-  if (!config.custom_api_url) {
+  if (!config.embedding_api_url) {
     throw new Error('Custom API URL required');
   }
 
@@ -395,12 +395,12 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
   };
 
   // Add API key if provided
-  if (config.custom_api_key) {
-    headers['Authorization'] = `Bearer ${config.custom_api_key}`;
+  if (config.embedding_api_key) {
+    headers['Authorization'] = `Bearer ${config.embedding_api_key}`;
   }
 
   // Use larger batch size for custom API (llama.cpp handles 32+ well)
-  const batchSize = config.custom_batch_size || 32;
+  const batchSize = config.embedding_batch_size || 32;
   const expectedDimensions = config.embedding_dimensions;
 
   // Process in batches
@@ -410,7 +410,7 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
     const batch = texts.slice(i, i + batchSize);
 
     const batchEmbeddings = await withRetry(async () => {
-      const response = await fetchWithTimeout(config.custom_api_url!, {
+      const response = await fetchWithTimeout(config.embedding_api_url!, {
         method: 'POST',
         headers,
         body: JSON.stringify({

@@ -84,7 +84,7 @@ export async function status(): Promise<void> {
       if (config.embedding_mode === 'openrouter') {
         console.log(`OpenRouter API key:   ${config.openrouter_api_key ? 'Set' : 'Not set'}`);
       } else if (config.embedding_mode === 'custom') {
-        console.log(`Custom API URL:       ${config.custom_api_url || 'Not set'}`);
+        console.log(`Embedding API URL:    ${config.embedding_api_url || 'Not set'}`);
       }
     } catch (error: any) {
       // Config validation failed - show the issue

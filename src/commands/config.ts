@@ -8,8 +8,8 @@ interface ConfigData {
   embedding_mode: 'local' | 'openrouter' | 'custom';
   embedding_model?: string;
   openrouter_api_key?: string;
-  custom_api_url?: string;
-  custom_api_key?: string;
+  embedding_api_url?: string;
+  embedding_api_key?: string;
   chunk_size?: number;
   chunk_overlap?: number;
 }
@@ -101,7 +101,7 @@ export async function config(): Promise<void> {
         type: 'input',
         name: 'apiUrl',
         message: 'Custom API URL (e.g., http://localhost:1234/v1/embeddings):',
-        default: existingConfig.custom_api_url,
+        default: existingConfig.embedding_api_url,
         validate: (input: string) => {
           if (!input || input.trim() === '') {
             return 'API URL is required for custom mode';
@@ -118,7 +118,7 @@ export async function config(): Promise<void> {
         type: 'password',
         name: 'apiKey',
         message: 'API key (optional, press Enter to skip):',
-        default: existingConfig.custom_api_key || '',
+        default: existingConfig.embedding_api_key || '',
       },
       {
         type: 'input',
@@ -127,9 +127,9 @@ export async function config(): Promise<void> {
         default: existingConfig.embedding_model || 'text-embedding-3-small',
       },
     ]);
-    newConfig.custom_api_url = apiUrl;
+    newConfig.embedding_api_url = apiUrl;
     if (apiKey) {
-      newConfig.custom_api_key = apiKey;
+      newConfig.embedding_api_key = apiKey;
     }
     newConfig.embedding_model = model;
   }

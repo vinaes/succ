@@ -6,9 +6,9 @@ export interface SuccConfig {
   openrouter_api_key?: string;
   embedding_model: string;
   embedding_mode: 'local' | 'openrouter' | 'custom';
-  custom_api_url?: string;  // For custom API (llama.cpp, LM Studio, Ollama, etc.)
-  custom_api_key?: string;  // Optional API key for custom endpoint
-  custom_batch_size?: number;  // Batch size for custom API (default 32, llama.cpp works well with larger batches)
+  embedding_api_url?: string;  // For custom API (llama.cpp, LM Studio, Ollama, etc.)
+  embedding_api_key?: string;  // Optional API key for custom endpoint
+  embedding_batch_size?: number;  // Batch size for custom API (default 32, llama.cpp works well with larger batches)
   embedding_dimensions?: number;  // Override embedding dimensions for custom models
   chunk_size: number;
   chunk_overlap: number;
@@ -94,9 +94,9 @@ export function getConfig(): SuccConfig {
     );
   }
 
-  if (embeddingMode === 'custom' && !fileConfig.custom_api_url) {
+  if (embeddingMode === 'custom' && !fileConfig.embedding_api_url) {
     throw new Error(
-      'Custom API URL required. Set custom_api_url in config (e.g., "http://localhost:1234/v1/embeddings")'
+      'Custom API URL required. Set embedding_api_url in config (e.g., "http://localhost:1234/v1/embeddings")'
     );
   }
 

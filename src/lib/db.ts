@@ -385,6 +385,18 @@ export function searchDocuments(
   return results.slice(0, limit);
 }
 
+/**
+ * Get the embedding dimension of stored documents.
+ * Returns null if no documents exist.
+ */
+export function getStoredEmbeddingDimension(): number | null {
+  const database = getDb();
+  const row = database.prepare('SELECT embedding FROM documents LIMIT 1').get() as { embedding: Buffer } | undefined;
+  if (!row) return null;
+  const embedding = bufferToFloatArray(row.embedding);
+  return embedding.length;
+}
+
 export function getStats(): {
   total_documents: number;
   total_files: number;
@@ -407,6 +419,27 @@ export function getStats(): {
     total_files: totalFiles.count,
     last_indexed: lastIndexed.last,
   };
+}
+
+/**
+ * Clear all documents from the index.
+ * Used for reindexing after embedding model change.
+ */
+export function clearDocuments(): void {
+  const database = getDb();
+  database.prepare('DELETE FROM documents').run();
+  database.prepare('DELETE FROM file_hashes').run();
+  database.prepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
+}
+
+/**
+ * Clear only code documents from the index (keeps brain docs).
+ * Used for reindexing code after embedding model change.
+ */
+export function clearCodeDocuments(): void {
+  const database = getDb();
+  database.prepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
+  database.prepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
 }
 
 export function closeDb(): void {
