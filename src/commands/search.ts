@@ -33,17 +33,28 @@ export async function search(
         console.log(`   Stored embeddings: ${storedDimension} dimensions`);
         console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
 
-        const { action } = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'action',
-            message: 'What would you like to do?',
-            choices: [
-              { name: 'Reindex now (clear old index and reindex with current model)', value: 'reindex' },
-              { name: 'Cancel search', value: 'cancel' },
-            ],
-          },
-        ]);
+        // In non-interactive mode (no TTY), auto-reindex
+        const isInteractive = process.stdout.isTTY;
+
+        let action: string;
+        if (isInteractive) {
+          const response = await inquirer.prompt([
+            {
+              type: 'list',
+              name: 'action',
+              message: 'What would you like to do?',
+              choices: [
+                { name: 'Reindex now (clear old index and reindex with current model)', value: 'reindex' },
+                { name: 'Cancel search', value: 'cancel' },
+              ],
+            },
+          ]);
+          action = response.action;
+        } else {
+          // Non-interactive: auto-reindex
+          console.log('Non-interactive mode: automatically clearing and reindexing...');
+          action = 'reindex';
+        }
 
         if (action === 'cancel') {
           console.log('Search cancelled.');
@@ -54,7 +65,7 @@ export async function search(
           console.log('\nClearing old index...');
           clearDocuments();
           console.log('Reindexing with current model...\n');
-          await indexBrain(undefined, { force: true });
+          await indexBrain(undefined, { force: true, autoReindex: true });
           console.log('\n--- Continuing search ---\n');
         }
       }

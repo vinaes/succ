@@ -43,6 +43,7 @@ interface IndexCodeOptions {
   ignore?: string[];
   force?: boolean;
   maxFileSize?: number; // in KB
+  autoReindex?: boolean; // Auto-reindex on dimension mismatch (for non-interactive mode)
 }
 
 export async function indexCode(
@@ -54,6 +55,7 @@ export async function indexCode(
     ignore = DEFAULT_IGNORE,
     force = false,
     maxFileSize = 500, // 500KB default
+    autoReindex = false,
   } = options;
 
   const projectRoot = getProjectRoot();
@@ -77,17 +79,28 @@ export async function indexCode(
       console.log(`   Stored embeddings: ${storedDimension} dimensions`);
       console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
 
-      const { action } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'action',
-          message: 'What would you like to do?',
-          choices: [
-            { name: 'Clear old code index and reindex with current model', value: 'reindex' },
-            { name: 'Cancel', value: 'cancel' },
-          ],
-        },
-      ]);
+      // In non-interactive mode (no TTY or autoReindex), auto-clear and reindex
+      const isInteractive = process.stdout.isTTY && !autoReindex;
+
+      let action: string;
+      if (isInteractive) {
+        const response = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'action',
+            message: 'What would you like to do?',
+            choices: [
+              { name: 'Clear old code index and reindex with current model', value: 'reindex' },
+              { name: 'Cancel', value: 'cancel' },
+            ],
+          },
+        ]);
+        action = response.action;
+      } else {
+        // Non-interactive: auto-reindex
+        console.log('Non-interactive mode: automatically clearing and reindexing...');
+        action = 'reindex';
+      }
 
       if (action === 'cancel') {
         console.log('Indexing cancelled.');
