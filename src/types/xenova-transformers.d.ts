@@ -9,5 +9,10 @@ declare module '@huggingface/transformers' {
     localModelPath: string;
     allowRemoteModels: boolean;
     cacheDir: string;
+    backends: {
+      onnx: {
+        executionProviders: string[];
+      };
+    };
   };
 }

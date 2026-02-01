@@ -127,6 +127,11 @@ export async function watch(
       relativePath,
       setTimeout(async () => {
         pending.delete(relativePath);
+        // Check if file still exists (may have been renamed/deleted during debounce)
+        if (!fs.existsSync(absolutePath)) {
+          console.log(`  Skipped ${file} (no longer exists)`);
+          return;
+        }
         console.log(`[+] ${file}`);
         try {
           await indexFile(absolutePath, relativePath);
@@ -150,6 +155,11 @@ export async function watch(
       relativePath,
       setTimeout(async () => {
         pending.delete(relativePath);
+        // Check if file still exists (may have been renamed/deleted during debounce)
+        if (!fs.existsSync(absolutePath)) {
+          console.log(`  Skipped ${file} (no longer exists)`);
+          return;
+        }
         console.log(`[~] ${file}`);
         try {
           await indexFile(absolutePath, relativePath);

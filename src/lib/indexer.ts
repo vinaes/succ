@@ -105,23 +105,15 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
   const totalBatches = Math.ceil(uniqueFiles.length / batchSize);
 
-  // Process files in batches
+  // Process files in batches - but embed each file individually to reduce memory
   for (let i = 0; i < uniqueFiles.length; i += batchSize) {
     const batchNum = Math.floor(i / batchSize) + 1;
     const progress = Math.round((batchNum / totalBatches) * 100);
     process.stdout.write(`\r  [${progress}%] Processing batch ${batchNum}/${totalBatches}...`);
 
     const batch = uniqueFiles.slice(i, i + batchSize);
-    const allChunks: Array<{
-      filePath: string;
-      chunkIndex: number;
-      content: string;
-      startLine: number;
-      endLine: number;
-      hash: string;
-    }> = [];
 
-    // Read and chunk files
+    // Process each file individually to reduce memory footprint
     for (const filePath of batch) {
       // Check file size if limit specified
       if (maxFileSize) {
@@ -166,40 +158,28 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
       // Chunk the content
       const chunks = chunker(content, filePath);
+      if (chunks.length === 0) continue;
 
-      for (let j = 0; j < chunks.length; j++) {
-        allChunks.push({
+      try {
+        // Embed and store this file's chunks immediately (reduces memory)
+        const texts = chunks.map((c) => c.content);
+        const embeddings = await getEmbeddings(texts);
+
+        const documents = chunks.map((chunk, j) => ({
           filePath: relativePath,
           chunkIndex: j,
-          content: chunks[j].content,
-          startLine: chunks[j].startLine,
-          endLine: chunks[j].endLine,
+          content: chunk.content,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          embedding: embeddings[j],
           hash,
-        });
+        }));
+        upsertDocumentsBatchWithHashes(documents);
+
+        totalChunks += chunks.length;
+      } catch (error) {
+        console.error(`\n  Error processing ${relativePath}:`, error);
       }
-    }
-
-    if (allChunks.length === 0) continue;
-
-    try {
-      const texts = allChunks.map((c) => c.content);
-      const embeddings = await getEmbeddings(texts);
-
-      // Store documents AND hashes in single transaction (prevents race condition)
-      const documents = allChunks.map((chunk, j) => ({
-        filePath: chunk.filePath,
-        chunkIndex: chunk.chunkIndex,
-        content: chunk.content,
-        startLine: chunk.startLine,
-        endLine: chunk.endLine,
-        embedding: embeddings[j],
-        hash: chunk.hash,
-      }));
-      upsertDocumentsBatchWithHashes(documents);
-
-      totalChunks += allChunks.length;
-    } catch (error) {
-      console.error(`\n  Error processing batch:`, error);
     }
   }
 

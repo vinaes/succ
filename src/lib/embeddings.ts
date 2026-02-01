@@ -1,4 +1,8 @@
-import { getConfig } from './config.js';
+import { getConfig, getConfigWithOverride } from './config.js';
+import { createHash } from 'crypto';
+
+// Track which GPU backend is being used
+let gpuBackend: string | null = null;
 
 export interface EmbeddingResponse {
   data: Array<{
@@ -97,8 +101,12 @@ async function fetchWithTimeout(
 const CACHE_MAX_SIZE = 500;
 const embeddingCache = new Map<string, number[]>();
 
+/**
+ * Generate a cache key using full SHA-256 hash to prevent collisions
+ */
 function getCacheKey(text: string, mode: string, model: string): string {
-  return `${mode}:${model}:${text}`;
+  const textHash = createHash('sha256').update(text).digest('hex');
+  return `${mode}:${model}:${textHash}`;
 }
 
 function cacheGet(key: string): number[] | undefined {
@@ -155,18 +163,61 @@ async function withRetry<T>(
 
 /**
  * Get local embedding pipeline (lazy loaded)
+ * Uses CPU by default. GPU can be enabled via config (webgpu only for now).
  */
 async function getLocalPipeline() {
   if (!localPipeline) {
-    // Dynamic import to avoid loading transformers.js if not needed
     const { pipeline } = await import('@huggingface/transformers');
-    const config = getConfig();
-    console.log(`Loading local embedding model: ${config.embedding_model}...`);
+    const config = getConfigWithOverride();
+
+    // Use WebGPU only if explicitly requested in config
+    let device: 'webgpu' | 'cpu' = 'cpu';
+    if (config.gpu_enabled && config.gpu_device === 'webgpu') {
+      try {
+        if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+          const gpu = (navigator as any).gpu;
+          if (gpu) {
+            const adapter = await gpu.requestAdapter();
+            if (adapter) {
+              device = 'webgpu';
+            }
+          }
+        }
+      } catch {
+        // WebGPU not available
+      }
+    }
+
+    gpuBackend = device;
+    console.log(`Loading local embedding model: ${config.embedding_model} (${device.toUpperCase()})...`);
 
     try {
-      localPipeline = await pipeline('feature-extraction', config.embedding_model);
+      localPipeline = await pipeline('feature-extraction', config.embedding_model, {
+        device,
+        dtype: device === 'webgpu' ? 'fp16' : 'fp32',
+      });
       console.log('Model loaded.');
     } catch (error: unknown) {
+      // If WebGPU failed, retry with CPU
+      if (device === 'webgpu') {
+        console.log('WebGPU initialization failed, falling back to CPU...');
+        gpuBackend = 'cpu';
+        try {
+          localPipeline = await pipeline('feature-extraction', config.embedding_model, {
+            device: 'cpu',
+            dtype: 'fp32',
+          });
+          console.log('Model loaded (CPU fallback).');
+          return localPipeline;
+        } catch (cpuError: unknown) {
+          const message = cpuError instanceof Error ? cpuError.message : String(cpuError);
+          throw new Error(
+            `Failed to load embedding model '${config.embedding_model}'. ` +
+              `This may be due to network issues, disk space, or invalid model name. ` +
+              `Error: ${message}`
+          );
+        }
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to load embedding model '${config.embedding_model}'. ` +
@@ -179,16 +230,26 @@ async function getLocalPipeline() {
 }
 
 /**
+ * Get the currently active backend (webgpu/cpu)
+ */
+export function getGpuBackend(): string | null {
+  return gpuBackend;
+}
+
+/**
  * Get embeddings using local model (batch optimized)
  * Processes texts in batches for 3-5x speedup over sequential processing
  */
 async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
   const pipe = await getLocalPipeline();
+  const config = getConfigWithOverride();
 
   // For single text, process directly
   if (texts.length === 1) {
     const output = await pipe(texts[0], { pooling: 'mean', normalize: true });
-    return [Array.from(output.data as Float32Array)];
+    const embedding = Array.from(output.data as Float32Array);
+    validateEmbedding(embedding, config.embedding_model);
+    return [embedding];
   }
 
   // Batch processing - transformers.js supports arrays natively
@@ -199,15 +260,29 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
-    // Process batch in parallel using Promise.all
-    const batchResults = await Promise.all(
+    // Process batch with error handling for individual items
+    const batchResults = await Promise.allSettled(
       batch.map(async (text) => {
         const output = await pipe(text, { pooling: 'mean', normalize: true });
         return Array.from(output.data as Float32Array);
       })
     );
 
-    results.push(...batchResults);
+    for (const [idx, result] of batchResults.entries()) {
+      if (result.status === 'rejected') {
+        console.warn(`Failed to embed text at index ${i + idx}: ${result.reason}`);
+        // Use zero vector as fallback (will have low similarity scores)
+        const expectedDim = getModelDimension(config.embedding_model) || 384;
+        results.push(new Array(expectedDim).fill(0));
+      } else {
+        results.push(result.value);
+      }
+    }
+  }
+
+  // Validate all embeddings (not just first)
+  for (const embedding of results) {
+    validateEmbedding(embedding, config.embedding_model);
   }
 
   return results;
@@ -217,7 +292,7 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
  * Get embeddings from OpenRouter API (with retry and timeout)
  */
 async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfig();
+  const config = getConfigWithOverride();
   if (!config.openrouter_api_key) {
     throw new Error('OpenRouter API key required');
   }
@@ -245,9 +320,9 @@ async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
     const data = (await response.json()) as EmbeddingResponse;
     const embeddings = data.data.map((d) => d.embedding);
 
-    // Validate first embedding
-    if (embeddings.length > 0) {
-      validateEmbedding(embeddings[0], config.embedding_model);
+    // Validate all embeddings
+    for (const embedding of embeddings) {
+      validateEmbedding(embedding, config.embedding_model);
     }
 
     return embeddings;
@@ -255,11 +330,62 @@ async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
 }
 
 /**
+ * Check if custom API (llama.cpp, LM Studio, Ollama) is available
+ * Returns true if server responds, false otherwise
+ */
+export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: string }> {
+  const config = getConfigWithOverride();
+  if (!config.custom_api_url) {
+    return { ok: false, error: 'Custom API URL not configured' };
+  }
+
+  try {
+    // Try to get the base URL (without /embeddings) for health check
+    const baseUrl = config.custom_api_url.replace(/\/embeddings\/?$/, '');
+    const healthUrl = `${baseUrl}/health`;
+
+    const response = await fetchWithTimeout(healthUrl, { method: 'GET' }, 5000);
+
+    if (response.ok) {
+      return { ok: true };
+    }
+
+    // Some servers don't have /health, try a minimal embedding request
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (config.custom_api_key) {
+      headers['Authorization'] = `Bearer ${config.custom_api_key}`;
+    }
+
+    const testResponse = await fetchWithTimeout(
+      config.custom_api_url,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: config.embedding_model,
+          input: ['test'],
+        }),
+      },
+      10000
+    );
+
+    if (testResponse.ok) {
+      return { ok: true };
+    }
+
+    return { ok: false, error: `Server returned ${testResponse.status}` };
+  } catch (error: any) {
+    return { ok: false, error: error.message || 'Connection failed' };
+  }
+}
+
+/**
  * Get embeddings from custom API (llama.cpp, LM Studio, Ollama, etc.)
  * Expects OpenAI-compatible /v1/embeddings endpoint (with retry and timeout)
+ * Supports larger batch sizes for llama.cpp (default 32, configurable)
  */
 async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfig();
+  const config = getConfigWithOverride();
   if (!config.custom_api_url) {
     throw new Error('Custom API URL required');
   }
@@ -273,39 +399,61 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
     headers['Authorization'] = `Bearer ${config.custom_api_key}`;
   }
 
-  return withRetry(async () => {
-    const response = await fetchWithTimeout(config.custom_api_url!, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: config.embedding_model,
-        input: texts,
-      }),
+  // Use larger batch size for custom API (llama.cpp handles 32+ well)
+  const batchSize = config.custom_batch_size || 32;
+  const expectedDimensions = config.embedding_dimensions;
+
+  // Process in batches
+  const results: number[][] = [];
+
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+
+    const batchEmbeddings = await withRetry(async () => {
+      const response = await fetchWithTimeout(config.custom_api_url!, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: config.embedding_model,
+          input: batch,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Custom API error: ${response.status} - ${error}`);
+      }
+
+      const data = (await response.json()) as EmbeddingResponse;
+      return data.data.map((d) => d.embedding);
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Custom API error: ${response.status} - ${error}`);
+    // Validate embeddings
+    for (const embedding of batchEmbeddings) {
+      if (embedding.some((v) => !isFinite(v))) {
+        throw new Error('Embedding contains NaN or Infinity values');
+      }
+      // Validate dimensions if configured
+      if (expectedDimensions && embedding.length !== expectedDimensions) {
+        throw new Error(
+          `Embedding dimension mismatch: expected ${expectedDimensions}, got ${embedding.length}`
+        );
+      }
     }
 
-    const data = (await response.json()) as EmbeddingResponse;
-    const embeddings = data.data.map((d) => d.embedding);
+    results.push(...batchEmbeddings);
+  }
 
-    // Validate first embedding (custom models may have unknown dimensions)
-    if (embeddings.length > 0 && embeddings[0].some((v) => !isFinite(v))) {
-      throw new Error('Embedding contains NaN or Infinity values');
-    }
-
-    return embeddings;
-  });
+  return results;
 }
 
 /**
  * Get embeddings (auto-selects based on config mode)
  * Priority: local (default) → openrouter → custom
+ * Uses configOverride if set (for benchmarking)
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfig();
+  const config = getConfigWithOverride();
 
   switch (config.embedding_mode) {
     case 'local':
@@ -323,7 +471,7 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
  * Get embedding for a single text (with caching)
  */
 export async function getEmbedding(text: string): Promise<number[]> {
-  const config = getConfig();
+  const config = getConfigWithOverride();
   const cacheKey = getCacheKey(text, config.embedding_mode, config.embedding_model);
 
   // Check cache first
@@ -336,6 +484,18 @@ export async function getEmbedding(text: string): Promise<number[]> {
   cacheSet(cacheKey, result);
 
   return result;
+}
+
+/**
+ * Get info about current embedding configuration
+ */
+export function getEmbeddingInfo(): { mode: string; model: string; dimensions: number | undefined } {
+  const config = getConfigWithOverride();
+  return {
+    mode: config.embedding_mode,
+    model: config.embedding_model,
+    dimensions: getModelDimension(config.embedding_model),
+  };
 }
 
 /**

@@ -6,10 +6,21 @@ export interface SuccConfig {
   openrouter_api_key?: string;
   embedding_model: string;
   embedding_mode: 'local' | 'openrouter' | 'custom';
-  custom_api_url?: string;  // For custom API (llama.cpp, LM Studio, etc.)
+  custom_api_url?: string;  // For custom API (llama.cpp, LM Studio, Ollama, etc.)
   custom_api_key?: string;  // Optional API key for custom endpoint
+  custom_batch_size?: number;  // Batch size for custom API (default 32, llama.cpp works well with larger batches)
+  embedding_dimensions?: number;  // Override embedding dimensions for custom models
   chunk_size: number;
   chunk_overlap: number;
+  // GPU acceleration settings
+  gpu_enabled?: boolean;  // Enable GPU acceleration (auto-detect by default)
+  gpu_device?: 'cuda' | 'directml' | 'webgpu' | 'cpu';  // Preferred GPU backend
+  // Knowledge graph settings
+  graph_auto_link?: boolean;  // Auto-link new memories to similar ones (default: true)
+  graph_link_threshold?: number;  // Similarity threshold for auto-linking (default: 0.7)
+  graph_auto_export?: boolean;  // Auto-export graph to Obsidian on changes (default: false)
+  graph_export_format?: 'obsidian' | 'json';  // Export format (default: obsidian)
+  graph_export_path?: string;  // Custom export path (default: .claude/brain/graph)
 }
 
 // Model names for different modes
@@ -117,4 +128,38 @@ export function getGlobalDbPath(): string {
     fs.mkdirSync(globalDir, { recursive: true });
   }
   return path.join(globalDir, 'global.db');
+}
+
+// Temporary config override for benchmarking
+let configOverride: Partial<SuccConfig> | null = null;
+
+export function setConfigOverride(override: Partial<SuccConfig> | null): void {
+  configOverride = override;
+}
+
+export function getConfigWithOverride(): SuccConfig {
+  const baseConfig = getConfig();
+  if (configOverride) {
+    return { ...baseConfig, ...configOverride };
+  }
+  return baseConfig;
+}
+
+/**
+ * Check if OpenRouter API key is available
+ */
+export function hasOpenRouterKey(): boolean {
+  if (process.env.OPENROUTER_API_KEY) return true;
+
+  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
+  if (fs.existsSync(globalConfigPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
+      if (config.openrouter_api_key) return true;
+    } catch {
+      // Ignore
+    }
+  }
+
+  return false;
 }

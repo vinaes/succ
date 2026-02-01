@@ -1,5 +1,66 @@
 import { getConfig } from './config.js';
 
+/**
+ * Count net brace depth change ({=+1, }=-1) ignoring braces inside strings and comments
+ */
+function countBracesOutsideStrings(line: string): number {
+  let depth = 0;
+  let inString: string | null = null; // Track quote type: ', ", or `
+  let inLineComment = false;
+  let escaped = false; // Track escape state for proper \\ and \" handling
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = i < line.length - 1 ? line[i + 1] : '';
+
+    // If previous char was escape, this char is escaped - skip it
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    // Check for escape character inside strings
+    if (inString && char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    // Check for line comments (// or #)
+    if (!inString && !inLineComment) {
+      if (char === '/' && nextChar === '/') {
+        inLineComment = true;
+        continue;
+      }
+      if (char === '#') {
+        // Python-style comments
+        inLineComment = true;
+        continue;
+      }
+    }
+
+    if (inLineComment) continue;
+
+    // Handle string boundaries
+    if (!inString && (char === '"' || char === "'" || char === '`')) {
+      inString = char;
+      continue;
+    }
+
+    if (inString && char === inString) {
+      inString = null;
+      continue;
+    }
+
+    // Count braces only outside strings
+    if (!inString) {
+      if (char === '{') depth++;
+      if (char === '}') depth--;
+    }
+  }
+
+  return depth;
+}
+
 export interface Chunk {
   content: string;
   startLine: number;
@@ -35,6 +96,8 @@ export function chunkText(text: string, filePath: string): Chunk[] {
       // Keep overlap lines
       const overlapLines: string[] = [];
       let overlapSize = 0;
+      const previousChunkStartLine = startLine;
+      const previousChunkLineCount = currentChunk.length;
       for (let j = currentChunk.length - 1; j >= 0 && overlapSize < chunk_overlap; j--) {
         overlapLines.unshift(currentChunk[j]);
         overlapSize += currentChunk[j].length + 1;
@@ -42,7 +105,8 @@ export function chunkText(text: string, filePath: string): Chunk[] {
 
       currentChunk = overlapLines;
       currentSize = overlapSize;
-      startLine = i - overlapLines.length;
+      // The overlap lines start from the end of the previous chunk
+      startLine = previousChunkStartLine + previousChunkLineCount - overlapLines.length;
     }
 
     currentChunk.push(line);
@@ -61,9 +125,60 @@ export function chunkText(text: string, filePath: string): Chunk[] {
   return chunks;
 }
 
+// Max chunk size in characters (for embedding models with context limits)
+// 2048 tokens ~= 4000 chars for BERT-based models (conservative: ~2 chars/token)
+// This ensures compatibility with models like nomic-embed-text (2048 ctx)
+const MAX_CHUNK_CHARS = 4000;
+
+/**
+ * Split a large chunk into smaller pieces while preserving some structure
+ */
+function splitLargeChunk(chunk: Chunk): Chunk[] {
+  const { content, startLine } = chunk;
+  if (content.length <= MAX_CHUNK_CHARS) {
+    return [chunk];
+  }
+
+  const lines = content.split('\n');
+  const result: Chunk[] = [];
+  let currentLines: string[] = [];
+  let currentSize = 0;
+  let currentStartLine = startLine;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineSize = line.length + 1;
+
+    if (currentSize + lineSize > MAX_CHUNK_CHARS && currentLines.length > 0) {
+      result.push({
+        content: currentLines.join('\n'),
+        startLine: currentStartLine,
+        endLine: currentStartLine + currentLines.length - 1,
+      });
+      currentLines = [];
+      currentSize = 0;
+      currentStartLine = startLine + i;
+    }
+
+    currentLines.push(line);
+    currentSize += lineSize;
+  }
+
+  if (currentLines.length > 0) {
+    result.push({
+      content: currentLines.join('\n'),
+      startLine: currentStartLine,
+      endLine: currentStartLine + currentLines.length - 1,
+    });
+  }
+
+  return result;
+}
+
 /**
  * Chunk code files by logical units (functions, classes, etc.)
  * Falls back to line-based chunking if no structure detected
+ * Large chunks are automatically split to fit model context limits
  */
 export function chunkCode(content: string, filePath: string): Chunk[] {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
@@ -146,10 +261,9 @@ export function chunkCode(content: string, filePath: string): Chunk[] {
     // Check if this line starts a new definition
     const startsNewDef = langPatterns.some((p) => p.test(trimmedLine));
 
-    // For brace-based languages, track depth
+    // For brace-based languages, track depth (ignoring braces in strings/comments)
     if (['ts', 'js', 'go', 'rs', 'java', 'kt'].includes(patternKey || '')) {
-      braceDepth += (line.match(/{/g) || []).length;
-      braceDepth -= (line.match(/}/g) || []).length;
+      braceDepth += countBracesOutsideStrings(line);
     }
 
     // For Python, track indentation
@@ -213,7 +327,10 @@ export function chunkCode(content: string, filePath: string): Chunk[] {
   }
 
   // Filter out empty chunks and chunks that are too small
-  return chunks.filter((c) => c.content.trim().length > 20);
+  const filtered = chunks.filter((c) => c.content.trim().length > 20);
+
+  // Split any chunks that exceed the max size
+  return filtered.flatMap(splitLargeChunk);
 }
 
 /**
