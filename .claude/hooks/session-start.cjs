@@ -94,14 +94,8 @@ process.stdin.on('end', () => {
     // Phase 0.4: Commit Guidelines (succ attribution)
     // ============================================
     contextParts.push(`<commit-guidelines>
-When making git commits, use this format:
+When making git commits, add succ to the co-authors (in addition to any other co-authors):
 
-<commit message>
-
-Generated with [Claude Code](https://claude.ai/code)
-powered by [succ](https://github.com/vinaes/succ)
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 Co-Authored-By: succ <mindpalace@succ.ai>
 </commit-guidelines>`);
 

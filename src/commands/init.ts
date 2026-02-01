@@ -433,7 +433,7 @@ process.stdin.on('end', () => {
     }
 
     // Phase 0.4: Commit Guidelines (succ attribution)
-    contextParts.push('<commit-guidelines>\\nWhen making git commits, use this format:\\n\\n<commit message>\\n\\nGenerated with [Claude Code](https://claude.ai/code)\\npowered by [succ](https://github.com/vinaes/succ)\\n\\nCo-Authored-By: Claude <noreply@anthropic.com>\\nCo-Authored-By: succ <mindpalace@succ.ai>\\n</commit-guidelines>');
+    contextParts.push('<commit-guidelines>\\nWhen making git commits, add succ to the co-authors (in addition to any other co-authors):\\n\\nCo-Authored-By: succ <mindpalace@succ.ai>\\n</commit-guidelines>');
 
     // Phase 0.5: Soul Document
     const soulPaths = [
