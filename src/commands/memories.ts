@@ -17,8 +17,18 @@ import {
   closeGlobalDb,
 } from '../lib/db.js';
 import { getEmbedding } from '../lib/embeddings.js';
-import { getProjectRoot } from '../lib/config.js';
+import { getConfig, getProjectRoot } from '../lib/config.js';
+import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import path from 'path';
+
+/**
+ * Format quality score briefly for list display
+ */
+function formatQualityBrief(score: number): string {
+  const percent = Math.round(score * 100);
+  const stars = Math.round(score * 5);
+  return `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)} ${percent}%`;
+}
 
 interface MemoriesOptions {
   recent?: number;
@@ -99,8 +109,11 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         const date = new Date(memory.created_at).toLocaleDateString();
         const tagStr = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
         const sourceStr = memory.source ? ` (from: ${memory.source})` : '';
+        const qualityStr = memory.quality_score !== null
+          ? ` ${formatQualityBrief(memory.quality_score)}`
+          : '';
 
-        console.log(`• ${date}${tagStr}${sourceStr}`);
+        console.log(`• ${date}${tagStr}${sourceStr}${qualityStr}`);
         console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
         console.log();
       }
@@ -152,8 +165,11 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         const date = new Date(memory.created_at).toLocaleDateString();
         const similarity = (memory.similarity * 100).toFixed(0);
         const tagStr = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
+        const qualityStr = memory.quality_score !== null
+          ? ` ${formatQualityBrief(memory.quality_score)}`
+          : '';
 
-        console.log(`• ${date}${tagStr} (${similarity}% match)`);
+        console.log(`• ${date}${tagStr} (${similarity}% match)${qualityStr}`);
         console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
         console.log();
       }
@@ -170,17 +186,35 @@ interface RememberOptions {
   tags?: string;
   source?: string;
   global?: boolean;
+  skipQuality?: boolean;
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal } = options;
+  const { tags, source, global: useGlobal, skipQuality } = options;
 
   try {
     const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
     const embedding = await getEmbedding(content);
+
+    // Score the memory quality (unless disabled)
+    const config = getConfig();
+    let qualityScore = null;
+    if (!skipQuality && config.quality_scoring_enabled !== false) {
+      qualityScore = await scoreMemory(content);
+
+      // Check if it passes the threshold
+      if (!passesQualityThreshold(qualityScore)) {
+        console.log(`⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`);
+        console.log(`  Threshold: ${((config.quality_scoring_threshold ?? 0) * 100).toFixed(0)}%`);
+        console.log(`  Use --skip-quality to bypass or lower the threshold in config.`);
+        closeDb();
+        closeGlobalDb();
+        return;
+      }
+    }
 
     if (useGlobal) {
       // Save to global memory with project name
@@ -189,25 +223,29 @@ export async function remember(content: string, options: RememberOptions = {}): 
       closeGlobalDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
+      const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
       if (result.isDuplicate) {
         console.log(`⚠ Similar global memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
         console.log(`  Skipped duplicate.`);
       } else {
-        console.log(`✓ Remembered globally (id: ${result.id})${tagStr}`);
+        console.log(`✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr}`);
         console.log(`  Project: ${projectName}`);
         console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
       }
     } else {
-      // Save to local memory
-      const result = saveMemory(content, embedding, tagList, source);
+      // Save to local memory with quality score
+      const result = saveMemory(content, embedding, tagList, source, {
+        qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+      });
       closeDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
+      const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
       if (result.isDuplicate) {
         console.log(`⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
         console.log(`  Skipped duplicate.`);
       } else {
-        console.log(`✓ Remembered (id: ${result.id})${tagStr}`);
+        console.log(`✓ Remembered (id: ${result.id})${tagStr}${qualityStr}`);
         console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
       }
     }

@@ -12,21 +12,26 @@ import { config } from './commands/config.js';
 import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
 import { benchmark } from './commands/benchmark.js';
+import { benchmarkQuality } from './commands/benchmark-quality.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
+
+const VERSION = '1.0.0';
 
 const program = new Command();
 
 program
   .name('succ')
   .description('Semantic Understanding for Claude Code - local memory system')
-  .version('0.1.0');
+  .version(VERSION);
 
 program
   .command('init')
   .description('Initialize succ in current project')
   .option('-f, --force', 'Overwrite existing configuration')
+  .option('-y, --yes', 'Non-interactive mode (skip prompts)')
+  .option('-v, --verbose', 'Show detailed output (created files, etc.)')
   .action(init);
 
 program
@@ -176,11 +181,13 @@ program
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--source <source>', 'Source context')
   .option('-g, --global', 'Save to global memory (shared across projects)')
+  .option('--skip-quality', 'Skip quality scoring and threshold check')
   .action((content, options) => {
     remember(content, {
       tags: options.tags,
       source: options.source,
       global: options.global,
+      skipQuality: options.skipQuality,
     });
   });
 
@@ -227,6 +234,22 @@ program
   .action((options) => {
     benchmark({
       iterations: parseInt(options.iterations, 10),
+    });
+  });
+
+program
+  .command('benchmark-quality')
+  .description('Run quality scoring benchmark (heuristic vs ONNX vs Ollama vs OpenRouter)')
+  .option('--ollama', 'Include Ollama models in benchmark')
+  .option('--openrouter', 'Include OpenRouter API models in benchmark')
+  .option('--models <models>', 'Models to test (comma-separated)')
+  .option('--ollama-url <url>', 'Ollama API URL', 'http://localhost:11434')
+  .action((options) => {
+    benchmarkQuality({
+      ollama: options.ollama,
+      openrouter: options.openrouter,
+      models: options.models,
+      ollamaUrl: options.ollamaUrl,
     });
   });
 

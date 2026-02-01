@@ -114,11 +114,14 @@ function initDb(database: Database.Database): void {
       tags TEXT,
       source TEXT,
       type TEXT DEFAULT 'observation',
+      quality_score REAL,
+      quality_factors TEXT,
       embedding BLOB NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
+    CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score);
 
     CREATE TABLE IF NOT EXISTS memory_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,6 +149,23 @@ function initDb(database: Database.Database): void {
   // Create index on type after migration
   try {
     database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`).run();
+  } catch {
+    // Index may already exist
+  }
+
+  // Migration: add quality_score and quality_factors columns
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)`).run();
   } catch {
     // Index may already exist
   }
@@ -203,12 +223,15 @@ function initGlobalDb(database: Database.Database): void {
       source TEXT,
       project TEXT,
       type TEXT DEFAULT 'observation',
+      quality_score REAL,
+      quality_factors TEXT,
       embedding BLOB NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_global_memories_created_at ON memories(created_at);
     CREATE INDEX IF NOT EXISTS idx_global_memories_project ON memories(project);
+    CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score);
   `);
 
   // Migration: add type column if missing
@@ -221,6 +244,23 @@ function initGlobalDb(database: Database.Database): void {
   // Create index on type after migration
   try {
     database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_type ON memories(type)`).run();
+  } catch {
+    // Index may already exist
+  }
+
+  // Migration: add quality_score and quality_factors columns
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`).run();
   } catch {
     // Index may already exist
   }
@@ -507,6 +547,8 @@ export interface Memory {
   content: string;
   tags: string[];
   source: string | null;
+  quality_score: number | null;
+  quality_factors: Record<string, number> | null;
   created_at: string;
 }
 
@@ -515,6 +557,8 @@ export interface MemorySearchResult {
   content: string;
   tags: string[];
   source: string | null;
+  quality_score: number | null;
+  quality_factors: Record<string, number> | null;
   created_at: string;
   similarity: number;
 }
@@ -553,8 +597,13 @@ export interface SaveMemoryResult {
   similarity?: number;
 }
 
+export interface QualityScoreData {
+  score: number;
+  factors: Record<string, number>;
+}
+
 /**
- * Save a new memory with optional deduplication, type, and auto-linking
+ * Save a new memory with optional deduplication, type, quality score, and auto-linking
  * Returns { id, isDuplicate, similarity?, linksCreated? }
  */
 export function saveMemory(
@@ -562,9 +611,15 @@ export function saveMemory(
   embedding: number[],
   tags: string[] = [],
   source?: string,
-  options: { deduplicate?: boolean; type?: MemoryType; autoLink?: boolean; linkThreshold?: number } = {}
+  options: {
+    deduplicate?: boolean;
+    type?: MemoryType;
+    autoLink?: boolean;
+    linkThreshold?: number;
+    qualityScore?: QualityScoreData;
+  } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
-  const { deduplicate = true, type = 'observation', autoLink = true, linkThreshold = 0.7 } = options;
+  const { deduplicate = true, type = 'observation', autoLink = true, linkThreshold = 0.7, qualityScore } = options;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -577,13 +632,22 @@ export function saveMemory(
   const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
   const tagsJson = tags.length > 0 ? JSON.stringify(tags) : null;
+  const qualityFactorsJson = qualityScore?.factors ? JSON.stringify(qualityScore.factors) : null;
 
   const result = database
     .prepare(`
-      INSERT INTO memories (content, tags, source, type, embedding)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
-    .run(content, tagsJson, source ?? null, type, embeddingBlob);
+    .run(
+      content,
+      tagsJson,
+      source ?? null,
+      type,
+      qualityScore?.score ?? null,
+      qualityFactorsJson,
+      embeddingBlob
+    );
 
   const newId = result.lastInsertRowid as number;
   let linksCreated = 0;
@@ -666,6 +730,8 @@ export function searchMemories(
     content: string;
     tags: string | null;
     source: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -693,6 +759,8 @@ export function searchMemories(
         content: row.content,
         tags: rowTags,
         source: row.source,
+        quality_score: row.quality_score,
+        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
         created_at: row.created_at,
         similarity,
       });
@@ -712,7 +780,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
   const database = getDb();
   const rows = database
     .prepare(`
-      SELECT id, content, tags, source, created_at
+      SELECT id, content, tags, source, quality_score, quality_factors, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -722,6 +790,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
       content: string;
       tags: string | null;
       source: string | null;
+      quality_score: number | null;
+      quality_factors: string | null;
       created_at: string;
     }>;
 
@@ -730,6 +800,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     content: row.content,
     tags: row.tags ? JSON.parse(row.tags) : [],
     source: row.source,
+    quality_score: row.quality_score,
+    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     created_at: row.created_at,
   }));
 }
@@ -838,12 +910,14 @@ export function deleteMemoriesByTag(tag: string): number {
 export function getMemoryById(id: number): Memory | null {
   const database = getDb();
   const row = database
-    .prepare('SELECT id, content, tags, source, created_at FROM memories WHERE id = ?')
+    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, created_at FROM memories WHERE id = ?')
     .get(id) as {
       id: number;
       content: string;
       tags: string | null;
       source: string | null;
+      quality_score: number | null;
+      quality_factors: string | null;
       created_at: string;
     } | undefined;
 
@@ -854,19 +928,36 @@ export function getMemoryById(id: number): Memory | null {
     content: row.content,
     tags: row.tags ? JSON.parse(row.tags) : [],
     source: row.source,
+    quality_score: row.quality_score,
+    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     created_at: row.created_at,
   };
 }
 
 // ============ Global Memory functions ============
 
-export interface GlobalMemory extends Memory {
+export interface GlobalMemory {
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
   project: string | null;
+  quality_score: number | null;
+  quality_factors: Record<string, number> | null;
+  created_at: string;
   isGlobal: true;
 }
 
-export interface GlobalMemorySearchResult extends MemorySearchResult {
+export interface GlobalMemorySearchResult {
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
   project: string | null;
+  quality_score: number | null;
+  quality_factors: Record<string, number> | null;
+  created_at: string;
+  similarity: number;
   isGlobal: true;
 }
 
@@ -958,6 +1049,8 @@ export function searchGlobalMemories(
     tags: string | null;
     source: string | null;
     project: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -984,6 +1077,8 @@ export function searchGlobalMemories(
         tags: rowTags,
         source: row.source,
         project: row.project,
+        quality_score: row.quality_score,
+        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
         created_at: row.created_at,
         similarity,
         isGlobal: true,
@@ -1002,7 +1097,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
   const database = getGlobalDb();
   const rows = database
     .prepare(`
-      SELECT id, content, tags, source, project, created_at
+      SELECT id, content, tags, source, project, quality_score, quality_factors, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -1013,6 +1108,8 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
       tags: string | null;
       source: string | null;
       project: string | null;
+      quality_score: number | null;
+      quality_factors: string | null;
       created_at: string;
     }>;
 
@@ -1022,6 +1119,8 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
     tags: row.tags ? JSON.parse(row.tags) : [],
     source: row.source,
     project: row.project,
+    quality_score: row.quality_score,
+    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     created_at: row.created_at,
     isGlobal: true as const,
   }));

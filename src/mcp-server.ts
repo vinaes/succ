@@ -41,17 +41,19 @@ import {
   LINK_RELATIONS,
   type LinkRelation,
 } from './lib/db.js';
-import { getProjectRoot, getClaudeDir } from './lib/config.js';
+import { getConfig, getProjectRoot, getSuccDir } from './lib/config.js';
 import path from 'path';
 import fs from 'fs';
 import { getEmbedding, cleanupEmbeddings } from './lib/embeddings.js';
 import { index } from './commands/index.js';
 import { indexCode } from './commands/index-code.js';
+import { scoreMemory, passesQualityThreshold, formatQualityScore, cleanupQualityScoring } from './lib/quality.js';
 
 // Graceful shutdown handler
 function setupGracefulShutdown() {
   const cleanup = () => {
     cleanupEmbeddings();
+    cleanupQualityScoring();
     closeDb();
     closeGlobalDb();
     process.exit(0);
@@ -70,7 +72,7 @@ const server = new McpServer({
 
 // Get brain vault path
 function getBrainPath(): string {
-  return path.join(getClaudeDir(), 'brain');
+  return path.join(getSuccDir(), 'brain');
 }
 
 // Resource: List brain vault files
@@ -183,12 +185,12 @@ server.resource(
       'Get the soul document - defines AI personality, values, and communication style. Read this to understand how to interact with the user.',
   },
   async () => {
-    const claudeDir = getClaudeDir();
+    const succDir = getSuccDir();
 
     // Check multiple possible locations for soul document
     const soulPaths = [
-      path.join(claudeDir, 'soul.md'),
-      path.join(claudeDir, 'SOUL.md'),
+      path.join(succDir, 'soul.md'),
+      path.join(succDir, 'SOUL.md'),
       path.join(getProjectRoot(), 'soul.md'),
       path.join(getProjectRoot(), 'SOUL.md'),
       path.join(getProjectRoot(), '.soul.md'),
@@ -213,7 +215,7 @@ server.resource(
       contents: [
         {
           uri: 'soul://persona',
-          text: 'No soul document found. Create .claude/soul.md to define AI personality.\n\nRun `succ init` to generate a template.',
+          text: 'No soul document found. Create .succ/soul.md to define AI personality.\n\nRun `succ init` to generate a template.',
         },
       ],
     };
@@ -306,11 +308,31 @@ server.tool(
     try {
       const embedding = await getEmbedding(content);
 
+      // Score the memory quality
+      const config = getConfig();
+      let qualityScore = null;
+      if (config.quality_scoring_enabled !== false) {
+        qualityScore = await scoreMemory(content);
+
+        // Check if it passes the threshold
+        if (!passesQualityThreshold(qualityScore)) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`,
+              },
+            ],
+          };
+        }
+      }
+
       if (useGlobal) {
         const projectName = path.basename(getProjectRoot());
         const result = saveGlobalMemory(content, embedding, tags, source, projectName, { type });
 
         const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+        const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
         if (result.isDuplicate) {
           return {
             content: [
@@ -325,16 +347,20 @@ server.tool(
           content: [
             {
               type: 'text' as const,
-              text: `✓ Remembered globally (id: ${result.id})${tagStr} (project: ${projectName}):\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+              text: `✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr} (project: ${projectName}):\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
             },
           ],
         };
       }
 
-      const result = saveMemory(content, embedding, tags, source, { type });
+      const result = saveMemory(content, embedding, tags, source, {
+        type,
+        qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+      });
 
       const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
       const typeStr = type !== 'observation' ? ` (${type})` : '';
+      const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
       if (result.isDuplicate) {
         return {
           content: [
@@ -349,7 +375,7 @@ server.tool(
         content: [
           {
             type: 'text' as const,
-            text: `✓ Remembered${typeStr} (id: ${result.id})${tagStr}:\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+            text: `✓ Remembered${typeStr} (id: ${result.id})${tagStr}${qualityStr}:\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
           },
         ],
       };
@@ -509,7 +535,7 @@ server.tool(
   'succ_index',
   'Index files for semantic search. Run after adding or modifying documentation.',
   {
-    path: z.string().optional().describe('Path to index (default: .claude/brain)'),
+    path: z.string().optional().describe('Path to index (default: .succ/brain)'),
     force: z.boolean().optional().default(false).describe('Force reindex all files'),
   },
   async ({ path, force }) => {
@@ -1088,6 +1114,7 @@ async function main() {
 main().catch((error) => {
   console.error('Failed to start MCP server:', error);
   cleanupEmbeddings();
+  cleanupQualityScoring();
   closeDb();
   closeGlobalDb();
   process.exit(1);

@@ -20,7 +20,7 @@ export interface SuccConfig {
   graph_link_threshold?: number;  // Similarity threshold for auto-linking (default: 0.7)
   graph_auto_export?: boolean;  // Auto-export graph to Obsidian on changes (default: false)
   graph_export_format?: 'obsidian' | 'json';  // Export format (default: obsidian)
-  graph_export_path?: string;  // Custom export path (default: .claude/brain/graph)
+  graph_export_path?: string;  // Custom export path (default: .succ/brain/graph)
   // Analyze mode settings (for succ analyze)
   analyze_mode?: 'claude' | 'openrouter' | 'local';  // claude = Claude CLI (default), openrouter = OpenRouter API, local = local LLM
   analyze_api_url?: string;  // Local LLM API URL (e.g., http://localhost:11434/v1 for Ollama)
@@ -28,6 +28,13 @@ export interface SuccConfig {
   analyze_model?: string;  // Model name for local/openrouter (e.g., qwen2.5-coder:32b, deepseek-coder-v2)
   analyze_temperature?: number;  // Temperature for generation (default: 0.3)
   analyze_max_tokens?: number;  // Max tokens per response (default: 4096)
+  // Quality scoring settings
+  quality_scoring_enabled?: boolean;  // Enable quality scoring for memories (default: true)
+  quality_scoring_mode?: 'local' | 'custom' | 'openrouter';  // local = ONNX, custom = Ollama/LM Studio, openrouter = API
+  quality_scoring_model?: string;  // Model for LLM-based scoring (custom/openrouter modes)
+  quality_scoring_api_url?: string;  // API URL for custom mode
+  quality_scoring_api_key?: string;  // API key for custom mode
+  quality_scoring_threshold?: number;  // Minimum quality score to keep (0-1, default: 0)
 }
 
 // Model names for different modes
@@ -57,14 +64,20 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Try project config
-  const projectConfigPath = path.join(process.cwd(), '.claude', 'succ.json');
-  if (fs.existsSync(projectConfigPath)) {
-    try {
-      const projectConfig = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
-      fileConfig = { ...fileConfig, ...projectConfig };
-    } catch {
-      // Ignore parse errors
+  // Try project config (check .succ first, then legacy .claude)
+  const projectConfigPaths = [
+    path.join(process.cwd(), '.succ', 'config.json'),
+    path.join(process.cwd(), '.claude', 'succ.json'),  // legacy
+  ];
+  for (const projectConfigPath of projectConfigPaths) {
+    if (fs.existsSync(projectConfigPath)) {
+      try {
+        const projectConfig = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
+        fileConfig = { ...fileConfig, ...projectConfig };
+        break;
+      } catch {
+        // Ignore parse errors
+      }
     }
   }
 
@@ -110,10 +123,12 @@ export function getConfig(): SuccConfig {
 }
 
 export function getProjectRoot(): string {
-  // Walk up to find .git or .claude
+  // Walk up to find .git or .succ (legacy: .claude)
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, '.claude'))) {
+    if (fs.existsSync(path.join(dir, '.git')) ||
+        fs.existsSync(path.join(dir, '.succ')) ||
+        fs.existsSync(path.join(dir, '.claude'))) {
       return dir;
     }
     dir = path.dirname(dir);
@@ -121,12 +136,17 @@ export function getProjectRoot(): string {
   return process.cwd();
 }
 
+export function getSuccDir(): string {
+  return path.join(getProjectRoot(), '.succ');
+}
+
+// Legacy alias for backwards compatibility
 export function getClaudeDir(): string {
-  return path.join(getProjectRoot(), '.claude');
+  return getSuccDir();
 }
 
 export function getDbPath(): string {
-  return path.join(getClaudeDir(), 'succ.db');
+  return path.join(getSuccDir(), 'succ.db');
 }
 
 export function getGlobalDbPath(): string {
