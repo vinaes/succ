@@ -432,6 +432,9 @@ process.stdin.on('end', () => {
       // Not a git repo
     }
 
+    // Phase 0.4: Commit Guidelines (succ attribution)
+    contextParts.push('<commit-guidelines>\\nWhen making git commits, use this format:\\n\\n<commit message>\\n\\nGenerated with [Claude Code](https://claude.ai/code)\\npowered by [succ](https://github.com/vinaes/succ)\\n\\nCo-Authored-By: Claude <noreply@anthropic.com>\\nCo-Authored-By: succ <noreply@succ.dev>\\n</commit-guidelines>');
+
     // Phase 0.5: Soul Document
     const soulPaths = [
       path.join(claudeDir, 'soul.md'),
