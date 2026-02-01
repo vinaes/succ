@@ -14,6 +14,7 @@ import { indexCode } from './commands/index-code.js';
 import { benchmark } from './commands/benchmark.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
+import { graph } from './commands/graph.js';
 
 const program = new Command();
 
@@ -61,11 +62,37 @@ program
   .option('--sequential', 'Run agents sequentially instead of parallel')
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
   .option('--background', 'Run analysis in background (detached process)')
-  .action((options) => {
+  .option('--sandbox', 'Start sandbox daemon (continuous background analysis)')
+  .option('--sandbox-stop', 'Stop sandbox daemon')
+  .option('--sandbox-status', 'Show sandbox daemon status')
+  .option('--sandbox-worker', 'Internal: run sandbox worker (used by daemon)')
+  .option('--interval <minutes>', 'Interval for sandbox mode in minutes', '30')
+  .action(async (options) => {
+    // Import sandbox control functions
+    const { stopSandboxDaemon, sandboxStatus, runSandboxWorker } = await import('./commands/analyze.js');
+
+    if (options.sandboxStop) {
+      await stopSandboxDaemon();
+      return;
+    }
+
+    if (options.sandboxStatus) {
+      await sandboxStatus();
+      return;
+    }
+
+    if (options.sandboxWorker) {
+      // Internal: called by daemon process
+      await runSandboxWorker(parseInt(options.interval, 10), options.openrouter);
+      return;
+    }
+
     analyze({
       parallel: !options.sequential,
       openrouter: options.openrouter,
       background: options.background,
+      sandbox: options.sandbox,
+      interval: parseInt(options.interval, 10),
     });
   });
 
@@ -102,6 +129,7 @@ program
   .option('--tags <tags>', 'Filter by tags (comma-separated)')
   .option('-n, --limit <number>', 'Maximum number of results', '10')
   .option('-g, --global', 'Use global memory (shared across projects)')
+  .option('--json', 'Output as JSON (for scripting)')
   .action((options) => {
     memories({
       recent: options.recent ? parseInt(options.recent, 10) : undefined,
@@ -109,6 +137,7 @@ program
       tags: options.tags,
       limit: parseInt(options.limit, 10),
       global: options.global,
+      json: options.json,
     });
   });
 
@@ -195,6 +224,21 @@ program
   .action((options) => {
     soul({
       openrouter: options.openrouter,
+    });
+  });
+
+program
+  .command('graph <action>')
+  .description('Knowledge graph: export (to Obsidian), stats, auto-link')
+  .option('-f, --format <format>', 'Export format: obsidian or json', 'obsidian')
+  .option('-t, --threshold <number>', 'Similarity threshold for auto-link', '0.75')
+  .option('-o, --output <path>', 'Output directory for export')
+  .action((action, options) => {
+    graph({
+      action: action as 'export' | 'stats' | 'auto-link',
+      format: options.format,
+      threshold: parseFloat(options.threshold),
+      output: options.output,
     });
   });
 
