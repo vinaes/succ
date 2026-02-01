@@ -720,16 +720,32 @@ COMPARISON:
 
 ## vs Supermemory
 
+[Supermemory](https://supermemory.ai/) is a commercial memory API for AI apps. Here's how succ compares:
+
 | Feature | Supermemory | succ |
 |---------|-------------|------|
-| Hosting | Cloud (their servers) | Local (your machine) |
-| Privacy | Data sent to cloud | Everything local |
-| Cost | $20+/mo subscription | Free (local) or pay per API call |
-| Embeddings | Cloud API | Local or API (your choice) |
+| Hosting | Cloud (default), self-host available | Local only |
+| Privacy | Cloud by default, on-premise option | Everything local, always |
+| Cost | Free tier (1M tokens), Pro $19/mo, Scale $399/mo | Free forever |
+| Embeddings | Cloud API | Local (free) or API (your choice) |
+| MCP integration | Yes | Yes |
 | Cross-project memory | Cloud sync | Local global DB |
-| Code search | No | Yes (semantic) |
-| Graph | Proprietary | Obsidian-compatible |
-| Versioning | None | Git-tracked |
+| Code search | Via API | Yes (semantic, local) |
+| Knowledge graph | Via API | Obsidian-compatible vault |
+| Open source | Partial (MCP server) | Fully open source |
+| Versioning | None | Git-tracked brain vault |
+| Setup | Account + API key | `npm install -g succ && succ init` |
+
+**When to use Supermemory:**
+- You need managed infrastructure
+- You want sub-400ms latency at scale
+- You're building a commercial product with their API
+
+**When to use succ:**
+- You want zero cloud dependencies
+- You prefer Obsidian for knowledge management
+- You want full control over your data
+- You're a solo dev or small team
 
 ## Distribution Models (Roadmap)
 
