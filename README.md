@@ -209,12 +209,42 @@ succ analyze                      # Run via Claude CLI (recommended)
 succ analyze --sequential         # Run agents one by one
 succ analyze --background         # Run in background (for large projects)
 succ analyze --openrouter         # Use OpenRouter API (if no Claude subscription)
+succ analyze --local              # Use local LLM (Ollama, LM Studio, llama.cpp)
 ```
 
 **Modes:**
 - **Claude CLI mode (default)** — uses your Claude subscription, no extra API costs
 - **OpenRouter mode** — for users without Claude subscription (pay per API call)
+- **Local mode** — use your own LLM (Qwen, DeepSeek, Llama, etc.)
 - **Background mode** — runs detached, check status with `succ status`
+
+#### Local LLM Configuration
+
+To use local models for analysis, configure in `~/.succ/config.json`:
+
+```json
+{
+  "analyze_mode": "local",
+  "analyze_api_url": "http://localhost:11434/v1",
+  "analyze_model": "qwen2.5-coder:32b",
+  "analyze_temperature": 0.3,
+  "analyze_max_tokens": 4096
+}
+```
+
+**Supported backends:**
+- **Ollama**: `http://localhost:11434/v1`
+- **LM Studio**: `http://localhost:1234/v1`
+- **llama.cpp**: `http://localhost:8080/v1`
+- Any OpenAI-compatible API
+
+**Recommended models for code analysis:**
+| Model | Size | Notes |
+|-------|------|-------|
+| `qwen2.5-coder:32b` | ~20GB | Best for code, multilingual |
+| `deepseek-coder-v2:16b` | ~10GB | Fast, MoE architecture |
+| `codellama:34b` | ~20GB | Good code understanding |
+| `llama3.3:70b-q4` | ~40GB | General purpose |
 
 #### Sandbox Mode (Continuous Analysis)
 
@@ -301,10 +331,16 @@ Optional `~/.succ/config.json`:
 
 ```json
 {
+  // Embedding settings (for search)
   "embedding_mode": "local",                        // "local" (default), "openrouter", or "custom"
   "embedding_model": "Xenova/all-MiniLM-L6-v2",    // Local model (384 dimensions)
   "chunk_size": 500,
-  "chunk_overlap": 50
+  "chunk_overlap": 50,
+
+  // Analyze settings (for succ analyze)
+  "analyze_mode": "claude",                         // "claude" (default), "openrouter", or "local"
+  "analyze_api_url": "http://localhost:11434/v1",  // For local mode
+  "analyze_model": "qwen2.5-coder:32b"             // Model name for local/openrouter
 }
 ```
 

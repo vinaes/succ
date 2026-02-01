@@ -21,6 +21,13 @@ export interface SuccConfig {
   graph_auto_export?: boolean;  // Auto-export graph to Obsidian on changes (default: false)
   graph_export_format?: 'obsidian' | 'json';  // Export format (default: obsidian)
   graph_export_path?: string;  // Custom export path (default: .claude/brain/graph)
+  // Analyze mode settings (for succ analyze)
+  analyze_mode?: 'claude' | 'openrouter' | 'local';  // claude = Claude CLI (default), openrouter = OpenRouter API, local = local LLM
+  analyze_api_url?: string;  // Local LLM API URL (e.g., http://localhost:11434/v1 for Ollama)
+  analyze_api_key?: string;  // Optional API key for local LLM
+  analyze_model?: string;  // Model name for local/openrouter (e.g., qwen2.5-coder:32b, deepseek-coder-v2)
+  analyze_temperature?: number;  // Temperature for generation (default: 0.3)
+  analyze_max_tokens?: number;  // Max tokens per response (default: 4096)
 }
 
 // Model names for different modes

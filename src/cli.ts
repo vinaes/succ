@@ -61,6 +61,7 @@ program
   .description('Analyze project with Claude agents and generate brain vault')
   .option('--sequential', 'Run agents sequentially instead of parallel')
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
+  .option('--local', 'Use local LLM API (Ollama, LM Studio, llama.cpp)')
   .option('--background', 'Run analysis in background (detached process)')
   .option('--sandbox', 'Start sandbox daemon (continuous background analysis)')
   .option('--sandbox-stop', 'Stop sandbox daemon')
@@ -83,13 +84,14 @@ program
 
     if (options.sandboxWorker) {
       // Internal: called by daemon process
-      await runSandboxWorker(parseInt(options.interval, 10), options.openrouter);
+      await runSandboxWorker(parseInt(options.interval, 10), options.openrouter || options.local);
       return;
     }
 
     analyze({
       parallel: !options.sequential,
       openrouter: options.openrouter,
+      local: options.local,
       background: options.background,
       sandbox: options.sandbox,
       interval: parseInt(options.interval, 10),

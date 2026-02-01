@@ -8,6 +8,7 @@ import { withLock, getLockStatus } from '../lib/lock.js';
 interface AnalyzeOptions {
   parallel?: boolean;
   openrouter?: boolean;
+  local?: boolean;  // Use local LLM API
   background?: boolean;
   sandbox?: boolean;  // Continuous background analysis mode
   interval?: number;  // Interval in minutes for sandbox mode (default: 30)
@@ -23,7 +24,18 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, background = false, sandbox = false, interval = 30 } = options;
+  const { parallel = true, openrouter = false, local = false, background = false, sandbox = false, interval = 30 } = options;
+
+  // Determine mode from options or config
+  const config = getConfig();
+  let mode: 'claude' | 'openrouter' | 'local' = 'claude';
+  if (local) {
+    mode = 'local';
+  } else if (openrouter) {
+    mode = 'openrouter';
+  } else if (config.analyze_mode) {
+    mode = config.analyze_mode;
+  }
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
   const brainDir = path.join(claudeDir, 'brain');
@@ -70,10 +82,16 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     }, null, 2));
   };
 
+  const backendName = mode === 'local'
+    ? `Local LLM (${config.analyze_model || 'not configured'})`
+    : mode === 'openrouter'
+      ? 'OpenRouter API'
+      : 'Claude Code CLI';
+
   console.log('🧠 Analyzing project with Claude agents...\n');
   console.log(`Project: ${projectRoot}`);
   console.log(`Mode: ${parallel ? 'parallel' : 'sequential'}`);
-  console.log(`Backend: ${openrouter ? 'OpenRouter API' : 'Claude Code CLI'}\n`);
+  console.log(`Backend: ${backendName}\n`);
 
   writeProgress('starting', 0, 4);
 
@@ -84,11 +102,12 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const projectName = path.basename(projectRoot);
   const agents = getAgents(brainDir, projectName);
 
-  // Gather project context (used by both modes now)
+  // Gather project context (used by all modes now)
   writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
   const context = await gatherProjectContext(projectRoot);
 
-  if (openrouter) {
+  // Run agents based on mode
+  if (mode === 'openrouter') {
     await runAgentsOpenRouter(agents, context, writeProgress);
     await generateIndexFiles(brainDir, projectName);
     writeProgress('completed', agents.length, agents.length);
@@ -100,7 +119,19 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     return;
   }
 
-  // Use Claude Code CLI (with tools disabled, context passed in prompt)
+  if (mode === 'local') {
+    await runAgentsLocal(agents, context, writeProgress);
+    await generateIndexFiles(brainDir, projectName);
+    writeProgress('completed', agents.length, agents.length);
+    console.log('\n✅ Brain vault generated!');
+    console.log(`\nNext steps:`);
+    console.log(`  1. Review generated docs in .claude/brain/`);
+    console.log(`  2. Run \`succ index\` to create embeddings`);
+    console.log(`  3. Open in Obsidian for graph view`);
+    return;
+  }
+
+  // Default: Use Claude Code CLI (with tools disabled, context passed in prompt)
   if (parallel) {
     await runAgentsParallel(agents, context);
   } else {
@@ -760,6 +791,108 @@ async function runAgentsOpenRouter(
             },
           ],
           max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API error: ${response.status} - ${error}`);
+      }
+
+      const data = (await response.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const content = data.choices[0]?.message?.content;
+
+      if (content) {
+        // Write output (handles both single and multi-file)
+        await writeAgentOutput(agent, content);
+        completed++;
+        console.log(`  ✓ ${agent.name}`);
+      } else {
+        console.log(`  ✗ ${agent.name}: No content returned`);
+      }
+    } catch (error) {
+      console.log(`  ✗ ${agent.name}: ${error}`);
+    }
+  }
+}
+
+/**
+ * Run agents using local LLM API (Ollama, LM Studio, llama.cpp, etc.)
+ */
+async function runAgentsLocal(
+  agents: Agent[],
+  context: string,
+  writeProgress: ProgressFn
+): Promise<void> {
+  const config = getConfig();
+
+  const apiUrl = config.analyze_api_url;
+  const model = config.analyze_model;
+  const temperature = config.analyze_temperature ?? 0.3;
+  const maxTokens = config.analyze_max_tokens ?? 4096;
+
+  if (!apiUrl) {
+    console.error('Error: analyze_api_url not configured');
+    console.error('Set it in ~/.succ/config.json:');
+    console.error('  "analyze_api_url": "http://localhost:11434/v1"  // Ollama');
+    console.error('  "analyze_api_url": "http://localhost:1234/v1"   // LM Studio');
+    process.exit(1);
+  }
+
+  if (!model) {
+    console.error('Error: analyze_model not configured');
+    console.error('Set it in ~/.succ/config.json:');
+    console.error('  "analyze_model": "qwen2.5-coder:32b"  // Ollama');
+    console.error('  "analyze_model": "deepseek-coder-v2"  // LM Studio');
+    process.exit(1);
+  }
+
+  console.log(`Running ${agents.length} agents via local LLM...`);
+  console.log(`  API: ${apiUrl}`);
+  console.log(`  Model: ${model}\n`);
+
+  let completed = 0;
+  for (const agent of agents) {
+    writeProgress('running', completed, agents.length, agent.name);
+    console.log(`  ${agent.name}...`);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add API key if configured
+      if (config.analyze_api_key) {
+        headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+      }
+
+      // Build the completion endpoint URL
+      const completionUrl = apiUrl.endsWith('/v1')
+        ? `${apiUrl}/chat/completions`
+        : apiUrl.endsWith('/')
+          ? `${apiUrl}v1/chat/completions`
+          : `${apiUrl}/v1/chat/completions`;
+
+      const response = await fetch(completionUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert software documentation writer. Analyze the provided code and generate high-quality technical documentation in markdown format. Be precise and thorough.',
+            },
+            {
+              role: 'user',
+              content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
+            },
+          ],
+          temperature,
+          max_tokens: maxTokens,
+          stream: false,
         }),
       });
 
