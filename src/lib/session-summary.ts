@@ -7,11 +7,12 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { saveMemory, searchMemories, closeDb } from './db.js';
+import { saveMemory, searchMemories, closeDb, recordTokenStat } from './db.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
+import { countTokens } from './token-counter.js';
 
 /**
  * Extracted fact from session
@@ -31,6 +32,9 @@ export interface SessionSummaryResult {
   factsSaved: number;
   factsSkipped: number;
   errors: string[];
+  // Token stats for tracking savings
+  transcriptTokens?: number;
+  summaryTokens?: number;
 }
 
 /**
@@ -357,6 +361,8 @@ export async function extractSessionSummary(
     factsSaved: 0,
     factsSkipped: 0,
     errors: [],
+    transcriptTokens: countTokens(transcript),
+    summaryTokens: 0,
   };
 
   // Determine which agent to use
@@ -415,6 +421,9 @@ export async function extractSessionSummary(
 
   const facts = await extractFactsWithLLM(transcript, llmOptions);
   result.factsExtracted = facts.length;
+
+  // Calculate summary tokens (all fact contents combined)
+  result.summaryTokens = facts.reduce((sum, f) => sum + countTokens(f.content), 0);
 
   if (verbose) {
     console.log(`Found ${facts.length} potential facts`);
@@ -544,6 +553,30 @@ export async function sessionSummary(
     console.log(`  Errors: ${result.errors.length}`);
     for (const err of result.errors.slice(0, 3)) {
       console.log(`    - ${err}`);
+    }
+  }
+
+  // Record token stats if we actually saved facts
+  if (result.factsSaved > 0 && result.transcriptTokens && result.summaryTokens) {
+    const idleConfig = getIdleReflectionConfig();
+    const summaryEnabled = idleConfig.operations?.session_summary ?? true;
+
+    if (summaryEnabled) {
+      try {
+        const transcriptTokens = countTokens(transcriptContent);
+        const savingsTokens = Math.max(0, transcriptTokens - (result.summaryTokens || 0));
+
+        recordTokenStat({
+          event_type: 'session_summary',
+          query: transcriptPath,
+          returned_tokens: result.summaryTokens || 0,
+          full_source_tokens: transcriptTokens,
+          savings_tokens: savingsTokens,
+          chunks_count: result.factsSaved,
+        });
+      } catch {
+        // Don't fail if stats recording fails
+      }
     }
   }
 }
