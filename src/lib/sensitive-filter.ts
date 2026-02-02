@@ -51,6 +51,11 @@ const PATTERNS: { type: string; pattern: RegExp; redactPrefix: string }[] = [
   { type: 'email', pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, redactPrefix: '[EMAIL]' },
   { type: 'phone_us', pattern: /(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, redactPrefix: '[PHONE]' },
   { type: 'phone_intl', pattern: /\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g, redactPrefix: '[PHONE]' },
+  // Phone numbers without + (RU: 79..., BY: 375..., 8-800, etc.) - 9-12 digits starting with specific codes
+  { type: 'phone_ru', pattern: /\b[78][-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g, redactPrefix: '[PHONE]' },
+  { type: 'phone_by', pattern: /\b375[-.\s]?\d{2}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g, redactPrefix: '[PHONE]' },
+  // Generic long digit sequences (9-15 digits) that look like phone numbers
+  { type: 'phone_generic', pattern: /\b\d{9,15}\b/g, redactPrefix: '[PHONE]' },
   { type: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, redactPrefix: '[SSN]' },
   { type: 'credit_card', pattern: /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g, redactPrefix: '[CARD]' },
 
