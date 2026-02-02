@@ -453,6 +453,45 @@ export function createEmptyIndex(): BM25Index {
 // ============================================================================
 
 /**
+ * Base dictionary of common programming terms.
+ * Used as fallback when token frequencies are low.
+ * Frequencies are approximate based on typical codebases.
+ */
+const BASE_CODE_DICTIONARY: Record<string, number> = {
+  // Actions
+  get: 500, set: 400, add: 300, remove: 250, delete: 200, create: 200, update: 200,
+  find: 150, fetch: 150, load: 150, save: 150, read: 150, write: 150, parse: 100,
+  init: 100, start: 100, stop: 100, run: 100, execute: 80, handle: 100, process: 100,
+  check: 100, validate: 80, format: 80, convert: 80, transform: 80, build: 100,
+  render: 100, display: 80, show: 80, hide: 80, open: 80, close: 80, connect: 80,
+  send: 80, receive: 60, emit: 60, listen: 60, subscribe: 60, publish: 60,
+
+  // Nouns
+  user: 200, name: 200, data: 300, file: 300, path: 300, config: 200, error: 250,
+  request: 200, response: 200, result: 150, value: 250, key: 200, index: 200,
+  list: 150, array: 150, map: 150, object: 200, string: 300, number: 200,
+  type: 200, id: 300, code: 150, text: 150, content: 200, message: 150, event: 150,
+  state: 150, status: 100, context: 100, options: 100, params: 100, args: 100,
+  callback: 100, handler: 150, listener: 100, component: 150, element: 100,
+  node: 100, item: 150, entry: 100, record: 100, row: 100, column: 80, field: 100,
+  token: 100, buffer: 80, stream: 80, chunk: 80, batch: 80, queue: 80, stack: 80,
+  cache: 100, store: 100, db: 150, database: 100, table: 100, query: 150,
+  url: 150, uri: 80, api: 150, http: 100, json: 150, xml: 80, html: 100, css: 80,
+  server: 100, client: 100, socket: 80, port: 80, host: 80, endpoint: 80,
+
+  // Modifiers
+  async: 200, sync: 80, local: 100, global: 100, public: 80, private: 80,
+  static: 80, final: 60, default: 150, custom: 80, new: 150, old: 80,
+  first: 100, last: 100, next: 100, prev: 80, current: 100, all: 150,
+  single: 80, multi: 80, max: 100, min: 100, total: 100, count: 150,
+  is: 200, has: 150, can: 100, should: 80, will: 80, did: 60,
+
+  // Common suffixes/prefixes as words
+  by: 150, to: 200, from: 200, with: 200, for: 250, of: 200, on: 150, in: 150,
+  at: 100, or: 100, and: 150, not: 100, if: 250, else: 150, then: 80,
+};
+
+/**
  * Check if a word looks like flatcase (all lowercase, no separators)
  */
 export function isFlatcase(word: string): boolean {
@@ -503,15 +542,32 @@ export function segmentFlatcase(
       if (tokenLen < minTokenLength) continue;
 
       const token = word.slice(j, i);
-      const freq = getFrequency(token);
+      let freq = getFrequency(token);
+
+      // Fallback to base dictionary if token not found in indexed code
+      // Scale base dictionary frequencies to match indexed corpus
+      if (freq === 0 && BASE_CODE_DICTIONARY[token]) {
+        // Scale: if total is 34000 and base dict max is 500, scale by ~68
+        const scaleFactor = Math.max(1, totalTokens / 5000);
+        freq = BASE_CODE_DICTIONARY[token] * scaleFactor;
+      }
 
       // Score: log probability with length bonus
-      // Longer known tokens get higher scores
+      // But penalize long flatcase tokens that look like compounds
       let tokenScore: number;
       if (freq > 0) {
         // Known token: log(freq/total) + length bonus
         const prob = freq / Math.max(totalTokens, 1);
-        tokenScore = Math.log10(prob) + Math.sqrt(tokenLen) * 0.5;
+        tokenScore = Math.log10(prob);
+
+        // Length bonus only for tokens <= 8 chars
+        // Longer flatcase tokens are likely compounds and should be split
+        if (tokenLen <= 8) {
+          tokenScore += Math.sqrt(tokenLen) * 0.5;
+        } else {
+          // Penalize long flatcase tokens to encourage splitting
+          tokenScore -= (tokenLen - 8) * 0.3;
+        }
       } else {
         // Unknown token: penalize, but less for longer tokens
         tokenScore = unknownScore - (15 - tokenLen) * 0.1;
