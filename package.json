@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "description": "Local memory system for Claude Code - RAG with local or API embeddings",
   "type": "module",
   "bin": {
