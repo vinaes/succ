@@ -180,18 +180,33 @@ Run \`succ index\` to index this brain for semantic search.
   // Create hooks in project only for local development
   // Global install uses hooks from the succ package directory
   if (!useGlobalHooks) {
-    // Create session-start hook
-    const sessionStartPath = path.join(succDir, 'hooks', 'succ-session-start.cjs');
-    if (!fs.existsSync(sessionStartPath) || options.force) {
-      fs.writeFileSync(sessionStartPath, getSessionStartHook());
-      log(options.force && fs.existsSync(sessionStartPath) ? 'Updated hooks/succ-session-start.cjs' : 'Created hooks/succ-session-start.cjs');
-    }
+    // Copy hooks from package hooks/ directory (source of truth)
+    const hooksToCreate = [
+      'succ-session-start.cjs',
+      'succ-session-end.cjs',
+      'succ-idle-reflection.cjs',
+      'succ-user-prompt.cjs',
+      'succ-post-tool.cjs',
+    ];
 
-    // Create session-end hook (auto-summarize)
-    const sessionEndPath = path.join(succDir, 'hooks', 'succ-session-end.cjs');
-    if (!fs.existsSync(sessionEndPath) || options.force) {
-      fs.writeFileSync(sessionEndPath, getSessionEndHook());
-      log(options.force && fs.existsSync(sessionEndPath) ? 'Updated hooks/succ-session-end.cjs' : 'Created hooks/succ-session-end.cjs');
+    for (const hookFile of hooksToCreate) {
+      const destPath = path.join(succDir, 'hooks', hookFile);
+      const srcPath = path.join(SUCC_PACKAGE_DIR, 'hooks', hookFile);
+
+      if (!fs.existsSync(destPath) || options.force) {
+        // Try to copy from package hooks/ directory (source of truth)
+        if (fs.existsSync(srcPath)) {
+          fs.copyFileSync(srcPath, destPath);
+          log(options.force && fs.existsSync(destPath) ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+        } else {
+          // Fallback to inline templates for backwards compatibility
+          const hookContent = getHookContent(hookFile);
+          if (hookContent) {
+            fs.writeFileSync(destPath, hookContent);
+            log(options.force && fs.existsSync(destPath) ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+          }
+        }
+      }
     }
   }
 
@@ -399,32 +414,7 @@ Run \`succ index\` to index this brain for semantic search.
     fs.writeFileSync(settingsPath, JSON.stringify(finalSettings, null, 2));
   }
 
-  // Create remaining hooks only for local development
-  if (!useGlobalHooks) {
-    // Create idle-reflection hook
-    const idleReflectionPath = path.join(succDir, 'hooks', 'succ-idle-reflection.cjs');
-    if (!fs.existsSync(idleReflectionPath) || options.force) {
-      const existed = fs.existsSync(idleReflectionPath);
-      fs.writeFileSync(idleReflectionPath, getIdleReflectionHook());
-      log(options.force && existed ? 'Updated hooks/succ-idle-reflection.cjs' : 'Created hooks/succ-idle-reflection.cjs');
-    }
-
-    // Create user-prompt hook (memory-seeking pattern detection)
-    const userPromptPath = path.join(succDir, 'hooks', 'succ-user-prompt.cjs');
-    if (!fs.existsSync(userPromptPath) || options.force) {
-      const existed = fs.existsSync(userPromptPath);
-      fs.writeFileSync(userPromptPath, getUserPromptHook());
-      log(options.force && existed ? 'Updated hooks/succ-user-prompt.cjs' : 'Created hooks/succ-user-prompt.cjs');
-    }
-
-    // Create post-tool hook (auto-capture important actions)
-    const postToolPath = path.join(succDir, 'hooks', 'succ-post-tool.cjs');
-    if (!fs.existsSync(postToolPath) || options.force) {
-      const existed = fs.existsSync(postToolPath);
-      fs.writeFileSync(postToolPath, getPostToolHook());
-      log(options.force && existed ? 'Updated hooks/succ-post-tool.cjs' : 'Created hooks/succ-post-tool.cjs');
-    }
-  }
+  // Note: All hooks are now created in the earlier block using copyFileSync from hooks/ directory
 
   // Add MCP server to Claude Code config
   const mcpAdded = addMcpServer(projectRoot);
@@ -1865,6 +1855,26 @@ _Historical change logs._
 // ============================================================================
 // Hook Templates
 // ============================================================================
+
+/**
+ * Get hook content by filename (fallback for when source files aren't available)
+ */
+function getHookContent(hookFile: string): string | null {
+  switch (hookFile) {
+    case 'succ-session-start.cjs':
+      return getSessionStartHook();
+    case 'succ-session-end.cjs':
+      return getSessionEndHook();
+    case 'succ-idle-reflection.cjs':
+      return getIdleReflectionHook();
+    case 'succ-user-prompt.cjs':
+      return getUserPromptHook();
+    case 'succ-post-tool.cjs':
+      return getPostToolHook();
+    default:
+      return null;
+  }
+}
 
 function getIdleReflectionHook(): string {
   return `#!/usr/bin/env node
