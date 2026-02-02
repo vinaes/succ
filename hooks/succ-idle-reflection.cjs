@@ -5,9 +5,11 @@
  * Performs multiple operations during Claude's idle time:
  * 1. Memory Consolidation - merge/delete duplicate memories
  * 2. Graph Refinement - auto-link memories by similarity
- * 3. Session Summary - extract key facts (future)
+ * 3. Session Summary - extract key facts (async, detached)
  * 4. Precompute Context - prepare next session (future)
- * 5. Write Reflection - human-like reflection text
+ * 5. Write Reflection - human-like reflection text (async, detached)
+ *
+ * Heavy LLM operations run as detached processes to not block the session.
  *
  * Fires on Notification event with idle_prompt matcher (after ~60 seconds idle)
  */
@@ -90,9 +92,9 @@ function loadConfig(projectDir) {
 }
 
 /**
- * Run succ CLI command synchronously
+ * Run succ CLI command synchronously (for fast operations)
  */
-function runSuccCommand(projectDir, args, timeout = 10000) {
+function runSuccCommandSync(projectDir, args, timeout = 10000) {
   try {
     const result = spawnSync('succ', args, {
       cwd: projectDir,
@@ -111,13 +113,32 @@ function runSuccCommand(projectDir, args, timeout = 10000) {
 }
 
 /**
- * Memory Consolidation - merge/delete duplicates
+ * Run succ CLI command as detached process (for heavy LLM operations)
+ * Returns immediately, process continues in background
+ */
+function runSuccCommandDetached(projectDir, args) {
+  try {
+    const proc = spawn('succ', args, {
+      cwd: projectDir,
+      shell: true,
+      detached: true,
+      stdio: 'ignore',
+    });
+    proc.unref(); // Allow parent to exit independently
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Memory Consolidation - merge/delete duplicates (sync - fast, no LLM)
  */
 function runMemoryConsolidation(projectDir, config) {
   const threshold = config.thresholds.similarity_for_merge;
   const limit = config.max_memories_to_process;
 
-  const result = runSuccCommand(projectDir, [
+  const result = runSuccCommandSync(projectDir, [
     'consolidate',
     '-t', String(threshold),
     '-n', String(limit),
@@ -127,12 +148,12 @@ function runMemoryConsolidation(projectDir, config) {
 }
 
 /**
- * Graph Refinement - auto-link memories
+ * Graph Refinement - auto-link memories (sync - fast, no LLM)
  */
 function runGraphRefinement(projectDir, config) {
   const threshold = config.thresholds.auto_link_threshold;
 
-  const result = runSuccCommand(projectDir, [
+  const result = runSuccCommandSync(projectDir, [
     'graph', 'auto-link',
     '-t', String(threshold),
   ], 10000);
@@ -141,42 +162,64 @@ function runGraphRefinement(projectDir, config) {
 }
 
 /**
- * Session Summary - extract facts from transcript and save as memories
+ * Session Summary - extract facts (async/detached - uses LLM)
+ * Spawns detached process so it doesn't block the session
  */
-function runSessionSummary(projectDir, transcriptPath) {
+function runSessionSummaryAsync(projectDir, transcriptPath) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
     return false;
   }
 
-  const result = runSuccCommand(projectDir, [
+  return runSuccCommandDetached(projectDir, [
     'session-summary',
     transcriptPath,
-  ], 45000); // Allow more time for LLM extraction
-
-  return result.success;
+  ]);
 }
 
 /**
- * Write Reflection - generate reflection text via Claude
+ * Write Reflection - generate reflection text (async/detached - uses LLM)
+ * Spawns detached process so it doesn't block the session
  */
-function writeReflection(projectDir, transcriptContext, config) {
-  return new Promise((resolve) => {
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
-    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+function writeReflectionAsync(projectDir, transcriptContext, config) {
+  // Write transcript context to temp file for the detached process
+  const tempDir = path.join(projectDir, '.succ', '.tmp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
 
-    const reflectionsPath = path.join(projectDir, '.succ', 'brain', '.self', 'reflections.md');
-    const selfDir = path.dirname(reflectionsPath);
+  const contextFile = path.join(tempDir, `reflection-context-${Date.now()}.txt`);
+  fs.writeFileSync(contextFile, transcriptContext);
 
-    if (!fs.existsSync(selfDir)) {
-      fs.mkdirSync(selfDir, { recursive: true });
-    }
+  const model = config.agent_model || 'haiku';
+  const reflectionsPath = path.join(projectDir, '.succ', 'brain', '.self', 'reflections.md');
 
-    const prompt = `You are writing a brief personal reflection for an AI's internal journal.
+  // Create self directory if needed
+  const selfDir = path.dirname(reflectionsPath);
+  if (!fs.existsSync(selfDir)) {
+    fs.mkdirSync(selfDir, { recursive: true });
+  }
+
+  // Spawn a detached node process that does the actual reflection
+  const scriptContent = `
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const contextFile = ${JSON.stringify(contextFile)};
+const reflectionsPath = ${JSON.stringify(reflectionsPath)};
+const model = ${JSON.stringify(model)};
+
+const transcriptContext = fs.readFileSync(contextFile, 'utf8');
+
+const now = new Date();
+const dateStr = now.toISOString().split('T')[0];
+const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+
+const prompt = \`You are writing a brief personal reflection for an AI's internal journal.
 
 Session context (recent conversation):
 ---
-${transcriptContext.substring(0, 3000)}
+\${transcriptContext.substring(0, 3000)}
 ---
 
 Write a short reflection (3-5 sentences) about this session. Be honest and introspective.
@@ -185,54 +228,78 @@ Consider:
 - Any interesting challenges or discoveries?
 - What might be worth remembering for future sessions?
 
-Output ONLY the reflection text, no headers or formatting. Write in first person as if you are the AI reflecting on your own work.`;
+Output ONLY the reflection text, no headers or formatting. Write in first person as if you are the AI reflecting on your own work.\`;
 
-    const model = config.agent_model || 'haiku';
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      cwd: projectDir,
-    });
+const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
+  stdio: ['pipe', 'pipe', 'pipe'],
+  shell: true,
+});
 
-    proc.stdin.write(prompt);
-    proc.stdin.end();
+proc.stdin.write(prompt);
+proc.stdin.end();
 
-    let stdout = '';
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
+let stdout = '';
+proc.stdout.on('data', (data) => {
+  stdout += data.toString();
+});
 
-    proc.on('close', (code) => {
-      if (code === 0 && stdout.trim() && stdout.trim().length > 50) {
-        const existingContent = fs.existsSync(reflectionsPath)
-          ? fs.readFileSync(reflectionsPath, 'utf8')
-          : '# Reflections\n\nInternal dialogue between sessions.\n';
+proc.on('close', (code) => {
+  // Clean up temp file
+  try { fs.unlinkSync(contextFile); } catch {}
 
-        const reflectionEntry = `
-## ${dateStr} ${timeStr} (idle pause)
+  if (code === 0 && stdout.trim() && stdout.trim().length > 50) {
+    const existingContent = fs.existsSync(reflectionsPath)
+      ? fs.readFileSync(reflectionsPath, 'utf8')
+      : '# Reflections\\n\\nInternal dialogue between sessions.\\n';
 
-${stdout.trim()}
+    const reflectionEntry = \`
+## \${dateStr} \${timeStr} (idle pause)
+
+\${stdout.trim()}
 
 ---
+\`;
+
+    fs.writeFileSync(reflectionsPath, existingContent + reflectionEntry);
+  }
+  process.exit(0);
+});
+
+proc.on('error', () => {
+  try { fs.unlinkSync(contextFile); } catch {}
+  process.exit(1);
+});
+
+// Timeout after 60 seconds
+setTimeout(() => {
+  proc.kill();
+  try { fs.unlinkSync(contextFile); } catch {}
+  process.exit(1);
+}, 60000);
 `;
 
-        fs.writeFileSync(reflectionsPath, existingContent + reflectionEntry);
-        resolve(true);
-      } else {
-        resolve(false);
-      }
-    });
+  const scriptFile = path.join(tempDir, `reflection-script-${Date.now()}.cjs`);
+  fs.writeFileSync(scriptFile, scriptContent);
 
-    proc.on('error', () => {
-      resolve(false);
+  try {
+    const proc = spawn('node', [scriptFile], {
+      cwd: projectDir,
+      detached: true,
+      stdio: 'ignore',
     });
+    proc.unref();
 
-    // Timeout for reflection
+    // Clean up script file after a delay (the detached process should have started)
     setTimeout(() => {
-      proc.kill();
-      resolve(false);
-    }, 20000);
-  });
+      try { fs.unlinkSync(scriptFile); } catch {}
+    }, 5000);
+
+    return true;
+  } catch (err) {
+    try { fs.unlinkSync(scriptFile); } catch {}
+    try { fs.unlinkSync(contextFile); } catch {}
+    return false;
+  }
 }
 
 /**
@@ -293,7 +360,7 @@ process.stdin.on('readable', () => {
   }
 });
 
-process.stdin.on('end', async () => {
+process.stdin.on('end', () => {
   try {
     const hookInput = JSON.parse(input);
     let projectDir = hookInput.cwd || process.cwd();
@@ -311,40 +378,39 @@ process.stdin.on('end', async () => {
       process.exit(0);
     }
 
-    // Track what we did
-    const results = {
-      consolidation: null,
-      graph: null,
-      sessionSummary: null,
-      reflection: null,
-    };
+    // === SYNC OPERATIONS (fast, no LLM) ===
+    // These run synchronously and complete before hook exits
 
-    // 1. Memory Consolidation
+    // 1. Memory Consolidation (sync)
     if (config.operations.memory_consolidation) {
-      results.consolidation = runMemoryConsolidation(projectDir, config);
+      runMemoryConsolidation(projectDir, config);
     }
 
-    // 2. Graph Refinement
+    // 2. Graph Refinement (sync)
     if (config.operations.graph_refinement) {
-      results.graph = runGraphRefinement(projectDir, config);
+      runGraphRefinement(projectDir, config);
     }
 
-    // 3. Session Summary (extract facts from transcript)
+    // === ASYNC OPERATIONS (slow, uses LLM) ===
+    // These spawn detached processes and complete in background
+    // Hook exits immediately, processes continue independently
+
+    // 3. Session Summary (async/detached)
     if (config.operations.session_summary && hookInput.transcript_path) {
-      results.sessionSummary = runSessionSummary(projectDir, hookInput.transcript_path);
+      runSessionSummaryAsync(projectDir, hookInput.transcript_path);
     }
 
-    // 4. Write Reflection (needs transcript context)
+    // 4. Write Reflection (async/detached)
     if (config.operations.write_reflection) {
       const transcriptContext = extractTranscriptContext(hookInput);
-
       if (transcriptContext && transcriptContext.length >= 100) {
-        results.reflection = await writeReflection(projectDir, transcriptContext, config);
+        writeReflectionAsync(projectDir, transcriptContext, config);
       }
     }
 
-    // TODO: Precompute Context (requires LLM call to prepare context)
+    // TODO: Precompute Context (async/detached)
 
+    // Exit immediately - detached processes continue in background
     process.exit(0);
 
   } catch (err) {
@@ -353,7 +419,7 @@ process.stdin.on('end', async () => {
   }
 });
 
-// Global timeout
+// Global timeout (safety net)
 setTimeout(() => {
   process.exit(0);
-}, 28000);
+}, 5000); // Reduced since heavy ops are now detached
