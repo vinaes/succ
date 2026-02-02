@@ -14,7 +14,7 @@
  * Fires on Notification event with idle_prompt matcher (after ~60 seconds idle)
  */
 
-const { spawn, spawnSync } = require('child_process');
+const spawn = require('cross-spawn');
 const fs = require('fs');
 const path = require('path');
 
@@ -93,13 +93,13 @@ function loadConfig(projectDir) {
 
 /**
  * Run succ CLI command synchronously (for fast operations)
+ * Uses cross-spawn for cross-platform compatibility without shell
  */
 function runSuccCommandSync(projectDir, args, timeout = 10000) {
   try {
-    const result = spawnSync('npx', ['succ', ...args], {
+    const result = spawn.sync('npx', ['succ', ...args], {
       cwd: projectDir,
       timeout,
-      shell: true,
       encoding: 'utf8',
     });
     return {
@@ -115,12 +115,12 @@ function runSuccCommandSync(projectDir, args, timeout = 10000) {
 /**
  * Run succ CLI command as detached process (for heavy LLM operations)
  * Returns immediately, process continues in background
+ * Uses cross-spawn for cross-platform compatibility without shell
  */
 function runSuccCommandDetached(projectDir, args) {
   try {
     const proc = spawn('npx', ['succ', ...args], {
       cwd: projectDir,
-      shell: true,
       detached: true,
       stdio: 'ignore',
     });
@@ -342,13 +342,11 @@ tags:
 
   fs.writeFileSync(reflectionFile, content);
 
-  // Save to memory via succ remember
+  // Save to memory via succ remember (using cross-spawn from parent scope)
   try {
-    const { spawnSync } = require('child_process');
-    spawnSync('npx', ['succ', 'remember', text.trim(), '--tags', 'reflection', '--source', 'idle-reflection'], {
+    spawn.sync('npx', ['succ', 'remember', text.trim(), '--tags', 'reflection', '--source', 'idle-reflection'], {
       cwd: projectDir,
       timeout: 10000,
-      shell: true,
     });
   } catch {
     // Memory save failed, but file was written
@@ -399,10 +397,9 @@ async function main() {
     }
     process.exit(0);
   } else {
-    // Use Claude CLI
+    // Use Claude CLI (cross-spawn handles .cmd on Windows)
     const proc = spawn('claude', ['-p', '--tools', '', '--model', claudeModel], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
     });
 
     proc.stdin.write(prompt);

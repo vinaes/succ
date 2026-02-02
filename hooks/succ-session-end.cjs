@@ -10,7 +10,7 @@
  * Uses process.execPath to find node and handles cross-platform paths
  */
 
-const { spawnSync, spawn } = require('child_process');
+const spawn = require('cross-spawn');
 const fs = require('fs');
 const path = require('path');
 
@@ -83,7 +83,7 @@ process.stdin.on('end', () => {
 
     // 1. Save to SQLite memory via succ
     try {
-      spawnSync('npx', [
+      spawn.sync('npx', [
         'succ',
         'remember',
         memoryContent,
@@ -94,7 +94,6 @@ process.stdin.on('end', () => {
         encoding: 'utf8',
         timeout: 30000,
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: true,
       });
     } catch {
       // Failed to save to memory, continue
@@ -123,7 +122,6 @@ Keep each bullet concise (1-2 sentences max).`;
 
       const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: true,
         cwd: projectDir,
       });
 

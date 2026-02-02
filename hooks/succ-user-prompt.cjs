@@ -11,10 +11,10 @@
  * - Questions about past: "why did we", "what was decided", "last time"
  * - Context requests: "bring me up to speed", "background on"
  *
- * Uses execFileSync for security (no shell injection)
+ * Uses cross-spawn for cross-platform compatibility without shell
  */
 
-const { execFileSync } = require('child_process');
+const spawn = require('cross-spawn');
 const path = require('path');
 const fs = require('fs');
 
@@ -108,7 +108,7 @@ process.stdin.on('end', () => {
     const contextParts = [];
 
     try {
-      const result = execFileSync(
+      const result = spawn.sync(
         'npx',
         ['succ', 'memories', '--search', searchQuery, '--limit', '3'],
         {
@@ -116,12 +116,11 @@ process.stdin.on('end', () => {
           encoding: 'utf8',
           timeout: 5000,
           stdio: ['pipe', 'pipe', 'pipe'],
-          shell: true,
         }
       );
 
-      if (result.trim() && !result.includes('No memories found')) {
-        contextParts.push(result.trim());
+      if (result.stdout && result.stdout.trim() && !result.stdout.includes('No memories found')) {
+        contextParts.push(result.stdout.trim());
       }
     } catch {
       // Memory search failed
@@ -130,7 +129,7 @@ process.stdin.on('end', () => {
     // For explicit commands, also search brain vault
     if (isExplicitMemoryCommand) {
       try {
-        const brainResult = execFileSync(
+        const brainResult = spawn.sync(
           'npx',
           ['succ', 'search', searchQuery, '--limit', '2'],
           {
@@ -138,12 +137,11 @@ process.stdin.on('end', () => {
             encoding: 'utf8',
             timeout: 5000,
             stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true,
           }
         );
 
-        if (brainResult.trim() && !brainResult.includes('No results')) {
-          contextParts.push('\n--- From Knowledge Base ---\n' + brainResult.trim());
+        if (brainResult.stdout && brainResult.stdout.trim() && !brainResult.stdout.includes('No results')) {
+          contextParts.push('\n--- From Knowledge Base ---\n' + brainResult.stdout.trim());
         }
       } catch {
         // Brain search failed
