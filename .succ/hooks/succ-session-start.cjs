@@ -259,10 +259,13 @@ Co-Authored-By: succ <mindpalace@succ.ai>
         }
 
         // Launch watcher as detached process
-        const watcher = spawn('node', [watcherPath, projectDir], {
+        // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
+        // Using process.execPath and stdio: 'pipe' for better compatibility
+        const watcher = spawn(process.execPath, [watcherPath, projectDir], {
           cwd: projectDir,
           detached: true,
-          stdio: 'ignore',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
         });
         watcher.unref();
       }

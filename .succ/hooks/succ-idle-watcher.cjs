@@ -129,11 +129,14 @@ function triggerReflection(transcriptPath) {
     transcript_path: transcriptPath,
   };
 
-  // Spawn idle-reflection hook
-  const proc = spawn('node', [idleHookPath], {
+  // Spawn idle-reflection hook (use process.execPath for reliability)
+  // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
+  // but we include it anyway for potential future fixes
+  const proc = spawn(process.execPath, [idleHookPath], {
     cwd: projectDir,
-    stdio: ['pipe', 'ignore', 'ignore'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     detached: true,
+    windowsHide: true,
   });
 
   proc.stdin.write(JSON.stringify(hookInput));
@@ -163,11 +166,12 @@ function triggerReflectionSync(transcriptPath) {
   };
 
   // Run synchronously with timeout
-  spawnSync('node', [idleHookPath], {
+  spawnSync(process.execPath, [idleHookPath], {
     cwd: projectDir,
     input: JSON.stringify(hookInput),
     timeout: 60000, // 60 second timeout
-    stdio: ['pipe', 'ignore', 'ignore'],
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
   });
 }
 
@@ -303,14 +307,16 @@ function triggerBPETraining(config) {
   fs.writeFileSync(lastBPETrainFile, Date.now().toString());
 
   // Use npx succ to run BPE training
+  // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
   const proc = spawn('npx', ['succ', 'train-bpe',
     '--vocab-size', config.bpe.vocab_size.toString(),
     '--min-frequency', config.bpe.min_frequency.toString()
   ], {
     cwd: projectDir,
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
     shell: process.platform === 'win32',
+    windowsHide: true,
   });
 
   proc.unref();
