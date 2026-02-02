@@ -299,6 +299,30 @@ Configure operations in `.succ/config.json`:
 }
 ```
 
+### BPE Training Config
+
+The idle watcher can automatically retrain BPE vocabulary when code is indexed:
+
+```json
+{
+  "bpe": {
+    "enabled": true,
+    "vocab_size": 5000,
+    "min_frequency": 2,
+    "retrain_interval": "hourly"
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `false` | Enable BPE tokenizer |
+| `vocab_size` | `5000` | Target vocabulary size |
+| `min_frequency` | `2` | Minimum pair frequency to merge |
+| `retrain_interval` | `hourly` | When to retrain: `hourly` or `daily` |
+
+Set `enabled: false` to disable automatic BPE training during idle time.
+
 ### Sleep Agent (Dual-Agent Mode)
 
 Offload heavy idle operations to a local LLM while Claude handles reflections:
