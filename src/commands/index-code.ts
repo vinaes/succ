@@ -5,7 +5,8 @@ import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkCode } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash } from '../lib/db.js';
+import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/db.js';
+import { tokenizeCode } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 
 // Default patterns for common code files
@@ -221,6 +222,14 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
 
   // Upsert to database
   upsertDocumentsBatchWithHashes(documents);
+
+  // Update token frequencies for Ronin-style segmentation
+  const allTokens: string[] = [];
+  for (const chunk of chunks) {
+    const tokens = tokenizeCode(chunk.content);
+    allTokens.push(...tokens);
+  }
+  updateTokenFrequencies(allTokens);
 
   return { success: true, chunks: chunks.length };
 }

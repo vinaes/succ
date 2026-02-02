@@ -9,7 +9,9 @@ import {
   closeDb,
   deleteFileHash,
   getAllFileHashes,
+  updateTokenFrequencies,
 } from './db.js';
+import { tokenizeCode } from './bm25.js';
 
 export interface Chunk {
   content: string;
@@ -175,6 +177,16 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
           hash,
         }));
         upsertDocumentsBatchWithHashes(documents);
+
+        // Update token frequencies for code files (for Ronin-style segmentation)
+        if (pathPrefix === 'code:') {
+          const allTokens: string[] = [];
+          for (const chunk of chunks) {
+            const tokens = tokenizeCode(chunk.content);
+            allTokens.push(...tokens);
+          }
+          updateTokenFrequencies(allTokens);
+        }
 
         totalChunks += chunks.length;
       } catch (error) {
