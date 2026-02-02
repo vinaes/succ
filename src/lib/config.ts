@@ -35,11 +35,87 @@ export interface SuccConfig {
   quality_scoring_api_url?: string;  // API URL for custom mode
   quality_scoring_api_key?: string;  // API key for custom mode
   quality_scoring_threshold?: number;  // Minimum quality score to keep (0-1, default: 0)
+  // Idle reflection settings (sleep-time compute)
+  idle_reflection?: IdleReflectionConfig;
+}
+
+export interface IdleReflectionConfig {
+  enabled?: boolean;  // Enable idle reflection (default: true)
+  // Operations to perform during idle time
+  operations?: {
+    memory_consolidation?: boolean;  // Merge similar memories, remove duplicates (default: true)
+    graph_refinement?: boolean;  // Auto-link memories by similarity (default: true)
+    session_summary?: boolean;  // Extract key facts from session transcript (default: true)
+    precompute_context?: boolean;  // Prepare context for next session-start (default: false)
+    write_reflection?: boolean;  // Write human-like reflection text (default: true)
+  };
+  // Thresholds for operations
+  thresholds?: {
+    similarity_for_merge?: number;  // Cosine similarity to consider memories duplicates (default: 0.85)
+    auto_link_threshold?: number;  // Similarity threshold for graph auto-linking (default: 0.75)
+    min_quality_for_summary?: number;  // Min quality score for facts extracted from session (default: 0.5)
+  };
+  // Primary agent (always Claude via CLI)
+  agent_model?: 'haiku' | 'sonnet' | 'opus';  // Claude model for reflection (default: 'haiku')
+  // Optional secondary sleep agent (runs in parallel for heavy lifting)
+  sleep_agent?: {
+    enabled?: boolean;  // Enable secondary sleep agent (default: false)
+    mode?: 'local' | 'openrouter';  // local = Ollama/LM Studio, openrouter = API
+    model?: string;  // Model name: 'qwen2.5:7b' for local, 'deepseek/deepseek-chat' for openrouter
+    api_url?: string;  // API URL for local mode (e.g., 'http://localhost:11434/v1')
+    api_key?: string;  // API key for openrouter (uses openrouter_api_key if not set)
+    // Which operations to offload to sleep agent
+    handle_operations?: {
+      memory_consolidation?: boolean;  // Offload memory merge/dedup (default: true)
+      session_summary?: boolean;  // Offload fact extraction (default: true)
+      precompute_context?: boolean;  // Offload context preparation (default: true)
+    };
+  };
+  // Processing limits
+  max_memories_to_process?: number;  // Max memories to consolidate per idle (default: 50)
+  timeout_seconds?: number;  // Max time for idle operations (default: 25)
 }
 
 // Model names for different modes
 export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2';  // 384 dimensions
 export const OPENROUTER_MODEL = 'openai/text-embedding-3-small';
+
+// Default sleep agent config
+export const DEFAULT_SLEEP_AGENT_CONFIG = {
+  enabled: false,
+  mode: 'local' as const,
+  model: '',
+  api_url: '',
+  api_key: '',
+  handle_operations: {
+    memory_consolidation: true,
+    session_summary: true,
+    precompute_context: true,
+  },
+};
+
+// Default idle reflection config
+export const DEFAULT_IDLE_REFLECTION_CONFIG = {
+  enabled: true,
+  operations: {
+    memory_consolidation: true,
+    graph_refinement: true,
+    session_summary: true,
+    precompute_context: false,  // Disabled by default - experimental
+    write_reflection: true,
+  },
+  thresholds: {
+    similarity_for_merge: 0.85,
+    auto_link_threshold: 0.75,
+    min_quality_for_summary: 0.5,
+  },
+  // Primary agent (Claude Haiku via CLI)
+  agent_model: 'haiku' as const,
+  // Secondary sleep agent (disabled by default)
+  sleep_agent: DEFAULT_SLEEP_AGENT_CONFIG,
+  max_memories_to_process: 50,
+  timeout_seconds: 25,
+};
 
 const DEFAULT_CONFIG: Omit<SuccConfig, 'openrouter_api_key'> = {
   embedding_model: LOCAL_MODEL,
@@ -189,4 +265,111 @@ export function hasOpenRouterKey(): boolean {
   }
 
   return false;
+}
+
+/**
+ * Get idle reflection configuration with defaults
+ */
+export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
+  const config = getConfig();
+  const userConfig = config.idle_reflection || {};
+  const userSleepAgent = userConfig.sleep_agent || {};
+
+  // For openrouter mode, fall back to global openrouter_api_key if not set
+  const sleepAgentApiKey = userSleepAgent.api_key ||
+    (userSleepAgent.mode === 'openrouter' ? config.openrouter_api_key : '') ||
+    DEFAULT_SLEEP_AGENT_CONFIG.api_key;
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_IDLE_REFLECTION_CONFIG.enabled,
+    operations: {
+      memory_consolidation: userConfig.operations?.memory_consolidation ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.memory_consolidation,
+      graph_refinement: userConfig.operations?.graph_refinement ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_refinement,
+      session_summary: userConfig.operations?.session_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
+      precompute_context: userConfig.operations?.precompute_context ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,
+      write_reflection: userConfig.operations?.write_reflection ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.write_reflection,
+    },
+    thresholds: {
+      similarity_for_merge: userConfig.thresholds?.similarity_for_merge ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.similarity_for_merge,
+      auto_link_threshold: userConfig.thresholds?.auto_link_threshold ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.auto_link_threshold,
+      min_quality_for_summary: userConfig.thresholds?.min_quality_for_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.min_quality_for_summary,
+    },
+    agent_model: userConfig.agent_model ?? DEFAULT_IDLE_REFLECTION_CONFIG.agent_model,
+    sleep_agent: {
+      enabled: userSleepAgent.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled,
+      mode: userSleepAgent.mode ?? DEFAULT_SLEEP_AGENT_CONFIG.mode,
+      model: userSleepAgent.model ?? DEFAULT_SLEEP_AGENT_CONFIG.model,
+      api_url: userSleepAgent.api_url ?? DEFAULT_SLEEP_AGENT_CONFIG.api_url,
+      api_key: sleepAgentApiKey,
+      handle_operations: {
+        memory_consolidation: userSleepAgent.handle_operations?.memory_consolidation ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.memory_consolidation,
+        session_summary: userSleepAgent.handle_operations?.session_summary ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.session_summary,
+        precompute_context: userSleepAgent.handle_operations?.precompute_context ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.precompute_context,
+      },
+    },
+    max_memories_to_process: userConfig.max_memories_to_process ?? DEFAULT_IDLE_REFLECTION_CONFIG.max_memories_to_process,
+    timeout_seconds: userConfig.timeout_seconds ?? DEFAULT_IDLE_REFLECTION_CONFIG.timeout_seconds,
+  };
+}
+
+/**
+ * Determine which agent handles each operation
+ * Returns 'claude' or 'sleep' for each operation
+ */
+export type IdleOperation = 'memory_consolidation' | 'graph_refinement' | 'session_summary' | 'precompute_context' | 'write_reflection';
+
+export interface OperationAssignment {
+  operation: IdleOperation;
+  agent: 'claude' | 'sleep';
+  enabled: boolean;
+}
+
+export function getOperationAssignments(): OperationAssignment[] {
+  const config = getIdleReflectionConfig();
+  const ops = config.operations;
+  const sleepAgent = config.sleep_agent;
+  const sleepOps = sleepAgent.handle_operations;
+  const sleepEnabled = sleepAgent.enabled && !!sleepAgent.model;
+
+  const assignments: OperationAssignment[] = [
+    {
+      operation: 'memory_consolidation',
+      // Offload to sleep agent if enabled and configured to handle it
+      agent: sleepEnabled && sleepOps?.memory_consolidation ? 'sleep' : 'claude',
+      enabled: ops?.memory_consolidation ?? true,
+    },
+    {
+      operation: 'graph_refinement',
+      // Graph refinement always stays with Claude (needs succ CLI access)
+      agent: 'claude',
+      enabled: ops?.graph_refinement ?? true,
+    },
+    {
+      operation: 'session_summary',
+      agent: sleepEnabled && sleepOps?.session_summary ? 'sleep' : 'claude',
+      enabled: ops?.session_summary ?? true,
+    },
+    {
+      operation: 'precompute_context',
+      agent: sleepEnabled && sleepOps?.precompute_context ? 'sleep' : 'claude',
+      enabled: ops?.precompute_context ?? false,
+    },
+    {
+      operation: 'write_reflection',
+      // Reflection text always stays with Claude (writes to reflections.md)
+      agent: 'claude',
+      enabled: ops?.write_reflection ?? true,
+    },
+  ];
+
+  return assignments;
+}
+
+/**
+ * Get operations assigned to a specific agent
+ */
+export function getAgentOperations(agent: 'claude' | 'sleep'): IdleOperation[] {
+  return getOperationAssignments()
+    .filter(a => a.agent === agent && a.enabled)
+    .map(a => a.operation);
 }
