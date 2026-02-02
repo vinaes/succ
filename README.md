@@ -132,6 +132,64 @@ succ watch --stop                 # Stop daemon
 
 Supports 120+ file extensions (based on GitHub Linguist) with comprehensive ignore patterns for build artifacts, dependencies, etc.
 
+## Hybrid Search
+
+succ combines semantic embeddings with BM25 keyword search for best-of-both-worlds retrieval:
+
+### How It Works
+
+1. **Semantic search** — finds conceptually similar content via embeddings
+2. **BM25 keyword search** — finds exact matches and rare terms
+3. **Reciprocal Rank Fusion** — merges results optimally
+
+### Code-Aware Tokenizer
+
+The code tokenizer understands all naming conventions:
+
+| Convention | Example | Tokens |
+|------------|---------|--------|
+| camelCase | `getUserName` | get, user, name |
+| PascalCase | `UserService` | user, service |
+| snake_case | `get_user_name` | get, user, name |
+| SCREAMING_SNAKE | `MAX_RETRY_COUNT` | max, retry, count |
+| kebab-case | `user-profile` | user, profile |
+| flatcase | `getusername` | get, user, name *(via Ronin)* |
+
+### Ronin-Style Word Segmentation
+
+For flatcase identifiers (no separators), succ uses dynamic programming to find optimal splits:
+
+```
+getusername → get + user + name
+fetchdatafromapi → fetch + data + from + api
+```
+
+**How it works:**
+- Builds token frequency table from your indexed code
+- Uses log-probability scoring with length bonuses
+- Falls back to base dictionary (500+ common programming terms)
+- Learns your project's vocabulary over time
+
+### BPE Tokenizer (Optional)
+
+Train project-specific vocabulary for even better segmentation:
+
+```bash
+succ train-bpe                    # Train from indexed code
+succ train-bpe --stats            # Show current vocabulary stats
+```
+
+BPE learns common token pairs in your codebase (e.g., `get`+`User` → `getUser`), improving search for project-specific terms.
+
+### Docs vs Code
+
+| Aspect | Documents | Code |
+|--------|-----------|------|
+| Tokenizer | Markdown-aware + stemming | Naming convention splitter |
+| Stemming | Yes (running → run) | No (preserves exact terms) |
+| Stop words | Filtered | Kept (important in code) |
+| Segmentation | Standard | Ronin + BPE |
+
 ## Configuration
 
 **No API key required!** succ uses local embeddings by default via [Transformers.js](https://huggingface.co/docs/transformers.js).
