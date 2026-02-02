@@ -52,7 +52,7 @@ export function getAllMemoriesWithEmbeddings(): Array<Memory & { embedding: numb
 
   const rows = database
     .prepare(
-      `SELECT id, content, tags, source, quality_score, quality_factors, created_at, embedding
+      `SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, created_at, embedding
        FROM memories`
     )
     .all() as Array<{
@@ -62,6 +62,8 @@ export function getAllMemoriesWithEmbeddings(): Array<Memory & { embedding: numb
     source: string | null;
     quality_score: number | null;
     quality_factors: string | null;
+    access_count: number | null;
+    last_accessed: string | null;
     created_at: string;
     embedding: Buffer;
   }>;
@@ -73,6 +75,8 @@ export function getAllMemoriesWithEmbeddings(): Array<Memory & { embedding: numb
     source: row.source,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
     created_at: row.created_at,
     embedding: bufferToFloatArray(row.embedding),
   }));

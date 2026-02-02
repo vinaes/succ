@@ -69,6 +69,7 @@ succ search "how does authentication work"
 | `succ config` | Interactive configuration |
 | `succ status` | Show index statistics |
 | `succ stats` | Show token savings statistics |
+| `succ retention` | Memory retention analysis and cleanup |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
@@ -436,6 +437,47 @@ Output:
 - Uses Anthropic's recommended 3.5 chars/token heuristic
 
 MCP tool: `succ_stats`
+
+### Auto-Retention Policies
+
+succ automatically manages memory lifecycle with decay-based retention:
+
+```bash
+succ retention                   # Show retention stats
+succ retention --dry-run         # Preview what would be deleted
+succ retention --apply           # Actually delete low-score memories
+```
+
+**How it works:**
+
+Effective score formula:
+```
+effective_score = quality_score × recency_factor × access_boost
+
+recency_factor = 1 / (1 + decay_rate × days_since_creation)
+access_boost = min(1 + access_weight × access_count, max_boost)
+```
+
+- **Quality score** — from quality scoring system (0-1)
+- **Recency factor** — newer memories score higher, decay over time
+- **Access boost** — frequently recalled memories are preserved
+
+Retention tiers:
+- `keep`: effective_score ≥ 0.3 (kept)
+- `warn`: effective_score 0.15-0.3 (approaching deletion)
+- `delete`: effective_score < 0.15 (removed on --apply)
+
+Configure in `.succ/config.json`:
+```json
+{
+  "retention": {
+    "decay_rate": 0.01,
+    "access_weight": 0.1,
+    "keep_threshold": 0.3,
+    "delete_threshold": 0.15
+  }
+}
+```
 
 ## Memory System
 

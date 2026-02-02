@@ -47,6 +47,8 @@ import {
   // Token stats
   getTokenStatsAggregated,
   getTokenStatsSummary,
+  // Retention/access tracking
+  incrementMemoryAccessBatch,
 } from './lib/db.js';
 import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses } from './lib/config.js';
 import path from 'path';
@@ -145,6 +147,40 @@ function trackTokenSavings(
       files_count: uniqueFiles.length,
       chunks_count: results.length,
     });
+  } catch {
+    // Don't fail the search if tracking fails
+  }
+}
+
+/**
+ * Track memory access for retention decay.
+ * Memories that are frequently accessed will have higher effective scores.
+ *
+ * @param memoryIds - Array of memory IDs that were returned
+ * @param limit - The search limit (top N results)
+ * @param totalResults - Total number of results before limit
+ */
+function trackMemoryAccess(
+  memoryIds: number[],
+  limit: number,
+  totalResults: number
+): void {
+  if (memoryIds.length === 0) return;
+
+  try {
+    const accesses: Array<{ memoryId: number; weight: number }> = [];
+
+    for (let i = 0; i < memoryIds.length; i++) {
+      // Top results (within limit) get full weight (1.0 = exact match)
+      // Results beyond limit would get 0.5 (similarity hit) but we only track returned results
+      // Weight decreases slightly by position: top result = 1.0, 2nd = 0.95, etc.
+      const positionPenalty = Math.max(0, 0.05 * i);
+      const weight = i < limit ? Math.max(0.5, 1.0 - positionPenalty) : 0.5;
+
+      accesses.push({ memoryId: memoryIds[i], weight });
+    }
+
+    incrementMemoryAccessBatch(accesses);
   } catch {
     // Don't fail the search if tracking fails
   }
@@ -631,6 +667,12 @@ server.tool(
         query,
         allResults.map((m) => ({ file_path: `memory:${m.id || 'unknown'}`, content: m.content }))
       );
+
+      // Track memory access for retention decay (local memories only)
+      const localMemoryIds = allResults
+        .filter((r) => !r.isGlobal && r.id)
+        .map((r) => r.id as number);
+      trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
 
       const formatted = allResults
         .map((m, i) => {
