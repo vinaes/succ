@@ -167,7 +167,7 @@ async function callSleepAgent(prompt, sleepAgentConfig) {
   }
 
   const body = {
-    model: model || 'qwen2.5-coder:32b',
+    model: model || 'qwen2.5-coder:14b',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
     max_tokens: 1000,
@@ -374,7 +374,7 @@ async function callSleepAgentLocal(prompt) {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: model || 'qwen2.5-coder:32b',
+        model: model || 'qwen2.5-coder:14b',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 1000,
