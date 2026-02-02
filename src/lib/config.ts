@@ -35,6 +35,9 @@ export interface SuccConfig {
   quality_scoring_api_url?: string;  // API URL for custom mode
   quality_scoring_api_key?: string;  // API key for custom mode
   quality_scoring_threshold?: number;  // Minimum quality score to keep (0-1, default: 0)
+  // Sensitive info filter settings
+  sensitive_filter_enabled?: boolean;  // Enable sensitive info detection (default: true)
+  sensitive_auto_redact?: boolean;  // Auto-redact sensitive info without prompting (default: false)
   // Idle reflection settings (sleep-time compute)
   idle_reflection?: IdleReflectionConfig;
   // Idle watcher settings (smart activity-based reflections)

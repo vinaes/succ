@@ -190,12 +190,16 @@ program
   .option('--source <source>', 'Source context')
   .option('-g, --global', 'Save to global memory (shared across projects)')
   .option('--skip-quality', 'Skip quality scoring and threshold check')
+  .option('--skip-sensitive', 'Skip sensitive info check (not recommended)')
+  .option('--redact-sensitive', 'Auto-redact sensitive info and save')
   .action((content, options) => {
     remember(content, {
       tags: options.tags,
       source: options.source,
       global: options.global,
       skipQuality: options.skipQuality,
+      skipSensitiveCheck: options.skipSensitive,
+      redactSensitive: options.redactSensitive,
     });
   });
 

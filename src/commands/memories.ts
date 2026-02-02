@@ -19,6 +19,7 @@ import {
 import { getEmbedding } from '../lib/embeddings.js';
 import { getConfig, getProjectRoot } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
+import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
 import path from 'path';
 
 /**
@@ -187,20 +188,51 @@ interface RememberOptions {
   source?: string;
   global?: boolean;
   skipQuality?: boolean;
+  skipSensitiveCheck?: boolean;
+  redactSensitive?: boolean;
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality } = options;
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive } = options;
 
   try {
+    const config = getConfig();
     const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
+
+    // Check for sensitive information
+    const sensitiveCheckEnabled = config.sensitive_filter_enabled !== false && !skipSensitiveCheck;
+    if (sensitiveCheckEnabled) {
+      const scanResult = scanSensitive(content);
+      if (scanResult.hasSensitive) {
+        console.log(`\n⚠ Sensitive information detected:`);
+        console.log(formatMatches(scanResult.matches));
+        console.log();
+
+        if (redactSensitive || config.sensitive_auto_redact) {
+          // Auto-redact and continue
+          content = scanResult.redactedText;
+          console.log(`✓ Sensitive data redacted automatically.`);
+          console.log(`  Redacted content: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+          console.log();
+        } else {
+          // Block by default
+          console.log(`Memory not saved. Options:`);
+          console.log(`  --redact-sensitive  Save with sensitive data redacted`);
+          console.log(`  --skip-sensitive    Save anyway (not recommended)`);
+          console.log(`\nOr set in config: "sensitive_auto_redact": true`);
+          closeDb();
+          closeGlobalDb();
+          return;
+        }
+      }
+    }
+
     const embedding = await getEmbedding(content);
 
     // Score the memory quality (unless disabled)
-    const config = getConfig();
     let qualityScore = null;
     if (!skipQuality && config.quality_scoring_enabled !== false) {
       qualityScore = await scoreMemory(content);
