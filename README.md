@@ -70,6 +70,7 @@ succ search "how does authentication work"
 | `succ status` | Show index statistics |
 | `succ stats` | Show token savings statistics |
 | `succ retention` | Memory retention analysis and cleanup |
+| `succ checkpoint <action>` | Create, restore, or list checkpoints |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
@@ -483,6 +484,38 @@ Configure in `.succ/config.json`:
 ```
 
 **Automatic cleanup:** When `retention.enabled: true`, the idle reflection hook will automatically run cleanup at the configured interval. This happens during idle time without interrupting your work.
+
+### Checkpoints (Backup/Restore)
+
+Create full backups of your succ state:
+
+```bash
+succ checkpoint create              # Create checkpoint
+succ checkpoint create --compress   # Gzip compressed
+succ checkpoint create -o backup.json
+succ checkpoint list                # List available checkpoints
+succ checkpoint info backup.json    # Show checkpoint details
+succ checkpoint restore backup.json # Restore from checkpoint
+succ checkpoint restore backup.json --overwrite  # Replace existing data
+```
+
+**What's included:**
+- All memories (with embeddings, quality scores, access tracking)
+- Indexed documents (chunks with embeddings)
+- Knowledge graph (memory links)
+- Brain vault (markdown files)
+- Configuration
+
+**Options:**
+- `--compress` — Gzip compress output
+- `--no-brain` — Exclude brain vault files
+- `--no-documents` — Exclude indexed documents
+- `--overwrite` — Replace existing data on restore
+- `--restore-config` — Also restore config on restore
+
+Checkpoints are stored in `.succ/checkpoints/` by default.
+
+MCP tool: `succ_checkpoint`
 
 ## Memory System
 

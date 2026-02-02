@@ -149,6 +149,9 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 **succ_config_set** key="..." value="..." [global=true]
 → First run succ_config to see keys, then set. global=true for user config, false for project
 
+**succ_checkpoint** action="create|list" [compress=true]
+→ Create or list checkpoints (full backup of memories, docs, brain vault)
+
 ---
 **recall** = memories (from remember) | **search** = documents (brain/) | **search_code** = source files
 </succ-mcp-tools>`);

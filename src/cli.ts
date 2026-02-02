@@ -23,6 +23,7 @@ import { precomputeContext } from './commands/precompute-context.js';
 import { trainBPE } from './commands/train-bpe.js';
 import { stats } from './commands/stats.js';
 import { retention } from './commands/retention.js';
+import { checkpoint } from './commands/checkpoint.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -416,6 +417,32 @@ program
       dryRun: options.dryRun,
       apply: options.apply,
       verbose: options.verbose,
+    });
+  });
+
+program
+  .command('checkpoint <action> [file]')
+  .description('Create, restore, or list checkpoints (full backup/restore)')
+  .option('-o, --output <path>', 'Output file path for create')
+  .option('--compress', 'Compress with gzip')
+  .option('--no-brain', 'Exclude brain vault from create')
+  .option('--no-documents', 'Exclude indexed documents from create')
+  .option('--no-config', 'Exclude config from create')
+  .option('--overwrite', 'Overwrite existing data on restore')
+  .option('--restore-config', 'Also restore config on restore')
+  .action((action, file, options) => {
+    checkpoint({
+      action: action as 'create' | 'restore' | 'list' | 'info',
+      file,
+      output: options.output,
+      compress: options.compress,
+      includeBrain: options.brain,
+      includeDocuments: options.documents,
+      includeConfig: options.config,
+      overwrite: options.overwrite,
+      restoreBrain: options.brain,
+      restoreDocuments: options.documents,
+      restoreConfig: options.restoreConfig,
     });
   });
 
