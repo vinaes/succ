@@ -8,6 +8,7 @@ dist/
 .claude/*.log
 .claude/*.lock
 .claude/sandbox-*.json
+.succ/.tmp/
 
 # Keep brain vault, soul.md, hooks, and settings.json in git!
 # They contain valuable documentation and configuration
