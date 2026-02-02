@@ -18,6 +18,7 @@ function createMemory(overrides: Partial<MemoryForRetention> = {}): MemoryForRet
     quality_score: 0.5,
     access_count: 0,
     created_at: new Date().toISOString(),
+    last_accessed: null,
     ...overrides,
   };
 }

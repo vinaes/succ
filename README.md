@@ -71,6 +71,7 @@ succ search "how does authentication work"
 | `succ stats` | Show token savings statistics |
 | `succ retention` | Memory retention analysis and cleanup |
 | `succ checkpoint <action>` | Create, restore, or list checkpoints |
+| `succ score` | Show AI-readiness score for the project |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
@@ -516,6 +517,46 @@ succ checkpoint restore backup.json --overwrite  # Replace existing data
 Checkpoints are stored in `.succ/checkpoints/` by default.
 
 MCP tool: `succ_checkpoint`
+
+### AI-Readiness Score
+
+Check how "ready" your project is for AI collaboration:
+
+```bash
+succ score               # Show AI-readiness score
+succ score --json        # Output as JSON
+```
+
+Output:
+```
+AI-Readiness Score: 73/100 ⭐⭐⭐⭐
+
+  Brain Vault       20/25  ✓ CLAUDE.md exists, 12 docs
+  Memory Coverage   15/20    47 memories
+  Code Index        18/20    94% indexed
+  Soul Document      5/10    exists but incomplete
+  Hooks Active      10/10  ✓ session-start, session-end
+  Doc Index          5/10    3/8 files indexed
+  Quality Average    0/5     no quality scores
+
+Suggestions:
+  - Complete your soul.md
+  - Index remaining markdown files
+  - Enable quality scoring
+```
+
+**Metrics:**
+| Metric | Weight | Description |
+|--------|--------|-------------|
+| Brain Vault | 25% | CLAUDE.md exists, brain/ structure, number of docs |
+| Memory Coverage | 20% | Number of memories saved |
+| Code Index | 20% | % of source files indexed |
+| Soul Document | 10% | soul.md exists and is customized |
+| Hooks Active | 10% | session-start/end hooks configured |
+| Doc Index | 10% | % of brain/ markdown files indexed |
+| Quality Average | 5% | Average quality score of memories |
+
+MCP tool: `succ_score`
 
 ## Memory System
 

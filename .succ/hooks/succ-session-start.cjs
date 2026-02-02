@@ -109,6 +109,7 @@ process.stdin.on('end', () => {
 <status>
 **succ_status** — docs indexed, memories count, daemon status
 **succ_stats** — token savings statistics
+**succ_score** — AI-readiness score (how ready is project for AI)
 **succ_config** — show configuration
 **succ_config_set** key="quality_threshold" value="0.4" [global=true]
 **succ_checkpoint** action="create|list|restore|info" [compress=true] [file="backup.json"]

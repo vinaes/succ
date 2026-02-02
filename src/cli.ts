@@ -24,6 +24,7 @@ import { trainBPE } from './commands/train-bpe.js';
 import { stats } from './commands/stats.js';
 import { retention } from './commands/retention.js';
 import { checkpoint } from './commands/checkpoint.js';
+import { score } from './commands/score.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -443,6 +444,16 @@ program
       restoreBrain: options.brain,
       restoreDocuments: options.documents,
       restoreConfig: options.restoreConfig,
+    });
+  });
+
+program
+  .command('score')
+  .description('Show AI-readiness score for the project')
+  .option('--json', 'Output as JSON')
+  .action((options) => {
+    score({
+      json: options.json,
     });
   });
 
