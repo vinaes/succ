@@ -13,6 +13,10 @@ import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { countTokens } from './token-counter.js';
+import { estimateSavings } from './pricing.js';
+
+// Default model for cost estimation
+const DEFAULT_PRICING_MODEL = 'sonnet';
 
 /**
  * Extracted fact from session
@@ -565,6 +569,7 @@ export async function sessionSummary(
       try {
         const transcriptTokens = countTokens(transcriptContent);
         const savingsTokens = Math.max(0, transcriptTokens - (result.summaryTokens || 0));
+        const estimatedCost = estimateSavings(savingsTokens, DEFAULT_PRICING_MODEL);
 
         recordTokenStat({
           event_type: 'session_summary',
@@ -573,6 +578,8 @@ export async function sessionSummary(
           full_source_tokens: transcriptTokens,
           savings_tokens: savingsTokens,
           chunks_count: result.factsSaved,
+          model: DEFAULT_PRICING_MODEL,
+          estimated_cost: estimatedCost,
         });
       } catch {
         // Don't fail if stats recording fails
