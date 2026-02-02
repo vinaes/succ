@@ -22,6 +22,7 @@ import { sessionSummary } from './commands/session-summary.js';
 import { precomputeContext } from './commands/precompute-context.js';
 import { trainBPE } from './commands/train-bpe.js';
 import { stats } from './commands/stats.js';
+import { retention } from './commands/retention.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -401,6 +402,20 @@ program
     stats({
       tokens: options.tokens,
       clear: options.clear,
+    });
+  });
+
+program
+  .command('retention')
+  .description('Manage memory retention with decay-based cleanup')
+  .option('--dry-run', 'Preview what would be deleted')
+  .option('--apply', 'Actually delete low-score memories')
+  .option('-v, --verbose', 'Show detailed analysis')
+  .action((options) => {
+    retention({
+      dryRun: options.dryRun,
+      apply: options.apply,
+      verbose: options.verbose,
     });
   });
 

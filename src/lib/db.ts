@@ -194,6 +194,18 @@ function initDb(database: Database.Database): void {
     // Index may already exist
   }
 
+  // Migration: add access_count and last_accessed columns for retention decay
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 }
@@ -287,6 +299,18 @@ function initGlobalDb(database: Database.Database): void {
     database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`).run();
   } catch {
     // Index may already exist
+  }
+
+  // Migration: add access_count and last_accessed columns for retention decay
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
+  } catch {
+    // Column already exists, ignore
   }
 }
 
@@ -1018,6 +1042,8 @@ export interface Memory {
   source: string | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  access_count: number;
+  last_accessed: string | null;
   created_at: string;
 }
 
@@ -1249,7 +1275,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
   const database = getDb();
   const rows = database
     .prepare(`
-      SELECT id, content, tags, source, quality_score, quality_factors, created_at
+      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -1261,6 +1287,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
       source: string | null;
       quality_score: number | null;
       quality_factors: string | null;
+      access_count: number | null;
+      last_accessed: string | null;
       created_at: string;
     }>;
 
@@ -1271,6 +1299,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     source: row.source,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
     created_at: row.created_at,
   }));
 }
@@ -1379,7 +1409,7 @@ export function deleteMemoriesByTag(tag: string): number {
 export function getMemoryById(id: number): Memory | null {
   const database = getDb();
   const row = database
-    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, created_at FROM memories WHERE id = ?')
+    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, created_at FROM memories WHERE id = ?')
     .get(id) as {
       id: number;
       content: string;
@@ -1387,6 +1417,8 @@ export function getMemoryById(id: number): Memory | null {
       source: string | null;
       quality_score: number | null;
       quality_factors: string | null;
+      access_count: number | null;
+      last_accessed: string | null;
       created_at: string;
     } | undefined;
 
@@ -1399,6 +1431,8 @@ export function getMemoryById(id: number): Memory | null {
     source: row.source,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
     created_at: row.created_at,
   };
 }
@@ -2145,4 +2179,109 @@ export function getTokenStatsSummary(): {
 export function clearTokenStats(): void {
   const database = getDb();
   database.prepare('DELETE FROM token_stats').run();
+}
+
+// ============================================================================
+// Memory Access Tracking (for retention decay)
+// ============================================================================
+
+/**
+ * Increment access count for a memory.
+ * @param memoryId - The memory ID
+ * @param weight - Weight of the access (1.0 for exact match, 0.5 for similarity hit)
+ */
+export function incrementMemoryAccess(memoryId: number, weight: number = 1.0): void {
+  const database = getDb();
+  database
+    .prepare(`
+      UPDATE memories
+      SET access_count = COALESCE(access_count, 0) + ?,
+          last_accessed = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+    .run(weight, memoryId);
+}
+
+/**
+ * Batch increment access counts for multiple memories.
+ * @param accesses - Array of { memoryId, weight } objects
+ */
+export function incrementMemoryAccessBatch(accesses: Array<{ memoryId: number; weight: number }>): void {
+  if (accesses.length === 0) return;
+
+  const database = getDb();
+  const stmt = database.prepare(`
+    UPDATE memories
+    SET access_count = COALESCE(access_count, 0) + ?,
+        last_accessed = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const transaction = database.transaction((items: Array<{ memoryId: number; weight: number }>) => {
+    for (const { memoryId, weight } of items) {
+      stmt.run(weight, memoryId);
+    }
+  });
+
+  transaction(accesses);
+}
+
+/**
+ * Memory data for retention calculations
+ */
+export interface MemoryForRetention {
+  id: number;
+  content: string;
+  quality_score: number | null;
+  access_count: number;
+  created_at: string;
+  last_accessed: string | null;
+}
+
+/**
+ * Get all memories with retention-relevant fields.
+ */
+export function getAllMemoriesForRetention(): MemoryForRetention[] {
+  const database = getDb();
+  const rows = database
+    .prepare(`
+      SELECT id, content, quality_score, access_count, created_at, last_accessed
+      FROM memories
+      ORDER BY created_at ASC
+    `)
+    .all() as Array<{
+      id: number;
+      content: string;
+      quality_score: number | null;
+      access_count: number | null;
+      created_at: string;
+      last_accessed: string | null;
+    }>;
+
+  return rows.map(row => ({
+    id: row.id,
+    content: row.content,
+    quality_score: row.quality_score,
+    access_count: row.access_count ?? 0,
+    created_at: row.created_at,
+    last_accessed: row.last_accessed,
+  }));
+}
+
+/**
+ * Delete memories by IDs (batch operation for retention cleanup).
+ */
+export function deleteMemoriesByIds(ids: number[]): number {
+  if (ids.length === 0) return 0;
+
+  const database = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  const result = database
+    .prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+    .run(...ids);
+
+  // Invalidate BM25 index since memories changed
+  invalidateMemoriesBm25Index();
+
+  return result.changes;
 }

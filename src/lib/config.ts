@@ -44,6 +44,19 @@ export interface SuccConfig {
   idle_watcher?: IdleWatcherConfig;
   // BPE tokenizer settings (optional enhancement to Ronin segmentation)
   bpe?: BPETokenizerConfig;
+  // Retention policy settings (auto-cleanup with decay)
+  retention?: RetentionPolicyConfig;
+}
+
+export interface RetentionPolicyConfig {
+  enabled?: boolean;  // Enable retention cleanup (default: false - manual only)
+  decay_rate?: number;  // Decay rate for recency factor (default: 0.01, at 100 days factor ≈ 0.5)
+  access_weight?: number;  // Weight per access for boost calculation (default: 0.1)
+  max_access_boost?: number;  // Maximum access boost multiplier (default: 2.0)
+  keep_threshold?: number;  // Effective score threshold to keep (default: 0.3)
+  delete_threshold?: number;  // Effective score threshold to delete (default: 0.15)
+  default_quality_score?: number;  // Default quality for memories without score (default: 0.5)
+  auto_cleanup_interval_days?: number;  // Days between auto-cleanup runs (default: 7)
 }
 
 export interface BPETokenizerConfig {
@@ -107,6 +120,18 @@ export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
   idle_minutes: 2,
   check_interval: 30,
   min_conversation_length: 5,
+};
+
+// Default retention policy config
+export const DEFAULT_RETENTION_POLICY_CONFIG: Required<RetentionPolicyConfig> = {
+  enabled: false,  // Manual only by default
+  decay_rate: 0.01,
+  access_weight: 0.1,
+  max_access_boost: 2.0,
+  keep_threshold: 0.3,
+  delete_threshold: 0.15,
+  default_quality_score: 0.5,
+  auto_cleanup_interval_days: 7,
 };
 
 // Default sleep agent config
@@ -308,6 +333,25 @@ export function getIdleWatcherConfig(): Required<IdleWatcherConfig> {
     idle_minutes: userConfig.idle_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.idle_minutes,
     check_interval: userConfig.check_interval ?? DEFAULT_IDLE_WATCHER_CONFIG.check_interval,
     min_conversation_length: userConfig.min_conversation_length ?? DEFAULT_IDLE_WATCHER_CONFIG.min_conversation_length,
+  };
+}
+
+/**
+ * Get retention policy configuration with defaults
+ */
+export function getRetentionConfig(): Required<RetentionPolicyConfig> {
+  const config = getConfig();
+  const userConfig = config.retention || {};
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_RETENTION_POLICY_CONFIG.enabled,
+    decay_rate: userConfig.decay_rate ?? DEFAULT_RETENTION_POLICY_CONFIG.decay_rate,
+    access_weight: userConfig.access_weight ?? DEFAULT_RETENTION_POLICY_CONFIG.access_weight,
+    max_access_boost: userConfig.max_access_boost ?? DEFAULT_RETENTION_POLICY_CONFIG.max_access_boost,
+    keep_threshold: userConfig.keep_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.keep_threshold,
+    delete_threshold: userConfig.delete_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.delete_threshold,
+    default_quality_score: userConfig.default_quality_score ?? DEFAULT_RETENTION_POLICY_CONFIG.default_quality_score,
+    auto_cleanup_interval_days: userConfig.auto_cleanup_interval_days ?? DEFAULT_RETENTION_POLICY_CONFIG.auto_cleanup_interval_days,
   };
 }
 
