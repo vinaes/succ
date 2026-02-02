@@ -275,12 +275,11 @@ function writeReflectionAsync(projectDir, transcriptContext, config) {
   const contextFile = path.join(tempDir, `reflection-context-${Date.now()}.txt`);
   fs.writeFileSync(contextFile, transcriptContext);
 
-  const reflectionsPath = path.join(projectDir, '.succ', 'brain', '.self', 'reflections.md');
+  const reflectionsDir = path.join(projectDir, '.succ', 'brain', 'reflections');
 
-  // Create self directory if needed
-  const selfDir = path.dirname(reflectionsPath);
-  if (!fs.existsSync(selfDir)) {
-    fs.mkdirSync(selfDir, { recursive: true });
+  // Create reflections directory if needed
+  if (!fs.existsSync(reflectionsDir)) {
+    fs.mkdirSync(reflectionsDir, { recursive: true });
   }
 
   // Determine which agent to use
@@ -295,7 +294,8 @@ const fs = require('fs');
 const path = require('path');
 
 const contextFile = ${JSON.stringify(contextFile)};
-const reflectionsPath = ${JSON.stringify(reflectionsPath)};
+const reflectionsDir = ${JSON.stringify(reflectionsDir)};
+const projectDir = ${JSON.stringify(projectDir)};
 const useSleepAgent = ${useSleepAgent};
 const sleepAgentConfig = ${JSON.stringify(sleepAgentConfig)};
 const claudeModel = ${JSON.stringify(claudeModel)};
@@ -304,7 +304,8 @@ const transcriptContext = fs.readFileSync(contextFile, 'utf8');
 
 const now = new Date();
 const dateStr = now.toISOString().split('T')[0];
-const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+const timeStr = now.toTimeString().split(' ')[0].substring(0, 5).replace(':', '-');
+const timestamp = dateStr + '_' + timeStr;
 
 const prompt = \`You are writing a brief personal reflection for an AI's internal journal.
 
@@ -324,19 +325,34 @@ Output ONLY the reflection text, no headers or formatting. Write in first person
 function writeReflection(text) {
   if (!text || text.trim().length < 50) return;
 
-  const existingContent = fs.existsSync(reflectionsPath)
-    ? fs.readFileSync(reflectionsPath, 'utf8')
-    : '# Reflections\\n\\nInternal dialogue between sessions.\\n';
+  // Create individual reflection file with YAML frontmatter
+  const reflectionFile = path.join(reflectionsDir, timestamp + '.md');
+  const content = \`---
+date: \${dateStr}
+time: \${timeStr.replace('-', ':')}
+trigger: idle
+tags:
+  - reflection
+---
 
-  const reflectionEntry = \`
-## \${dateStr} \${timeStr} (idle pause)
+# Reflection \${dateStr} \${timeStr.replace('-', ':')}
 
 \${text.trim()}
-
----
 \`;
 
-  fs.writeFileSync(reflectionsPath, existingContent + reflectionEntry);
+  fs.writeFileSync(reflectionFile, content);
+
+  // Save to memory via succ remember
+  try {
+    const { spawnSync } = require('child_process');
+    spawnSync('npx', ['succ', 'remember', text.trim(), '--tags', 'reflection', '--source', 'idle-reflection'], {
+      cwd: projectDir,
+      timeout: 10000,
+      shell: true,
+    });
+  } catch {
+    // Memory save failed, but file was written
+  }
 }
 
 async function callSleepAgentLocal(prompt) {
