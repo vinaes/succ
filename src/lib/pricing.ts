@@ -215,13 +215,101 @@ export function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
 /**
- * Get current model from environment variable or default to sonnet
+ * Get current model from environment variable, Claude Code transcript, or default to sonnet
  *
- * Checks ANTHROPIC_MODEL env var which can be set by user.
- * Note: Claude Code does not automatically set this when using /model command,
- * but users can set it manually for accurate cost tracking.
+ * Priority:
+ * 1. ANTHROPIC_MODEL env var (explicit override)
+ * 2. Most recent Claude Code session transcript (automatic detection)
+ * 3. Default to 'sonnet'
  */
 export function getCurrentModel(): string {
-  return process.env.ANTHROPIC_MODEL || 'sonnet';
+  // 1. Check env var first (explicit override)
+  if (process.env.ANTHROPIC_MODEL) {
+    return process.env.ANTHROPIC_MODEL;
+  }
+
+  // 2. Try to detect from Claude Code session transcript
+  try {
+    const detectedModel = detectModelFromClaudeCode();
+    if (detectedModel) {
+      return detectedModel;
+    }
+  } catch {
+    // Ignore errors, fall back to default
+  }
+
+  // 3. Default
+  return 'sonnet';
+}
+
+/**
+ * Detect model from Claude Code session transcript
+ * Reads the most recent session in current project and extracts model from assistant messages
+ */
+function detectModelFromClaudeCode(): string | null {
+  const claudeDir = path.join(os.homedir(), '.claude');
+  const projectsDir = path.join(claudeDir, 'projects');
+
+  if (!fs.existsSync(projectsDir)) {
+    return null;
+  }
+
+  // Get current working directory to find matching project
+  const cwd = process.cwd();
+  const projectDirName = cwd.replace(/[:/\\]/g, '-').replace(/^-/, '');
+
+  // Find project directory (case-insensitive on Windows)
+  const projectDirs = fs.readdirSync(projectsDir);
+  const matchingDir = projectDirs.find(
+    (d) => d.toLowerCase() === projectDirName.toLowerCase()
+  );
+
+  if (!matchingDir) {
+    return null;
+  }
+
+  const projectPath = path.join(projectsDir, matchingDir);
+
+  // Find most recent .jsonl file (session transcript)
+  const files = fs.readdirSync(projectPath).filter((f) => f.endsWith('.jsonl'));
+  if (files.length === 0) {
+    return null;
+  }
+
+  // Sort by mtime, get most recent
+  const sortedFiles = files
+    .map((f) => ({
+      name: f,
+      mtime: fs.statSync(path.join(projectPath, f)).mtime.getTime(),
+    }))
+    .sort((a, b) => b.mtime - a.mtime);
+
+  const latestSession = path.join(projectPath, sortedFiles[0].name);
+
+  // Read last few KB of file to find model (reading from end is faster for large files)
+  const stats = fs.statSync(latestSession);
+  const readSize = Math.min(stats.size, 50000); // Last 50KB should be enough
+  const fd = fs.openSync(latestSession, 'r');
+  const buffer = Buffer.alloc(readSize);
+  fs.readSync(fd, buffer, 0, readSize, Math.max(0, stats.size - readSize));
+  fs.closeSync(fd);
+
+  const content = buffer.toString('utf-8');
+
+  // Find last occurrence of "model":"..." in assistant messages
+  const modelMatches = content.match(/"model"\s*:\s*"([^"]+)"/g);
+  if (!modelMatches || modelMatches.length === 0) {
+    return null;
+  }
+
+  // Get the last match and extract model name
+  const lastMatch = modelMatches[modelMatches.length - 1];
+  const modelName = lastMatch.match(/"model"\s*:\s*"([^"]+)"/)?.[1];
+
+  return modelName || null;
 }
