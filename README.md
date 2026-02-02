@@ -15,9 +15,13 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 - **Knowledge graph** — link memories, auto-detect relationships, export to Obsidian
 - **Auto-hooks** — context injection at session start, auto-summarize at session end
 - **Idle reflections** — AI generates insights during idle time
+- **Session context** — auto-generated briefings for next session
+- **Sensitive filter** — detect and redact PII, API keys, secrets
+- **Quality scoring** — local ONNX classification to filter noise
 - **Watch mode** — auto-reindex on file changes with debouncing
 - **Daemon mode** — continuous background analysis
 - **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
+- **Sleep agent** — offload heavy operations to local LLM
 - **MCP integration** — Claude can use succ tools directly
 - **Soul document** — define AI personality, values, communication style
 - **Zero config** — works out of the box
@@ -197,6 +201,50 @@ Configure in `.succ/config.json`:
 | `check_interval` | `30` | Seconds between activity checks |
 | `min_conversation_length` | `5` | Minimum transcript entries before reflecting |
 
+**Safety:** Watcher auto-exits after 90 minutes of no activity to prevent zombie processes.
+
+**Idle Reflection Operations:**
+- `memory_consolidation` — merge similar memories, remove duplicates
+- `graph_refinement` — auto-link related memories
+- `session_summary` — extract key points from conversation
+- `precompute_context` — generate next-session briefing (`.succ/next-session-context.md`)
+- `write_reflection` — save AI insights as markdown with YAML frontmatter
+
+Configure operations in `.succ/config.json`:
+
+```json
+{
+  "idle_reflection": {
+    "operations": {
+      "precompute_context": true,
+      "write_reflection": true
+    }
+  }
+}
+```
+
+### Sleep Agent (Dual-Agent Mode)
+
+Offload heavy idle operations to a local LLM while Claude handles reflections:
+
+```json
+{
+  "idle_reflection": {
+    "sleep_agent": {
+      "enabled": true,
+      "mode": "local",
+      "model": "qwen2.5-coder:14b",
+      "api_url": "http://localhost:11434/v1",
+      "handle_operations": {
+        "memory_consolidation": true,
+        "session_summary": true,
+        "precompute_context": true
+      }
+    }
+  }
+}
+```
+
 **Supported backends:** Ollama, LM Studio, llama.cpp, any OpenAI-compatible API.
 
 **Recommended models:**
@@ -205,6 +253,50 @@ Configure in `.succ/config.json`:
 | `qwen2.5-coder:14b` | ~9GB | Best balance for 8GB VRAM |
 | `qwen2.5-coder:32b` | ~20GB | Best quality, needs 12GB+ VRAM |
 | `deepseek-coder-v2:16b` | ~10GB | Fast, MoE architecture |
+
+### Sensitive Info Filter
+
+Automatically detects and redacts sensitive information before saving memories:
+
+- **API keys** — OpenAI, Anthropic, AWS, GitHub, Stripe, etc.
+- **Phone numbers** — international formats
+- **Secrets** — passwords, tokens, private keys, JWTs
+- **PII** — names, emails, addresses
+- **High-entropy strings** — random strings likely to be secrets
+
+Configure in `~/.succ/config.json`:
+
+```json
+{
+  "sensitive_filter_enabled": true,
+  "sensitive_auto_redact": false
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `sensitive_filter_enabled` | `true` | Enable detection |
+| `sensitive_auto_redact` | `false` | Auto-redact without prompting |
+
+### Quality Scoring
+
+Memories are scored for quality to filter noise:
+
+- **Local (default)** — ONNX zero-shot classification, no API needed
+- **Custom** — Ollama, LM Studio, llama.cpp
+- **OpenRouter** — Cloud API
+
+Configure in `~/.succ/config.json`:
+
+```json
+{
+  "quality_scoring_enabled": true,
+  "quality_scoring_mode": "local",
+  "quality_scoring_threshold": 0.3
+}
+```
+
+Scoring factors: specificity, clarity, relevance, uniqueness.
 
 ## Memory System
 
@@ -247,6 +339,16 @@ Generate with: `succ soul`
 
 Learn more: [soul.md](https://soul.md/)
 
+## Next Session Context
+
+When idle reflections run, succ generates `.succ/next-session-context.md` — a briefing for the next session containing:
+
+- **Session summary** — key points from the last conversation
+- **Suggested focus** — what to work on next
+- **Relevant memories** — recent decisions, learnings, errors
+
+This file is automatically loaded by the session-start hook, giving Claude context about previous work.
+
 ## Architecture
 
 ```
@@ -288,6 +390,9 @@ your-project/
 | Daemon mode | No | **Continuous background analysis** |
 | Soul document | No | **AI personality customization** |
 | Idle reflections | No | **AI insights during idle** |
+| Sensitive filter | Via API | **Local detection + redaction** |
+| Quality scoring | Via API | **Local ONNX classification** |
+| Session context | No | **Auto-generated briefings** |
 | Cross-project memory | Cloud sync | **Local global DB** |
 | Git-friendly | No | **Brain vault is markdown** |
 | Open source | Partial (MCP server) | **Fully open source** |
