@@ -105,23 +105,24 @@ Co-Authored-By: succ <mindpalace@succ.ai>
     contextParts.push(`<succ-mcp-tools>
 ## succ MCP Tools - Use Actively!
 
-### MEMORY (use frequently!)
+### MEMORY (saved via remember, searched via recall)
 
 **succ_recall** query="..." [tags=["x"]] [since="last week"] [limit=5]
-→ Before implementing, when stuck, before decisions
+→ Search MEMORIES (decisions, learnings, patterns from past sessions)
+→ Use before implementing, when stuck, before decisions
 
 **succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true]
-→ Types: observation, decision, learning, error, pattern
+→ Save to MEMORIES. Types: observation, decision, learning, error, pattern
 
 **succ_forget** id=N | older_than="30d" | tag="temp"
 
-### SEARCH
+### SEARCH (indexed documents and code)
 
 **succ_search** query="..." [limit=5] [threshold=0.2]
-→ Search .succ/brain/ docs
+→ Search DOCUMENTS in .succ/brain/ (markdown knowledge base)
 
 **succ_search_code** query="..." [limit=5]
-→ Search indexed source code
+→ Search SOURCE CODE (.ts, .js, .py, etc.)
 
 ### SINGLE-FILE OPS
 
@@ -139,7 +140,7 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 **succ_status** → docs indexed, memories count, daemon status
 
 ---
-Save learnings, decisions, patterns - they persist across sessions!
+**recall** = memories (from remember) | **search** = documents (brain/) | **search_code** = source files
 </succ-mcp-tools>`);
 
     // Phase 0.5: Soul Document

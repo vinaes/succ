@@ -160,8 +160,15 @@ program
 
 program
   .command('config')
-  .description('Interactive configuration wizard')
-  .action(config);
+  .description('Show or edit succ configuration')
+  .option('-s, --show', 'Show current configuration (non-interactive)')
+  .option('--json', 'Output as JSON (with --show)')
+  .action((options) => {
+    config({
+      show: options.show,
+      json: options.json,
+    });
+  });
 
 program
   .command('memories')
