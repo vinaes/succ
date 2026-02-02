@@ -17,6 +17,7 @@ import { benchmarkQuality } from './commands/benchmark-quality.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
+import { consolidate } from './commands/consolidate.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -296,6 +297,24 @@ program
       format: options.format,
       threshold: parseFloat(options.threshold),
       output: options.output,
+    });
+  });
+
+program
+  .command('consolidate')
+  .description('Consolidate memories: merge duplicates, delete redundant')
+  .option('--dry-run', 'Preview changes without applying them')
+  .option('-t, --threshold <number>', 'Similarity threshold for consolidation (0-1)', '0.85')
+  .option('-n, --limit <number>', 'Maximum pairs to process', '50')
+  .option('--stats', 'Show consolidation statistics only')
+  .option('-v, --verbose', 'Show detailed output')
+  .action((options) => {
+    consolidate({
+      dryRun: options.dryRun,
+      threshold: options.threshold,
+      limit: options.limit,
+      stats: options.stats,
+      verbose: options.verbose,
     });
   });
 
