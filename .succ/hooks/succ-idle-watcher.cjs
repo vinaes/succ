@@ -110,7 +110,7 @@ function isActive() {
 }
 
 /**
- * Trigger reflection via idle-reflection hook
+ * Trigger reflection via idle-reflection hook (async, detached)
  */
 function triggerReflection(transcriptPath) {
   // Find idle-reflection hook (same directory as this script)
@@ -139,6 +139,36 @@ function triggerReflection(transcriptPath) {
   proc.stdin.write(JSON.stringify(hookInput));
   proc.stdin.end();
   proc.unref();
+}
+
+/**
+ * Trigger reflection synchronously (for session end)
+ * Waits for the hook to complete before returning
+ */
+function triggerReflectionSync(transcriptPath) {
+  const { spawnSync } = require('child_process');
+  const idleHookPath = path.join(__dirname, 'succ-idle-reflection.cjs');
+
+  if (!fs.existsSync(idleHookPath)) {
+    return;
+  }
+
+  // Update last reflection timestamp
+  fs.writeFileSync(lastReflectionFile, Date.now().toString());
+
+  // Prepare hook input
+  const hookInput = {
+    cwd: projectDir,
+    transcript_path: transcriptPath,
+  };
+
+  // Run synchronously with timeout
+  spawnSync('node', [idleHookPath], {
+    cwd: projectDir,
+    input: JSON.stringify(hookInput),
+    timeout: 60000, // 60 second timeout
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
 }
 
 /**
@@ -339,6 +369,30 @@ async function main() {
 
     // Wait before next check
     await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+  }
+
+  // Before exiting, check if we should run reflection
+  // This ensures reflection runs even if user never went idle during session
+  const lastReflection = readTimestamp(lastReflectionFile);
+  const sessionStartTime = readTimestamp(activeFile + '.start'); // We'll create this
+  const now = Date.now();
+  const thirtyMinutesMs = 30 * 60 * 1000;
+
+  // Run reflection if:
+  // 1. Never ran during this session, OR
+  // 2. Last reflection was more than 30 minutes ago
+  const shouldRunFinalReflection =
+    lastReflection === 0 ||
+    (now - lastReflection) > thirtyMinutesMs;
+
+  if (shouldRunFinalReflection) {
+    const transcriptPath = findTranscriptPath();
+    const transcriptLength = getTranscriptLength(transcriptPath);
+
+    if (transcriptLength >= config.min_conversation_length) {
+      // Run reflection synchronously before exit
+      triggerReflectionSync(transcriptPath);
+    }
   }
 
   // Cleanup
