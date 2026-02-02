@@ -118,7 +118,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG = {
     memory_consolidation: true,
     graph_refinement: true,
     session_summary: true,
-    precompute_context: false,  // Disabled by default - experimental
+    precompute_context: true,
     write_reflection: true,
   },
   thresholds: {

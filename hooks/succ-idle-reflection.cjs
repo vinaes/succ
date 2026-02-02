@@ -25,7 +25,7 @@ const DEFAULT_CONFIG = {
     memory_consolidation: true,
     graph_refinement: true,
     session_summary: true,
-    precompute_context: false,
+    precompute_context: true,
     write_reflection: true,
   },
   thresholds: {
@@ -96,7 +96,7 @@ function loadConfig(projectDir) {
  */
 function runSuccCommandSync(projectDir, args, timeout = 10000) {
   try {
-    const result = spawnSync('succ', args, {
+    const result = spawnSync('npx', ['succ', ...args], {
       cwd: projectDir,
       timeout,
       shell: true,
@@ -118,7 +118,7 @@ function runSuccCommandSync(projectDir, args, timeout = 10000) {
  */
 function runSuccCommandDetached(projectDir, args) {
   try {
-    const proc = spawn('succ', args, {
+    const proc = spawn('npx', ['succ', ...args], {
       cwd: projectDir,
       shell: true,
       detached: true,
