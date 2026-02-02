@@ -1,7 +1,7 @@
 /**
  * Stats Command
  *
- * Show statistics about succ usage, including token savings.
+ * Show statistics about succ usage, including token savings and estimated costs.
  */
 
 import {
@@ -14,10 +14,12 @@ import {
 } from '../lib/db.js';
 import { formatTokens, compressionPercent } from '../lib/token-counter.js';
 import { getConfig, getIdleReflectionConfig } from '../lib/config.js';
+import { estimateSavings, formatCost } from '../lib/pricing.js';
 
 interface StatsOptions {
   tokens?: boolean;
   clear?: boolean;
+  model?: string;
 }
 
 export async function stats(options: StatsOptions = {}): Promise<void> {
@@ -28,7 +30,7 @@ export async function stats(options: StatsOptions = {}): Promise<void> {
   }
 
   if (options.tokens) {
-    await showTokenStats();
+    await showTokenStats(options.model);
   } else {
     await showGeneralStats();
   }
@@ -56,12 +58,15 @@ async function showGeneralStats(): Promise<void> {
   console.log('\nRun `succ stats --tokens` to see token savings statistics.');
 }
 
-async function showTokenStats(): Promise<void> {
+async function showTokenStats(model?: string): Promise<void> {
   const idleConfig = getIdleReflectionConfig();
   const summaryEnabled = idleConfig.operations?.session_summary ?? true;
 
   const aggregated = getTokenStatsAggregated();
   const summary = getTokenStatsSummary();
+
+  // Use provided model or default to sonnet
+  const pricingModel = model || 'sonnet';
 
   console.log('## Token Savings\n');
 
@@ -71,13 +76,14 @@ async function showTokenStats(): Promise<void> {
   if (!summaryEnabled) {
     console.log('  Status: disabled (not tracking)');
   } else if (sessionStats) {
+    const sessionSavings = estimateSavings(sessionStats.total_savings_tokens, pricingModel);
     console.log(`  Sessions: ${sessionStats.query_count}`);
     console.log(`  Transcript: ${formatTokens(sessionStats.total_full_source_tokens)} tokens`);
     console.log(`  Summary: ${formatTokens(sessionStats.total_returned_tokens)} tokens`);
     console.log(
       `  Compression: ${compressionPercent(sessionStats.total_full_source_tokens, sessionStats.total_returned_tokens)}`
     );
-    console.log(`  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens`);
+    console.log(`  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens (~${formatCost(sessionSavings)})`);
   } else {
     console.log('  No session summaries recorded yet.');
   }
@@ -96,8 +102,9 @@ async function showTokenStats(): Promise<void> {
     const stat = aggregated.find((s) => s.event_type === type);
     if (stat) {
       const label = type === 'search_code' ? 'search_code' : type;
+      const typeSavings = estimateSavings(stat.total_savings_tokens, pricingModel);
       console.log(
-        `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
+        `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved (~${formatCost(typeSavings)})`
       );
       ragTotal.queries += stat.query_count;
       ragTotal.returned += stat.total_returned_tokens;
@@ -109,20 +116,24 @@ async function showTokenStats(): Promise<void> {
     console.log('  No RAG queries recorded yet.');
     console.log('  Use succ_recall, succ_search, or succ_search_code to start tracking.');
   } else {
+    const ragSavings = estimateSavings(ragTotal.saved, pricingModel);
     console.log(
-      `  ${'Subtotal'.padEnd(12)}: ${ragTotal.queries} queries, ${formatTokens(ragTotal.returned)} returned, ${formatTokens(ragTotal.saved)} saved`
+      `  ${'Subtotal'.padEnd(12)}: ${ragTotal.queries} queries, ${formatTokens(ragTotal.returned)} returned, ${formatTokens(ragTotal.saved)} saved (~${formatCost(ragSavings)})`
     );
   }
 
   // Total
   console.log('\n### Total');
   if (summary.total_queries > 0) {
+    const totalSavings = estimateSavings(summary.total_savings_tokens, pricingModel);
     console.log(`  Queries: ${summary.total_queries}`);
     console.log(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
     console.log(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
+    console.log(`  Estimated savings: ${formatCost(totalSavings)} (at ${pricingModel} rates)`);
   } else {
     console.log('  No stats recorded yet.');
   }
 
   console.log('\nRun `succ stats --tokens --clear` to reset statistics.');
+  console.log('Use `--model opus|sonnet|haiku` to calculate with different pricing.');
 }
