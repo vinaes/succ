@@ -12,7 +12,7 @@ import { watch } from './commands/watch.js';
 import { config } from './commands/config.js';
 import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
-import { benchmark } from './commands/benchmark.js';
+import { benchmark, benchmarkExisting } from './commands/benchmark.js';
 import { benchmarkQuality } from './commands/benchmark-quality.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
@@ -260,10 +260,26 @@ program
   .command('benchmark')
   .description('Run performance benchmarks')
   .option('-n, --iterations <number>', 'Number of iterations per test', '10')
+  .option('--advanced', 'Run advanced IR metrics (Recall@K, MRR, NDCG)')
+  .option('-k, --k <number>', 'K value for Recall@K and NDCG', '5')
+  .option('--json', 'Output results as JSON')
+  .option('--existing', 'Benchmark on existing memories (latency only)')
+  .option('-m, --model <model>', 'Local embedding model (e.g., Xenova/bge-base-en-v1.5)')
   .action((options) => {
-    benchmark({
-      iterations: parseInt(options.iterations, 10),
-    });
+    if (options.existing) {
+      benchmarkExisting({
+        k: parseInt(options.k, 10),
+        json: options.json,
+      });
+    } else {
+      benchmark({
+        iterations: parseInt(options.iterations, 10),
+        advanced: options.advanced,
+        k: parseInt(options.k, 10),
+        json: options.json,
+        model: options.model,
+      });
+    }
   });
 
 program

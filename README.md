@@ -628,34 +628,12 @@ your-project/
 
 ## Documentation
 
+- [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup
 - [llama.cpp GPU](docs/llama-cpp.md) — GPU-accelerated embeddings
 - [MCP Integration](docs/mcp.md) — Claude Code tools and resources
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and fixes
 - [Development](docs/development.md) — Contributing and testing
-
-## vs Supermemory
-
-| Feature | Supermemory | succ |
-|---------|-------------|------|
-| Hosting | Cloud | **Local only** |
-| Privacy | Cloud by default | **Everything local** |
-| Cost | Free tier, then $19-399/mo | **Free forever** |
-| Setup | Account + API key | **`npm i -g succ && succ init`** |
-| MCP integration | Yes | Yes |
-| Knowledge graph | Via API | **Obsidian-compatible vault** |
-| Code search | Via API | **Local semantic search** |
-| Local LLM | No | **Ollama, llama.cpp, LM Studio** |
-| Watch mode | No | **Auto-reindex on changes** |
-| Daemon mode | No | **Continuous background analysis** |
-| Soul document | No | **AI personality customization** |
-| Idle reflections | No | **AI insights during idle** |
-| Sensitive filter | Via API | **Local detection + redaction** |
-| Quality scoring | Via API | **Local ONNX classification** |
-| Session context | No | **Auto-generated briefings** |
-| Cross-project memory | Cloud sync | **Local global DB** |
-| Git-friendly | No | **Brain vault is markdown** |
-| Open source | Partial (MCP server) | **Fully open source** |
 
 ## License
 
