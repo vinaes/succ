@@ -100,33 +100,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     }
   };
 
-  // Create brain index
-  const brainIndexPath = path.join(succDir, 'brain', 'index.md');
-  if (!fs.existsSync(brainIndexPath)) {
-    fs.writeFileSync(
-      brainIndexPath,
-      `---
-description: "Project knowledge base index"
-type: index
----
-
-# Brain Index
-
-This is the knowledge base for this project. Add documentation, decisions, and learnings here.
-
-## Structure
-
-- \`decisions/\` — Architecture decisions
-- \`learnings/\` — Bug fixes, discoveries
-- \`index.md\` — This file
-
-## Usage
-
-Run \`succ index\` to index this brain for semantic search.
-`
-    );
-    log('Created brain/index.md');
-  }
+  // Note: brain/index.md removed - not used, brain vault has MOC files instead
 
   // Create .meta/learnings.md - rich learnings file with templates
   const learningsPath = path.join(succDir, 'brain', '.meta', 'learnings.md');

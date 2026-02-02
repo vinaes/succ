@@ -388,9 +388,9 @@ ${memory.content}
     exported++;
   }
 
-  // Create index file in brain root
+  // Create index file in brain root (Memories.md - no kebab-case)
   const indexContent = generateIndexContent(memories, brainDir, database);
-  fs.writeFileSync(path.join(brainDir, 'memories-index.md'), indexContent);
+  fs.writeFileSync(path.join(brainDir, 'Memories.md'), indexContent);
 
   // Create/update Obsidian config for graph colors
   ensureObsidianGraphConfig(brainDir);
@@ -431,7 +431,7 @@ function ensureObsidianGraphConfig(brainDir: string): void {
       { "query": "path:Features", "color": { "a": 1, "rgb": 16761035 } },     // Pink
       { "query": "path:Technical", "color": { "a": 1, "rgb": 10066329 } },    // Silver
       { "query": "path:Files", "color": { "a": 1, "rgb": 6591981 } },         // Teal
-      { "query": "path:reflections", "color": { "a": 1, "rgb": 9109504 } },   // Dark red
+      { "query": "path:Reflections", "color": { "a": 1, "rgb": 9109504 } },   // Dark red
       { "query": "path:00_Inbox", "color": { "a": 1, "rgb": 8421504 } },      // Gray
       // Tags (higher priority - listed after folders)
       { "query": "tag:#decision", "color": { "a": 1, "rgb": 16744448 } },     // Orange
@@ -573,7 +573,7 @@ function generateIndexContent(
     }
   }
 
-  let content = `# Memory Index
+  let content = `# Memories
 
 ## Statistics
 

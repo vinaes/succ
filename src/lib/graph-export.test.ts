@@ -127,7 +127,7 @@ describe('Graph Export Module', () => {
       expect(result.memoriesExported).toBe(1);
 
       // Check that index file was created
-      const indexPath = path.join(tempDir, 'memories-index.md');
+      const indexPath = path.join(tempDir, 'Memories.md');
       expect(fs.existsSync(indexPath)).toBe(true);
 
       // Check that memory file was created in Inbox
@@ -331,7 +331,8 @@ describe('Graph Export Module', () => {
       expect(mdFile).toBeDefined();
       if (mdFile) {
         const content = fs.readFileSync(path.join(inboxDir, mdFile), 'utf-8');
-        expect(content).toContain('# First line becomes title');
+        // Title has status emoji prefix (🟢 active, 🟡 fading, 🔵 future, ⚫ expired)
+        expect(content).toMatch(/# [🟢🟡🔵⚫] First line becomes title/u);
       }
     });
 
@@ -357,7 +358,8 @@ describe('Graph Export Module', () => {
       if (mdFile) {
         const content = fs.readFileSync(path.join(inboxDir, mdFile), 'utf-8');
         // Title should be truncated to 60 chars (57 + '...')
-        expect(content).toContain('# ' + 'A'.repeat(57) + '...');
+        // Title should be truncated to 60 chars (57 + '...') with status emoji prefix
+        expect(content).toMatch(/# [🟢🟡🔵⚫] A{57}\.\.\./u);
       }
     });
   });
@@ -393,11 +395,11 @@ describe('Graph Export Module', () => {
       const { exportGraphSilent } = await import('./graph-export.js');
       exportGraphSilent('obsidian', tempDir);
 
-      const indexPath = path.join(tempDir, 'memories-index.md');
+      const indexPath = path.join(tempDir, 'Memories.md');
       expect(fs.existsSync(indexPath)).toBe(true);
 
       const content = fs.readFileSync(indexPath, 'utf-8');
-      expect(content).toContain('# Memory Index');
+      expect(content).toContain('# Memories');
       expect(content).toContain('## Statistics');
       expect(content).toContain('**Total Memories:**');
       expect(content).toContain('**Total Links:**');
