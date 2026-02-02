@@ -8,37 +8,194 @@ import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/db.js';
 import { tokenizeCode } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
+import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';
 
-// Default patterns for common code files
+/**
+ * Default patterns for common code files.
+ * Based on GitHub Linguist (https://github.com/github-linguist/linguist)
+ */
 const DEFAULT_CODE_PATTERNS = [
-  '**/*.ts',
-  '**/*.tsx',
-  '**/*.js',
-  '**/*.jsx',
-  '**/*.py',
+  // JavaScript/TypeScript
+  '**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '**/*.mjs', '**/*.cjs', '**/*.mts', '**/*.cts',
+
+  // Python
+  '**/*.py', '**/*.pyw', '**/*.pyi',
+
+  // Java/JVM
+  '**/*.java', '**/*.kt', '**/*.kts', '**/*.scala', '**/*.groovy', '**/*.gradle',
+  '**/*.clj', '**/*.cljs', '**/*.cljc',
+
+  // C/C++
+  '**/*.c', '**/*.h', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.hpp', '**/*.hh', '**/*.hxx',
+  '**/*.ino',
+
+  // C#/.NET
+  '**/*.cs', '**/*.fs', '**/*.fsx', '**/*.vb',
+
+  // Go
   '**/*.go',
+
+  // Rust
   '**/*.rs',
-  '**/*.java',
-  '**/*.kt',
+
+  // Ruby
+  '**/*.rb', '**/*.rake', '**/*.gemspec',
+
+  // PHP
+  '**/*.php',
+
+  // Swift
+  '**/*.swift',
+
+  // Dart
+  '**/*.dart',
+
+  // Shell
+  '**/*.sh', '**/*.bash', '**/*.zsh',
+
+  // Lua
+  '**/*.lua',
+
+  // Elixir/Erlang
+  '**/*.ex', '**/*.exs', '**/*.erl',
+
+  // Haskell
+  '**/*.hs',
+
+  // SQL
+  '**/*.sql',
 ];
 
-// Default ignore patterns
+/**
+ * Default ignore patterns.
+ * Based on GitHub gitignore templates (https://github.com/github/gitignore)
+ */
 const DEFAULT_IGNORE = [
-  '**/node_modules/**',
+  // Version control
   '**/.git/**',
+  '**/.svn/**',
+  '**/.hg/**',
+
+  // Dependencies
+  '**/node_modules/**',
+  '**/bower_components/**',
+  '**/jspm_packages/**',
+  '**/web_modules/**',
+  '**/vendor/**',              // PHP, Go, Ruby
+  '**/.bundle/**',             // Ruby
+  '**/Pods/**',                // iOS CocoaPods
+
+  // Python
+  '**/__pycache__/**',
+  '**/*.py[cod]',
+  '**/.venv/**',
+  '**/venv/**',
+  '**/env/**',
+  '**/.eggs/**',
+  '**/*.egg-info/**',
+  '**/.tox/**',
+  '**/.nox/**',
+  '**/.pytest_cache/**',
+  '**/.mypy_cache/**',
+  '**/.ruff_cache/**',
+
+  // JavaScript/TypeScript build
   '**/dist/**',
   '**/build/**',
+  '**/out/**',
   '**/.next/**',
+  '**/.nuxt/**',
+  '**/.output/**',
+  '**/.svelte-kit/**',
+  '**/.vitepress/**',
+  '**/.docusaurus/**',
+  '**/.cache/**',
+  '**/.parcel-cache/**',
+  '**/.turbo/**',
+
+  // Java/JVM
+  '**/target/**',              // Maven
+  '**/bin/**',                 // Eclipse
+  '**/.gradle/**',
+  '**/gradle/**',
+  '**/*.class',
+
+  // Rust
   '**/target/**',
-  '**/__pycache__/**',
-  '**/venv/**',
-  '**/.venv/**',
-  '**/vendor/**',
+  '**/debug/**',
+
+  // Go
+  '**/go/pkg/**',
+
+  // .NET
+  '**/obj/**',
+  '**/packages/**',
+  '**/.vs/**',
+
+  // Minified/bundled files
   '**/*.min.js',
+  '**/*.min.css',
   '**/*.bundle.js',
+  '**/*.chunk.js',
+
+  // Coverage
   '**/coverage/**',
+  '**/.nyc_output/**',
+  '**/htmlcov/**',
+
+  // IDE/Editors
+  '**/.idea/**',
+  '**/.vscode/**',
+  '**/*.swp',
+  '**/*.swo',
+  '**/*~',
+
+  // OS files
+  '**/.DS_Store',
+  '**/Thumbs.db',
+  '**/desktop.ini',
+
+  // Lock files and logs
+  '**/*.log',
+  '**/logs/**',
+  '**/*.lock',
+  '**/package-lock.json',
+  '**/yarn.lock',
+  '**/pnpm-lock.yaml',
+  '**/Gemfile.lock',
+  '**/Cargo.lock',
+  '**/poetry.lock',
+  '**/composer.lock',
+
+  // Environment/secrets
+  '**/.env',
+  '**/.env.*',
+  '**/secrets/**',
+  '**/*.pem',
+  '**/*.key',
+
+  // Testing
+  '**/.hypothesis/**',
+  '**/test-results/**',
+  '**/playwright-report/**',
+
+  // Documentation build
+  '**/docs/_build/**',
+  '**/site/**',
+
+  // Temporary
+  '**/tmp/**',
+  '**/temp/**',
+  '**/.tmp/**',
+
+  // succ/Claude specific
   '**/.claude/**',
   '**/.succ/**',
+
+  // Generated
+  '**/generated/**',
+  '**/*.generated.*',
+  '**/*.auto.*',
 ];
 
 interface IndexCodeOptions {
@@ -140,6 +297,19 @@ export async function indexCode(
 
   if (result.skippedLargeFiles > 0) {
     console.log(`  (Large files >${maxFileSize}KB were skipped)`);
+  }
+
+  // Check if BPE needs retraining after indexing
+  // Only if we actually indexed new files
+  if (result.newFiles > 0 || result.updatedFiles > 0) {
+    const config = getConfig();
+    if (config.bpe?.enabled) {
+      const lastIndexTime = new Date().toISOString();
+      if (needsBPERetrain(config.bpe.retrain_interval || 'hourly', lastIndexTime)) {
+        console.log('\nBPE vocabulary may be stale, retraining...');
+        await trainBPEFromDatabase(config.bpe.vocab_size, config.bpe.min_frequency);
+      }
+    }
   }
 }
 

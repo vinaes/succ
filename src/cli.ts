@@ -20,6 +20,7 @@ import { graph } from './commands/graph.js';
 import { consolidate } from './commands/consolidate.js';
 import { sessionSummary } from './commands/session-summary.js';
 import { precomputeContext } from './commands/precompute-context.js';
+import { trainBPE } from './commands/train-bpe.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -127,8 +128,9 @@ program
 
 program
   .command('watch [path]')
-  .description('Watch for file changes and auto-reindex')
-  .option('--pattern <glob>', 'File pattern to match', '**/*.md')
+  .description('Watch for file changes and auto-reindex (docs + code by default)')
+  .option('--pattern <glob>', 'File pattern to match for docs', '**/*.md')
+  .option('--ignore-code', 'Skip watching source code files (watch docs only)')
   .option('--daemon', 'Start as background daemon')
   .option('--stop', 'Stop watch daemon')
   .option('--status', 'Show watch daemon status')
@@ -146,15 +148,19 @@ program
       return;
     }
 
+    // Code watching is ON by default, --ignore-code turns it off
+    const includeCode = !options.ignoreCode;
+
     if (options.daemonWorker) {
       // Internal: called by daemon process
-      await runWatchDaemonWorker(targetPath, options.pattern);
+      await runWatchDaemonWorker(targetPath, options.pattern, includeCode);
       return;
     }
 
     watch(targetPath, {
       pattern: options.pattern,
       daemon: options.daemon,
+      includeCode,
     });
   });
 
@@ -368,6 +374,20 @@ program
       openrouter: options.openrouter,
       apiUrl: options.apiUrl,
       model: options.model,
+    });
+  });
+
+program
+  .command('train-bpe')
+  .description('Train BPE vocabulary from indexed code')
+  .option('--vocab-size <number>', 'Target vocabulary size', '5000')
+  .option('--min-frequency <number>', 'Minimum pair frequency to merge', '2')
+  .option('--stats', 'Show current BPE statistics only')
+  .action((options) => {
+    trainBPE({
+      vocabSize: parseInt(options.vocabSize, 10),
+      minFrequency: parseInt(options.minFrequency, 10),
+      showStats: options.stats,
     });
   });
 
