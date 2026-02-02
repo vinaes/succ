@@ -214,3 +214,14 @@ export function formatCost(cost: number): string {
   }
   return `$${cost.toFixed(2)}`;
 }
+
+/**
+ * Get current model from environment variable or default to sonnet
+ *
+ * Checks ANTHROPIC_MODEL env var which can be set by user.
+ * Note: Claude Code does not automatically set this when using /model command,
+ * but users can set it manually for accurate cost tracking.
+ */
+export function getCurrentModel(): string {
+  return process.env.ANTHROPIC_MODEL || 'sonnet';
+}

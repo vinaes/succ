@@ -62,10 +62,9 @@ import { countTokens, countTokensArray, formatTokens, compressionPercent } from 
 import { recordTokenStat, type TokenEventType } from './lib/db.js';
 import { getIdleReflectionConfig } from './lib/config.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from './lib/temporal.js';
-import { estimateSavings } from './lib/pricing.js';
+import { estimateSavings, getCurrentModel } from './lib/pricing.js';
 
-// Default model for cost estimation (Claude Sonnet 4.5)
-const DEFAULT_PRICING_MODEL = 'sonnet';
+// Get model from env var or default to sonnet
 
 // Graceful shutdown handler
 function setupGracefulShutdown() {
@@ -142,7 +141,8 @@ function trackTokenSavings(
     }
 
     const savingsTokens = Math.max(0, fullSourceTokens - returnedTokens);
-    const estimatedCost = estimateSavings(savingsTokens, DEFAULT_PRICING_MODEL);
+    const model = getCurrentModel();
+    const estimatedCost = estimateSavings(savingsTokens, model);
 
     recordTokenStat({
       event_type: eventType,
@@ -152,7 +152,7 @@ function trackTokenSavings(
       savings_tokens: savingsTokens,
       files_count: uniqueFiles.length,
       chunks_count: results.length,
-      model: DEFAULT_PRICING_MODEL,
+      model,
       estimated_cost: estimatedCost,
     });
   } catch {
