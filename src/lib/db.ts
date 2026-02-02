@@ -885,6 +885,11 @@ export interface HybridMemoryResult {
   similarity: number;
   bm25Score?: number;
   vectorScore?: number;
+  // Temporal fields
+  last_accessed?: string | null;
+  access_count?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
 }
 
 /**
@@ -899,7 +904,11 @@ export function hybridSearchMemories(
 ): HybridMemoryResult[] {
   const database = getDb();
 
-  const rows = database.prepare('SELECT id, content, tags, source, type, created_at, embedding FROM memories WHERE embedding IS NOT NULL').all() as Array<{
+  const rows = database.prepare(`
+    SELECT id, content, tags, source, type, created_at, embedding,
+           last_accessed, access_count, valid_from, valid_until
+    FROM memories WHERE embedding IS NOT NULL
+  `).all() as Array<{
     id: number;
     content: string;
     tags: string | null;
@@ -907,6 +916,10 @@ export function hybridSearchMemories(
     type: string | null;
     created_at: string;
     embedding: Buffer;
+    last_accessed: string | null;
+    access_count: number;
+    valid_from: string | null;
+    valid_until: string | null;
   }>;
 
   if (rows.length === 0) return [];
@@ -949,6 +962,10 @@ export function hybridSearchMemories(
       similarity: c.score,
       bm25Score: bm25Map.get(c.docId),
       vectorScore: vectorMap.get(c.docId),
+      last_accessed: row.last_accessed,
+      access_count: row.access_count,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
     });
   }
   return results;

@@ -314,6 +314,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
     }
   } catch (error: any) {
     console.error('Error saving memory:', error.message);
+    console.error(error.stack);
     closeDb();
     closeGlobalDb();
     process.exit(1);
