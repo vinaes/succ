@@ -56,6 +56,59 @@ describe('tokenizeCode', () => {
     expect(tokens).toContain('id');
     expect(tokens).toContain('number');
   });
+
+  it('splits dot.case', () => {
+    const tokens = tokenizeCode('config.database.host');
+    expect(tokens).toContain('config');
+    expect(tokens).toContain('database');
+    expect(tokens).toContain('host');
+  });
+
+  it('splits path/case', () => {
+    const tokens = tokenizeCode('src/utils/helper.ts');
+    expect(tokens).toContain('src');
+    expect(tokens).toContain('utils');
+    expect(tokens).toContain('helper');
+    expect(tokens).toContain('ts');
+  });
+
+  it('splits colon::case (C++/Rust)', () => {
+    const tokens = tokenizeCode('std::vector<int>');
+    expect(tokens).toContain('std');
+    expect(tokens).toContain('vector');
+    expect(tokens).toContain('int');
+  });
+
+  it('splits numbers from letters', () => {
+    const tokens = tokenizeCode('user2 v3 test123');
+    expect(tokens).toContain('user');
+    expect(tokens).toContain('2');
+    expect(tokens).toContain('v');
+    expect(tokens).toContain('3');
+    expect(tokens).toContain('test');
+    expect(tokens).toContain('123');
+  });
+
+  it('handles backslash paths (Windows)', () => {
+    const tokens = tokenizeCode('src\\lib\\utils.ts');
+    expect(tokens).toContain('src');
+    expect(tokens).toContain('lib');
+    expect(tokens).toContain('utils');
+  });
+
+  it('handles @ symbols (decorators, packages)', () => {
+    const tokens = tokenizeCode('@angular/core @decorator');
+    expect(tokens).toContain('angular');
+    expect(tokens).toContain('core');
+    expect(tokens).toContain('decorator');
+  });
+
+  it('handles SCREAMING_SNAKE_CASE', () => {
+    const tokens = tokenizeCode('MAX_RETRY_COUNT');
+    expect(tokens).toContain('max');
+    expect(tokens).toContain('retry');
+    expect(tokens).toContain('count');
+  });
 });
 
 describe('tokenizeDocs', () => {

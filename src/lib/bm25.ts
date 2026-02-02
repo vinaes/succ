@@ -40,7 +40,18 @@ export interface BM25Result {
 
 /**
  * Code-aware tokenizer
- * Handles: camelCase, PascalCase, snake_case, SCREAMING_SNAKE, kebab-case
+ * Handles all common naming conventions:
+ * - camelCase: getUserName -> get, user, name
+ * - PascalCase: GetUserName -> get, user, name
+ * - snake_case: get_user_name -> get, user, name
+ * - SCREAMING_SNAKE: GET_USER_NAME -> get, user, name
+ * - kebab-case: get-user-name -> get, user, name
+ * - dot.case: get.user.name -> get, user, name
+ * - path/case: src/utils/helper -> src, utils, helper
+ * - Train-Case: Get-User-Name -> get, user, name
+ * - colon::case: std::vector -> std, vector
+ * - number suffixes: user2, v3 -> user, 2, v, 3
+ *
  * Preserves original identifiers for exact match
  */
 export function tokenizeCode(text: string): string[] {
@@ -49,19 +60,24 @@ export function tokenizeCode(text: string): string[] {
   // Handle acronyms: HTMLParser -> HTML Parser
   processed = processed.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
 
-  // 2. Split snake_case and kebab-case
-  processed = processed.replace(/[_-]/g, ' ');
+  // 2. Split on common separators: _ - . / \ : @
+  processed = processed.replace(/[_\-./\\:@]+/g, ' ');
 
-  // 3. Keep alphanumeric, remove rest
+  // 3. Split numbers from letters: user2 -> user 2, v3 -> v 3
+  processed = processed.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+  processed = processed.replace(/(\d)([a-zA-Z])/g, '$1 $2');
+
+  // 4. Keep alphanumeric, remove rest
   processed = processed.replace(/[^a-zA-Z0-9\s]/g, ' ');
 
-  // 4. Lowercase and split
+  // 5. Lowercase and split
   const words = processed
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length > 0);
 
-  // 5. Add original tokens for exact match (important for searching useGlobalHooks)
+  // 6. Add original tokens for exact match (important for searching useGlobalHooks)
+  // Split on non-identifier chars but keep underscores (valid in most languages)
   const originalTokens = text
     .split(/[^a-zA-Z0-9_]+/)
     .filter((t) => t.length > 1)
