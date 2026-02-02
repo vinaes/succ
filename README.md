@@ -19,6 +19,7 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 - **Session context** — auto-generated briefings for next session
 - **Sensitive filter** — detect and redact PII, API keys, secrets
 - **Quality scoring** — local ONNX classification to filter noise
+- **Token savings tracking** — measure how many tokens saved by RAG vs loading full files
 - **Watch mode** — auto-reindex on file changes with debouncing
 - **Daemon mode** — continuous background analysis
 - **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
@@ -67,6 +68,7 @@ succ search "how does authentication work"
 | `succ soul` | Generate personalized soul.md |
 | `succ config` | Interactive configuration |
 | `succ status` | Show index statistics |
+| `succ stats` | Show token savings statistics |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
@@ -397,6 +399,43 @@ Configure in `~/.succ/config.json`:
 ```
 
 Scoring factors: specificity, clarity, relevance, uniqueness.
+
+### Token Savings Tracking
+
+succ tracks how many tokens are saved by using RAG search instead of loading full files:
+
+```bash
+succ stats --tokens
+```
+
+Output:
+```
+## Token Savings
+
+### Session Summaries
+  Sessions: 47
+  Transcript: 2.3M tokens
+  Summary: 89K tokens
+  Compression: 96.1%
+  Saved: 2.2M tokens
+
+### RAG Queries
+  recall      : 234 queries, 45K returned, 1.2M saved
+  search      : 156 queries, 32K returned, 890K saved
+  search_code :  89 queries, 28K returned, 2.1M saved
+
+### Total
+  Queries: 479
+  Tokens returned: 105K
+  Tokens saved: 4.2M
+```
+
+**How it works:**
+- For each search/recall, tracks tokens in returned chunks vs full source files
+- For session summaries, tracks transcript tokens vs compressed summary
+- Uses Anthropic's recommended 3.5 chars/token heuristic
+
+MCP tool: `succ_stats`
 
 ## Memory System
 
