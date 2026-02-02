@@ -422,7 +422,7 @@ program
   .description('Show succ usage statistics')
   .option('--tokens', 'Show token savings statistics')
   .option('--clear', 'Clear token statistics')
-  .option('--model <model>', 'Model for cost calculation (opus, sonnet, haiku)', 'sonnet')
+  .option('--model <model>', 'Override model for cost recalculation (opus, sonnet, haiku)')
   .action((options) => {
     stats({
       tokens: options.tokens,
