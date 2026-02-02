@@ -34,6 +34,7 @@ process.stdin.on('end', () => {
     }
 
     // Signal idle watcher to shutdown by removing active file
+    // The watcher will check if reflection is needed before exiting
     try {
       const watcherActiveFile = path.join(projectDir, '.succ', '.tmp', 'watcher-active.txt');
       if (fs.existsSync(watcherActiveFile)) {
