@@ -102,19 +102,18 @@ async function extractFactsWithLLM(
  * Extract facts using Claude CLI
  */
 async function extractWithClaudeCLI(prompt: string, model: string): Promise<ExtractedFact[]> {
-  const { spawn } = await import('child_process');
+  const spawn = (await import('cross-spawn')).default;
 
   return new Promise((resolve) => {
     const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
     });
 
-    proc.stdin.write(prompt);
-    proc.stdin.end();
+    proc.stdin?.write(prompt);
+    proc.stdin?.end();
 
     let stdout = '';
-    proc.stdout.on('data', (data: Buffer) => {
+    proc.stdout?.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
 

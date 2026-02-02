@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
@@ -97,7 +97,6 @@ async function generateViaClaude(context: string, prompt: string): Promise<strin
 
     const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
     });
 
     proc.stdin?.write(fullPrompt);

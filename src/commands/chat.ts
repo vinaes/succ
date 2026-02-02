@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 import { searchDocuments, closeDb } from '../lib/db.js';
 import { getEmbedding } from '../lib/embeddings.js';
 
@@ -86,20 +86,19 @@ ${query}`;
   // Use --print for non-interactive output, pipe prompt via stdin
   const claude = spawn('claude', ['--print'], {
     stdio: ['pipe', 'inherit', 'inherit'],
-    shell: true,
   });
 
   // Write prompt to stdin
-  claude.stdin.write(prompt);
-  claude.stdin.end();
+  claude.stdin?.write(prompt);
+  claude.stdin?.end();
 
-  claude.on('error', (error) => {
+  claude.on('error', (error: Error) => {
     console.error('Failed to start Claude CLI:', error.message);
     console.error('Make sure Claude CLI is installed: npm install -g @anthropic-ai/claude-code');
     process.exit(1);
   });
 
-  claude.on('close', (code) => {
+  claude.on('close', (code: number | null) => {
     process.exit(code ?? 0);
   });
 }

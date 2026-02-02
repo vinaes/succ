@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "description": "Local memory system for Claude Code - RAG with local or API embeddings",
   "type": "module",
   "bin": {
@@ -29,6 +29,7 @@
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.25.3",
+    "@redactpii/node": "^1.0.16",
     "@types/inquirer": "^9.0.9",
     "better-sqlite3": "^11.0.0",
     "chokidar": "^5.0.0",

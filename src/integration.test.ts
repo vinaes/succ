@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execFileSync, spawn } from 'child_process';
+import spawn from 'cross-spawn';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const spawnSync = require('cross-spawn').sync;
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -10,23 +12,21 @@ const INTEGRATION_TIMEOUT = 60000;
 describe('Integration Tests', () => {
   describe('CLI Commands', () => {
     it('should run status command', () => {
-      const result = execFileSync('npx', ['tsx', 'src/cli.ts', 'status'], {
+      const result = spawnSync('npx', ['tsx', 'src/cli.ts', 'status'], {
         encoding: 'utf-8',
         timeout: 30000,
-        shell: true,
       });
       // Status should complete without error
-      expect(result).toBeDefined();
+      expect(result.status).toBe(0);
     });
 
     it('should show help', () => {
-      const result = execFileSync('npx', ['tsx', 'src/cli.ts', '--help'], {
+      const result = spawnSync('npx', ['tsx', 'src/cli.ts', '--help'], {
         encoding: 'utf-8',
         timeout: 10000,
-        shell: true,
       });
-      expect(result).toContain('succ');
-      expect(result).toContain('Commands:');
+      expect(result.stdout).toContain('succ');
+      expect(result.stdout).toContain('Commands:');
     });
   });
 
@@ -35,8 +35,7 @@ describe('Integration Tests', () => {
       // Create a child process running MCP server
       const proc = spawn('npx', ['tsx', 'src/mcp-server.ts'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: true,
-      });
+              });
 
       // Send initialize request
       const initRequest = JSON.stringify({
@@ -89,8 +88,7 @@ describe('Integration Tests', () => {
     it('should handle succ_status tool call', async () => {
       const proc = spawn('npx', ['tsx', 'src/mcp-server.ts'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: true,
-      });
+              });
 
       let stdout = '';
       let initialized = false;
@@ -163,11 +161,11 @@ describe('Integration Tests', () => {
 
       // Initialize git repo
       try {
-        execFileSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
-        execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tempDir, stdio: 'ignore' });
-        execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir, stdio: 'ignore' });
-        execFileSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
-        execFileSync('git', ['commit', '-m', 'init'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['commit', '-m', 'init'], { cwd: tempDir, stdio: 'ignore' });
       } catch {
         // Git not available, skip git-related tests
       }
@@ -193,24 +191,22 @@ describe('Integration Tests', () => {
     });
 
     it('should show daemon status when not running', () => {
-      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--status'], {
+      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--status'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
-        shell: true,
-      });
+              });
 
       expect(result).toContain('Daemon Status');
       expect(result).toContain('Stopped');
     });
 
     it('should handle --stop when not running', () => {
-      const result = execFileSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--stop'], {
+      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--stop'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
-        shell: true,
-      });
+              });
 
       expect(result).toContain('No daemon running');
     });

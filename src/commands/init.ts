@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 import { fileURLToPath } from 'url';
 import inquirer from 'inquirer';
 import ora from 'ora';
@@ -39,7 +39,6 @@ function startDaemon(command: string, args: string[], cwd: string): void {
     cwd,
     detached: true,
     stdio: 'ignore',
-    shell: true,
   });
   child.unref();
 }

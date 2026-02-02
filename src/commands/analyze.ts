@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
@@ -700,7 +700,6 @@ ${agent.prompt}`;
       '--model', 'haiku',
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
     });
 
     // Send prompt via stdin
@@ -710,15 +709,15 @@ ${agent.prompt}`;
     let stdout = '';
     let stderr = '';
 
-    proc.stdout?.on('data', (data) => {
+    proc.stdout?.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
 
-    proc.stderr?.on('data', (data) => {
+    proc.stderr?.on('data', (data: Buffer) => {
       stderr += data.toString();
     });
 
-    proc.on('close', async (code) => {
+    proc.on('close', async (code: number | null) => {
       // Clean up temp file
       try { fs.unlinkSync(tempPromptFile); } catch {}
 
@@ -731,7 +730,7 @@ ${agent.prompt}`;
       }
     });
 
-    proc.on('error', (err) => {
+    proc.on('error', (err: Error) => {
       try { fs.unlinkSync(tempPromptFile); } catch {}
       reject(err);
     });
@@ -1209,19 +1208,18 @@ Output ONLY the JSON array, no other text.`;
       const data = await result.json() as { choices: Array<{ message: { content: string } }> };
       response = data.choices[0]?.message?.content || '[]';
     } else {
-      // Use Claude CLI via spawn (safer than exec)
+      // Use Claude CLI via spawn (cross-spawn for cross-platform)
       response = await new Promise<string>((resolve, reject) => {
         const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
           stdio: ['pipe', 'pipe', 'pipe'],
-          shell: true,
         });
 
         proc.stdin?.write(prompt);
         proc.stdin?.end();
 
         let stdout = '';
-        proc.stdout?.on('data', (data) => { stdout += data.toString(); });
-        proc.on('close', (code) => {
+        proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+        proc.on('close', (code: number | null) => {
           if (code === 0) resolve(stdout);
           else reject(new Error(`Exit code ${code}`));
         });
