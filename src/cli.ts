@@ -265,6 +265,7 @@ program
   .option('--json', 'Output results as JSON')
   .option('--existing', 'Benchmark on existing memories (latency only)')
   .option('-m, --model <model>', 'Local embedding model (e.g., Xenova/bge-base-en-v1.5)')
+  .option('--size <size>', 'Dataset size: small (20), medium (64), large (all)', 'small')
   .action((options) => {
     if (options.existing) {
       benchmarkExisting({
@@ -278,6 +279,7 @@ program
         k: parseInt(options.k, 10),
         json: options.json,
         model: options.model,
+        size: options.size as 'small' | 'medium' | 'large',
       });
     }
   });

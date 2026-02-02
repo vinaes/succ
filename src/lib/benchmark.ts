@@ -359,44 +359,166 @@ export interface TestDataset {
   queries: BenchmarkQuery[];
 }
 
+// Extended categories for larger benchmarks
+const EXTENDED_CATEGORIES: Record<string, Array<{ content: string; tags: string[] }>> = {
+  typescript: [
+    { content: 'TypeScript is a strongly typed programming language that builds on JavaScript', tags: ['typescript', 'programming', 'language'] },
+    { content: 'TypeScript interfaces define the shape of objects with type checking', tags: ['typescript', 'interfaces', 'types'] },
+    { content: 'TypeScript generics allow creating reusable components with type safety', tags: ['typescript', 'generics', 'reusable'] },
+    { content: 'TypeScript decorators are a stage 2 proposal for JavaScript', tags: ['typescript', 'decorators', 'metadata'] },
+    { content: 'TypeScript enums provide a way to define named constants', tags: ['typescript', 'enums', 'constants'] },
+    { content: 'TypeScript utility types like Partial, Required, Pick transform types', tags: ['typescript', 'utility', 'types'] },
+    { content: 'TypeScript namespaces organize code and prevent naming collisions', tags: ['typescript', 'namespaces', 'modules'] },
+    { content: 'TypeScript strict mode enables stricter type checking options', tags: ['typescript', 'strict', 'config'] },
+  ],
+  react: [
+    { content: 'React is a JavaScript library for building user interfaces', tags: ['react', 'frontend', 'ui'] },
+    { content: 'React hooks like useState and useEffect manage component state and side effects', tags: ['react', 'hooks', 'state'] },
+    { content: 'React components can be functional or class-based', tags: ['react', 'components', 'functional'] },
+    { content: 'React context provides a way to pass data through the component tree', tags: ['react', 'context', 'state'] },
+    { content: 'React Server Components render on the server for better performance', tags: ['react', 'server', 'performance'] },
+    { content: 'React Suspense handles async operations with loading states', tags: ['react', 'suspense', 'async'] },
+    { content: 'React memo prevents unnecessary re-renders of components', tags: ['react', 'memo', 'optimization'] },
+    { content: 'React portals render children into different DOM nodes', tags: ['react', 'portals', 'dom'] },
+  ],
+  database: [
+    { content: 'PostgreSQL is a powerful open source relational database', tags: ['database', 'postgresql', 'sql'] },
+    { content: 'SQLite is a self-contained, serverless SQL database engine', tags: ['database', 'sqlite', 'embedded'] },
+    { content: 'Database indexes improve query performance by creating sorted references', tags: ['database', 'indexes', 'performance'] },
+    { content: 'Database transactions ensure ACID properties for data integrity', tags: ['database', 'transactions', 'acid'] },
+    { content: 'MongoDB is a document-oriented NoSQL database', tags: ['database', 'mongodb', 'nosql'] },
+    { content: 'Redis is an in-memory data structure store for caching', tags: ['database', 'redis', 'cache'] },
+    { content: 'Database migrations track schema changes over time', tags: ['database', 'migrations', 'schema'] },
+    { content: 'Connection pooling reuses database connections for efficiency', tags: ['database', 'pooling', 'connections'] },
+  ],
+  devops: [
+    { content: 'Docker containers package software into standardized units', tags: ['docker', 'containers', 'devops'] },
+    { content: 'Kubernetes orchestrates containerized applications at scale', tags: ['kubernetes', 'orchestration', 'devops'] },
+    { content: 'CI/CD pipelines automate building, testing, and deploying code', tags: ['cicd', 'automation', 'devops'] },
+    { content: 'Infrastructure as Code defines infrastructure using configuration files', tags: ['iac', 'terraform', 'devops'] },
+    { content: 'GitHub Actions automates workflows directly in repositories', tags: ['github', 'actions', 'devops'] },
+    { content: 'Prometheus monitors systems and collects metrics', tags: ['prometheus', 'monitoring', 'devops'] },
+    { content: 'Helm manages Kubernetes applications with charts', tags: ['helm', 'kubernetes', 'devops'] },
+    { content: 'Ansible automates configuration management across servers', tags: ['ansible', 'automation', 'devops'] },
+  ],
+  architecture: [
+    { content: 'Microservices architecture splits applications into small, independent services', tags: ['microservices', 'architecture', 'distributed'] },
+    { content: 'Event-driven architecture uses events to trigger and communicate between services', tags: ['events', 'architecture', 'async'] },
+    { content: 'Domain-Driven Design focuses on the core domain and domain logic', tags: ['ddd', 'architecture', 'domain'] },
+    { content: 'Clean Architecture separates concerns into layers with dependency rules', tags: ['clean', 'architecture', 'layers'] },
+    { content: 'CQRS separates read and write operations for scalability', tags: ['cqrs', 'architecture', 'patterns'] },
+    { content: 'Event Sourcing stores state as a sequence of events', tags: ['eventsourcing', 'architecture', 'patterns'] },
+    { content: 'Hexagonal Architecture organizes code around ports and adapters', tags: ['hexagonal', 'architecture', 'ports'] },
+    { content: 'Saga pattern manages distributed transactions across services', tags: ['saga', 'architecture', 'distributed'] },
+  ],
+  security: [
+    { content: 'JWT tokens provide stateless authentication for APIs', tags: ['jwt', 'security', 'auth'] },
+    { content: 'OAuth 2.0 enables secure delegated access to resources', tags: ['oauth', 'security', 'auth'] },
+    { content: 'CORS controls which origins can access your API', tags: ['cors', 'security', 'web'] },
+    { content: 'SQL injection attacks exploit poorly sanitized user input', tags: ['sql', 'security', 'vulnerabilities'] },
+    { content: 'XSS attacks inject malicious scripts into web pages', tags: ['xss', 'security', 'vulnerabilities'] },
+    { content: 'HTTPS encrypts data in transit using TLS', tags: ['https', 'security', 'encryption'] },
+    { content: 'API rate limiting prevents abuse and denial of service', tags: ['ratelimit', 'security', 'api'] },
+    { content: 'Password hashing with bcrypt protects stored credentials', tags: ['bcrypt', 'security', 'passwords'] },
+  ],
+  testing: [
+    { content: 'Unit tests verify individual functions in isolation', tags: ['unit', 'testing', 'isolation'] },
+    { content: 'Integration tests verify components work together correctly', tags: ['integration', 'testing', 'components'] },
+    { content: 'End-to-end tests simulate real user scenarios', tags: ['e2e', 'testing', 'scenarios'] },
+    { content: 'Test-driven development writes tests before implementation', tags: ['tdd', 'testing', 'methodology'] },
+    { content: 'Mocking replaces dependencies with controlled implementations', tags: ['mocking', 'testing', 'dependencies'] },
+    { content: 'Code coverage measures how much code is executed by tests', tags: ['coverage', 'testing', 'metrics'] },
+    { content: 'Snapshot testing captures component output for comparison', tags: ['snapshot', 'testing', 'ui'] },
+    { content: 'Property-based testing generates random inputs to find edge cases', tags: ['property', 'testing', 'random'] },
+  ],
+  performance: [
+    { content: 'Caching stores frequently accessed data for faster retrieval', tags: ['caching', 'performance', 'speed'] },
+    { content: 'Lazy loading defers resource loading until needed', tags: ['lazy', 'performance', 'loading'] },
+    { content: 'Code splitting breaks bundles into smaller chunks', tags: ['splitting', 'performance', 'bundles'] },
+    { content: 'CDN distributes content closer to users geographically', tags: ['cdn', 'performance', 'distribution'] },
+    { content: 'Database query optimization reduces execution time', tags: ['optimization', 'performance', 'database'] },
+    { content: 'Memory profiling identifies memory leaks and inefficiencies', tags: ['memory', 'performance', 'profiling'] },
+    { content: 'Load balancing distributes traffic across multiple servers', tags: ['loadbalancing', 'performance', 'scaling'] },
+    { content: 'Compression reduces data size for faster transmission', tags: ['compression', 'performance', 'network'] },
+  ],
+};
+
+// Extended queries for larger benchmarks
+const EXTENDED_QUERIES: Array<{ query: string; categories: string[] }> = [
+  // TypeScript queries
+  { query: 'strongly typed javascript superset language', categories: ['typescript'] },
+  { query: 'type checking and interfaces in code', categories: ['typescript'] },
+  { query: 'generic type parameters reusable components', categories: ['typescript'] },
+  { query: 'decorators metadata annotations', categories: ['typescript'] },
+
+  // React queries
+  { query: 'UI component library for frontend', categories: ['react'] },
+  { query: 'managing state in functional components', categories: ['react'] },
+  { query: 'server side rendering performance', categories: ['react'] },
+  { query: 'prevent unnecessary component renders', categories: ['react', 'performance'] },
+
+  // Database queries
+  { query: 'SQL relational database open source', categories: ['database'] },
+  { query: 'query performance optimization indexes', categories: ['database', 'performance'] },
+  { query: 'document store nosql database', categories: ['database'] },
+  { query: 'in-memory caching data structure', categories: ['database', 'performance'] },
+
+  // DevOps queries
+  { query: 'container orchestration deployment', categories: ['devops'] },
+  { query: 'automate build test deploy pipeline', categories: ['devops'] },
+  { query: 'infrastructure configuration management', categories: ['devops'] },
+  { query: 'monitoring metrics collection', categories: ['devops'] },
+
+  // Architecture queries
+  { query: 'distributed services communication patterns', categories: ['architecture'] },
+  { query: 'domain logic separation layers', categories: ['architecture'] },
+  { query: 'event sourcing state management', categories: ['architecture'] },
+  { query: 'read write separation scalability', categories: ['architecture'] },
+
+  // Security queries
+  { query: 'token based authentication API', categories: ['security'] },
+  { query: 'prevent injection attacks input validation', categories: ['security'] },
+  { query: 'encrypt data transmission HTTPS', categories: ['security'] },
+  { query: 'rate limiting prevent abuse', categories: ['security'] },
+
+  // Testing queries
+  { query: 'isolated function verification unit tests', categories: ['testing'] },
+  { query: 'component integration verification', categories: ['testing'] },
+  { query: 'test driven development methodology', categories: ['testing'] },
+  { query: 'code coverage test metrics', categories: ['testing'] },
+
+  // Performance queries
+  { query: 'speed up data retrieval caching', categories: ['performance'] },
+  { query: 'reduce bundle size code splitting', categories: ['performance'] },
+  { query: 'distribute load multiple servers', categories: ['performance'] },
+  { query: 'identify memory leaks profiling', categories: ['performance'] },
+
+  // Cross-category queries
+  { query: 'building scalable web applications', categories: ['react', 'architecture', 'performance'] },
+  { query: 'secure API development best practices', categories: ['security', 'architecture'] },
+  { query: 'automated testing CI/CD integration', categories: ['testing', 'devops'] },
+  { query: 'database performance optimization techniques', categories: ['database', 'performance'] },
+];
+
 /**
  * Generate a synthetic test dataset for benchmarking.
  * Uses diverse topics with known relationships for ground truth.
+ *
+ * @param size - 'small' (20 memories, 12 queries), 'medium' (64 memories, 36 queries), 'large' (all)
  */
-export function generateTestDataset(): TestDataset {
-  // Categories with related content
-  const categories = {
-    typescript: [
-      { content: 'TypeScript is a strongly typed programming language that builds on JavaScript', tags: ['typescript', 'programming', 'language'] },
-      { content: 'TypeScript interfaces define the shape of objects with type checking', tags: ['typescript', 'interfaces', 'types'] },
-      { content: 'TypeScript generics allow creating reusable components with type safety', tags: ['typescript', 'generics', 'reusable'] },
-      { content: 'TypeScript decorators are a stage 2 proposal for JavaScript', tags: ['typescript', 'decorators', 'metadata'] },
-    ],
-    react: [
-      { content: 'React is a JavaScript library for building user interfaces', tags: ['react', 'frontend', 'ui'] },
-      { content: 'React hooks like useState and useEffect manage component state and side effects', tags: ['react', 'hooks', 'state'] },
-      { content: 'React components can be functional or class-based', tags: ['react', 'components', 'functional'] },
-      { content: 'React context provides a way to pass data through the component tree', tags: ['react', 'context', 'state'] },
-    ],
-    database: [
-      { content: 'PostgreSQL is a powerful open source relational database', tags: ['database', 'postgresql', 'sql'] },
-      { content: 'SQLite is a self-contained, serverless SQL database engine', tags: ['database', 'sqlite', 'embedded'] },
-      { content: 'Database indexes improve query performance by creating sorted references', tags: ['database', 'indexes', 'performance'] },
-      { content: 'Database transactions ensure ACID properties for data integrity', tags: ['database', 'transactions', 'acid'] },
-    ],
-    devops: [
-      { content: 'Docker containers package software into standardized units', tags: ['docker', 'containers', 'devops'] },
-      { content: 'Kubernetes orchestrates containerized applications at scale', tags: ['kubernetes', 'orchestration', 'devops'] },
-      { content: 'CI/CD pipelines automate building, testing, and deploying code', tags: ['cicd', 'automation', 'devops'] },
-      { content: 'Infrastructure as Code defines infrastructure using configuration files', tags: ['iac', 'terraform', 'devops'] },
-    ],
-    architecture: [
-      { content: 'Microservices architecture splits applications into small, independent services', tags: ['microservices', 'architecture', 'distributed'] },
-      { content: 'Event-driven architecture uses events to trigger and communicate between services', tags: ['events', 'architecture', 'async'] },
-      { content: 'Domain-Driven Design focuses on the core domain and domain logic', tags: ['ddd', 'architecture', 'domain'] },
-      { content: 'Clean Architecture separates concerns into layers with dependency rules', tags: ['clean', 'architecture', 'layers'] },
-    ],
-  };
+export function generateTestDataset(size: 'small' | 'medium' | 'large' = 'small'): TestDataset {
+  // Select categories based on size
+  const categoryNames = size === 'small'
+    ? ['typescript', 'react', 'database', 'devops', 'architecture']
+    : Object.keys(EXTENDED_CATEGORIES);
+
+  const itemsPerCategory = size === 'small' ? 4 : 8;
+
+  // Build categories object
+  const categories: Record<string, Array<{ content: string; tags: string[] }>> = {};
+  for (const name of categoryNames) {
+    categories[name] = EXTENDED_CATEGORIES[name].slice(0, itemsPerCategory);
+  }
 
   // Flatten memories with category info
   const memories: TestDataset['memories'] = [];
@@ -412,32 +534,36 @@ export function generateTestDataset(): TestDataset {
     }
   }
 
-  // Generate queries with ground truth
-  const queries: BenchmarkQuery[] = [
-    // TypeScript queries
-    { query: 'strongly typed javascript superset language', relevantIds: categoryIds.typescript },
-    { query: 'type checking and interfaces in code', relevantIds: categoryIds.typescript },
+  // Generate queries based on size
+  const queries: BenchmarkQuery[] = [];
 
-    // React queries
-    { query: 'UI component library for frontend', relevantIds: categoryIds.react },
-    { query: 'managing state in functional components', relevantIds: categoryIds.react },
-
-    // Database queries
-    { query: 'SQL relational database open source', relevantIds: categoryIds.database },
-    { query: 'query performance optimization indexes', relevantIds: categoryIds.database },
-
-    // DevOps queries
-    { query: 'container orchestration deployment', relevantIds: [...categoryIds.devops] },
-    { query: 'automate build test deploy pipeline', relevantIds: categoryIds.devops },
-
-    // Architecture queries
-    { query: 'distributed services communication patterns', relevantIds: categoryIds.architecture },
-    { query: 'domain logic separation layers', relevantIds: categoryIds.architecture },
-
-    // Cross-category queries
-    { query: 'building scalable web applications', relevantIds: [...categoryIds.react, ...categoryIds.architecture] },
-    { query: 'data storage and retrieval systems', relevantIds: categoryIds.database },
-  ];
+  if (size === 'small') {
+    // Original small dataset queries
+    queries.push(
+      { query: 'strongly typed javascript superset language', relevantIds: categoryIds.typescript },
+      { query: 'type checking and interfaces in code', relevantIds: categoryIds.typescript },
+      { query: 'UI component library for frontend', relevantIds: categoryIds.react },
+      { query: 'managing state in functional components', relevantIds: categoryIds.react },
+      { query: 'SQL relational database open source', relevantIds: categoryIds.database },
+      { query: 'query performance optimization indexes', relevantIds: categoryIds.database },
+      { query: 'container orchestration deployment', relevantIds: [...categoryIds.devops] },
+      { query: 'automate build test deploy pipeline', relevantIds: categoryIds.devops },
+      { query: 'distributed services communication patterns', relevantIds: categoryIds.architecture },
+      { query: 'domain logic separation layers', relevantIds: categoryIds.architecture },
+      { query: 'building scalable web applications', relevantIds: [...categoryIds.react, ...categoryIds.architecture] },
+      { query: 'data storage and retrieval systems', relevantIds: categoryIds.database }
+    );
+  } else {
+    // Extended queries for medium/large
+    for (const q of EXTENDED_QUERIES) {
+      // Only include queries where all required categories exist
+      const relevantCategories = q.categories.filter((c) => categoryIds[c]);
+      if (relevantCategories.length > 0) {
+        const relevantIds = relevantCategories.flatMap((c) => categoryIds[c] || []);
+        queries.push({ query: q.query, relevantIds });
+      }
+    }
+  }
 
   return { memories, queries };
 }

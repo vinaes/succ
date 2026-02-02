@@ -208,13 +208,16 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
 /**
  * Run advanced benchmark with IR metrics (Recall@K, MRR, NDCG)
  */
-async function runAdvancedBenchmark(k: number = 5): Promise<{
+async function runAdvancedBenchmark(
+  k: number = 5,
+  size: 'small' | 'medium' | 'large' = 'small'
+): Promise<{
   accuracy: AccuracyMetrics;
   latency: LatencyMetrics;
 }> {
-  console.log('\n  Running advanced accuracy benchmark...');
+  console.log(`\n  Running advanced accuracy benchmark (${size} dataset)...`);
 
-  const dataset = generateTestDataset();
+  const dataset = generateTestDataset(size);
   const savedIds: number[] = [];
 
   // Insert test memories
@@ -298,6 +301,7 @@ export interface BenchmarkOptions {
   k?: number;
   json?: boolean;
   model?: string;
+  size?: 'small' | 'medium' | 'large';
 }
 
 // Available local models for benchmarking
@@ -315,6 +319,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
   const iterations = options.iterations || 10;
   const k = options.k || 5;
   const localModel = options.model || LOCAL_MODEL;
+  const datasetSize = options.size || 'small';
 
   console.log('═══════════════════════════════════════════════════════════');
   console.log('                     SUCC BENCHMARK                         ');
@@ -338,7 +343,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
 
   // Run advanced benchmark if requested
   if (options.advanced) {
-    const { accuracy, latency } = await runAdvancedBenchmark(k);
+    const { accuracy, latency } = await runAdvancedBenchmark(k, datasetSize);
     localResults.advancedAccuracy = accuracy;
     localResults.latency = latency;
   }
@@ -363,7 +368,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
     const openrouterResults = await runModeBenchmark(iterations, 'openrouter');
 
     if (options.advanced) {
-      const { accuracy, latency } = await runAdvancedBenchmark(k);
+      const { accuracy, latency } = await runAdvancedBenchmark(k, datasetSize);
       openrouterResults.advancedAccuracy = accuracy;
       openrouterResults.latency = latency;
     }
