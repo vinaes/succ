@@ -392,7 +392,109 @@ ${memory.content}
   const indexContent = generateIndexContent(memories, brainDir, database);
   fs.writeFileSync(path.join(brainDir, 'memories-index.md'), indexContent);
 
+  // Create/update Obsidian config for graph colors
+  ensureObsidianGraphConfig(brainDir);
+
   return { memoriesExported: exported, linksExported: totalLinks };
+}
+
+/**
+ * Ensure Obsidian graph config exists with color groups for folders and tags
+ */
+function ensureObsidianGraphConfig(brainDir: string): void {
+  const obsidianDir = path.join(brainDir, '.obsidian');
+  const snippetsDir = path.join(obsidianDir, 'snippets');
+
+  // Create directories if needed
+  if (!fs.existsSync(obsidianDir)) {
+    fs.mkdirSync(obsidianDir, { recursive: true });
+  }
+  if (!fs.existsSync(snippetsDir)) {
+    fs.mkdirSync(snippetsDir, { recursive: true });
+  }
+
+  // Graph config with color groups
+  const graphConfig = {
+    "collapse-filter": false,
+    "search": "",
+    "showTags": true,
+    "showAttachments": false,
+    "hideUnresolved": false,
+    "showOrphans": true,
+    "collapse-color-groups": false,
+    "colorGroups": [
+      // Folders
+      { "query": "path:Decisions", "color": { "a": 1, "rgb": 16744448 } },    // Orange
+      { "query": "path:Strategy", "color": { "a": 1, "rgb": 10494192 } },     // Purple
+      { "query": "path:02_Knowledge", "color": { "a": 1, "rgb": 65382 } },    // Green
+      { "query": "path:Systems", "color": { "a": 1, "rgb": 3447003 } },       // Cyan
+      { "query": "path:Features", "color": { "a": 1, "rgb": 16761035 } },     // Pink
+      { "query": "path:Technical", "color": { "a": 1, "rgb": 10066329 } },    // Silver
+      { "query": "path:Files", "color": { "a": 1, "rgb": 6591981 } },         // Teal
+      { "query": "path:reflections", "color": { "a": 1, "rgb": 9109504 } },   // Dark red
+      { "query": "path:00_Inbox", "color": { "a": 1, "rgb": 8421504 } },      // Gray
+      // Tags (higher priority - listed after folders)
+      { "query": "tag:#decision", "color": { "a": 1, "rgb": 16744448 } },     // Orange
+      { "query": "tag:#learning", "color": { "a": 1, "rgb": 65382 } },        // Green
+      { "query": "tag:#pattern", "color": { "a": 1, "rgb": 10494192 } },      // Purple
+      { "query": "tag:#error", "color": { "a": 1, "rgb": 16711680 } },        // Red
+      { "query": "tag:#architecture", "color": { "a": 1, "rgb": 3447003 } },  // Cyan
+      { "query": "tag:#sprint", "color": { "a": 1, "rgb": 65535 } },          // Aqua
+    ],
+    "collapse-display": false,
+    "showArrow": true,
+    "textFadeMultiplier": 0,
+    "nodeSizeMultiplier": 1.2,
+    "lineSizeMultiplier": 1,
+    "collapse-forces": false,
+    "centerStrength": 0.5,
+    "repelStrength": 12,
+    "linkStrength": 1,
+    "linkDistance": 180,
+    "scale": 0.6,
+    "close": false
+  };
+
+  // Write graph config
+  fs.writeFileSync(
+    path.join(obsidianDir, 'graph.json'),
+    JSON.stringify(graphConfig, null, 2)
+  );
+
+  // CSS snippet for additional styling
+  const cssSnippet = `/* succ Brain Vault Graph Styling - Auto-generated */
+
+/* Tag colors in editor */
+.tag[href="#decision"] { background-color: rgba(255,149,0,0.2); color: #FF9500; }
+.tag[href="#learning"] { background-color: rgba(0,255,102,0.2); color: #00FF66; }
+.tag[href="#pattern"] { background-color: rgba(160,32,240,0.2); color: #A020F0; }
+.tag[href="#error"] { background-color: rgba(255,0,0,0.2); color: #FF0000; }
+.tag[href="#sprint"] { background-color: rgba(0,255,255,0.2); color: #00FFFF; }
+.tag[href="#architecture"] { background-color: rgba(52,152,219,0.2); color: #3498DB; }
+
+/* Temporal status indicators in titles */
+.markdown-preview-view h1 { position: relative; }
+
+/* Graph link visibility */
+.graph-view .links line { stroke-opacity: 0.6; stroke-width: 1.5px; }
+.graph-view .nodes circle:hover { stroke: #fff; stroke-width: 2px; }
+
+/* Frontmatter styling */
+.metadata-property[data-property-key="temporal_status"] .metadata-property-value { font-weight: bold; }
+.metadata-property[data-property-key="decay_score"] .metadata-property-value { font-family: monospace; }
+`;
+
+  fs.writeFileSync(path.join(snippetsDir, 'succ-graph.css'), cssSnippet);
+
+  // Enable the snippet in appearance.json
+  const appearanceConfig = {
+    "cssTheme": "",
+    "enabledCssSnippets": ["succ-graph"]
+  };
+  fs.writeFileSync(
+    path.join(obsidianDir, 'appearance.json'),
+    JSON.stringify(appearanceConfig, null, 2)
+  );
 }
 
 function getMemoryType(id: number, database: ReturnType<typeof getDb>): string {
