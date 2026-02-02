@@ -1,11 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkCode } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearCodeDocuments } from '../lib/db.js';
-import { getEmbedding } from '../lib/embeddings.js';
+import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash } from '../lib/db.js';
+import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 
 // Default patterns for common code files
 const DEFAULT_CODE_PATTERNS = [
@@ -139,4 +140,87 @@ export async function indexCode(
   if (result.skippedLargeFiles > 0) {
     console.log(`  (Large files >${maxFileSize}KB were skipped)`);
   }
+}
+
+/**
+ * Compute content hash for a file
+ */
+function computeHash(content: string): string {
+  return crypto.createHash('md5').update(content).digest('hex');
+}
+
+export interface IndexCodeFileResult {
+  success: boolean;
+  chunks?: number;
+  error?: string;
+  skipped?: boolean;
+  reason?: string;
+}
+
+/**
+ * Index a single code file
+ */
+export async function indexCodeFile(filePath: string, options: { force?: boolean } = {}): Promise<IndexCodeFileResult> {
+  const { force = false } = options;
+  const projectRoot = getProjectRoot();
+  const absolutePath = path.resolve(filePath);
+
+  // Check file exists
+  if (!fs.existsSync(absolutePath)) {
+    return { success: false, error: `File not found: ${filePath}` };
+  }
+
+  // Check it's a file, not directory
+  const stats = fs.statSync(absolutePath);
+  if (!stats.isFile()) {
+    return { success: false, error: `Not a file: ${filePath}` };
+  }
+
+  // Check file size (500KB limit)
+  const maxFileSize = 500 * 1024;
+  if (stats.size > maxFileSize) {
+    return { success: false, skipped: true, reason: `File too large: ${(stats.size / 1024).toFixed(0)}KB > 500KB` };
+  }
+
+  // Read file content
+  const content = fs.readFileSync(absolutePath, 'utf-8');
+  const contentHash = computeHash(content);
+
+  // Get relative path for storage (with code: prefix)
+  const relativePath = path.relative(projectRoot, absolutePath);
+  const storedPath = `code:${relativePath}`;
+
+  // Check if file already indexed with same hash
+  if (!force) {
+    const existingHash = getFileHash(storedPath);
+    if (existingHash === contentHash) {
+      return { success: true, skipped: true, reason: 'File unchanged (same hash)' };
+    }
+  }
+
+  // Chunk the code
+  const chunks = chunkCode(content, absolutePath);
+  if (chunks.length === 0) {
+    return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
+  }
+
+  // Generate embeddings
+  const texts = chunks.map(c => c.content);
+  const embeddings = await getEmbeddings(texts);
+
+  // Prepare documents for upsert (with hash for each document)
+  const documents = chunks.map((chunk, i) => ({
+    filePath: storedPath,
+    chunkIndex: i,
+    content: chunk.content,
+    startLine: chunk.startLine,
+    endLine: chunk.endLine,
+    embedding: embeddings[i],
+    hash: contentHash,
+  }));
+
+  // Upsert to database
+  upsertDocumentsBatchWithHashes(documents);
+
+  return { success: true, chunks: chunks.length };
 }

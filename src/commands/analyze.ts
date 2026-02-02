@@ -1480,3 +1480,353 @@ Lessons learned during development.
     JSON.stringify(graphJson, null, 2)
   );
 }
+
+/**
+ * Analyze a single file and generate documentation in brain vault
+ */
+export interface AnalyzeFileOptions {
+  mode?: 'claude' | 'openrouter' | 'local';
+}
+
+export interface AnalyzeFileResult {
+  success: boolean;
+  outputPath?: string;
+  error?: string;
+}
+
+/**
+ * Gather minimal project context for single file analysis
+ */
+function gatherMinimalContext(projectRoot: string): string {
+  const parts: string[] = [];
+
+  // Read package.json for project info
+  const packageJsonPath = path.join(projectRoot, 'package.json');
+  if (fs.existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      parts.push(`Project: ${pkg.name || path.basename(projectRoot)}`);
+      if (pkg.description) parts.push(`Description: ${pkg.description}`);
+      if (pkg.dependencies) {
+        const deps = Object.keys(pkg.dependencies).slice(0, 10).join(', ');
+        parts.push(`Key dependencies: ${deps}`);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // Try other project files if no package.json
+  if (parts.length === 0) {
+    const projectFiles = ['go.mod', 'pyproject.toml', 'Cargo.toml'];
+    for (const pf of projectFiles) {
+      const pfPath = path.join(projectRoot, pf);
+      if (fs.existsSync(pfPath)) {
+        parts.push(`Project type: ${pf.replace(/\.[^.]+$/, '')}`);
+        break;
+      }
+    }
+  }
+
+  // Get basic file structure (just top-level dirs)
+  try {
+    const entries = fs.readdirSync(projectRoot, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.') && !['node_modules', 'dist', 'build', 'vendor'].includes(e.name))
+      .map(e => e.name)
+      .slice(0, 8);
+    if (dirs.length > 0) {
+      parts.push(`Main directories: ${dirs.join(', ')}`);
+    }
+  } catch {
+    // Ignore errors
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Get list of existing brain vault documents for wikilink suggestions
+ */
+function getExistingBrainDocs(brainDir: string): string[] {
+  const docs: string[] = [];
+
+  if (!fs.existsSync(brainDir)) {
+    return docs;
+  }
+
+  function walkDir(dir: string) {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkDir(fullPath);
+        } else if (entry.name.endsWith('.md')) {
+          // Get document title (filename without .md)
+          const docName = entry.name.replace(/\.md$/, '');
+          docs.push(docName);
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  walkDir(brainDir);
+  return [...new Set(docs)]; // Remove duplicates
+}
+
+export async function analyzeFile(
+  filePath: string,
+  options: AnalyzeFileOptions = {}
+): Promise<AnalyzeFileResult> {
+  const config = getConfig();
+  const projectRoot = getProjectRoot();
+  const succDir = getSuccDir();
+  const brainDir = path.join(succDir, 'brain');
+
+  // Determine mode (default to config or 'claude', but 'claude' not supported for single file)
+  let mode = options.mode || config.analyze_mode || 'claude';
+
+  // Check file exists
+  const absolutePath = path.isAbsolute(filePath)
+    ? filePath
+    : path.join(projectRoot, filePath);
+
+  if (!fs.existsSync(absolutePath)) {
+    return { success: false, error: `File not found: ${absolutePath}` };
+  }
+
+  // Read file content
+  const fileContent = fs.readFileSync(absolutePath, 'utf-8');
+  const fileName = path.basename(filePath);
+  const relativePath = path.relative(projectRoot, absolutePath);
+  const ext = path.extname(filePath).toLowerCase();
+
+  // Determine output path in brain vault
+  const projectName = path.basename(projectRoot);
+  const outputDir = path.join(brainDir, '01_Projects', projectName, 'Files');
+  const outputPath = path.join(outputDir, `${fileName}.md`);
+
+  // Ensure output directory exists
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  // Ensure Files.md MOC exists
+  const filesMocPath = path.join(brainDir, '01_Projects', projectName, 'Files.md');
+  if (!fs.existsSync(filesMocPath)) {
+    const filesMocContent = `---
+description: "Source code file documentation"
+project: ${projectName}
+type: index
+relevance: high
+---
+
+# Files
+
+**Parent:** [[${projectName}]]
+
+Map of documented source files. Each file analysis includes purpose, key components, dependencies, and usage.
+
+## Documented Files
+
+_Files are automatically added here when analyzed._
+`;
+    fs.writeFileSync(filesMocPath, filesMocContent);
+  }
+
+  // Gather minimal project context
+  const projectContext = gatherMinimalContext(projectRoot);
+
+  // Get existing brain docs for wikilink suggestions
+  const existingDocs = getExistingBrainDocs(brainDir);
+  const wikilinksSection = existingDocs.length > 0
+    ? `\n## Existing Documentation (use these for [[wikilinks]]):\n${existingDocs.slice(0, 50).join(', ')}\n`
+    : '';
+
+  // Build analysis prompt
+  const prompt = `Analyze this source file and create documentation.
+
+## Project Context
+${projectContext}
+${wikilinksSection}
+## File to Analyze
+File: ${relativePath}
+Extension: ${ext}
+
+Content:
+\`\`\`${ext.slice(1) || 'text'}
+${fileContent.slice(0, 10000)}${fileContent.length > 10000 ? '\n... (truncated)' : ''}
+\`\`\`
+
+---
+
+Create a documentation file following these rules:
+
+1. YAML frontmatter (MUST be first):
+---
+description: "Brief description of this file's purpose"
+project: ${projectName}
+type: file-analysis
+relevance: medium
+file: ${relativePath}
+---
+
+2. Document structure:
+# ${fileName}
+
+**Parent:** [[Files]]
+**Path:** \`${relativePath}\`
+
+## Purpose
+What this file does and why it exists.
+
+## Key Components
+Main functions, classes, exports with brief descriptions.
+
+## Dependencies
+What it imports/requires. Use [[wikilinks]] ONLY for documents listed in "Existing Documentation" section above.
+
+## Usage
+How this file is used in the project. Reference related files with [[wikilinks]] ONLY if they exist in the documentation list.
+
+CRITICAL FORMATTING RULES:
+- Your response MUST start with exactly \`---\` on the first line
+- NO text before the frontmatter (no "Let me...", "Here is...", "Based on...")
+- The first 3 characters of your output must be the three dashes
+- **Parent:** must be [[Files]] (not [[lib]] or folder names)
+- ONLY use [[wikilinks]] for documents that exist in the "Existing Documentation" list
+- If a related file doesn't have documentation yet, just mention it as plain text (no brackets)`;
+
+  try {
+    let content: string | null = null;
+
+    if (mode === 'local') {
+      const apiUrl = config.analyze_api_url;
+      const model = config.analyze_model;
+
+      if (!apiUrl || !model) {
+        return {
+          success: false,
+          error: 'Local LLM not configured. Set analyze_api_url and analyze_model in ~/.succ/config.json',
+        };
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.analyze_api_key) {
+        headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+      }
+
+      const completionUrl = apiUrl.endsWith('/v1')
+        ? `${apiUrl}/chat/completions`
+        : apiUrl.endsWith('/')
+          ? `${apiUrl}v1/chat/completions`
+          : `${apiUrl}/v1/chat/completions`;
+
+      const response = await fetch(completionUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert software documentation writer. Generate clear, concise documentation.',
+            },
+            { role: 'user', content: prompt },
+          ],
+          temperature: config.analyze_temperature ?? 0.3,
+          max_tokens: config.analyze_max_tokens ?? 4096,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return { success: false, error: `API error: ${response.status} - ${error}` };
+      }
+
+      const data = (await response.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      content = data.choices[0]?.message?.content || null;
+    } else if (mode === 'openrouter') {
+      const apiKey = config.openrouter_api_key;
+      if (!apiKey) {
+        return { success: false, error: 'OpenRouter API key not configured' };
+      }
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://github.com/vinaes/succ',
+        },
+        body: JSON.stringify({
+          model: 'anthropic/claude-3-haiku',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert software documentation writer. Generate clear, concise documentation.',
+            },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return { success: false, error: `OpenRouter error: ${response.status} - ${error}` };
+      }
+
+      const data = (await response.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      content = data.choices[0]?.message?.content || null;
+    } else {
+      // Claude CLI mode - use cross-spawn sync
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { sync: spawnSync } = await import('cross-spawn') as any;
+
+      const result = spawnSync('claude', [
+        '-p',
+        '--tools', '',
+        '--model', 'haiku',
+      ], {
+        input: prompt,
+        encoding: 'utf-8',
+        timeout: 120000, // 2 minutes timeout
+      });
+
+      if (result.error) {
+        return { success: false, error: `Claude CLI error: ${result.error.message}` };
+      }
+
+      if (result.status !== 0) {
+        return { success: false, error: `Claude CLI failed: ${result.stderr || 'Unknown error'}` };
+      }
+
+      content = result.stdout?.toString().trim() || null;
+    }
+
+    if (!content) {
+      return { success: false, error: 'No content returned from LLM' };
+    }
+
+    // Clean output (remove preamble, code fences)
+    const cleanedContent = cleanMarkdownOutput(content);
+
+    // Write output
+    fs.writeFileSync(outputPath, cleanedContent);
+
+    return { success: true, outputPath };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}

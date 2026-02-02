@@ -408,3 +408,78 @@ export function getAgentOperations(agent: 'claude' | 'sleep'): IdleOperation[] {
     .filter(a => a.agent === agent && a.enabled)
     .map(a => a.operation);
 }
+
+/**
+ * Check if a process is running by PID
+ */
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface DaemonStatus {
+  name: string;
+  running: boolean;
+  pid?: number;
+  pidFile?: string;
+  logFile?: string;
+}
+
+/**
+ * Get status of all succ daemons (watch, analyze)
+ */
+export function getDaemonStatuses(): DaemonStatus[] {
+  const succDir = getSuccDir();
+  const statuses: DaemonStatus[] = [];
+
+  // Watch daemon
+  const watchPidFile = path.join(succDir, 'watch.pid');
+  const watchLogFile = path.join(succDir, 'watch.log');
+  if (fs.existsSync(watchPidFile)) {
+    const pid = parseInt(fs.readFileSync(watchPidFile, 'utf-8').trim(), 10);
+    statuses.push({
+      name: 'watch',
+      running: isProcessRunning(pid),
+      pid,
+      pidFile: watchPidFile,
+      logFile: fs.existsSync(watchLogFile) ? watchLogFile : undefined,
+    });
+  } else {
+    statuses.push({ name: 'watch', running: false });
+  }
+
+  // Analyze daemon
+  const analyzePidFile = path.join(succDir, 'daemon.pid');
+  const analyzeLogFile = path.join(succDir, 'daemon.log');
+  if (fs.existsSync(analyzePidFile)) {
+    const pid = parseInt(fs.readFileSync(analyzePidFile, 'utf-8').trim(), 10);
+    statuses.push({
+      name: 'analyze',
+      running: isProcessRunning(pid),
+      pid,
+      pidFile: analyzePidFile,
+      logFile: fs.existsSync(analyzeLogFile) ? analyzeLogFile : undefined,
+    });
+  } else {
+    statuses.push({ name: 'analyze', running: false });
+  }
+
+  // Idle watcher (from hooks)
+  const tmpDir = path.join(succDir, '.tmp');
+  const watcherActiveFile = path.join(tmpDir, 'watcher-active.txt');
+  if (fs.existsSync(watcherActiveFile)) {
+    statuses.push({
+      name: 'idle-watcher',
+      running: true,
+      pidFile: watcherActiveFile,
+    });
+  } else {
+    statuses.push({ name: 'idle-watcher', running: false });
+  }
+
+  return statuses;
+}
