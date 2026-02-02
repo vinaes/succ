@@ -119,6 +119,28 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       }
     }
 
+    // Phase 0.6: Precomputed Context from previous session
+    const precomputedContextPath = path.join(succDir, 'next-session-context.md');
+    if (fs.existsSync(precomputedContextPath)) {
+      try {
+        const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
+        if (precomputedContent) {
+          contextParts.push('<previous-session-context>\n' + precomputedContent + '\n</previous-session-context>');
+
+          // Archive the file after loading (move to .context-archive)
+          const archiveDir = path.join(succDir, '.context-archive');
+          if (!fs.existsSync(archiveDir)) {
+            fs.mkdirSync(archiveDir, { recursive: true });
+          }
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
+          fs.renameSync(precomputedContextPath, archivePath);
+        }
+      } catch {
+        // Ignore errors reading precomputed context
+      }
+    }
+
     // Phase 1-3: Memories and stats via succ CLI
     // Use npx succ for CLI commands
     try {

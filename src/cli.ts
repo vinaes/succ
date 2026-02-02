@@ -19,6 +19,7 @@ import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
 import { consolidate } from './commands/consolidate.js';
 import { sessionSummary } from './commands/session-summary.js';
+import { precomputeContext } from './commands/precompute-context.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -326,6 +327,18 @@ program
   .option('-v, --verbose', 'Show detailed output')
   .action((transcript, options) => {
     sessionSummary(transcript, {
+      dryRun: options.dryRun,
+      verbose: options.verbose,
+    });
+  });
+
+program
+  .command('precompute-context <transcript>')
+  .description('Generate context briefing for next session')
+  .option('--dry-run', 'Preview output without saving')
+  .option('-v, --verbose', 'Show detailed output')
+  .action((transcript, options) => {
+    precomputeContext(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
     });

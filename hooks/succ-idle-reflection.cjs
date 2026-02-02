@@ -408,7 +408,13 @@ process.stdin.on('end', () => {
       }
     }
 
-    // TODO: Precompute Context (async/detached)
+    // 5. Precompute Context (async/detached)
+    if (config.operations.precompute_context && hookInput.transcript_path) {
+      runSuccCommandDetached(projectDir, [
+        'precompute-context',
+        hookInput.transcript_path,
+      ]);
+    }
 
     // Exit immediately - detached processes continue in background
     process.exit(0);
