@@ -281,12 +281,14 @@ server.resource(
       return { contents: [{ uri: 'brain://index', text: 'Brain vault not initialized.' }] };
     }
 
-    // Try index.md first, then CLAUDE.md
-    const indexPath = path.join(brainPath, 'index.md');
+    // Try project MOC first, then CLAUDE.md, then Memories.md
+    const projectName = path.basename(getProjectRoot());
+    const projectMocPath = path.join(brainPath, '01_Projects', projectName, `${projectName}.md`);
     const claudePath = path.join(brainPath, 'CLAUDE.md');
+    const memoriesPath = path.join(brainPath, 'Memories.md');
 
-    if (fs.existsSync(indexPath)) {
-      const content = fs.readFileSync(indexPath, 'utf-8');
+    if (fs.existsSync(projectMocPath)) {
+      const content = fs.readFileSync(projectMocPath, 'utf-8');
       return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
     }
 
@@ -295,7 +297,12 @@ server.resource(
       return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
     }
 
-    return { contents: [{ uri: 'brain://index', text: 'No index.md or CLAUDE.md found.' }] };
+    if (fs.existsSync(memoriesPath)) {
+      const content = fs.readFileSync(memoriesPath, 'utf-8');
+      return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
+    }
+
+    return { contents: [{ uri: 'brain://index', text: 'No project MOC, CLAUDE.md, or Memories.md found.' }] };
   }
 );
 

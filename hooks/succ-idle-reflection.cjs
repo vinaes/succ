@@ -289,7 +289,7 @@ function writeReflectionAsync(projectDir, transcriptContext, config) {
   const contextFile = path.join(tempDir, `reflection-context-${Date.now()}.txt`);
   fs.writeFileSync(contextFile, transcriptContext);
 
-  const reflectionsDir = path.join(projectDir, '.succ', 'brain', 'reflections');
+  const reflectionsDir = path.join(projectDir, '.succ', 'brain', 'Reflections');
 
   // Create reflections directory if needed
   if (!fs.existsSync(reflectionsDir)) {
@@ -318,8 +318,8 @@ const transcriptContext = fs.readFileSync(contextFile, 'utf8');
 
 const now = new Date();
 const dateStr = now.toISOString().split('T')[0];
-const timeStr = now.toTimeString().split(' ')[0].substring(0, 5).replace(':', '-');
-const timestamp = dateStr + '_' + timeStr;
+const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+const timestamp = dateStr + ' ' + timeStr;
 
 const prompt = \`You are writing a brief personal reflection for an AI's internal journal.
 
@@ -343,13 +343,13 @@ function writeReflection(text) {
   const reflectionFile = path.join(reflectionsDir, timestamp + '.md');
   const content = \`---
 date: \${dateStr}
-time: \${timeStr.replace('-', ':')}
+time: \${timeStr}
 trigger: idle
 tags:
   - reflection
 ---
 
-# Reflection \${dateStr} \${timeStr.replace('-', ':')}
+# Reflection \${dateStr} \${timeStr}
 
 \${text.trim()}
 \`;
