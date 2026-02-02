@@ -9,6 +9,10 @@ import { precomputeContextCLI } from '../lib/precompute-context.js';
 interface PrecomputeContextOptions {
   dryRun?: boolean;
   verbose?: boolean;
+  local?: boolean;
+  openrouter?: boolean;
+  apiUrl?: string;
+  model?: string;
 }
 
 export async function precomputeContext(
@@ -18,5 +22,9 @@ export async function precomputeContext(
   await precomputeContextCLI(transcriptPath, {
     dryRun: options.dryRun,
     verbose: options.verbose,
+    local: options.local,
+    openrouter: options.openrouter,
+    apiUrl: options.apiUrl,
+    model: options.model,
   });
 }

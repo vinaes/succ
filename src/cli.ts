@@ -325,10 +325,18 @@ program
   .description('Extract facts from session transcript and save as memories')
   .option('--dry-run', 'Preview facts without saving')
   .option('-v, --verbose', 'Show detailed output')
+  .option('--local', 'Use local LLM (Ollama/llama.cpp)')
+  .option('--openrouter', 'Use OpenRouter API')
+  .option('--api-url <url>', 'API URL for local LLM')
+  .option('--model <model>', 'Model to use')
   .action((transcript, options) => {
     sessionSummary(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
+      local: options.local,
+      openrouter: options.openrouter,
+      apiUrl: options.apiUrl,
+      model: options.model,
     });
   });
 
@@ -337,10 +345,18 @@ program
   .description('Generate context briefing for next session')
   .option('--dry-run', 'Preview output without saving')
   .option('-v, --verbose', 'Show detailed output')
+  .option('--local', 'Use local LLM (Ollama/llama.cpp)')
+  .option('--openrouter', 'Use OpenRouter API')
+  .option('--api-url <url>', 'API URL for local LLM')
+  .option('--model <model>', 'Model to use')
   .action((transcript, options) => {
     precomputeContext(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
+      local: options.local,
+      openrouter: options.openrouter,
+      apiUrl: options.apiUrl,
+      model: options.model,
     });
   });
 

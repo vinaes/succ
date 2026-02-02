@@ -132,6 +132,77 @@ function runSuccCommandDetached(projectDir, args) {
 }
 
 /**
+ * Call Sleep Agent (local LLM) via OpenAI-compatible API
+ * Used for heavy batch operations when sleep_agent.enabled = true
+ *
+ * @param {string} prompt - The prompt to send
+ * @param {object} sleepAgentConfig - sleep_agent config from idle_reflection
+ * @returns {Promise<string|null>} - Response text or null on error
+ */
+async function callSleepAgent(prompt, sleepAgentConfig) {
+  const { mode, model, api_url, api_key } = sleepAgentConfig;
+
+  // Determine API URL based on mode
+  let baseUrl = api_url;
+  if (!baseUrl) {
+    if (mode === 'local') {
+      baseUrl = 'http://localhost:11434/v1'; // Ollama default
+    } else if (mode === 'openrouter') {
+      baseUrl = 'https://openrouter.ai/api/v1';
+    }
+  }
+
+  if (!baseUrl) {
+    return null;
+  }
+
+  const endpoint = baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
+
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (api_key) {
+    headers['Authorization'] = `Bearer ${api_key}`;
+  }
+
+  const body = {
+    model: model || 'llama3.2',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 1000,
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000), // 60s timeout
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Check if an operation should use sleep_agent instead of Claude CLI
+ */
+function shouldUseSleepAgent(config, operation) {
+  if (!config.sleep_agent?.enabled) {
+    return false;
+  }
+  return config.sleep_agent.handle_operations?.[operation] === true;
+}
+
+/**
  * Memory Consolidation - merge/delete duplicates (sync - fast, no LLM)
  */
 function runMemoryConsolidation(projectDir, config) {
@@ -164,21 +235,35 @@ function runGraphRefinement(projectDir, config) {
 /**
  * Session Summary - extract facts (async/detached - uses LLM)
  * Spawns detached process so it doesn't block the session
+ * Uses sleep_agent if configured
  */
-function runSessionSummaryAsync(projectDir, transcriptPath) {
+function runSessionSummaryAsync(projectDir, transcriptPath, config) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
     return false;
   }
 
-  return runSuccCommandDetached(projectDir, [
-    'session-summary',
-    transcriptPath,
-  ]);
+  const args = ['session-summary', transcriptPath];
+
+  // Add sleep_agent flags if configured
+  if (shouldUseSleepAgent(config, 'session_summary')) {
+    const sa = config.sleep_agent;
+    if (sa.mode === 'local') {
+      args.push('--local');
+      if (sa.api_url) args.push('--api-url', sa.api_url);
+      if (sa.model) args.push('--model', sa.model);
+    } else if (sa.mode === 'openrouter') {
+      args.push('--openrouter');
+      if (sa.model) args.push('--model', sa.model);
+    }
+  }
+
+  return runSuccCommandDetached(projectDir, args);
 }
 
 /**
  * Write Reflection - generate reflection text (async/detached - uses LLM)
  * Spawns detached process so it doesn't block the session
+ * Uses sleep_agent if configured, otherwise falls back to Claude CLI
  */
 function writeReflectionAsync(projectDir, transcriptContext, config) {
   // Write transcript context to temp file for the detached process
@@ -190,7 +275,6 @@ function writeReflectionAsync(projectDir, transcriptContext, config) {
   const contextFile = path.join(tempDir, `reflection-context-${Date.now()}.txt`);
   fs.writeFileSync(contextFile, transcriptContext);
 
-  const model = config.agent_model || 'haiku';
   const reflectionsPath = path.join(projectDir, '.succ', 'brain', '.self', 'reflections.md');
 
   // Create self directory if needed
@@ -198,6 +282,11 @@ function writeReflectionAsync(projectDir, transcriptContext, config) {
   if (!fs.existsSync(selfDir)) {
     fs.mkdirSync(selfDir, { recursive: true });
   }
+
+  // Determine which agent to use
+  const useSleepAgent = shouldUseSleepAgent(config, 'write_reflection');
+  const sleepAgentConfig = config.sleep_agent || {};
+  const claudeModel = config.agent_model || 'haiku';
 
   // Spawn a detached node process that does the actual reflection
   const scriptContent = `
@@ -207,7 +296,9 @@ const path = require('path');
 
 const contextFile = ${JSON.stringify(contextFile)};
 const reflectionsPath = ${JSON.stringify(reflectionsPath)};
-const model = ${JSON.stringify(model)};
+const useSleepAgent = ${useSleepAgent};
+const sleepAgentConfig = ${JSON.stringify(sleepAgentConfig)};
+const claudeModel = ${JSON.stringify(claudeModel)};
 
 const transcriptContext = fs.readFileSync(contextFile, 'utf8');
 
@@ -230,52 +321,92 @@ Consider:
 
 Output ONLY the reflection text, no headers or formatting. Write in first person as if you are the AI reflecting on your own work.\`;
 
-const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-  stdio: ['pipe', 'pipe', 'pipe'],
-  shell: true,
-});
+function writeReflection(text) {
+  if (!text || text.trim().length < 50) return;
 
-proc.stdin.write(prompt);
-proc.stdin.end();
+  const existingContent = fs.existsSync(reflectionsPath)
+    ? fs.readFileSync(reflectionsPath, 'utf8')
+    : '# Reflections\\n\\nInternal dialogue between sessions.\\n';
 
-let stdout = '';
-proc.stdout.on('data', (data) => {
-  stdout += data.toString();
-});
-
-proc.on('close', (code) => {
-  // Clean up temp file
-  try { fs.unlinkSync(contextFile); } catch {}
-
-  if (code === 0 && stdout.trim() && stdout.trim().length > 50) {
-    const existingContent = fs.existsSync(reflectionsPath)
-      ? fs.readFileSync(reflectionsPath, 'utf8')
-      : '# Reflections\\n\\nInternal dialogue between sessions.\\n';
-
-    const reflectionEntry = \`
+  const reflectionEntry = \`
 ## \${dateStr} \${timeStr} (idle pause)
 
-\${stdout.trim()}
+\${text.trim()}
 
 ---
 \`;
 
-    fs.writeFileSync(reflectionsPath, existingContent + reflectionEntry);
+  fs.writeFileSync(reflectionsPath, existingContent + reflectionEntry);
+}
+
+async function callSleepAgentLocal(prompt) {
+  const { mode, model, api_url, api_key } = sleepAgentConfig;
+
+  let baseUrl = api_url;
+  if (!baseUrl) {
+    if (mode === 'local') baseUrl = 'http://localhost:11434/v1';
+    else if (mode === 'openrouter') baseUrl = 'https://openrouter.ai/api/v1';
   }
-  process.exit(0);
-});
+  if (!baseUrl) return null;
 
-proc.on('error', () => {
-  try { fs.unlinkSync(contextFile); } catch {}
-  process.exit(1);
-});
+  const endpoint = baseUrl.endsWith('/') ? baseUrl + 'chat/completions' : baseUrl + '/chat/completions';
+  const headers = { 'Content-Type': 'application/json' };
+  if (api_key) headers['Authorization'] = 'Bearer ' + api_key;
 
-// Timeout after 60 seconds
-setTimeout(() => {
-  proc.kill();
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: model || 'llama3.2',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch { return null; }
+}
+
+async function main() {
   try { fs.unlinkSync(contextFile); } catch {}
-  process.exit(1);
-}, 60000);
+
+  if (useSleepAgent) {
+    // Use local LLM via sleep_agent
+    const result = await callSleepAgentLocal(prompt);
+    if (result) {
+      writeReflection(result);
+    }
+    process.exit(0);
+  } else {
+    // Use Claude CLI
+    const proc = spawn('claude', ['-p', '--tools', '', '--model', claudeModel], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true,
+    });
+
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+
+    let stdout = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) writeReflection(stdout);
+      process.exit(0);
+    });
+
+    proc.on('error', () => { process.exit(1); });
+
+    setTimeout(() => { proc.kill(); process.exit(1); }, 60000);
+  }
+}
+
+main();
 `;
 
   const scriptFile = path.join(tempDir, `reflection-script-${Date.now()}.cjs`);
@@ -397,7 +528,7 @@ process.stdin.on('end', () => {
 
     // 3. Session Summary (async/detached)
     if (config.operations.session_summary && hookInput.transcript_path) {
-      runSessionSummaryAsync(projectDir, hookInput.transcript_path);
+      runSessionSummaryAsync(projectDir, hookInput.transcript_path, config);
     }
 
     // 4. Write Reflection (async/detached)
@@ -410,10 +541,22 @@ process.stdin.on('end', () => {
 
     // 5. Precompute Context (async/detached)
     if (config.operations.precompute_context && hookInput.transcript_path) {
-      runSuccCommandDetached(projectDir, [
-        'precompute-context',
-        hookInput.transcript_path,
-      ]);
+      const precomputeArgs = ['precompute-context', hookInput.transcript_path];
+
+      // Add sleep_agent flags if configured
+      if (shouldUseSleepAgent(config, 'precompute_context')) {
+        const sa = config.sleep_agent;
+        if (sa.mode === 'local') {
+          precomputeArgs.push('--local');
+          if (sa.api_url) precomputeArgs.push('--api-url', sa.api_url);
+          if (sa.model) precomputeArgs.push('--model', sa.model);
+        } else if (sa.mode === 'openrouter') {
+          precomputeArgs.push('--openrouter');
+          if (sa.model) precomputeArgs.push('--model', sa.model);
+        }
+      }
+
+      runSuccCommandDetached(projectDir, precomputeArgs);
     }
 
     // Exit immediately - detached processes continue in background

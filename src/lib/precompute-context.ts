@@ -294,6 +294,11 @@ export async function precomputeContext(
   options: {
     verbose?: boolean;
     dryRun?: boolean;
+    // CLI overrides for LLM selection
+    local?: boolean;
+    openrouter?: boolean;
+    apiUrl?: string;
+    model?: string;
   } = {}
 ): Promise<PrecomputeResult> {
   const { verbose = false, dryRun = false } = options;
@@ -319,9 +324,7 @@ export async function precomputeContext(
     }
 
     // Determine which agent to use
-    const sleepAgent = config.sleep_agent;
-    const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.precompute_context;
-
+    // CLI flags take priority over config
     let llmOptions: {
       mode: 'claude' | 'local' | 'openrouter';
       model?: string;
@@ -329,18 +332,38 @@ export async function precomputeContext(
       apiKey?: string;
     };
 
-    if (useSleepAgent) {
+    if (options.local) {
+      // CLI: --local flag
       llmOptions = {
-        mode: sleepAgent.mode as 'local' | 'openrouter',
-        model: sleepAgent.model,
-        apiUrl: sleepAgent.api_url,
-        apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
+        mode: 'local',
+        model: options.model || config.sleep_agent?.model || 'llama3.2',
+        apiUrl: options.apiUrl || config.sleep_agent?.api_url || 'http://localhost:11434/v1',
+      };
+    } else if (options.openrouter) {
+      // CLI: --openrouter flag
+      llmOptions = {
+        mode: 'openrouter',
+        model: options.model || config.sleep_agent?.model || 'anthropic/claude-3-haiku',
+        apiKey: config.sleep_agent?.api_key || globalConfig.openrouter_api_key,
       };
     } else {
-      llmOptions = {
-        mode: 'claude',
-        model: config.agent_model,
-      };
+      // Use config-based selection
+      const sleepAgent = config.sleep_agent;
+      const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.precompute_context;
+
+      if (useSleepAgent) {
+        llmOptions = {
+          mode: sleepAgent.mode as 'local' | 'openrouter',
+          model: sleepAgent.model,
+          apiUrl: sleepAgent.api_url,
+          apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
+        };
+      } else {
+        llmOptions = {
+          mode: 'claude',
+          model: config.agent_model,
+        };
+      }
     }
 
     if (verbose) {
@@ -423,6 +446,10 @@ export async function precomputeContextCLI(
   options: {
     dryRun?: boolean;
     verbose?: boolean;
+    local?: boolean;
+    openrouter?: boolean;
+    apiUrl?: string;
+    model?: string;
   } = {}
 ): Promise<void> {
   if (!fs.existsSync(transcriptPath)) {
@@ -475,6 +502,10 @@ export async function precomputeContextCLI(
   const result = await precomputeContext(transcript, {
     dryRun: options.dryRun,
     verbose: options.verbose ?? true,
+    local: options.local,
+    openrouter: options.openrouter,
+    apiUrl: options.apiUrl,
+    model: options.model,
   });
 
   console.log('\nPrecompute Results:');

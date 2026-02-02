@@ -325,6 +325,11 @@ export async function extractSessionSummary(
     verbose?: boolean;
     dryRun?: boolean;
     onProgress?: (current: number, total: number, action: string) => void;
+    // CLI overrides for LLM selection
+    local?: boolean;
+    openrouter?: boolean;
+    apiUrl?: string;
+    model?: string;
   } = {}
 ): Promise<SessionSummaryResult> {
   const { verbose = false, dryRun = false, onProgress } = options;
@@ -339,9 +344,7 @@ export async function extractSessionSummary(
   };
 
   // Determine which agent to use
-  const sleepAgent = config.sleep_agent;
-  const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.session_summary;
-
+  // CLI flags take priority over config
   let llmOptions: {
     mode: 'claude' | 'local' | 'openrouter';
     model?: string;
@@ -349,18 +352,38 @@ export async function extractSessionSummary(
     apiKey?: string;
   };
 
-  if (useSleepAgent) {
+  if (options.local) {
+    // CLI: --local flag
     llmOptions = {
-      mode: sleepAgent.mode as 'local' | 'openrouter',
-      model: sleepAgent.model,
-      apiUrl: sleepAgent.api_url,
-      apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
+      mode: 'local',
+      model: options.model || config.sleep_agent?.model || 'llama3.2',
+      apiUrl: options.apiUrl || config.sleep_agent?.api_url || 'http://localhost:11434/v1',
+    };
+  } else if (options.openrouter) {
+    // CLI: --openrouter flag
+    llmOptions = {
+      mode: 'openrouter',
+      model: options.model || config.sleep_agent?.model || 'anthropic/claude-3-haiku',
+      apiKey: config.sleep_agent?.api_key || globalConfig.openrouter_api_key,
     };
   } else {
-    llmOptions = {
-      mode: 'claude',
-      model: config.agent_model,
-    };
+    // Use config-based selection
+    const sleepAgent = config.sleep_agent;
+    const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.session_summary;
+
+    if (useSleepAgent) {
+      llmOptions = {
+        mode: sleepAgent.mode as 'local' | 'openrouter',
+        model: sleepAgent.model,
+        apiUrl: sleepAgent.api_url,
+        apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
+      };
+    } else {
+      llmOptions = {
+        mode: 'claude',
+        model: config.agent_model,
+      };
+    }
   }
 
   if (verbose) {
@@ -432,6 +455,10 @@ export async function sessionSummary(
   options: {
     dryRun?: boolean;
     verbose?: boolean;
+    local?: boolean;
+    openrouter?: boolean;
+    apiUrl?: string;
+    model?: string;
   } = {}
 ): Promise<void> {
   const fs = await import('fs');
@@ -486,6 +513,10 @@ export async function sessionSummary(
   const result = await extractSessionSummary(transcript, {
     dryRun: options.dryRun,
     verbose: options.verbose ?? true,
+    local: options.local,
+    openrouter: options.openrouter,
+    apiUrl: options.apiUrl,
+    model: options.model,
   });
 
   console.log('\nSession Summary Results:');
