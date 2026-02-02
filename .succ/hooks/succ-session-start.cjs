@@ -135,9 +135,13 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 **succ_link** action="create|delete|show|graph|auto" [source_id=N] [target_id=N] [relation="leads_to"]
 **succ_explore** memory_id=N [depth=2]
 
-### STATUS
+### STATUS & CONFIG
 
 **succ_status** → docs indexed, memories count, daemon status
+→ Use at session start to understand what's indexed, or when debugging search issues
+
+**succ_config** → show current configuration with all effective values
+→ Use when user asks about settings, embedding model, or to debug config issues
 
 ---
 **recall** = memories (from remember) | **search** = documents (brain/) | **search_code** = source files
