@@ -12,7 +12,7 @@
  * Uses execFileSync for security (no shell injection)
  */
 
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -191,6 +191,31 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       }
     } catch {
       // npx succ not available
+    }
+
+    // Launch idle watcher daemon
+    try {
+      const watcherPath = path.join(__dirname, 'succ-idle-watcher.cjs');
+      if (fs.existsSync(watcherPath)) {
+        // Save transcript path for watcher if available
+        if (hookInput.transcript_path) {
+          const tmpDir = path.join(succDir, '.tmp');
+          if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(tmpDir, 'current-transcript.txt'), hookInput.transcript_path);
+        }
+
+        // Launch watcher as detached process
+        const watcher = spawn('node', [watcherPath, projectDir], {
+          cwd: projectDir,
+          detached: true,
+          stdio: 'ignore',
+        });
+        watcher.unref();
+      }
+    } catch {
+      // Watcher launch failed, continue without it
     }
 
     if (contextParts.length > 0) {

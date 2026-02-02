@@ -166,6 +166,37 @@ Configure in `~/.succ/config.json`:
 }
 ```
 
+### Idle Watcher (Smart Reflections)
+
+The idle watcher monitors user activity and triggers reflections only when you stop interacting — true idle detection instead of simple throttling.
+
+**How it works:**
+- SessionStart launches a background watcher daemon
+- UserPromptSubmit signals "user is active"
+- Stop signals "Claude responded"
+- If no user activity for N minutes after Claude responds → reflection triggers
+- SessionEnd cleanly shuts down the watcher
+
+Configure in `.succ/config.json`:
+
+```json
+{
+  "idle_watcher": {
+    "enabled": true,
+    "idle_minutes": 2,
+    "check_interval": 30,
+    "min_conversation_length": 5
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable/disable idle watcher |
+| `idle_minutes` | `2` | Minutes of inactivity before reflection |
+| `check_interval` | `30` | Seconds between activity checks |
+| `min_conversation_length` | `5` | Minimum transcript entries before reflecting |
+
 **Supported backends:** Ollama, LM Studio, llama.cpp, any OpenAI-compatible API.
 
 **Recommended models:**

@@ -37,6 +37,16 @@ process.stdin.on('end', () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
+    // Signal user activity to idle watcher
+    try {
+      const tmpDir = path.join(projectDir, '.succ', '.tmp');
+      if (fs.existsSync(tmpDir)) {
+        fs.writeFileSync(path.join(tmpDir, 'last-user-prompt.txt'), Date.now().toString());
+      }
+    } catch {
+      // Ignore errors
+    }
+
     const prompt = hookInput.prompt || hookInput.message || '';
     if (!prompt || prompt.length < 5) {
       process.exit(0);

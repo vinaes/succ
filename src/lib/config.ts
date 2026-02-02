@@ -37,6 +37,15 @@ export interface SuccConfig {
   quality_scoring_threshold?: number;  // Minimum quality score to keep (0-1, default: 0)
   // Idle reflection settings (sleep-time compute)
   idle_reflection?: IdleReflectionConfig;
+  // Idle watcher settings (smart activity-based reflections)
+  idle_watcher?: IdleWatcherConfig;
+}
+
+export interface IdleWatcherConfig {
+  enabled?: boolean;  // Enable idle watcher (default: true)
+  idle_minutes?: number;  // Minutes of inactivity before reflection (default: 2)
+  check_interval?: number;  // Seconds between activity checks (default: 30)
+  min_conversation_length?: number;  // Minimum transcript entries before reflecting (default: 5)
 }
 
 export interface IdleReflectionConfig {
@@ -79,6 +88,14 @@ export interface IdleReflectionConfig {
 // Model names for different modes
 export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2';  // 384 dimensions
 export const OPENROUTER_MODEL = 'openai/text-embedding-3-small';
+
+// Default idle watcher config
+export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
+  enabled: true,
+  idle_minutes: 2,
+  check_interval: 30,
+  min_conversation_length: 5,
+};
 
 // Default sleep agent config
 export const DEFAULT_SLEEP_AGENT_CONFIG = {
@@ -265,6 +282,21 @@ export function hasOpenRouterKey(): boolean {
   }
 
   return false;
+}
+
+/**
+ * Get idle watcher configuration with defaults
+ */
+export function getIdleWatcherConfig(): Required<IdleWatcherConfig> {
+  const config = getConfig();
+  const userConfig = config.idle_watcher || {};
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_IDLE_WATCHER_CONFIG.enabled,
+    idle_minutes: userConfig.idle_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.idle_minutes,
+    check_interval: userConfig.check_interval ?? DEFAULT_IDLE_WATCHER_CONFIG.check_interval,
+    min_conversation_length: userConfig.min_conversation_length ?? DEFAULT_IDLE_WATCHER_CONFIG.min_conversation_length,
+  };
 }
 
 /**

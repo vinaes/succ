@@ -184,7 +184,9 @@ Run \`succ index\` to index this brain for semantic search.
     const hooksToCreate = [
       'succ-session-start.cjs',
       'succ-session-end.cjs',
+      'succ-stop-reflection.cjs',
       'succ-idle-reflection.cjs',
+      'succ-idle-watcher.cjs',
       'succ-user-prompt.cjs',
       'succ-post-tool.cjs',
     ];
@@ -250,8 +252,19 @@ Run \`succ index\` to index this brain for semantic search.
           hooks: [
             {
               type: 'command',
+              command: `node "${hooksPath}/succ-stop-reflection.cjs"`,
+              timeout: 60,
+            },
+          ],
+        },
+      ],
+      SessionEnd: [
+        {
+          hooks: [
+            {
+              type: 'command',
               command: `node "${hooksPath}/succ-session-end.cjs"`,
-              timeout: 15,
+              timeout: 60,
             },
           ],
         },
@@ -329,6 +342,7 @@ Run \`succ index\` to index this brain for semantic search.
                 // Check for succ hook files (prefixed with "succ-")
                 if (succCommand.includes('succ-session-start.cjs') && existingCommand.includes('succ-session-start.cjs')) return true;
                 if (succCommand.includes('succ-session-end.cjs') && existingCommand.includes('succ-session-end.cjs')) return true;
+                if (succCommand.includes('succ-stop-reflection.cjs') && existingCommand.includes('succ-stop-reflection.cjs')) return true;
                 if (succCommand.includes('succ-user-prompt.cjs') && existingCommand.includes('succ-user-prompt.cjs')) return true;
                 if (succCommand.includes('succ-post-tool.cjs') && existingCommand.includes('succ-post-tool.cjs')) return true;
                 if (succCommand.includes('succ-idle-reflection.cjs') && existingCommand.includes('succ-idle-reflection.cjs')) return true;
@@ -375,8 +389,8 @@ Run \`succ index\` to index this brain for semantic search.
               if (cmd.includes('/hooks/succ-') || cmd.includes('\\hooks\\succ-')) return false;
               // Also remove any legacy hooks with succ hook names
               if (cmd.includes('session-start.cjs') || cmd.includes('session-end.cjs') ||
-                  cmd.includes('user-prompt.cjs') || cmd.includes('post-tool.cjs') ||
-                  cmd.includes('idle-reflection.cjs')) return false;
+                  cmd.includes('stop-reflection.cjs') || cmd.includes('user-prompt.cjs') ||
+                  cmd.includes('post-tool.cjs') || cmd.includes('idle-reflection.cjs')) return false;
               return true;
             });
             if (nonSuccHooks.length > 0) {

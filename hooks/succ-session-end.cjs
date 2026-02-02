@@ -33,7 +33,17 @@ process.stdin.on('end', () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    // Stop hook receives: { transcript_summary, ... }
+    // Signal idle watcher to shutdown by removing active file
+    try {
+      const watcherActiveFile = path.join(projectDir, '.succ', '.tmp', 'watcher-active.txt');
+      if (fs.existsSync(watcherActiveFile)) {
+        fs.unlinkSync(watcherActiveFile);
+      }
+    } catch {
+      // Ignore errors
+    }
+
+    // SessionEnd hook receives: { transcript_summary, ... }
     const summary = hookInput.transcript_summary || hookInput.session_summary;
 
     if (!summary || summary.length < 50) {
