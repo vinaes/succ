@@ -46,6 +46,7 @@ Or if running from source:
 | `succ_explore` | Explore knowledge graph from a memory |
 | `succ_status` | Get index, memory, and daemon statistics |
 | `succ_config` | Show current configuration with all effective values |
+| `succ_config_set` | Update config value (key=value). Saves to ~/.succ/config.json |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 
