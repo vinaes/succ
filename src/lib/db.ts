@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { getDbPath, getGlobalDbPath, getConfig } from './config.js';
 import { cosineSimilarity, getModelDimension } from './embeddings.js';
+import * as bm25 from './bm25.js';
 
 // Lazy import to avoid circular dependency
 let scheduleAutoExport: (() => void) | null = null;
@@ -423,6 +424,435 @@ export function searchDocuments(
   results.sort((a, b) => b.similarity - a.similarity);
 
   return results.slice(0, limit);
+}
+
+// ============================================================================
+// BM25 Index Management
+// ============================================================================
+
+let codeBm25Index: bm25.BM25Index | null = null;
+
+/**
+ * Get or build BM25 index for code search
+ */
+function getCodeBm25Index(): bm25.BM25Index {
+  if (codeBm25Index) return codeBm25Index;
+
+  const database = getDb();
+
+  // Try to load from metadata
+  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_code_index'").get() as
+    | { value: string }
+    | undefined;
+
+  if (stored) {
+    try {
+      codeBm25Index = bm25.deserializeIndex(stored.value);
+      return codeBm25Index;
+    } catch {
+      // Invalid stored index, rebuild
+    }
+  }
+
+  // Build from documents
+  const rows = database.prepare("SELECT id, content FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+    id: number;
+    content: string;
+  }>;
+
+  codeBm25Index = bm25.buildIndex(rows, 'code');
+
+  // Store for future use
+  saveCodeBm25Index();
+
+  return codeBm25Index;
+}
+
+/**
+ * Save BM25 index to metadata
+ */
+function saveCodeBm25Index(): void {
+  if (!codeBm25Index) return;
+  const database = getDb();
+  const serialized = bm25.serializeIndex(codeBm25Index);
+  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_code_index', ?)").run(serialized);
+}
+
+/**
+ * Invalidate BM25 index (call when documents change)
+ */
+export function invalidateCodeBm25Index(): void {
+  codeBm25Index = null;
+  const database = getDb();
+  database.prepare("DELETE FROM metadata WHERE key = 'bm25_code_index'").run();
+}
+
+/**
+ * Update BM25 index when a document is added/updated
+ */
+export function updateCodeBm25Index(docId: number, content: string): void {
+  const index = getCodeBm25Index();
+  // Remove old entry if exists
+  bm25.removeFromIndex(index, docId);
+  // Add new entry
+  bm25.addToIndex(index, { id: docId, content }, 'code');
+  saveCodeBm25Index();
+}
+
+// ============================================================================
+// Hybrid Search (BM25 + Vector)
+// ============================================================================
+
+export interface HybridSearchResult extends SearchResult {
+  bm25Score?: number;
+  vectorScore?: number;
+}
+
+/**
+ * Hybrid search combining BM25 and vector similarity
+ *
+ * @param query - Search query string
+ * @param queryEmbedding - Query embedding vector
+ * @param limit - Max results
+ * @param threshold - Min similarity threshold
+ * @param alpha - Weight: 0=pure BM25, 1=pure vector, 0.5=equal (default: 0.5)
+ */
+export function hybridSearchCode(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.25,
+  alpha: number = 0.5
+): HybridSearchResult[] {
+  const database = getDb();
+
+  // Get all code documents
+  const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+    id: number;
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: Buffer;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search
+  const bm25Index = getCodeBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'code', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridSearchResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      file_path: row.file_path,
+      content: row.content,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+    });
+  }
+  return results;
+}
+
+// ============================================================================
+// BM25 Index for Docs (brain/ markdown files)
+// ============================================================================
+
+let docsBm25Index: bm25.BM25Index | null = null;
+
+/**
+ * Get or build BM25 index for docs search (brain/ files)
+ */
+function getDocsBm25Index(): bm25.BM25Index {
+  if (docsBm25Index) return docsBm25Index;
+
+  const database = getDb();
+
+  // Try to load from metadata
+  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_docs_index'").get() as
+    | { value: string }
+    | undefined;
+
+  if (stored) {
+    try {
+      docsBm25Index = bm25.deserializeIndex(stored.value);
+      return docsBm25Index;
+    } catch {
+      // Invalid stored index, rebuild
+    }
+  }
+
+  // Build from documents (exclude code: prefix)
+  const rows = database.prepare("SELECT id, content FROM documents WHERE file_path NOT LIKE 'code:%'").all() as Array<{
+    id: number;
+    content: string;
+  }>;
+
+  docsBm25Index = bm25.buildIndex(rows, 'docs');
+
+  // Store for future use
+  saveDocsBm25Index();
+
+  return docsBm25Index;
+}
+
+/**
+ * Save docs BM25 index to metadata
+ */
+function saveDocsBm25Index(): void {
+  if (!docsBm25Index) return;
+  const database = getDb();
+  const serialized = bm25.serializeIndex(docsBm25Index);
+  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_docs_index', ?)").run(serialized);
+}
+
+/**
+ * Invalidate docs BM25 index
+ */
+export function invalidateDocsBm25Index(): void {
+  docsBm25Index = null;
+  const database = getDb();
+  database.prepare("DELETE FROM metadata WHERE key = 'bm25_docs_index'").run();
+}
+
+/**
+ * Hybrid search for docs (brain/ markdown files)
+ */
+export function hybridSearchDocs(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.2,
+  alpha: number = 0.5
+): HybridSearchResult[] {
+  const database = getDb();
+
+  // Get all docs (exclude code: prefix)
+  const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%'").all() as Array<{
+    id: number;
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: Buffer;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search with docs tokenizer (stemming)
+  const bm25Index = getDocsBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridSearchResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      file_path: row.file_path,
+      content: row.content,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+    });
+  }
+  return results;
+}
+
+// ============================================================================
+// BM25 Index for Memories
+// ============================================================================
+
+let memoriesBm25Index: bm25.BM25Index | null = null;
+
+/**
+ * Get or build BM25 index for memories
+ */
+function getMemoriesBm25Index(): bm25.BM25Index {
+  if (memoriesBm25Index) return memoriesBm25Index;
+
+  const database = getDb();
+
+  // Try to load from metadata
+  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'").get() as
+    | { value: string }
+    | undefined;
+
+  if (stored) {
+    try {
+      memoriesBm25Index = bm25.deserializeIndex(stored.value);
+      return memoriesBm25Index;
+    } catch {
+      // Invalid stored index, rebuild
+    }
+  }
+
+  // Build from memories
+  const rows = database.prepare('SELECT id, content FROM memories').all() as Array<{
+    id: number;
+    content: string;
+  }>;
+
+  memoriesBm25Index = bm25.buildIndex(rows, 'docs'); // Use docs tokenizer with stemming
+
+  // Store for future use
+  saveMemoriesBm25Index();
+
+  return memoriesBm25Index;
+}
+
+/**
+ * Save memories BM25 index to metadata
+ */
+function saveMemoriesBm25Index(): void {
+  if (!memoriesBm25Index) return;
+  const database = getDb();
+  const serialized = bm25.serializeIndex(memoriesBm25Index);
+  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)").run(serialized);
+}
+
+/**
+ * Invalidate memories BM25 index
+ */
+export function invalidateMemoriesBm25Index(): void {
+  memoriesBm25Index = null;
+  const database = getDb();
+  database.prepare("DELETE FROM metadata WHERE key = 'bm25_memories_index'").run();
+}
+
+/**
+ * Update memories BM25 index when a memory is added
+ */
+export function updateMemoriesBm25Index(memoryId: number, content: string): void {
+  const index = getMemoriesBm25Index();
+  bm25.removeFromIndex(index, memoryId);
+  bm25.addToIndex(index, { id: memoryId, content }, 'docs');
+  saveMemoriesBm25Index();
+}
+
+export interface HybridMemoryResult {
+  id: number;
+  content: string;
+  tags: string | null;
+  source: string | null;
+  type: string | null;
+  created_at: string;
+  similarity: number;
+  bm25Score?: number;
+  vectorScore?: number;
+}
+
+/**
+ * Hybrid search for memories
+ */
+export function hybridSearchMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5
+): HybridMemoryResult[] {
+  const database = getDb();
+
+  const rows = database.prepare('SELECT id, content, tags, source, type, created_at, embedding FROM memories WHERE embedding IS NOT NULL').all() as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    type: string | null;
+    created_at: string;
+    embedding: Buffer;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search
+  const bm25Index = getMemoriesBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridMemoryResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      id: row.id,
+      content: row.content,
+      tags: row.tags,
+      source: row.source,
+      type: row.type,
+      created_at: row.created_at,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+    });
+  }
+  return results;
 }
 
 /**

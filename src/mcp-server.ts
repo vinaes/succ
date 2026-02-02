@@ -16,6 +16,9 @@ import { z } from 'zod';
 
 import {
   searchDocuments,
+  hybridSearchCode,
+  hybridSearchDocs,
+  hybridSearchMemories,
   getStats,
   closeDb,
   saveMemory,
@@ -26,6 +29,7 @@ import {
   deleteMemoriesOlderThan,
   deleteMemoriesByTag,
   getMemoryById,
+  updateMemoriesBm25Index,
   // Global memory
   saveGlobalMemory,
   searchGlobalMemories,
@@ -223,10 +227,10 @@ server.resource(
   }
 );
 
-// Tool: succ_search - Semantic search in brain vault
+// Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
 server.tool(
   'succ_search',
-  'Search the project knowledge base semantically. Returns relevant chunks from indexed documentation.',
+  'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation.',
   {
     query: z.string().describe('The search query'),
     limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
@@ -235,7 +239,8 @@ server.tool(
   async ({ query, limit, threshold }) => {
     try {
       const queryEmbedding = await getEmbedding(query);
-      const results = searchDocuments(queryEmbedding, limit, threshold);
+      // Use hybrid search for docs
+      const results = hybridSearchDocs(query, queryEmbedding, limit, threshold);
 
       if (results.length === 0) {
         return {
@@ -250,8 +255,8 @@ server.tool(
 
       const formatted = results
         .map((r, i) => {
-          const similarity = (r.similarity * 100).toFixed(1);
-          return `### ${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line} (${similarity}%)\n\n${r.content}`;
+          const score = (r.similarity * 100).toFixed(1);
+          return `### ${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line} (${score}%)\n\n${r.content}`;
         })
         .join('\n\n---\n\n');
 
@@ -417,10 +422,10 @@ server.tool(
   }
 );
 
-// Tool: succ_recall - Recall past memories (searches both local and global)
+// Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
 server.tool(
   'succ_recall',
-  'Recall relevant memories from past sessions. Searches both project-local and global (cross-project) memories.',
+  'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories.',
   {
     query: z.string().describe('What to recall (semantic search)'),
     limit: z.number().optional().default(5).describe('Maximum number of memories (default: 5)'),
@@ -458,13 +463,38 @@ server.tool(
 
       const queryEmbedding = await getEmbedding(query);
 
-      // Search both local and global memories
-      const localResults = searchMemories(queryEmbedding, limit, 0.3, tags, sinceDate);
+      // Use hybrid search for local memories (BM25 + vector with RRF)
+      // Note: tags and since filtering applied after hybrid search
+      let localResults = hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
+
+      // Apply tag filter if specified
+      if (tags && tags.length > 0) {
+        localResults = localResults.filter((m) => {
+          const memTags = m.tags ? m.tags.split(',').map((t) => t.trim()) : [];
+          return tags.some((t) => memTags.includes(t));
+        });
+      }
+
+      // Apply date filter if specified
+      if (sinceDate) {
+        localResults = localResults.filter((m) => new Date(m.created_at) >= sinceDate!);
+      }
+
+      localResults = localResults.slice(0, limit);
+
+      // Global memories still use vector-only search (separate DB)
       const globalResults = searchGlobalMemories(queryEmbedding, limit, 0.3, tags, sinceDate);
+
+      // Helper to parse tags (can be string or array)
+      const parseTags = (t: string | string[] | null): string[] => {
+        if (!t) return [];
+        if (Array.isArray(t)) return t;
+        return t.split(',').map((s) => s.trim()).filter(Boolean);
+      };
 
       // Merge and sort by similarity
       const allResults = [
-        ...localResults.map((r) => ({ ...r, isGlobal: false })),
+        ...localResults.map((r) => ({ ...r, tags: parseTags(r.tags), isGlobal: false })),
         ...globalResults.map((r) => ({ ...r, isGlobal: true })),
       ]
         .sort((a, b) => b.similarity - a.similarity)
@@ -493,7 +523,8 @@ server.tool(
 
         const recentFormatted = recent
           .map((m, i) => {
-            const tagStr = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
+            const memTags = parseTags(m.tags);
+            const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
             const date = new Date(m.created_at).toLocaleDateString();
             const scope = m.isGlobal ? '[GLOBAL] ' : '';
             return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`;
@@ -513,7 +544,8 @@ server.tool(
       const formatted = allResults
         .map((m, i) => {
           const similarity = (m.similarity * 100).toFixed(0);
-          const tagStr = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
+          const memTags = Array.isArray(m.tags) ? m.tags : parseTags(m.tags);
+          const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
           const date = new Date(m.created_at).toLocaleDateString();
           const sourceStr = m.source ? ` (from: ${m.source})` : '';
           const scope = m.isGlobal ? ' [GLOBAL]' : '';
@@ -714,23 +746,20 @@ server.tool(
   }
 );
 
-// Tool: succ_search_code - Search indexed code
+// Tool: succ_search_code - Search indexed code (hybrid BM25 + vector)
 server.tool(
   'succ_search_code',
-  'Search indexed source code semantically. Find functions, classes, and code patterns.',
+  'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Works well for both exact identifiers and conceptual queries.',
   {
-    query: z.string().describe('What to search for (e.g., "authentication logic", "database connection")'),
+    query: z.string().describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
     limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
     threshold: z.number().optional().default(0.25).describe('Similarity threshold 0-1 (default: 0.25)'),
   },
   async ({ query, limit, threshold }) => {
     try {
       const queryEmbedding = await getEmbedding(query);
-      // Search only code: prefixed files
-      const allResults = searchDocuments(queryEmbedding, limit * 3, threshold);
-      const codeResults = allResults
-        .filter((r) => r.file_path.startsWith('code:'))
-        .slice(0, limit);
+      // Hybrid search: BM25 + vector with RRF fusion
+      const codeResults = hybridSearchCode(query, queryEmbedding, limit, threshold);
 
       if (codeResults.length === 0) {
         return {
@@ -745,10 +774,10 @@ server.tool(
 
       const formatted = codeResults
         .map((r, i) => {
-          const similarity = (r.similarity * 100).toFixed(1);
+          const score = (r.similarity * 100).toFixed(1);
           // Remove code: prefix for display
           const filePath = r.file_path.replace(/^code:/, '');
-          return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${similarity}%)\n\n\`\`\`\n${r.content}\n\`\`\``;
+          return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)\n\n\`\`\`\n${r.content}\n\`\`\``;
         })
         .join('\n\n---\n\n');
 
@@ -1207,6 +1236,38 @@ function parseRelativeDate(input: string): Date | null {
 
   return null;
 }
+
+// Tool: succ_config - Show current configuration
+server.tool(
+  'succ_config',
+  'Get the current succ configuration with all settings and their effective values (with defaults applied). Shows embedding mode, analyze mode, quality scoring, graph settings, idle reflection, etc.',
+  {},
+  async () => {
+    try {
+      const { getConfigDisplay, formatConfigDisplay } = await import('./lib/config.js');
+      const display = getConfigDisplay(true); // mask secrets
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: formatConfigDisplay(display),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error getting config: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
