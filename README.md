@@ -7,6 +7,7 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 ## Features
 
 - **Local-first** — all data stays on your machine, no API keys required
+- **Hybrid search** — semantic embeddings + BM25 keyword search for best results
 - **RAG with embeddings** — semantic search via local model (or API)
 - **Brain vault** — Obsidian-compatible markdown knowledge base
 - **Persistent memory** — remember decisions, learnings, preferences across sessions
@@ -56,7 +57,8 @@ succ search "how does authentication work"
 | `succ index-code [path]` | Index source code |
 | `succ search <query>` | Semantic search |
 | `succ chat <query>` | RAG chat with context |
-| `succ watch [path]` | Watch for file changes and auto-reindex |
+| `succ watch [path]` | Watch for changes and auto-reindex (docs + code) |
+| `succ train-bpe` | Train BPE vocabulary from indexed code |
 | `succ remember <content>` | Save to memory |
 | `succ memories` | List and search memories |
 | `succ forget` | Delete memories |
@@ -115,6 +117,20 @@ succ analyze --stop               # Stop daemon
 ├── 02_Knowledge/                # Research notes
 └── 03_Archive/                  # Old/superseded
 ```
+
+### succ watch
+
+Watches for file changes and auto-reindexes. By default watches both docs and code:
+
+```bash
+succ watch                        # Watch docs + code (foreground)
+succ watch --daemon               # Run as background daemon
+succ watch --ignore-code          # Watch only docs (skip code files)
+succ watch --status               # Check daemon status
+succ watch --stop                 # Stop daemon
+```
+
+Supports 120+ file extensions (based on GitHub Linguist) with comprehensive ignore patterns for build artifacts, dependencies, etc.
 
 ## Configuration
 
