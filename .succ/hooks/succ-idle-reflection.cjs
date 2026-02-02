@@ -388,8 +388,16 @@ async function callSleepAgentLocal(prompt) {
   } catch { return null; }
 }
 
+const scriptFile = ${JSON.stringify(scriptFile)};
+
 async function main() {
   try { fs.unlinkSync(contextFile); } catch {}
+
+  // Cleanup function to delete script file on exit
+  const cleanup = () => {
+    try { fs.unlinkSync(scriptFile); } catch {}
+  };
+  process.on('exit', cleanup);
 
   if (useSleepAgent) {
     // Use local LLM via sleep_agent
@@ -435,12 +443,7 @@ main();
       stdio: 'ignore',
     });
     proc.unref();
-
-    // Clean up script file after a delay (the detached process should have started)
-    setTimeout(() => {
-      try { fs.unlinkSync(scriptFile); } catch {}
-    }, 5000);
-
+    // Script file will be deleted by the detached process on exit
     return true;
   } catch (err) {
     try { fs.unlinkSync(scriptFile); } catch {}
