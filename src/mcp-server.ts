@@ -61,6 +61,7 @@ import { scanSensitive, formatMatches } from './lib/sensitive-filter.js';
 import { countTokens, countTokensArray, formatTokens, compressionPercent } from './lib/token-counter.js';
 import { recordTokenStat, type TokenEventType } from './lib/db.js';
 import { getIdleReflectionConfig } from './lib/config.js';
+import { parseDuration, applyTemporalScoring, getTemporalConfig } from './lib/temporal.js';
 
 // Graceful shutdown handler
 function setupGracefulShutdown() {
@@ -407,7 +408,7 @@ server.tool(
 // Tool: succ_remember - Save important information to memory
 server.tool(
   'succ_remember',
-  'Save important information to long-term memory. Use this to remember decisions, learnings, user preferences, or anything worth recalling later. Use global=true for cross-project memories.',
+  'Save important information to long-term memory. Use this to remember decisions, learnings, user preferences, or anything worth recalling later. Use global=true for cross-project memories. Use valid_until for temporary info (sprint goals, workarounds), valid_from for scheduled changes.',
   {
     content: z.string().describe('The information to remember'),
     tags: z
@@ -429,8 +430,16 @@ server.tool(
       .optional()
       .default(false)
       .describe('Save to global memory (shared across all projects)'),
+    valid_from: z
+      .string()
+      .optional()
+      .describe('When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'),
+    valid_until: z
+      .string()
+      .optional()
+      .describe('When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'),
   },
-  async ({ content, tags, source, type, global: useGlobal }) => {
+  async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until }) => {
     try {
       const config = getConfig();
 
@@ -455,6 +464,38 @@ server.tool(
         }
       }
 
+      // Parse temporal validity periods
+      let validFromDate: Date | undefined;
+      let validUntilDate: Date | undefined;
+
+      if (valid_from) {
+        try {
+          validFromDate = parseDuration(valid_from);
+        } catch (e: any) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Invalid valid_from: ${e.message}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
+            }],
+            isError: true,
+          };
+        }
+      }
+
+      if (valid_until) {
+        try {
+          validUntilDate = parseDuration(valid_until);
+        } catch (e: any) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Invalid valid_until: ${e.message}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
+            }],
+            isError: true,
+          };
+        }
+      }
+
       const embedding = await getEmbedding(content);
       let qualityScore = null;
       if (config.quality_scoring_enabled !== false) {
@@ -472,6 +513,11 @@ server.tool(
           };
         }
       }
+
+      // Format validity period for display
+      const validityStr = (validFromDate || validUntilDate)
+        ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
+        : '';
 
       if (useGlobal) {
         const projectName = path.basename(getProjectRoot());
@@ -493,7 +539,7 @@ server.tool(
           content: [
             {
               type: 'text' as const,
-              text: `✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr} (project: ${projectName}):\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+              text: `✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr}${validityStr} (project: ${projectName}):\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
             },
           ],
         };
@@ -502,6 +548,8 @@ server.tool(
       const result = saveMemory(content, embedding, tags, source, {
         type,
         qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+        validFrom: validFromDate,
+        validUntil: validUntilDate,
       });
 
       const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
@@ -521,7 +569,7 @@ server.tool(
         content: [
           {
             type: 'text' as const,
-            text: `✓ Remembered${typeStr} (id: ${result.id})${tagStr}${qualityStr}:\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+            text: `✓ Remembered${typeStr} (id: ${result.id})${tagStr}${qualityStr}${validityStr}:\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
           },
         ],
       };
@@ -545,7 +593,7 @@ server.tool(
 // Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
 server.tool(
   'succ_recall',
-  'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories.',
+  'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Use as_of_date for point-in-time queries (post-mortems, audits, debugging past state).',
   {
     query: z.string().describe('What to recall (semantic search)'),
     limit: z.number().optional().default(5).describe('Maximum number of memories (default: 5)'),
@@ -557,8 +605,12 @@ server.tool(
       .string()
       .optional()
       .describe('Only memories after this date (ISO format or "yesterday", "last week")'),
+    as_of_date: z
+      .string()
+      .optional()
+      .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
   },
-  async ({ query, limit, tags, since }) => {
+  async ({ query, limit, tags, since, as_of_date }) => {
     try {
       // Parse relative date strings
       let sinceDate: Date | undefined;
@@ -600,6 +652,44 @@ server.tool(
         localResults = localResults.filter((m) => new Date(m.created_at) >= sinceDate!);
       }
 
+      // Apply point-in-time validity filter (as_of_date)
+      // This filters memories to show only those that were valid at the specified point in time
+      let asOfDateObj: Date | undefined;
+      if (as_of_date) {
+        asOfDateObj = new Date(as_of_date);
+        if (isNaN(asOfDateObj.getTime())) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Invalid as_of_date: "${as_of_date}". Use ISO format (2024-06-01).`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Filter: memory must have been created before as_of_date AND
+        // either have no valid_until or valid_until is after as_of_date AND
+        // either have no valid_from or valid_from is before as_of_date
+        localResults = localResults.filter((m) => {
+          const createdAt = new Date(m.created_at);
+          if (createdAt > asOfDateObj!) return false;
+
+          // Check valid_from: if set, must be before or equal to as_of_date
+          if (m.valid_from) {
+            const validFrom = new Date(m.valid_from);
+            if (validFrom > asOfDateObj!) return false;
+          }
+
+          // Check valid_until: if set, must be after or equal to as_of_date
+          if (m.valid_until) {
+            const validUntil = new Date(m.valid_until);
+            if (validUntil < asOfDateObj!) return false;
+          }
+
+          return true;
+        });
+      }
+
       localResults = localResults.slice(0, limit);
 
       // Global memories still use vector-only search (separate DB)
@@ -613,12 +703,29 @@ server.tool(
       };
 
       // Merge and sort by similarity
-      const allResults = [
+      let allResults = [
         ...localResults.map((r) => ({ ...r, tags: parseTags(r.tags), isGlobal: false })),
         ...globalResults.map((r) => ({ ...r, isGlobal: true })),
       ]
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, limit);
+
+      // Apply temporal scoring if enabled (time decay + access boost)
+      const temporalConfig = getTemporalConfig();
+      if (temporalConfig.enabled && !as_of_date) {
+        // Don't apply temporal scoring for point-in-time queries
+        const scoredResults = applyTemporalScoring(
+          allResults.map(r => ({
+            ...r,
+            last_accessed: (r as any).last_accessed || null,
+            access_count: (r as any).access_count || 0,
+            valid_from: (r as any).valid_from || null,
+            valid_until: (r as any).valid_until || null,
+          })),
+          temporalConfig
+        );
+        allResults = scoredResults;
+      }
 
       if (allResults.length === 0) {
         // Try to show recent memories as fallback
@@ -683,13 +790,25 @@ server.tool(
           const sourceStr = m.source ? ` (from: ${m.source})` : '';
           const scope = m.isGlobal ? ' [GLOBAL]' : '';
           const projectStr = m.isGlobal && 'project' in m && m.project ? ` (project: ${m.project})` : '';
-          return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr} (${similarity}% match)\n\n${m.content}`;
+
+          // Show temporal validity info if present
+          const validFrom = (m as any).valid_from;
+          const validUntil = (m as any).valid_until;
+          let validityStr = '';
+          if (validFrom || validUntil) {
+            const fromStr = validFrom ? new Date(validFrom).toLocaleDateString() : '∞';
+            const untilStr = validUntil ? new Date(validUntil).toLocaleDateString() : '∞';
+            validityStr = ` [valid: ${fromStr} → ${untilStr}]`;
+          }
+
+          return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${m.content}`;
         })
         .join('\n\n---\n\n');
 
       const localCount = allResults.filter((r) => !r.isGlobal).length;
       const globalCount = allResults.filter((r) => r.isGlobal).length;
-      const summary = `Found ${allResults.length} memories (${localCount} local, ${globalCount} global)`;
+      const asOfStr = as_of_date ? ` (as of ${as_of_date})` : '';
+      const summary = `Found ${allResults.length} memories (${localCount} local, ${globalCount} global)${asOfStr}`;
 
       return {
         content: [
