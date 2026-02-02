@@ -336,7 +336,7 @@ export async function precomputeContext(
       // CLI: --local flag
       llmOptions = {
         mode: 'local',
-        model: options.model || config.sleep_agent?.model || 'llama3.2',
+        model: options.model || config.sleep_agent?.model || 'qwen2.5-coder:32b',
         apiUrl: options.apiUrl || config.sleep_agent?.api_url || 'http://localhost:11434/v1',
       };
     } else if (options.openrouter) {
