@@ -215,11 +215,8 @@ Track your benchmark results over time to detect regressions:
 |------|---------|-----------|-----|---------|------------|
 | 2026-02 | 1.0.59 | 60.6% | 98.6% | 71.2% | 16.0 |
 
-## Comparison with Competitors
+## Key Advantages
 
-See [Competitive Analysis](../.succ/brain/01_Projects/succ/Strategy/Competitive%20Analysis.md) for detailed comparison with Mem0, Zep, Letta, and others.
-
-**Summary:**
-- succ is the only solution offering local-first, zero-latency embeddings
-- Accuracy is comparable to cloud-based solutions
-- No API costs for local mode
+- **Local-first** — Zero-latency embeddings with no API calls
+- **Accuracy** — Comparable to cloud-based solutions
+- **Cost** — No API costs for local mode

@@ -5,14 +5,10 @@
  * - Code search: exact tokenizer for identifiers (camelCase, snake_case)
  * - Docs search: stemming for natural language
  *
- * Best practices from research:
+ * Features:
  * - RRF (Reciprocal Rank Fusion) for combining results
- * - k1=1.3, b=0.75 - optimal parameters
+ * - k1=1.3, b=0.75 - optimal BM25 parameters
  * - Exact match boost for identifier searches
- *
- * Sources:
- * - https://weaviate.io/blog/hybrid-search-explained
- * - https://superlinked.com/vectorhub/articles/optimizing-rag-with-hybrid-search-reranking
  */
 
 // BM25 parameters (tuned for code/docs)

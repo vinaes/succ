@@ -46,6 +46,8 @@ export interface SuccConfig {
   bpe?: BPETokenizerConfig;
   // Retention policy settings (auto-cleanup with decay)
   retention?: RetentionPolicyConfig;
+  // Temporal awareness settings (time-weighted scoring)
+  temporal?: TemporalConfig;
 }
 
 export interface RetentionPolicyConfig {
@@ -57,6 +59,22 @@ export interface RetentionPolicyConfig {
   delete_threshold?: number;  // Effective score threshold to delete (default: 0.15)
   default_quality_score?: number;  // Default quality for memories without score (default: 0.5)
   auto_cleanup_interval_days?: number;  // Days between auto-cleanup runs (default: 7)
+}
+
+export interface TemporalConfig {
+  enabled?: boolean;  // Enable temporal scoring (default: true)
+  // Scoring weights (must sum to 1.0)
+  semantic_weight?: number;  // Weight for semantic similarity (default: 0.8)
+  recency_weight?: number;  // Weight for time decay (default: 0.2)
+  // Decay parameters
+  decay_half_life_hours?: number;  // Hours until score decays to 50% (default: 168 = 7 days)
+  decay_floor?: number;  // Minimum decay factor (default: 0.1)
+  // Access boost
+  access_boost_enabled?: boolean;  // Enable access frequency boost (default: true)
+  access_boost_factor?: number;  // Score boost per access (default: 0.05)
+  max_access_boost?: number;  // Maximum access boost (default: 0.3)
+  // Validity filtering
+  filter_expired?: boolean;  // Filter out expired facts (default: true)
 }
 
 export interface BPETokenizerConfig {

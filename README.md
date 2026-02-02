@@ -20,6 +20,7 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 - **Sensitive filter** — detect and redact PII, API keys, secrets
 - **Quality scoring** — local ONNX classification to filter noise
 - **Token savings tracking** — measure how many tokens saved by RAG vs loading full files
+- **Temporal awareness** — time decay, validity periods, point-in-time queries
 - **Watch mode** — auto-reindex on file changes with debouncing
 - **Daemon mode** — continuous background analysis
 - **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
@@ -629,6 +630,7 @@ your-project/
 ## Documentation
 
 - [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
+- [Temporal Awareness](docs/temporal.md) — Time decay, validity periods, point-in-time queries
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup
 - [llama.cpp GPU](docs/llama-cpp.md) — GPU-accelerated embeddings
 - [MCP Integration](docs/mcp.md) — Claude Code tools and resources
