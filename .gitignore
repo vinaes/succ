@@ -4,13 +4,11 @@ dist/
 .env
 .env.local
 
-# succ generated files
-.claude/*.log
-.claude/*.lock
-.claude/sandbox-*.json
+# succ generated files (local to each machine)
+.claude/
 .succ/.tmp/
 .succ/.context-archive/
 .succ/next-session-context.md
+.succ/brain/
 
-# Keep brain vault, soul.md, hooks, and settings.json in git!
-# They contain valuable documentation and configuration
+# Hooks are tracked in git (see .succ/hooks/)
