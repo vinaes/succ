@@ -6,6 +6,7 @@ import {
   getConfig,
   getProjectRoot,
   getClaudeDir,
+  getSuccDir,
   getDbPath,
   getGlobalDbPath,
   setConfigOverride,
@@ -35,21 +36,30 @@ describe('Config Module', () => {
     });
   });
 
-  describe('getClaudeDir', () => {
-    it('should return .claude path under project root', () => {
-      const claudeDir = getClaudeDir();
+  describe('getSuccDir', () => {
+    it('should return .succ path under project root', () => {
+      const succDir = getSuccDir();
       const projectRoot = getProjectRoot();
 
-      expect(claudeDir).toBe(path.join(projectRoot, '.claude'));
+      expect(succDir).toBe(path.join(projectRoot, '.succ'));
+    });
+  });
+
+  describe('getClaudeDir', () => {
+    it('should be alias for getSuccDir (backwards compatibility)', () => {
+      const claudeDir = getClaudeDir();
+      const succDir = getSuccDir();
+
+      expect(claudeDir).toBe(succDir);
     });
   });
 
   describe('getDbPath', () => {
-    it('should return succ.db path under .claude', () => {
+    it('should return succ.db path under .succ', () => {
       const dbPath = getDbPath();
-      const claudeDir = getClaudeDir();
+      const succDir = getSuccDir();
 
-      expect(dbPath).toBe(path.join(claudeDir, 'succ.db'));
+      expect(dbPath).toBe(path.join(succDir, 'succ.db'));
     });
   });
 

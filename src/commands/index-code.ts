@@ -36,6 +36,7 @@ const DEFAULT_IGNORE = [
   '**/*.bundle.js',
   '**/coverage/**',
   '**/.claude/**',
+  '**/.succ/**',
 ];
 
 interface IndexCodeOptions {

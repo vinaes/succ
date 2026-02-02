@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
-import { getProjectRoot, getClaudeDir, getConfig } from '../lib/config.js';
+import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
 import { withLock, getLockStatus } from '../lib/lock.js';
 
 interface AnalyzeOptions {
@@ -37,18 +37,18 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     mode = config.analyze_mode;
   }
   const projectRoot = getProjectRoot();
-  const claudeDir = getClaudeDir();
-  const brainDir = path.join(claudeDir, 'brain');
+  const succDir = getSuccDir();
+  const brainDir = path.join(succDir, 'brain');
 
   // Daemon mode: continuous background analysis as separate daemon
   if (daemon) {
-    await manageDaemon(projectRoot, claudeDir, brainDir, interval, openrouter);
+    await manageDaemon(projectRoot, succDir, brainDir, interval, openrouter);
     return;
   }
 
   // Background mode: spawn detached process and exit
   if (background) {
-    const logFile = path.join(claudeDir, 'analyze.log');
+    const logFile = path.join(succDir, 'analyze.log');
     const args = ['analyze'];
     if (!parallel) args.push('--sequential');
     if (openrouter) args.push('--openrouter');
@@ -70,7 +70,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   }
 
   // Write progress file
-  const progressFile = path.join(claudeDir, 'analyze.progress.json');
+  const progressFile = path.join(succDir, 'analyze.progress.json');
   const writeProgress = (status: string, completed: number, total: number, current?: string) => {
     fs.writeFileSync(progressFile, JSON.stringify({
       status,
@@ -113,7 +113,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     writeProgress('completed', agents.length, agents.length);
     console.log('\n✅ Brain vault generated!');
     console.log(`\nNext steps:`);
-    console.log(`  1. Review generated docs in .claude/brain/`);
+    console.log(`  1. Review generated docs in .succ/brain/`);
     console.log(`  2. Run \`succ index\` to create embeddings`);
     console.log(`  3. Open in Obsidian for graph view`);
     return;
@@ -125,7 +125,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     writeProgress('completed', agents.length, agents.length);
     console.log('\n✅ Brain vault generated!');
     console.log(`\nNext steps:`);
-    console.log(`  1. Review generated docs in .claude/brain/`);
+    console.log(`  1. Review generated docs in .succ/brain/`);
     console.log(`  2. Run \`succ index\` to create embeddings`);
     console.log(`  3. Open in Obsidian for graph view`);
     return;
@@ -143,7 +143,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   console.log('\n✅ Brain vault generated!');
   console.log(`\nNext steps:`);
-  console.log(`  1. Review generated docs in .claude/brain/`);
+  console.log(`  1. Review generated docs in .succ/brain/`);
   console.log(`  2. Run \`succ index\` to create embeddings`);
   console.log(`  3. Open in Obsidian for graph view`);
 }
@@ -514,13 +514,13 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
  */
 async function manageDaemon(
   projectRoot: string,
-  claudeDir: string,
+  succDir: string,
   brainDir: string,
   intervalMinutes: number,
   openrouter: boolean
 ): Promise<void> {
-  const pidFile = path.join(claudeDir, 'daemon.pid');
-  const logFile = path.join(claudeDir, 'daemon.log');
+  const pidFile = path.join(succDir, 'daemon.pid');
+  const logFile = path.join(succDir, 'daemon.log');
 
   // Check if daemon is already running
   if (fs.existsSync(pidFile)) {
@@ -580,8 +580,8 @@ function isProcessRunning(pid: number): boolean {
  * Stop daemon
  */
 export async function stopAnalyzeDaemon(): Promise<void> {
-  const claudeDir = getClaudeDir();
-  const pidFile = path.join(claudeDir, 'daemon.pid');
+  const succDir = getSuccDir();
+  const pidFile = path.join(succDir, 'daemon.pid');
 
   if (!fs.existsSync(pidFile)) {
     console.log('No daemon running');
@@ -608,10 +608,10 @@ export async function stopAnalyzeDaemon(): Promise<void> {
  * Show daemon status
  */
 export async function analyzeDaemonStatus(): Promise<void> {
-  const claudeDir = getClaudeDir();
-  const pidFile = path.join(claudeDir, 'daemon.pid');
-  const stateFile = path.join(claudeDir, 'daemon.state.json');
-  const logFile = path.join(claudeDir, 'daemon.log');
+  const succDir = getSuccDir();
+  const pidFile = path.join(succDir, 'daemon.pid');
+  const stateFile = path.join(succDir, 'daemon.state.json');
+  const logFile = path.join(succDir, 'daemon.log');
 
   console.log('📊 Daemon Status\n');
 
@@ -658,10 +658,10 @@ export async function analyzeDaemonStatus(): Promise<void> {
  */
 export async function runDaemonWorker(intervalMinutes: number, openrouter: boolean): Promise<void> {
   const projectRoot = getProjectRoot();
-  const claudeDir = getClaudeDir();
-  const brainDir = path.join(claudeDir, 'brain');
+  const succDir = getSuccDir();
+  const brainDir = path.join(succDir, 'brain');
 
-  await runDaemonMode(projectRoot, claudeDir, brainDir, intervalMinutes, openrouter);
+  await runDaemonMode(projectRoot, succDir, brainDir, intervalMinutes, openrouter);
 }
 
 interface RunAgentOptions {
@@ -965,14 +965,14 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
  */
 async function runDaemonMode(
   projectRoot: string,
-  claudeDir: string,
+  succDir: string,
   brainDir: string,
   intervalMinutes: number,
   openrouter: boolean
 ): Promise<void> {
   const { execFileSync } = await import('child_process');
-  const logFile = path.join(claudeDir, 'daemon.log');
-  const stateFile = path.join(claudeDir, 'daemon.state.json');
+  const logFile = path.join(succDir, 'daemon.log');
+  const stateFile = path.join(succDir, 'daemon.state.json');
 
   const log = (msg: string) => {
     const timestamp = new Date().toISOString();

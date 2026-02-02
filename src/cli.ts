@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { createRequire } from 'module';
 import { init } from './commands/init.js';
 import { index } from './commands/index.js';
 import { search } from './commands/search.js';
@@ -17,7 +18,10 @@ import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
 
-const VERSION = '1.0.0';
+// Read version from package.json
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+const VERSION = pkg.version;
 
 const program = new Command();
 
@@ -32,6 +36,7 @@ program
   .option('-f, --force', 'Overwrite existing configuration')
   .option('-y, --yes', 'Non-interactive mode (skip prompts)')
   .option('-v, --verbose', 'Show detailed output (created files, etc.)')
+  .option('-g, --global', 'Use global hooks (from succ package dir, not local copies)')
   .action(init);
 
 program

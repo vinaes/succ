@@ -1,20 +1,61 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getProjectRoot, getClaudeDir } from '../lib/config.js';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import inquirer from 'inquirer';
+import ora from 'ora';
+import isInstalledGlobally from 'is-installed-globally';
+import { getProjectRoot, getSuccDir, LOCAL_MODEL } from '../lib/config.js';
+
+// Get the directory where succ is installed
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SUCC_PACKAGE_DIR = path.resolve(__dirname, '..', '..');
 
 interface InitOptions {
   force?: boolean;
+  yes?: boolean; // Non-interactive mode
+  verbose?: boolean; // Show detailed output
+  global?: boolean; // Force global mode (use hooks from package dir)
+}
+
+interface ConfigData {
+  embedding_mode: 'local' | 'openrouter' | 'custom';
+  embedding_model?: string;
+  embedding_api_url?: string;
+  embedding_dimensions?: number;
+  openrouter_api_key?: string;
+  analyze_mode?: 'claude' | 'openrouter' | 'local';
+  analyze_api_url?: string;
+  analyze_model?: string;
+}
+
+/**
+ * Start a daemon process in the background
+ */
+function startDaemon(command: string, args: string[], cwd: string): void {
+  const child = spawn(command, args, {
+    cwd,
+    detached: true,
+    stdio: 'ignore',
+    shell: true,
+  });
+  child.unref();
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
   const projectRoot = getProjectRoot();
-  const claudeDir = getClaudeDir();
+  const succDir = getSuccDir();
+  const isInteractive = !options.yes && process.stdout.isTTY && process.stdin.isTTY;
+  const verbose = options.verbose || false;
 
-  console.log(`Initializing succ in ${projectRoot}`);
+  // Determine if running in global mode
+  // --global flag forces global mode (for testing), otherwise auto-detect
+  const useGlobalHooks = options.global || isInstalledGlobally;
 
   // Check if already initialized
-  if (fs.existsSync(path.join(claudeDir, 'succ.db')) && !options.force) {
+  if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
     console.log('succ is already initialized. Use --force to reinitialize.');
     return;
   }
@@ -22,33 +63,45 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Create directories - full brain vault structure
   const projectName = path.basename(projectRoot);
   const dirs = [
-    claudeDir,
-    path.join(claudeDir, 'brain'),
-    path.join(claudeDir, 'brain', '.meta'),
-    path.join(claudeDir, 'brain', '.self'),
-    path.join(claudeDir, 'brain', '00_Inbox'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Decisions'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Features'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Technical'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Systems'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Strategy'),
-    path.join(claudeDir, 'brain', '01_Projects', projectName, 'Sessions'),
-    path.join(claudeDir, 'brain', '02_Knowledge', 'Research'),
-    path.join(claudeDir, 'brain', '02_Knowledge', 'Ideas'),
-    path.join(claudeDir, 'brain', '03_Archive', 'Legacy'),
-    path.join(claudeDir, 'brain', '03_Archive', 'Changelogs'),
-    path.join(claudeDir, 'hooks'),
+    succDir,
+    path.join(succDir, 'brain'),
+    path.join(succDir, 'brain', '.meta'),
+    path.join(succDir, 'brain', '.self'),
+    path.join(succDir, 'brain', '00_Inbox'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Features'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Technical'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Systems'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions'),
+    path.join(succDir, 'brain', '02_Knowledge', 'Research'),
+    path.join(succDir, 'brain', '02_Knowledge', 'Ideas'),
+    path.join(succDir, 'brain', '03_Archive', 'Legacy'),
+    path.join(succDir, 'brain', '03_Archive', 'Changelogs'),
+    // hooks directory only created for local development (not global install)
+    ...(useGlobalHooks ? [] : [path.join(succDir, 'hooks')]),
   ];
+
+  // Start spinner for directory creation
+  const spinner = ora('Initializing succ...').start();
 
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      console.log(`Created ${path.relative(projectRoot, dir)}/`);
     }
   }
 
+  // Helper to log only in verbose mode
+  const log = (msg: string) => {
+    if (verbose) {
+      spinner.stop();
+      console.log(`  ${msg}`);
+      spinner.start('Initializing succ...');
+    }
+  };
+
   // Create brain index
-  const brainIndexPath = path.join(claudeDir, 'brain', 'index.md');
+  const brainIndexPath = path.join(succDir, 'brain', 'index.md');
   if (!fs.existsSync(brainIndexPath)) {
     fs.writeFileSync(
       brainIndexPath,
@@ -72,85 +125,106 @@ This is the knowledge base for this project. Add documentation, decisions, and l
 Run \`succ index\` to index this brain for semantic search.
 `
     );
-    console.log('Created brain/index.md');
+    log('Created brain/index.md');
   }
 
   // Create .meta/learnings.md - rich learnings file with templates
-  const learningsPath = path.join(claudeDir, 'brain', '.meta', 'learnings.md');
+  const learningsPath = path.join(succDir, 'brain', '.meta', 'learnings.md');
   if (!fs.existsSync(learningsPath)) {
     fs.writeFileSync(learningsPath, getLearningsTemplate(projectName));
-    console.log('Created brain/.meta/learnings.md');
+    log('Created brain/.meta/learnings.md');
   }
 
   // Create .meta/context-rules.md
-  const contextRulesPath = path.join(claudeDir, 'brain', '.meta', 'context-rules.md');
+  const contextRulesPath = path.join(succDir, 'brain', '.meta', 'context-rules.md');
   if (!fs.existsSync(contextRulesPath)) {
     fs.writeFileSync(contextRulesPath, getContextRulesTemplate(projectName));
-    console.log('Created brain/.meta/context-rules.md');
+    log('Created brain/.meta/context-rules.md');
   }
 
   // Create .self/reflections.md
-  const reflectionsPath = path.join(claudeDir, 'brain', '.self', 'reflections.md');
+  const reflectionsPath = path.join(succDir, 'brain', '.self', 'reflections.md');
   if (!fs.existsSync(reflectionsPath)) {
     fs.writeFileSync(reflectionsPath, getReflectionsTemplate());
-    console.log('Created brain/.self/reflections.md');
+    log('Created brain/.self/reflections.md');
   }
 
   // Create MOC (Map of Content) files for each major folder
   const mocFiles = [
-    { path: path.join(claudeDir, 'brain', '00_Inbox', 'Inbox.md'), content: getInboxMocTemplate() },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, `${projectName}.md`), content: getProjectMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'), content: getDecisionsMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'), content: getFeaturesMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'), content: getTechnicalMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'), content: getSystemsMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'), content: getStrategyMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '01_Projects', projectName, 'Sessions', 'Sessions.md'), content: getSessionsMocTemplate(projectName) },
-    { path: path.join(claudeDir, 'brain', '02_Knowledge', 'Knowledge.md'), content: getKnowledgeMocTemplate() },
-    { path: path.join(claudeDir, 'brain', '03_Archive', 'Archive.md'), content: getArchiveMocTemplate() },
+    { path: path.join(succDir, 'brain', '00_Inbox', 'Inbox.md'), content: getInboxMocTemplate() },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, `${projectName}.md`), content: getProjectMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'), content: getDecisionsMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'), content: getFeaturesMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'), content: getTechnicalMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'), content: getSystemsMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'), content: getStrategyMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions', 'Sessions.md'), content: getSessionsMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '02_Knowledge', 'Knowledge.md'), content: getKnowledgeMocTemplate() },
+    { path: path.join(succDir, 'brain', '03_Archive', 'Archive.md'), content: getArchiveMocTemplate() },
   ];
 
   for (const moc of mocFiles) {
     if (!fs.existsSync(moc.path)) {
       fs.writeFileSync(moc.path, moc.content);
-      console.log(`Created ${path.relative(projectRoot, moc.path)}`);
+      log(`Created ${path.relative(projectRoot, moc.path)}`);
     }
   }
 
   // Create soul.md template
-  const soulPath = path.join(claudeDir, 'soul.md');
+  const soulPath = path.join(succDir, 'soul.md');
   if (!fs.existsSync(soulPath)) {
     fs.writeFileSync(soulPath, getSoulTemplate());
-    console.log('Created soul.md');
+    log('Created soul.md');
   }
 
-  // Create session-start hook
-  const sessionStartPath = path.join(claudeDir, 'hooks', 'session-start.cjs');
-  if (!fs.existsSync(sessionStartPath) || options.force) {
-    fs.writeFileSync(sessionStartPath, getSessionStartHook());
-    console.log(options.force && fs.existsSync(sessionStartPath) ? 'Updated hooks/session-start.cjs' : 'Created hooks/session-start.cjs');
+  // Create hooks in project only for local development
+  // Global install uses hooks from the succ package directory
+  if (!useGlobalHooks) {
+    // Create session-start hook
+    const sessionStartPath = path.join(succDir, 'hooks', 'succ-session-start.cjs');
+    if (!fs.existsSync(sessionStartPath) || options.force) {
+      fs.writeFileSync(sessionStartPath, getSessionStartHook());
+      log(options.force && fs.existsSync(sessionStartPath) ? 'Updated hooks/succ-session-start.cjs' : 'Created hooks/succ-session-start.cjs');
+    }
+
+    // Create session-end hook (auto-summarize)
+    const sessionEndPath = path.join(succDir, 'hooks', 'succ-session-end.cjs');
+    if (!fs.existsSync(sessionEndPath) || options.force) {
+      fs.writeFileSync(sessionEndPath, getSessionEndHook());
+      log(options.force && fs.existsSync(sessionEndPath) ? 'Updated hooks/succ-session-end.cjs' : 'Created hooks/succ-session-end.cjs');
+    }
   }
 
-  // Create session-end hook (auto-summarize)
-  const sessionEndPath = path.join(claudeDir, 'hooks', 'session-end.cjs');
-  if (!fs.existsSync(sessionEndPath) || options.force) {
-    fs.writeFileSync(sessionEndPath, getSessionEndHook());
-    console.log(options.force && fs.existsSync(sessionEndPath) ? 'Updated hooks/session-end.cjs' : 'Created hooks/session-end.cjs');
+  // Create or merge settings.json in .claude/ (Claude Code looks for it there)
+  const claudeDir = path.join(projectRoot, '.claude');
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
   }
-
-  // Create or merge settings.json
   const settingsPath = path.join(claudeDir, 'settings.json');
   const settingsExisted = fs.existsSync(settingsPath);
 
   if (!settingsExisted || options.force) {
+    // Determine hooks path based on installation mode
+    // Global install: hooks are in the succ package directory
+    // Local dev: hooks are copied to .succ/hooks/ in the project
+    const hooksPath = useGlobalHooks
+      ? path.join(SUCC_PACKAGE_DIR, 'hooks').replace(/\\/g, '/')
+      : '.succ/hooks';
+
+    if (verbose) {
+      console.log(`  Installation mode: ${useGlobalHooks ? 'global' : 'local development'}`);
+      console.log(`  Hooks path: ${hooksPath}`);
+    }
+
     // Define succ hooks
+    // Hook files prefixed with "succ-" to avoid conflicts with other hooks
     const succHooks = {
       SessionStart: [
         {
           hooks: [
             {
               type: 'command',
-              command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.cjs"',
+              command: `node "${hooksPath}/succ-session-start.cjs"`,
               timeout: 10,
             },
           ],
@@ -161,7 +235,7 @@ Run \`succ index\` to index this brain for semantic search.
           hooks: [
             {
               type: 'command',
-              command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.cjs"',
+              command: `node "${hooksPath}/succ-session-end.cjs"`,
               timeout: 15,
             },
           ],
@@ -172,7 +246,7 @@ Run \`succ index\` to index this brain for semantic search.
           hooks: [
             {
               type: 'command',
-              command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt.cjs"',
+              command: `node "${hooksPath}/succ-user-prompt.cjs"`,
               timeout: 10,
             },
           ],
@@ -183,7 +257,7 @@ Run \`succ index\` to index this brain for semantic search.
           hooks: [
             {
               type: 'command',
-              command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool.cjs"',
+              command: `node "${hooksPath}/succ-post-tool.cjs"`,
               timeout: 5,
             },
           ],
@@ -195,7 +269,7 @@ Run \`succ index\` to index this brain for semantic search.
           hooks: [
             {
               type: 'command',
-              command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/idle-reflection.cjs"',
+              command: `node "${hooksPath}/succ-idle-reflection.cjs"`,
               timeout: 30,
             },
           ],
@@ -205,8 +279,8 @@ Run \`succ index\` to index this brain for semantic search.
 
     let finalSettings: Record<string, any>;
 
-    if (settingsExisted) {
-      // Merge with existing settings
+    if (settingsExisted && !options.force) {
+      // Merge with existing settings (non-force mode)
       try {
         const existingContent = fs.readFileSync(settingsPath, 'utf-8');
         const existingSettings = JSON.parse(existingContent);
@@ -237,12 +311,12 @@ Run \`succ index\` to index this brain for semantic search.
               const alreadyExists = existingHooks.some((existing: any) => {
                 const existingCommand = existing.hooks?.[0]?.command || '';
 
-                // Check for exact succ hook files
-                if (succCommand.includes('session-start.cjs') && existingCommand.includes('session-start.cjs')) return true;
-                if (succCommand.includes('session-end.cjs') && existingCommand.includes('session-end.cjs')) return true;
-                if (succCommand.includes('user-prompt.cjs') && existingCommand.includes('user-prompt.cjs')) return true;
-                if (succCommand.includes('post-tool.cjs') && existingCommand.includes('post-tool.cjs')) return true;
-                if (succCommand.includes('idle-reflection.cjs') && existingCommand.includes('idle-reflection.cjs')) return true;
+                // Check for succ hook files (prefixed with "succ-")
+                if (succCommand.includes('succ-session-start.cjs') && existingCommand.includes('succ-session-start.cjs')) return true;
+                if (succCommand.includes('succ-session-end.cjs') && existingCommand.includes('succ-session-end.cjs')) return true;
+                if (succCommand.includes('succ-user-prompt.cjs') && existingCommand.includes('succ-user-prompt.cjs')) return true;
+                if (succCommand.includes('succ-post-tool.cjs') && existingCommand.includes('succ-post-tool.cjs')) return true;
+                if (succCommand.includes('succ-idle-reflection.cjs') && existingCommand.includes('succ-idle-reflection.cjs')) return true;
 
                 // For Notification hooks, check matcher
                 if (succMatcher && existing.matcher === succMatcher) return true;
@@ -257,58 +331,314 @@ Run \`succ index\` to index this brain for semantic search.
           }
         }
 
-        console.log('Merged settings.json (preserved existing permissions and hooks)');
+        log('Merged settings.json (preserved existing permissions and hooks)');
       } catch {
         // Failed to parse existing, create new
         finalSettings = { hooks: succHooks };
-        console.log('Created settings.json (failed to parse existing)');
+        log('Created settings.json (failed to parse existing)');
+      }
+    } else if (settingsExisted && options.force) {
+      // Force mode: replace succ hooks but preserve other settings
+      try {
+        const existingContent = fs.readFileSync(settingsPath, 'utf-8');
+        const existingSettings = JSON.parse(existingContent);
+
+        // Preserve non-hook settings (permissions, etc.)
+        finalSettings = { ...existingSettings };
+
+        // Replace hooks entirely with new succ hooks
+        // but preserve any non-succ hooks
+        if (finalSettings.hooks) {
+          for (const [hookType, hookConfig] of Object.entries(finalSettings.hooks)) {
+            const existingHooks = hookConfig as any[];
+            // Filter out old succ hooks (both old names and new "succ-" prefixed names)
+            const nonSuccHooks = existingHooks.filter((h: any) => {
+              const cmd = h.hooks?.[0]?.command || '';
+              // Remove hooks in .succ/hooks/ directory (local dev)
+              if (cmd.includes('.succ/hooks/')) return false;
+              // Remove hooks from global succ install (contains /hooks/succ- pattern)
+              if (cmd.includes('/hooks/succ-') || cmd.includes('\\hooks\\succ-')) return false;
+              // Also remove any legacy hooks with succ hook names
+              if (cmd.includes('session-start.cjs') || cmd.includes('session-end.cjs') ||
+                  cmd.includes('user-prompt.cjs') || cmd.includes('post-tool.cjs') ||
+                  cmd.includes('idle-reflection.cjs')) return false;
+              return true;
+            });
+            if (nonSuccHooks.length > 0) {
+              finalSettings.hooks[hookType] = nonSuccHooks;
+            } else {
+              delete finalSettings.hooks[hookType];
+            }
+          }
+        }
+
+        // Now add fresh succ hooks
+        if (!finalSettings.hooks) {
+          finalSettings.hooks = {};
+        }
+        for (const [hookType, hookConfig] of Object.entries(succHooks)) {
+          if (!finalSettings.hooks[hookType]) {
+            finalSettings.hooks[hookType] = hookConfig;
+          } else {
+            finalSettings.hooks[hookType] = [...finalSettings.hooks[hookType], ...(hookConfig as any[])];
+          }
+        }
+
+        log('Replaced succ hooks in settings.json (--force)');
+      } catch {
+        // Failed to parse existing, create new
+        finalSettings = { hooks: succHooks };
+        log('Created settings.json (failed to parse existing)');
       }
     } else {
       // Create new settings
       finalSettings = { hooks: succHooks };
-      console.log('Created settings.json');
+      log('Created settings.json');
     }
 
     fs.writeFileSync(settingsPath, JSON.stringify(finalSettings, null, 2));
   }
 
-  // Create idle-reflection hook
-  const idleReflectionPath = path.join(claudeDir, 'hooks', 'idle-reflection.cjs');
-  if (!fs.existsSync(idleReflectionPath) || options.force) {
-    const existed = fs.existsSync(idleReflectionPath);
-    fs.writeFileSync(idleReflectionPath, getIdleReflectionHook());
-    console.log(options.force && existed ? 'Updated hooks/idle-reflection.cjs' : 'Created hooks/idle-reflection.cjs');
-  }
+  // Create remaining hooks only for local development
+  if (!useGlobalHooks) {
+    // Create idle-reflection hook
+    const idleReflectionPath = path.join(succDir, 'hooks', 'succ-idle-reflection.cjs');
+    if (!fs.existsSync(idleReflectionPath) || options.force) {
+      const existed = fs.existsSync(idleReflectionPath);
+      fs.writeFileSync(idleReflectionPath, getIdleReflectionHook());
+      log(options.force && existed ? 'Updated hooks/succ-idle-reflection.cjs' : 'Created hooks/succ-idle-reflection.cjs');
+    }
 
-  // Create user-prompt hook (memory-seeking pattern detection)
-  const userPromptPath = path.join(claudeDir, 'hooks', 'user-prompt.cjs');
-  if (!fs.existsSync(userPromptPath) || options.force) {
-    const existed = fs.existsSync(userPromptPath);
-    fs.writeFileSync(userPromptPath, getUserPromptHook());
-    console.log(options.force && existed ? 'Updated hooks/user-prompt.cjs' : 'Created hooks/user-prompt.cjs');
-  }
+    // Create user-prompt hook (memory-seeking pattern detection)
+    const userPromptPath = path.join(succDir, 'hooks', 'succ-user-prompt.cjs');
+    if (!fs.existsSync(userPromptPath) || options.force) {
+      const existed = fs.existsSync(userPromptPath);
+      fs.writeFileSync(userPromptPath, getUserPromptHook());
+      log(options.force && existed ? 'Updated hooks/succ-user-prompt.cjs' : 'Created hooks/succ-user-prompt.cjs');
+    }
 
-  // Create post-tool hook (auto-capture important actions)
-  const postToolPath = path.join(claudeDir, 'hooks', 'post-tool.cjs');
-  if (!fs.existsSync(postToolPath) || options.force) {
-    const existed = fs.existsSync(postToolPath);
-    fs.writeFileSync(postToolPath, getPostToolHook());
-    console.log(options.force && existed ? 'Updated hooks/post-tool.cjs' : 'Created hooks/post-tool.cjs');
+    // Create post-tool hook (auto-capture important actions)
+    const postToolPath = path.join(succDir, 'hooks', 'succ-post-tool.cjs');
+    if (!fs.existsSync(postToolPath) || options.force) {
+      const existed = fs.existsSync(postToolPath);
+      fs.writeFileSync(postToolPath, getPostToolHook());
+      log(options.force && existed ? 'Updated hooks/succ-post-tool.cjs' : 'Created hooks/succ-post-tool.cjs');
+    }
   }
 
   // Add MCP server to Claude Code config
   const mcpAdded = addMcpServer(projectRoot);
 
-  console.log('\nsucc initialized successfully!');
-  if (mcpAdded) {
-    console.log('MCP server added to Claude Code config.');
+  // Stop spinner with success message
+  spinner.succeed('succ initialized successfully!');
+
+  if (verbose && mcpAdded) {
+    console.log('  MCP server added to Claude Code config.');
   }
-  console.log('\nNext steps:');
-  console.log('  1. Run `succ analyze` to generate brain documentation');
-  console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
-  console.log('  3. Run `succ search <query>` to find relevant content');
-  if (mcpAdded) {
-    console.log('  4. Restart Claude Code to enable succ tools');
+
+  // Interactive configuration
+  if (isInteractive) {
+    await runInteractiveSetup(projectRoot, verbose);
+  } else {
+    // Non-interactive: show next steps
+    console.log('\nNext steps:');
+    console.log('  1. Run `succ analyze` to generate brain documentation');
+    console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
+    console.log('  3. Run `succ search <query>` to find relevant content');
+    if (mcpAdded) {
+      console.log('  4. Restart Claude Code to enable succ tools');
+    }
+  }
+}
+
+/**
+ * Interactive setup wizard
+ */
+async function runInteractiveSetup(projectRoot: string, verbose: boolean = false): Promise<void> {
+  const globalConfigDir = path.join(os.homedir(), '.succ');
+  const globalConfigPath = path.join(globalConfigDir, 'config.json');
+
+  console.log('\n--- Configuration ---\n');
+
+  // Step 1: Embedding mode
+  const { embeddingMode } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'embeddingMode',
+      message: 'Select embedding mode for semantic search:',
+      choices: [
+        {
+          name: 'Local (default) - runs on CPU, no API key',
+          value: 'local',
+        },
+        {
+          name: 'Local LLM - Ollama/llama.cpp with nomic-embed-text',
+          value: 'ollama',
+        },
+        {
+          name: 'OpenRouter - cloud embeddings',
+          value: 'openrouter',
+        },
+      ],
+      default: 'local',
+    },
+  ]);
+
+  const newConfig: Partial<ConfigData> = {};
+
+  if (embeddingMode === 'local') {
+    newConfig.embedding_mode = 'local';
+    newConfig.embedding_model = LOCAL_MODEL;
+  } else if (embeddingMode === 'ollama') {
+    const { embeddingApiUrl, embeddingModel } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'embeddingApiUrl',
+        message: 'Embedding API URL:',
+        default: 'http://localhost:11434/v1/embeddings',
+      },
+      {
+        type: 'input',
+        name: 'embeddingModel',
+        message: 'Embedding model:',
+        default: 'nomic-embed-text',
+      },
+    ]);
+    newConfig.embedding_mode = 'custom';
+    newConfig.embedding_api_url = embeddingApiUrl;
+    newConfig.embedding_model = embeddingModel;
+    newConfig.embedding_dimensions = 768;
+    console.log(`  Tip: Run \`ollama pull ${embeddingModel}\` to download the model`);
+  } else if (embeddingMode === 'openrouter') {
+    const { apiKey } = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'OpenRouter API key:',
+        validate: (input: string) => input?.trim() ? true : 'API key is required',
+      },
+    ]);
+    newConfig.embedding_mode = 'openrouter';
+    newConfig.openrouter_api_key = apiKey;
+    newConfig.embedding_model = 'openai/text-embedding-3-small';
+  }
+
+  // Step 2: Analysis mode
+  const { analyzeMode } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'analyzeMode',
+      message: 'Select analysis mode for `succ analyze`:',
+      choices: [
+        {
+          name: 'Claude CLI (default) - uses claude command',
+          value: 'claude',
+        },
+        {
+          name: 'Local LLM - Ollama/llama.cpp/LM Studio',
+          value: 'local',
+        },
+        {
+          name: 'OpenRouter - uses OpenRouter API',
+          value: 'openrouter',
+        },
+      ],
+      default: 'claude',
+    },
+  ]);
+
+  if (analyzeMode === 'local') {
+    const { analyzeApiUrl, analyzeModel } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'analyzeApiUrl',
+        message: 'Analysis API URL:',
+        default: 'http://localhost:11434/v1',
+      },
+      {
+        type: 'input',
+        name: 'analyzeModel',
+        message: 'Analysis model:',
+        default: 'qwen2.5-coder:14b',
+      },
+    ]);
+    newConfig.analyze_mode = 'local';
+    newConfig.analyze_api_url = analyzeApiUrl;
+    newConfig.analyze_model = analyzeModel;
+    console.log(`  Tip: Run \`ollama pull ${analyzeModel}\` to download the model`);
+  } else if (analyzeMode === 'openrouter') {
+    newConfig.analyze_mode = 'openrouter';
+    // Prompt for API key if not already set for embeddings
+    if (!newConfig.openrouter_api_key) {
+      const { apiKey } = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'apiKey',
+          message: 'OpenRouter API key:',
+          validate: (input: string) => input?.trim() ? true : 'API key is required',
+        },
+      ]);
+      newConfig.openrouter_api_key = apiKey;
+    }
+  }
+  // claude mode doesn't need extra config
+
+  // Save config
+  if (Object.keys(newConfig).length > 0) {
+    if (!fs.existsSync(globalConfigDir)) {
+      fs.mkdirSync(globalConfigDir, { recursive: true });
+    }
+    fs.writeFileSync(globalConfigPath, JSON.stringify(newConfig, null, 2));
+    console.log(`\nConfiguration saved to ${globalConfigPath}`);
+  }
+
+  // Step 3: Start daemons
+  console.log('\n--- Start Services ---\n');
+
+  const { startAnalyze } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'startAnalyze',
+      message: 'Start analyze daemon? (continuous background analysis)',
+      default: false,
+    },
+  ]);
+
+  if (startAnalyze) {
+    const analyzeArgs = ['analyze', '--daemon'];
+    if (analyzeMode === 'local') {
+      analyzeArgs.push('--local');
+    } else if (analyzeMode === 'openrouter') {
+      analyzeArgs.push('--openrouter');
+    }
+    startDaemon('npx', ['succ', ...analyzeArgs], projectRoot);
+    console.log('  ✓ Analyze daemon started');
+  }
+
+  const { startWatch } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'startWatch',
+      message: 'Start watch daemon? (auto-reindex on file changes)',
+      default: false,
+    },
+  ]);
+
+  if (startWatch) {
+    startDaemon('npx', ['succ', 'watch', '--daemon'], projectRoot);
+    console.log('  ✓ Watch daemon started');
+  }
+
+  // Final message
+  console.log('\n--- Done ---\n');
+  console.log('succ is ready! Try:');
+  console.log('  succ analyze          # Generate brain documentation');
+  console.log('  succ index            # Create embeddings');
+  console.log('  succ search <query>   # Find relevant content');
+  if (startAnalyze || startWatch) {
+    console.log('\nDaemon status:');
+    if (startAnalyze) console.log('  succ analyze --status');
+    if (startWatch) console.log('  succ watch --status');
   }
 }
 
@@ -399,7 +729,7 @@ process.stdin.on('end', () => {
     }
 
     const contextParts = [];
-    const claudeDir = path.join(projectDir, '.claude');
+    const succDir = path.join(projectDir, '.succ');
     const projectName = path.basename(projectDir);
 
     // Phase 0: Git Context
@@ -437,8 +767,8 @@ process.stdin.on('end', () => {
 
     // Phase 0.5: Soul Document
     const soulPaths = [
-      path.join(claudeDir, 'soul.md'),
-      path.join(claudeDir, 'SOUL.md'),
+      path.join(succDir, 'soul.md'),
+      path.join(succDir, 'SOUL.md'),
       path.join(projectDir, 'soul.md'),
       path.join(projectDir, 'SOUL.md'),
     ];
@@ -454,13 +784,11 @@ process.stdin.on('end', () => {
     }
 
     // Phase 1-3: Memories and stats via succ CLI
-    const nodePath = process.execPath;
-    const succCli = path.join(projectDir, 'dist', 'cli.js');
-
-    if (fs.existsSync(succCli)) {
+    // Use npx succ for CLI commands
+    try {
       // Recent memories
       try {
-        const memoriesResult = execFileSync(nodePath, [succCli, 'memories', '--recent', '5'], {
+        const memoriesResult = execFileSync('npx', ['succ', 'memories', '--recent', '5'], {
           cwd: projectDir,
           encoding: 'utf8',
           timeout: 5000,
@@ -476,7 +804,7 @@ process.stdin.on('end', () => {
 
       // Knowledge base stats
       try {
-        const statusResult = execFileSync(nodePath, [succCli, 'status'], {
+        const statusResult = execFileSync('npx', ['succ', 'status'], {
           cwd: projectDir,
           encoding: 'utf8',
           timeout: 5000,
@@ -503,6 +831,8 @@ process.stdin.on('end', () => {
       } catch {
         // status not available
       }
+    } catch {
+      // npx succ not available
     }
 
     if (contextParts.length > 0) {
@@ -581,8 +911,8 @@ function getSessionEndHook(): string {
  *
  * Actions:
  * 1. Save session summary to SQLite memory (succ remember)
- * 2. Use Claude CLI to extract learnings and append to .claude/brain/.meta/learnings.md
- * 3. Create session note in .claude/brain/00_Inbox/
+ * 2. Use Claude CLI to extract learnings and append to .succ/brain/.meta/learnings.md
+ * 3. Create session note in .succ/brain/00_Inbox/
  *
  * Uses process.execPath to find node and handles cross-platform paths
  */
@@ -644,29 +974,25 @@ process.stdin.on('end', () => {
     const memoryContent = content.replace(/[\\r\\n]+/g, ' ').replace(/\\s+/g, ' ').trim();
 
     // Brain vault paths
-    const brainDir = path.join(projectDir, '.claude', 'brain');
+    const brainDir = path.join(projectDir, '.succ', 'brain');
     const learningsPath = path.join(brainDir, '.meta', 'learnings.md');
     const inboxDir = path.join(brainDir, '00_Inbox');
 
     // 1. Save to SQLite memory via succ
     try {
-      const nodePath = process.execPath;
-      const succCli = path.join(projectDir, 'dist', 'cli.js');
-
-      if (fs.existsSync(succCli)) {
-        spawnSync(nodePath, [
-          succCli,
-          'remember',
-          memoryContent,
-          '--tags', tags.join(','),
-          '--source', 'session-' + sessionDate
-        ], {
-          cwd: projectDir,
-          encoding: 'utf8',
-          timeout: 30000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-      }
+      spawnSync('npx', [
+        'succ',
+        'remember',
+        memoryContent,
+        '--tags', tags.join(','),
+        '--source', 'session-' + sessionDate
+      ], {
+        cwd: projectDir,
+        encoding: 'utf8',
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
+      });
     } catch {
       // Failed to save to memory, continue
     }
@@ -904,49 +1230,47 @@ process.stdin.on('end', () => {
 
     // Search memories
     const contextParts = [];
-    const nodePath = process.execPath;
-    const succCli = path.join(projectDir, 'dist', 'cli.js');
 
-    if (fs.existsSync(succCli)) {
+    try {
+      const result = execFileSync(
+        'npx',
+        ['succ', 'memories', '--search', searchQuery, '--limit', '3'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
+        }
+      );
+
+      if (result.trim() && !result.includes('No memories found')) {
+        contextParts.push(result.trim());
+      }
+    } catch {
+      // Memory search failed
+    }
+
+    // For explicit commands, also search brain vault
+    if (isExplicitMemoryCommand) {
       try {
-        const result = execFileSync(
-          nodePath,
-          [succCli, 'memories', '--search', searchQuery, '--limit', '3'],
+        const brainResult = execFileSync(
+          'npx',
+          ['succ', 'search', searchQuery, '--limit', '2'],
           {
             cwd: projectDir,
             encoding: 'utf8',
             timeout: 5000,
             stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true,
           }
         );
 
-        if (result.trim() && !result.includes('No memories found')) {
-          contextParts.push(result.trim());
+        if (brainResult.trim() && !brainResult.includes('No results')) {
+          contextParts.push('\\n--- From Knowledge Base ---\\n' + brainResult.trim());
         }
       } catch {
-        // Memory search failed
-      }
-
-      // For explicit commands, also search brain vault
-      if (isExplicitMemoryCommand) {
-        try {
-          const brainResult = execFileSync(
-            nodePath,
-            [succCli, 'search', searchQuery, '--limit', '2'],
-            {
-              cwd: projectDir,
-              encoding: 'utf8',
-              timeout: 5000,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            }
-          );
-
-          if (brainResult.trim() && !brainResult.includes('No results')) {
-            contextParts.push('\\n--- From Knowledge Base ---\\n' + brainResult.trim());
-          }
-        } catch {
-          // Brain search failed
-        }
+        // Brain search failed
       }
     }
 
@@ -1015,12 +1339,23 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    const nodePath = process.execPath;
-    const succCli = path.join(projectDir, 'dist', 'cli.js');
-
-    if (!fs.existsSync(succCli)) {
-      process.exit(0);
-    }
+    // Helper to call succ CLI
+    const succRemember = (content, tags) => {
+      try {
+        execFileSync('npx', [
+          'succ', 'remember',
+          content,
+          '--tags', tags,
+          '--source', 'auto-capture',
+        ], {
+          cwd: projectDir,
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
+        });
+      } catch {}
+    };
 
     // Pattern 1: Git Commits
     if (toolName === 'Bash' && toolInput.command) {
@@ -1029,19 +1364,7 @@ process.stdin.on('end', () => {
       if (/git\\s+commit/i.test(cmd) && wasSuccess) {
         const msgMatch = cmd.match(/-m\\s+["']([^"']+)["']/);
         if (msgMatch) {
-          try {
-            execFileSync(nodePath, [
-              succCli, 'remember',
-              'Committed: ' + msgMatch[1],
-              '--tags', 'git,commit,milestone',
-              '--source', 'auto-capture',
-            ], {
-              cwd: projectDir,
-              encoding: 'utf8',
-              timeout: 5000,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-          } catch {}
+          succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone');
         }
       }
 
@@ -1049,19 +1372,7 @@ process.stdin.on('end', () => {
       if (/(?:npm|yarn|pnpm)\\s+(?:install|add)\\s+(\\S+)/i.test(cmd) && wasSuccess) {
         const pkgMatch = cmd.match(/(?:npm|yarn|pnpm)\\s+(?:install|add)\\s+(\\S+)/i);
         if (pkgMatch && pkgMatch[1] && !pkgMatch[1].startsWith('-')) {
-          try {
-            execFileSync(nodePath, [
-              succCli, 'remember',
-              'Added dependency: ' + pkgMatch[1],
-              '--tags', 'dependency,package',
-              '--source', 'auto-capture',
-            ], {
-              cwd: projectDir,
-              encoding: 'utf8',
-              timeout: 5000,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-          } catch {}
+          succRemember('Added dependency: ' + pkgMatch[1], 'dependency,package');
         }
       }
 
@@ -1071,19 +1382,7 @@ process.stdin.on('end', () => {
         const failed = /fail|error|✗|✘/i.test(toolOutput);
 
         if (passed && !failed) {
-          try {
-            execFileSync(nodePath, [
-              succCli, 'remember',
-              'Tests passed after changes',
-              '--tags', 'test,success',
-              '--source', 'auto-capture',
-            ], {
-              cwd: projectDir,
-              encoding: 'utf8',
-              timeout: 5000,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-          } catch {}
+          succRemember('Tests passed after changes', 'test,success');
         }
       }
     }
@@ -1101,19 +1400,7 @@ process.stdin.on('end', () => {
       ) {
         const content = toolInput.content || '';
         if (content.length < 5000) {
-          try {
-            execFileSync(nodePath, [
-              succCli, 'remember',
-              'Created file: ' + relativePath,
-              '--tags', 'file,created',
-              '--source', 'auto-capture',
-            ], {
-              cwd: projectDir,
-              encoding: 'utf8',
-              timeout: 5000,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-          } catch {}
+          succRemember('Created file: ' + relativePath, 'file,created');
         }
       }
     }
@@ -1199,8 +1486,8 @@ How to load relevant context at session start.
 
 ## Always Load
 
-- \`.claude/brain/.meta/learnings.md\` — accumulated wisdom
-- \`.claude/brain/01_Projects/${projectName}/${projectName}.md\` — project overview
+- \`.succ/brain/.meta/learnings.md\` — accumulated wisdom
+- \`.succ/brain/01_Projects/${projectName}/${projectName}.md\` — project overview
 
 ## Load on Topic
 
@@ -1246,8 +1533,8 @@ Async conversation with myself across sessions. Not facts — thoughts.
 
 **BEFORE researching:** Check brain first!
 
-- \`.claude/brain/.meta/learnings.md\` — documented discoveries
-- \`.claude/brain/01_Projects/*/Technical/*.md\` — existing analyses
+- \`.succ/brain/.meta/learnings.md\` — documented discoveries
+- \`.succ/brain/01_Projects/*/Technical/*.md\` — existing analyses
 
 **After researching:** Add to \`learnings.md\` or create \`Technical/*.md\` doc
 
@@ -1556,7 +1843,7 @@ function getIdleReflectionHook(): string {
  * Idle Reflection Hook - Triggered when Claude has been idle
  *
  * Uses Claude CLI to generate meaningful reflection from session context.
- * Writes to .claude/brain/.self/reflections.md
+ * Writes to .succ/brain/.self/reflections.md
  *
  * Fires on Notification event with idle_prompt matcher (after ~60 seconds idle)
  */
@@ -1589,7 +1876,7 @@ process.stdin.on('end', () => {
     const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
 
     // Path to reflections file
-    const reflectionsPath = path.join(projectDir, '.claude', 'brain', '.self', 'reflections.md');
+    const reflectionsPath = path.join(projectDir, '.succ', 'brain', '.self', 'reflections.md');
 
     // Create .self directory if needed
     const selfDir = path.dirname(reflectionsPath);
@@ -1609,11 +1896,25 @@ process.stdin.on('end', () => {
           .map(line => {
             try {
               const entry = JSON.parse(line);
+              // Extract text content - content can be string or array of content blocks
+              const getTextContent = (content) => {
+                if (typeof content === 'string') return content;
+                if (Array.isArray(content)) {
+                  return content
+                    .filter(block => block.type === 'text' && block.text)
+                    .map(block => block.text)
+                    .join(' ');
+                }
+                return '';
+              };
+
               if (entry.type === 'assistant' && entry.message?.content) {
-                return 'Assistant: ' + entry.message.content.substring(0, 500);
+                const text = getTextContent(entry.message.content);
+                if (text) return 'Assistant: ' + text.substring(0, 500);
               }
-              if (entry.type === 'human' && entry.message?.content) {
-                return 'User: ' + entry.message.content.substring(0, 300);
+              if ((entry.type === 'human' || entry.type === 'user') && entry.message?.content) {
+                const text = getTextContent(entry.message.content);
+                if (text) return 'User: ' + text.substring(0, 300);
               }
             } catch {
               return null;

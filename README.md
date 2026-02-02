@@ -12,7 +12,12 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 - **Persistent memory** — remember decisions, learnings, preferences across sessions
 - **Cross-project memory** — global memories shared between all your projects
 - **Code indexing** — semantic search across your codebase
+- **Knowledge graph** — link memories, auto-detect relationships, export to Obsidian
 - **Auto-hooks** — context injection at session start, auto-summarize at session end
+- **Idle reflections** — AI generates insights during idle time
+- **Watch mode** — auto-reindex on file changes with debouncing
+- **Daemon mode** — continuous background analysis
+- **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
 - **MCP integration** — Claude can use succ tools directly
 - **Soul document** — define AI personality, values, communication style
 - **Zero config** — works out of the box
@@ -41,7 +46,7 @@ succ search "how does authentication work"
 
 | Command | Description |
 |---------|-------------|
-| `succ init` | Create `.claude/` structure in your project |
+| `succ init` | Interactive setup wizard |
 | `succ analyze` | Generate brain vault with Claude agents |
 | `succ index [path]` | Index files for semantic search |
 | `succ index-code [path]` | Index source code |
@@ -56,6 +61,25 @@ succ search "how does authentication work"
 | `succ status` | Show index statistics |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
+
+### succ init
+
+Interactive setup wizard that creates the `.succ/` structure and configures succ:
+
+```bash
+succ init                         # Interactive mode with prompts
+succ init --yes                   # Non-interactive (use defaults)
+succ init --verbose               # Show detailed output (created files)
+succ init --force                 # Reinitialize existing project
+```
+
+**What it does:**
+1. Creates brain vault structure (`.succ/brain/`)
+2. Sets up hooks (session-start, session-end, etc.)
+3. Configures MCP server for Claude Code
+4. Prompts for embedding mode (Local / Local LLM / OpenRouter)
+5. Prompts for analysis mode (Claude CLI / Local LLM / OpenRouter)
+6. Optionally starts analyze/watch daemons
 
 ### succ analyze
 
@@ -75,7 +99,7 @@ succ analyze --stop               # Stop daemon
 **What it creates:**
 
 ```
-.claude/brain/
+.succ/brain/
 ├── CLAUDE.md                    # Navigation hub
 ├── 01_Projects/{project}/
 │   ├── Technical/               # Architecture, API, Conventions, Dependencies
@@ -156,7 +180,7 @@ Configure in `~/.succ/config.json`:
 succ provides two types of memory:
 
 ### Local Memory (per-project)
-- Stored in `.claude/succ.db`
+- Stored in `.succ/succ.db`
 - Project-specific decisions, learnings, context
 
 ### Global Memory (cross-project)
@@ -171,7 +195,7 @@ succ memories --global
 
 ## Soul Document
 
-The soul document (`.claude/soul.md`) defines who the AI is in your collaboration:
+The soul document (`.succ/soul.md`) defines who the AI is in your collaboration:
 
 ```markdown
 # Soul
@@ -196,10 +220,11 @@ Learn more: [soul.md](https://soul.md/)
 
 ```
 your-project/
-└── .claude/
+├── .claude/
+│   └── settings.json    # Claude Code hooks config
+└── .succ/
     ├── brain/           # Obsidian-compatible vault
-    ├── hooks/           # Claude Code hooks
-    ├── settings.json    # Hooks config
+    ├── hooks/           # Hook scripts
     ├── soul.md          # AI personality
     └── succ.db          # Vector database
 
@@ -220,12 +245,21 @@ your-project/
 
 | Feature | Supermemory | succ |
 |---------|-------------|------|
-| Hosting | Cloud | Local only |
-| Privacy | Cloud by default | Everything local |
-| Cost | Free tier, then $19-399/mo | Free forever |
+| Hosting | Cloud | **Local only** |
+| Privacy | Cloud by default | **Everything local** |
+| Cost | Free tier, then $19-399/mo | **Free forever** |
+| Setup | Account + API key | **`npm i -g succ && succ init`** |
 | MCP integration | Yes | Yes |
-| Knowledge graph | Via API | Obsidian-compatible |
-| Open source | Partial | Fully open source |
+| Knowledge graph | Via API | **Obsidian-compatible vault** |
+| Code search | Via API | **Local semantic search** |
+| Local LLM | No | **Ollama, llama.cpp, LM Studio** |
+| Watch mode | No | **Auto-reindex on changes** |
+| Daemon mode | No | **Continuous background analysis** |
+| Soul document | No | **AI personality customization** |
+| Idle reflections | No | **AI insights during idle** |
+| Cross-project memory | Cloud sync | **Local global DB** |
+| Git-friendly | No | **Brain vault is markdown** |
+| Open source | Partial (MCP server) | **Fully open source** |
 
 ## License
 
