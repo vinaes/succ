@@ -195,10 +195,10 @@ describe('Integration Tests', () => {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
-              });
+      });
 
-      expect(result).toContain('Daemon Status');
-      expect(result).toContain('Stopped');
+      expect(result.stdout).toContain('Daemon Status');
+      expect(result.stdout).toContain('Stopped');
     });
 
     it('should handle --stop when not running', () => {
@@ -206,9 +206,9 @@ describe('Integration Tests', () => {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
-              });
+      });
 
-      expect(result).toContain('No daemon running');
+      expect(result.stdout).toContain('No daemon running');
     });
   });
 
@@ -216,7 +216,9 @@ describe('Integration Tests', () => {
     let tempDir: string;
 
     beforeEach(() => {
-      tempDir = path.join(os.tmpdir(), `succ-lock-test-${Date.now()}`);
+      // Use random suffix to avoid conflicts when src and dist tests run in parallel
+      const randomSuffix = Math.random().toString(36).substring(2, 10);
+      tempDir = path.join(os.tmpdir(), `succ-lock-test-${Date.now()}-${randomSuffix}`);
       fs.mkdirSync(tempDir, { recursive: true });
       fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
     });
