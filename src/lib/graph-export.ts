@@ -7,6 +7,7 @@ import {
   getGraphStats,
   type MemoryType,
 } from './db.js';
+import { calculateTemporalScore, getTemporalConfig } from './temporal.js';
 
 /**
  * Map memory type to brain vault folder
@@ -106,10 +107,11 @@ export function exportGraphSilent(
 ): { memoriesExported: number; linksExported: number } {
   const database = getDb();
 
-  // Get all memories
+  // Get all memories with temporal fields
   const memories = database
     .prepare(`
-      SELECT id, content, tags, source, type, created_at
+      SELECT id, content, tags, source, type, created_at,
+             valid_from, valid_until, last_accessed, access_count
       FROM memories
       ORDER BY created_at DESC
     `)
@@ -120,6 +122,10 @@ export function exportGraphSilent(
       source: string | null;
       type: string | null;
       created_at: string;
+      valid_from: string | null;
+      valid_until: string | null;
+      last_accessed: string | null;
+      access_count: number;
     }>;
 
   if (memories.length === 0) {
@@ -150,23 +156,69 @@ function exportToJson(
     source: string | null;
     type: string | null;
     created_at: string;
+    valid_from?: string | null;
+    valid_until?: string | null;
+    last_accessed?: string | null;
+    access_count?: number;
   }>,
   graphDir: string,
   database: ReturnType<typeof getDb>
 ): { memoriesExported: number; linksExported: number } {
+  const temporalConfig = getTemporalConfig();
+  const now = new Date();
+
   const graphData = {
-    memories: memories.map(m => ({
-      id: m.id,
-      content: m.content,
-      tags: m.tags ? JSON.parse(m.tags) : [],
-      source: m.source,
-      type: m.type || 'observation',
-      created_at: m.created_at,
-    })),
+    memories: memories.map(m => {
+      const temporalResult = calculateTemporalScore(1.0, {
+        created_at: m.created_at,
+        last_accessed: m.last_accessed || null,
+        access_count: m.access_count || 0,
+        valid_from: m.valid_from || null,
+        valid_until: m.valid_until || null,
+      }, temporalConfig);
+      const temporalScore = temporalResult.temporalScore;
+
+      // Determine temporal status
+      let temporalStatus = 'active';
+      if (m.valid_until && new Date(m.valid_until) < now) {
+        temporalStatus = 'expired';
+      } else if (m.valid_from && new Date(m.valid_from) > now) {
+        temporalStatus = 'future';
+      } else if (temporalScore < 0.3) {
+        temporalStatus = 'fading';
+      }
+
+      return {
+        id: m.id,
+        content: m.content,
+        tags: m.tags ? JSON.parse(m.tags) : [],
+        source: m.source,
+        type: m.type || 'observation',
+        created_at: m.created_at,
+        // Temporal fields
+        valid_from: m.valid_from,
+        valid_until: m.valid_until,
+        last_accessed: m.last_accessed,
+        access_count: m.access_count || 0,
+        temporal_status: temporalStatus,
+        decay_score: parseFloat(temporalScore.toFixed(2)),
+      };
+    }),
     links: [] as Array<{ source: number; target: number; relation: string; weight: number }>,
     stats: getGraphStats(),
+    temporal_summary: {
+      active: 0,
+      expired: 0,
+      future: 0,
+      fading: 0,
+    },
     exported_at: new Date().toISOString(),
   };
+
+  // Count temporal statuses
+  for (const m of graphData.memories) {
+    graphData.temporal_summary[m.temporal_status as keyof typeof graphData.temporal_summary]++;
+  }
 
   // Get all links
   const links = database
@@ -194,12 +246,20 @@ function exportToObsidian(
     source: string | null;
     type: string | null;
     created_at: string;
+    valid_from?: string | null;
+    valid_until?: string | null;
+    last_accessed?: string | null;
+    access_count?: number;
   }>,
   brainDir: string,
   database: ReturnType<typeof getDb>
 ): { memoriesExported: number; linksExported: number } {
   let exported = 0;
   let totalLinks = 0;
+
+  // Get temporal config for decay calculation
+  const temporalConfig = getTemporalConfig();
+  const now = new Date();
 
   // Build maps for link resolution
   const memoryTagsMap = new Map<number, string[]>();
@@ -233,16 +293,64 @@ function exportToObsidian(
     const firstLine = memory.content.split('\n')[0].trim();
     const title = firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
 
-    // Build content
-    let content = `---
-id: ${memory.id}
-type: ${type}
-tags: [${tags.map(t => `"${t}"`).join(', ')}]
-source: ${memory.source || 'unknown'}
-created: ${memory.created_at}
----
+    // Calculate temporal state and decay score
+    const temporalResult = calculateTemporalScore(1.0, {
+      created_at: memory.created_at,
+      last_accessed: memory.last_accessed || null,
+      access_count: memory.access_count || 0,
+      valid_from: memory.valid_from || null,
+      valid_until: memory.valid_until || null,
+    }, temporalConfig);
+    const temporalScore = temporalResult.temporalScore;
 
-# ${title}
+    // Determine temporal status
+    let temporalStatus = 'active';
+    let statusEmoji = '🟢';
+    if (memory.valid_until && new Date(memory.valid_until) < now) {
+      temporalStatus = 'expired';
+      statusEmoji = '⚫';
+    } else if (memory.valid_from && new Date(memory.valid_from) > now) {
+      temporalStatus = 'future';
+      statusEmoji = '🔵';
+    } else if (temporalScore < 0.3) {
+      temporalStatus = 'fading';
+      statusEmoji = '🟡';
+    }
+
+    // Build frontmatter with temporal metadata
+    const frontmatterLines = [
+      '---',
+      `id: ${memory.id}`,
+      `type: ${type}`,
+      `tags: [${tags.map(t => `"${t}"`).join(', ')}]`,
+      `source: ${memory.source || 'unknown'}`,
+      `created: ${memory.created_at}`,
+    ];
+
+    // Add temporal fields if present
+    if (memory.valid_from) {
+      frontmatterLines.push(`valid_from: ${memory.valid_from}`);
+    }
+    if (memory.valid_until) {
+      frontmatterLines.push(`valid_until: ${memory.valid_until}`);
+    }
+
+    // Add computed temporal metadata
+    frontmatterLines.push(`temporal_status: ${temporalStatus}`);
+    frontmatterLines.push(`decay_score: ${temporalScore.toFixed(2)}`);
+    if (memory.access_count && memory.access_count > 0) {
+      frontmatterLines.push(`access_count: ${memory.access_count}`);
+    }
+    if (memory.last_accessed) {
+      frontmatterLines.push(`last_accessed: ${memory.last_accessed}`);
+    }
+
+    frontmatterLines.push('---');
+
+    // Build content with status indicator in title
+    let content = `${frontmatterLines.join('\n')}
+
+# ${statusEmoji} ${title}
 
 ${memory.content}
 
@@ -295,15 +403,35 @@ function getMemoryType(id: number, database: ReturnType<typeof getDb>): string {
 }
 
 function generateIndexContent(
-  memories: Array<{ id: number; content: string; type: string | null; tags: string | null; created_at: string }>,
+  memories: Array<{
+    id: number;
+    content: string;
+    type: string | null;
+    tags: string | null;
+    created_at: string;
+    valid_from?: string | null;
+    valid_until?: string | null;
+    last_accessed?: string | null;
+    access_count?: number;
+  }>,
   brainDir: string,
   database: ReturnType<typeof getDb>
 ): string {
   const stats = getGraphStats();
   const projectName = path.basename(getProjectRoot());
+  const temporalConfig = getTemporalConfig();
+  const now = new Date();
+
+  // Track temporal statistics
+  const temporalStats = {
+    active: 0,
+    expired: 0,
+    future: 0,
+    fading: 0,
+  };
 
   // Group by location
-  const byLocation: Record<string, Array<{ id: number; type: string; date: string }>> = {
+  const byLocation: Record<string, Array<{ id: number; type: string; date: string; status: string }>> = {
     'Decisions': [],
     'Knowledge': [],
     'Inbox': [],
@@ -314,12 +442,32 @@ function generateIndexContent(
     const tags: string[] = m.tags ? JSON.parse(m.tags) : [];
     const dateStr = new Date(m.created_at).toISOString().split('T')[0];
 
+    // Calculate temporal status
+    const temporalResult = calculateTemporalScore(1.0, {
+      created_at: m.created_at,
+      last_accessed: m.last_accessed || null,
+      access_count: m.access_count || 0,
+      valid_from: m.valid_from || null,
+      valid_until: m.valid_until || null,
+    }, temporalConfig);
+    const temporalScore = temporalResult.temporalScore;
+
+    let status = 'active';
+    if (m.valid_until && new Date(m.valid_until) < now) {
+      status = 'expired';
+    } else if (m.valid_from && new Date(m.valid_from) > now) {
+      status = 'future';
+    } else if (temporalScore < 0.3) {
+      status = 'fading';
+    }
+    temporalStats[status as keyof typeof temporalStats]++;
+
     if (type === 'decision' || tags.includes('decision')) {
-      byLocation['Decisions'].push({ id: m.id, type, date: dateStr });
+      byLocation['Decisions'].push({ id: m.id, type, date: dateStr, status });
     } else if (type === 'learning' || type === 'pattern' || tags.includes('learning') || tags.includes('pattern')) {
-      byLocation['Knowledge'].push({ id: m.id, type, date: dateStr });
+      byLocation['Knowledge'].push({ id: m.id, type, date: dateStr, status });
     } else {
-      byLocation['Inbox'].push({ id: m.id, type, date: dateStr });
+      byLocation['Inbox'].push({ id: m.id, type, date: dateStr, status });
     }
   }
 
@@ -331,6 +479,15 @@ function generateIndexContent(
 - **Total Links:** ${stats.total_links}
 - **Avg Links/Memory:** ${stats.avg_links_per_memory.toFixed(2)}
 - **Isolated Memories:** ${stats.isolated_memories}
+
+## Temporal Status
+
+| Status | Count | Description |
+|--------|-------|-------------|
+| 🟢 Active | ${temporalStats.active} | Currently valid memories |
+| 🟡 Fading | ${temporalStats.fading} | Low relevance (decay < 30%) |
+| 🔵 Future | ${temporalStats.future} | Not yet valid (scheduled) |
+| ⚫ Expired | ${temporalStats.expired} | Past validity period |
 
 ## By Location
 
