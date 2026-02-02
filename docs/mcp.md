@@ -45,6 +45,7 @@ Or if running from source:
 | `succ_link` | Create/manage links between memories (knowledge graph) |
 | `succ_explore` | Explore knowledge graph from a memory |
 | `succ_status` | Get index, memory, and daemon statistics |
+| `succ_config` | Show current configuration with all effective values |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 
@@ -101,9 +102,9 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 | **Forget** | `succ forget` | `succ_forget` | Both light |
 | **Knowledge graph** | `succ graph` | `succ_link`, `succ_explore` | CLI for export/stats, MCP for navigation |
 | **Status** | `succ status` | `succ_status` | Both light, MCP adds daemon info |
+| **Config** | `succ config` / `succ config --show` | `succ_config` | CLI: wizard or show, MCP: show only |
 | **Watch daemon** | `succ watch` | — | Long-running background process |
 | **RAG chat** | `succ chat` | — | Interactive terminal session |
-| **Config wizard** | `succ config` | — | Interactive prompts |
 | **Soul generator** | `succ soul` | — | Heavy: analyzes project, generates persona |
 | **Consolidate** | `succ consolidate` | — | Heavy: merges/deduplicates memories |
 | **Session tools** | `succ session-summary`, `succ precompute-context` | — | Heavy: processes transcripts |

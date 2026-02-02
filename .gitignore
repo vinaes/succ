@@ -10,5 +10,9 @@ dist/
 .succ/.context-archive/
 .succ/next-session-context.md
 .succ/brain/
+.succ/soul.md
+
+# MCP config (local)
+.mcp.json
 
 # Hooks are tracked in git (see .succ/hooks/)

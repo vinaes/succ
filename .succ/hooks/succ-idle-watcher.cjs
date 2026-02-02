@@ -34,6 +34,14 @@ const DEFAULT_CONFIG = {
   min_conversation_length: 5,
 };
 
+// Default BPE config
+const DEFAULT_BPE_CONFIG = {
+  enabled: false,
+  vocab_size: 5000,
+  min_frequency: 2,
+  retrain_interval: 'hourly',
+};
+
 // Get project dir from command line or environment
 const projectDir = process.argv[2] || process.env.SUCC_PROJECT_DIR || process.cwd();
 
@@ -58,11 +66,18 @@ function loadConfig() {
       try {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         const watcherConfig = config.idle_watcher || {};
+        const bpeConfig = config.bpe || {};
         return {
           enabled: watcherConfig.enabled ?? DEFAULT_CONFIG.enabled,
           idle_minutes: watcherConfig.idle_minutes ?? DEFAULT_CONFIG.idle_minutes,
           check_interval: watcherConfig.check_interval ?? DEFAULT_CONFIG.check_interval,
           min_conversation_length: watcherConfig.min_conversation_length ?? DEFAULT_CONFIG.min_conversation_length,
+          bpe: {
+            enabled: bpeConfig.enabled ?? DEFAULT_BPE_CONFIG.enabled,
+            vocab_size: bpeConfig.vocab_size ?? DEFAULT_BPE_CONFIG.vocab_size,
+            min_frequency: bpeConfig.min_frequency ?? DEFAULT_BPE_CONFIG.min_frequency,
+            retrain_interval: bpeConfig.retrain_interval ?? DEFAULT_BPE_CONFIG.retrain_interval,
+          },
         };
       } catch {
         // Config parse error, use defaults
@@ -70,7 +85,7 @@ function loadConfig() {
     }
   }
 
-  return DEFAULT_CONFIG;
+  return { ...DEFAULT_CONFIG, bpe: DEFAULT_BPE_CONFIG };
 }
 
 /**
@@ -200,6 +215,77 @@ function getTranscriptLength(transcriptPath) {
   }
 }
 
+// BPE training state
+const lastBPETrainFile = path.join(tmpDir, 'last-bpe-train.txt');
+const lastCodeIndexFile = path.join(tmpDir, 'last-code-index.txt');
+
+/**
+ * Read last BPE train timestamp
+ */
+function readLastBPETrain() {
+  return readTimestamp(lastBPETrainFile);
+}
+
+/**
+ * Read last code index timestamp (set by index-code command)
+ */
+function readLastCodeIndex() {
+  return readTimestamp(lastCodeIndexFile);
+}
+
+/**
+ * Check if BPE needs retraining based on config
+ */
+function needsBPERetrain(config) {
+  if (!config.bpe || !config.bpe.enabled) {
+    return false;
+  }
+
+  const lastTrained = readLastBPETrain();
+  const lastIndexed = readLastCodeIndex();
+  const now = Date.now();
+
+  // Never trained
+  if (lastTrained === 0) {
+    return true;
+  }
+
+  const hoursSinceTraining = (now - lastTrained) / (1000 * 60 * 60);
+
+  if (config.bpe.retrain_interval === 'hourly') {
+    // Retrain if > 1 hour AND new code was indexed since last training
+    if (hoursSinceTraining >= 1 && lastIndexed > lastTrained) {
+      return true;
+    }
+    // Always retrain if > 24 hours (daily maintenance)
+    return hoursSinceTraining >= 24;
+  } else {
+    // Daily: retrain if > 24 hours
+    return hoursSinceTraining >= 24;
+  }
+}
+
+/**
+ * Trigger BPE training via succ CLI
+ */
+function triggerBPETraining(config) {
+  // Update timestamp first to prevent multiple triggers
+  fs.writeFileSync(lastBPETrainFile, Date.now().toString());
+
+  // Use npx succ to run BPE training
+  const proc = spawn('npx', ['succ', 'train-bpe',
+    '--vocab-size', config.bpe.vocab_size.toString(),
+    '--min-frequency', config.bpe.min_frequency.toString()
+  ], {
+    cwd: projectDir,
+    stdio: 'ignore',
+    detached: true,
+    shell: process.platform === 'win32',
+  });
+
+  proc.unref();
+}
+
 /**
  * Main watcher loop
  */
@@ -244,6 +330,11 @@ async function main() {
       if (transcriptLength >= config.min_conversation_length) {
         triggerReflection(transcriptPath);
       }
+    }
+
+    // Check if BPE needs retraining (during idle time)
+    if (idleLongEnough && needsBPERetrain(config)) {
+      triggerBPETraining(config);
     }
 
     // Wait before next check
