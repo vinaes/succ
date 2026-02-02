@@ -48,6 +48,7 @@ import { getEmbedding, cleanupEmbeddings } from './lib/embeddings.js';
 import { index } from './commands/index.js';
 import { indexCode } from './commands/index-code.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore, cleanupQualityScoring } from './lib/quality.js';
+import { scanSensitive, formatMatches } from './lib/sensitive-filter.js';
 
 // Graceful shutdown handler
 function setupGracefulShutdown() {
@@ -306,10 +307,30 @@ server.tool(
   },
   async ({ content, tags, source, type, global: useGlobal }) => {
     try {
-      const embedding = await getEmbedding(content);
-
-      // Score the memory quality
       const config = getConfig();
+
+      // Check for sensitive information (non-interactive mode for MCP)
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(content);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            // Auto-redact and continue
+            content = scanResult.redactedText;
+          } else {
+            // Block - can't prompt user in MCP mode
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved. Set "sensitive_auto_redact": true in config to auto-redact, or use CLI with --redact-sensitive flag.`,
+                },
+              ],
+            };
+          }
+        }
+      }
+
+      const embedding = await getEmbedding(content);
       let qualityScore = null;
       if (config.quality_scoring_enabled !== false) {
         qualityScore = await scoreMemory(content);
