@@ -20,6 +20,7 @@ import { getEmbedding } from '../lib/embeddings.js';
 import { getConfig, getProjectRoot } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
+import { parseDuration } from '../lib/temporal.js';
 import path from 'path';
 
 /**
@@ -190,17 +191,42 @@ interface RememberOptions {
   skipQuality?: boolean;
   skipSensitiveCheck?: boolean;
   redactSensitive?: boolean;
+  // Temporal validity
+  validFrom?: string;   // When fact becomes valid (e.g., "2024-01-01" or "7d")
+  validUntil?: string;  // When fact expires (e.g., "2024-12-31" or "30d")
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive } = options;
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil } = options;
 
   try {
     const config = getConfig();
     const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
+
+    // Parse temporal validity periods
+    let validFromDate: Date | undefined;
+    let validUntilDate: Date | undefined;
+
+    if (validFrom) {
+      try {
+        validFromDate = parseDuration(validFrom);
+      } catch (e: any) {
+        console.error(`Invalid --valid-from: ${e.message}`);
+        process.exit(1);
+      }
+    }
+
+    if (validUntil) {
+      try {
+        validUntilDate = parseDuration(validUntil);
+      } catch (e: any) {
+        console.error(`Invalid --valid-until: ${e.message}`);
+        process.exit(1);
+      }
+    }
 
     // Check for sensitive information
     const sensitiveCheckEnabled = config.sensitive_filter_enabled !== false && !skipSensitiveCheck;
@@ -265,19 +291,24 @@ export async function remember(content: string, options: RememberOptions = {}): 
         console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
       }
     } else {
-      // Save to local memory with quality score
+      // Save to local memory with quality score and validity period
       const result = saveMemory(content, embedding, tagList, source, {
         qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+        validFrom: validFromDate,
+        validUntil: validUntilDate,
       });
       closeDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
       const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
+      const validityStr = (validFromDate || validUntilDate)
+        ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
+        : '';
       if (result.isDuplicate) {
         console.log(`⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
         console.log(`  Skipped duplicate.`);
       } else {
-        console.log(`✓ Remembered (id: ${result.id})${tagStr}${qualityStr}`);
+        console.log(`✓ Remembered (id: ${result.id})${tagStr}${qualityStr}${validityStr}`);
         console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
       }
     }

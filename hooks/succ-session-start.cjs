@@ -2,12 +2,12 @@
 /**
  * SessionStart Hook - Complete Context Injection
  *
- * 4-phase approach:
- * Phase 0: Git context (branch, uncommitted changes)
- * Phase 0.5: Soul document
- * Phase 1: Recent memories (prioritized by type)
- * Phase 2: Global memories (cross-project)
- * Phase 3: Knowledge base stats
+ * Loads:
+ * - Git context (branch, uncommitted changes)
+ * - Soul document (personality/values)
+ * - Previous session context
+ * - Recent memories (prioritized by type)
+ * - Knowledge base stats
  *
  * Uses execFileSync for security (no shell injection)
  */
@@ -39,7 +39,7 @@ process.stdin.on('end', () => {
     const succDir = path.join(projectDir, '.succ');
     const projectName = path.basename(projectDir);
 
-    // Phase 0: Git Context
+    // Git Context
     try {
       const gitParts = [];
       const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -69,7 +69,7 @@ process.stdin.on('end', () => {
       // Not a git repo
     }
 
-    // Phase 0.4: Commit Guidelines (succ attribution)
+    // Commit Guidelines (succ attribution)
     contextParts.push(`<commit-guidelines>
 When making git commits, add succ to the attribution footer.
 
@@ -101,7 +101,7 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 \`\`\`
 </commit-guidelines>`);
 
-    // Phase 0.5: Soul Document
+    // Soul Document
     const soulPaths = [
       path.join(succDir, 'soul.md'),
       path.join(succDir, 'SOUL.md'),
@@ -119,7 +119,7 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       }
     }
 
-    // Phase 0.6: Precomputed Context from previous session
+    // Precomputed Context from previous session
     const precomputedContextPath = path.join(succDir, 'next-session-context.md');
     if (fs.existsSync(precomputedContextPath)) {
       try {
@@ -141,7 +141,7 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       }
     }
 
-    // Phase 1-3: Memories and stats via succ CLI
+    // Memories and stats via succ CLI
     // Use npx succ for CLI commands
     try {
       // Recent memories

@@ -8,13 +8,13 @@
  * - Compact format (~100-200 tokens for tools reference)
  * - Quick decision guide at top
  *
- * Phases:
- * 1. Git context (branch, changes)
- * 2. succ tools reference (compact)
- * 3. Soul document
- * 4. Previous session context
- * 5. Recent memories (compact index)
- * 6. Knowledge base stats
+ * Loads:
+ * - Git context (branch, changes)
+ * - succ tools reference (compact)
+ * - Soul document
+ * - Previous session context
+ * - Recent memories (compact index)
+ * - Knowledge base stats
  */
 
 const { execFileSync, spawn } = require('child_process');
@@ -44,7 +44,7 @@ process.stdin.on('end', () => {
     const succDir = path.join(projectDir, '.succ');
     const projectName = path.basename(projectDir);
 
-    // Phase 1: Git Context
+    // Git Context
     try {
       const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
         cwd: projectDir,
@@ -67,7 +67,7 @@ process.stdin.on('end', () => {
       // Not a git repo
     }
 
-    // Phase 2: succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
+    // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
     contextParts.push(`<succ-tools>
 <decision-guide>
 | Question | Tool |
@@ -79,8 +79,9 @@ process.stdin.on('end', () => {
 | List files by pattern | Glob |
 </decision-guide>
 
-<search note="All use hybrid semantic + BM25 keyword matching">
+<search note="All use hybrid semantic + BM25 keyword matching. Recent memories rank higher.">
 **succ_recall** query="auth flow" [tags=["decision"]] [since="last week"] [limit=5]
+  [as_of_date="2024-06-01"] — for post-mortems, audits, debugging past state
 → Search memories (decisions, learnings, patterns)
 
 **succ_search** query="API design" [limit=5] [threshold=0.2]
@@ -90,8 +91,9 @@ process.stdin.on('end', () => {
 → Search source code
 </search>
 
-<memory>
+<memory hint="Use valid_until for sprint goals, temp workarounds; valid_from for scheduled changes">
 **succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true]
+  [valid_from="2025-03-01"] [valid_until="30d"]
 → Types: observation, decision, learning, error, pattern
 
 **succ_forget** [id=42] [older_than="30d"] [tag="temp"]
@@ -116,7 +118,7 @@ process.stdin.on('end', () => {
 </status>
 </succ-tools>`);
 
-    // Phase 2.5: Commit Guidelines (strict order)
+    // Commit Guidelines (strict order)
     contextParts.push(`<commit-format>
 Footer order (succ always LAST):
 1. Generated with [Claude Code]
@@ -129,7 +131,7 @@ Co-Authored-By order (succ always LAST):
 3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
 </commit-format>`);
 
-    // Phase 3: Soul Document
+    // Soul Document
     const soulPaths = [
       path.join(succDir, 'soul.md'),
       path.join(succDir, 'SOUL.md'),
@@ -147,7 +149,7 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Phase 4: Precomputed Context from previous session
+    // Precomputed Context from previous session
     const precomputedContextPath = path.join(succDir, 'next-session-context.md');
     if (fs.existsSync(precomputedContextPath)) {
       try {
@@ -169,7 +171,7 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Phase 5: Recent memories (compact index format)
+    // Recent memories (compact index format)
     try {
       const memoriesResult = execFileSync('npx', ['succ', 'memories', '--recent', '5', '--json'], {
         cwd: projectDir,
@@ -201,7 +203,7 @@ Co-Authored-By order (succ always LAST):
       // memories not available
     }
 
-    // Phase 6: Knowledge base stats (compact)
+    // Knowledge base stats (compact)
     try {
       const statusResult = execFileSync('npx', ['succ', 'status'], {
         cwd: projectDir,

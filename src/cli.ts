@@ -209,6 +209,8 @@ program
   .option('--skip-quality', 'Skip quality scoring and threshold check')
   .option('--skip-sensitive', 'Skip sensitive info check (not recommended)')
   .option('--redact-sensitive', 'Auto-redact sensitive info and save')
+  .option('--valid-from <date>', 'When fact becomes valid (e.g., "2024-01-01" or "7d")')
+  .option('--valid-until <date>', 'When fact expires (e.g., "2024-12-31" or "30d")')
   .action((content, options) => {
     remember(content, {
       tags: options.tags,
@@ -217,6 +219,8 @@ program
       skipQuality: options.skipQuality,
       skipSensitiveCheck: options.skipSensitive,
       redactSensitive: options.redactSensitive,
+      validFrom: options.validFrom,
+      validUntil: options.validUntil,
     });
   });
 

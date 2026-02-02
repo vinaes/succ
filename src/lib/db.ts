@@ -206,6 +206,30 @@ function initDb(database: Database.Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: add valid_from and valid_until columns for temporal awareness
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: add temporal fields to memory_links
+  try {
+    database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_from TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_until TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 }
@@ -309,6 +333,18 @@ function initGlobalDb(database: Database.Database): void {
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: add valid_from and valid_until columns for temporal awareness
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
   } catch {
     // Column already exists, ignore
   }
@@ -1044,6 +1080,9 @@ export interface Memory {
   quality_factors: Record<string, number> | null;
   access_count: number;
   last_accessed: string | null;
+  // Temporal validity
+  valid_from: string | null;  // When fact became valid (null = always valid)
+  valid_until: string | null; // When fact expires (null = never expires)
   created_at: string;
 }
 
@@ -1054,6 +1093,10 @@ export interface MemorySearchResult {
   source: string | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  access_count: number;
+  last_accessed: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
   created_at: string;
   similarity: number;
 }
@@ -1098,7 +1141,7 @@ export interface QualityScoreData {
 }
 
 /**
- * Save a new memory with optional deduplication, type, quality score, and auto-linking
+ * Save a new memory with optional deduplication, type, quality score, auto-linking, and validity period
  * Returns { id, isDuplicate, similarity?, linksCreated? }
  */
 export function saveMemory(
@@ -1112,9 +1155,12 @@ export function saveMemory(
     autoLink?: boolean;
     linkThreshold?: number;
     qualityScore?: QualityScoreData;
+    // Temporal validity
+    validFrom?: string | Date;
+    validUntil?: string | Date;
   } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
-  const { deduplicate = true, type = 'observation', autoLink = true, linkThreshold = 0.7, qualityScore } = options;
+  const { deduplicate = true, type = 'observation', autoLink = true, linkThreshold = 0.7, qualityScore, validFrom, validUntil } = options;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -1129,10 +1175,14 @@ export function saveMemory(
   const tagsJson = tags.length > 0 ? JSON.stringify(tags) : null;
   const qualityFactorsJson = qualityScore?.factors ? JSON.stringify(qualityScore.factors) : null;
 
+  // Convert Date objects to ISO strings
+  const validFromStr = validFrom ? (validFrom instanceof Date ? validFrom.toISOString() : validFrom) : null;
+  const validUntilStr = validUntil ? (validUntil instanceof Date ? validUntil.toISOString() : validUntil) : null;
+
   const result = database
     .prepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       content,
@@ -1141,6 +1191,8 @@ export function saveMemory(
       type,
       qualityScore?.score ?? null,
       qualityFactorsJson,
+      validFromStr,
+      validUntilStr,
       embeddingBlob
     );
 
@@ -1200,14 +1252,18 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
 }
 
 /**
- * Search memories by semantic similarity
+ * Search memories by semantic similarity with temporal awareness
  */
 export function searchMemories(
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.3,
   tags?: string[],
-  since?: Date
+  since?: Date,
+  options?: {
+    includeExpired?: boolean;  // Include expired memories (default: false)
+    asOfDate?: Date;  // Point-in-time query (default: now)
+  }
 ): MemorySearchResult[] {
   const database = getDb();
 
@@ -1227,13 +1283,31 @@ export function searchMemories(
     source: string | null;
     quality_score: number | null;
     quality_factors: string | null;
+    access_count: number | null;
+    last_accessed: string | null;
+    valid_from: string | null;
+    valid_until: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
 
   const results: MemorySearchResult[] = [];
+  const now = options?.asOfDate?.getTime() ?? Date.now();
+  const includeExpired = options?.includeExpired ?? false;
 
   for (const row of rows) {
+    // Check validity period
+    if (!includeExpired) {
+      if (row.valid_from) {
+        const validFrom = new Date(row.valid_from).getTime();
+        if (now < validFrom) continue; // Not yet valid
+      }
+      if (row.valid_until) {
+        const validUntil = new Date(row.valid_until).getTime();
+        if (now > validUntil) continue; // Expired
+      }
+    }
+
     // Parse tags
     const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
 
@@ -1256,6 +1330,10 @@ export function searchMemories(
         source: row.source,
         quality_score: row.quality_score,
         quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+        access_count: row.access_count ?? 0,
+        last_accessed: row.last_accessed,
+        valid_from: row.valid_from,
+        valid_until: row.valid_until,
         created_at: row.created_at,
         similarity,
       });
@@ -1275,7 +1353,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
   const database = getDb();
   const rows = database
     .prepare(`
-      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, created_at
+      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -1289,6 +1367,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
       quality_factors: string | null;
       access_count: number | null;
       last_accessed: string | null;
+      valid_from: string | null;
+      valid_until: string | null;
       created_at: string;
     }>;
 
@@ -1301,6 +1381,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
+    valid_from: row.valid_from,
+    valid_until: row.valid_until,
     created_at: row.created_at,
   }));
 }
@@ -1409,7 +1491,7 @@ export function deleteMemoriesByTag(tag: string): number {
 export function getMemoryById(id: number): Memory | null {
   const database = getDb();
   const row = database
-    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, created_at FROM memories WHERE id = ?')
+    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at FROM memories WHERE id = ?')
     .get(id) as {
       id: number;
       content: string;
@@ -1419,6 +1501,8 @@ export function getMemoryById(id: number): Memory | null {
       quality_factors: string | null;
       access_count: number | null;
       last_accessed: string | null;
+      valid_from: string | null;
+      valid_until: string | null;
       created_at: string;
     } | undefined;
 
@@ -1433,6 +1517,8 @@ export function getMemoryById(id: number): Memory | null {
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
+    valid_from: row.valid_from,
+    valid_until: row.valid_until,
     created_at: row.created_at,
   };
 }
@@ -1701,32 +1787,47 @@ export interface MemoryLink {
   target_id: number;
   relation: LinkRelation;
   weight: number;
+  // Temporal validity
+  valid_from: string | null;  // When relationship became valid
+  valid_until: string | null; // When relationship expired/was invalidated
   created_at: string;
 }
 
 export interface MemoryWithLinks extends Memory {
-  outgoing_links: Array<{ target_id: number; relation: LinkRelation; weight: number }>;
-  incoming_links: Array<{ source_id: number; relation: LinkRelation; weight: number }>;
+  outgoing_links: Array<{ target_id: number; relation: LinkRelation; weight: number; valid_from: string | null; valid_until: string | null }>;
+  incoming_links: Array<{ source_id: number; relation: LinkRelation; weight: number; valid_from: string | null; valid_until: string | null }>;
 }
 
 /**
- * Create a link between two memories
+ * Create a link between two memories with optional temporal validity
  */
 export function createMemoryLink(
   sourceId: number,
   targetId: number,
   relation: LinkRelation = 'related',
-  weight: number = 1.0
+  weight: number = 1.0,
+  options?: {
+    validFrom?: string | Date;
+    validUntil?: string | Date;
+  }
 ): { id: number; created: boolean } {
   const database = getDb();
+
+  // Convert Date objects to ISO strings
+  const validFromStr = options?.validFrom
+    ? (options.validFrom instanceof Date ? options.validFrom.toISOString() : options.validFrom)
+    : null;
+  const validUntilStr = options?.validUntil
+    ? (options.validUntil instanceof Date ? options.validUntil.toISOString() : options.validUntil)
+    : null;
 
   try {
     const result = database
       .prepare(`
-        INSERT INTO memory_links (source_id, target_id, relation, weight)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
+        VALUES (?, ?, ?, ?, ?, ?)
       `)
-      .run(sourceId, targetId, relation, weight);
+      .run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
 
     // Schedule auto-export if enabled (async, non-blocking)
     triggerAutoExport().catch(() => {});
@@ -1784,25 +1885,48 @@ export function getMemoryLinks(memoryId: number): {
 }
 
 /**
- * Get memory with its links
+ * Get memory with its links (optionally filtered by validity at a point in time)
  */
-export function getMemoryWithLinks(memoryId: number): MemoryWithLinks | null {
+export function getMemoryWithLinks(
+  memoryId: number,
+  options?: { asOfDate?: Date; includeExpired?: boolean }
+): MemoryWithLinks | null {
   const memory = getMemoryById(memoryId);
   if (!memory) return null;
 
   const links = getMemoryLinks(memoryId);
+  const now = options?.asOfDate?.getTime() ?? Date.now();
+  const includeExpired = options?.includeExpired ?? false;
+
+  // Filter links by validity period
+  const filterLink = (link: MemoryLink) => {
+    if (includeExpired) return true;
+    if (link.valid_from) {
+      const validFrom = new Date(link.valid_from).getTime();
+      if (now < validFrom) return false;
+    }
+    if (link.valid_until) {
+      const validUntil = new Date(link.valid_until).getTime();
+      if (now > validUntil) return false;
+    }
+    return true;
+  };
 
   return {
     ...memory,
-    outgoing_links: links.outgoing.map(l => ({
+    outgoing_links: links.outgoing.filter(filterLink).map(l => ({
       target_id: l.target_id,
       relation: l.relation as LinkRelation,
       weight: l.weight,
+      valid_from: l.valid_from,
+      valid_until: l.valid_until,
     })),
-    incoming_links: links.incoming.map(l => ({
+    incoming_links: links.incoming.filter(filterLink).map(l => ({
       source_id: l.source_id,
       relation: l.relation as LinkRelation,
       weight: l.weight,
+      valid_from: l.valid_from,
+      valid_until: l.valid_until,
     })),
   };
 }
@@ -1954,6 +2078,158 @@ export function getGraphStats(): {
     isolated_memories: isolatedCount,
     relations,
   };
+}
+
+/**
+ * Invalidate a memory link by setting valid_until to now.
+ * This is the "soft delete" approach for temporal graphs - we keep the link
+ * for historical queries but it won't appear in current-time queries.
+ */
+export function invalidateMemoryLink(
+  sourceId: number,
+  targetId: number,
+  relation?: LinkRelation
+): boolean {
+  const database = getDb();
+  const now = new Date().toISOString();
+
+  if (relation) {
+    const result = database
+      .prepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND relation = ? AND valid_until IS NULL')
+      .run(now, sourceId, targetId, relation);
+    return result.changes > 0;
+  } else {
+    const result = database
+      .prepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND valid_until IS NULL')
+      .run(now, sourceId, targetId);
+    return result.changes > 0;
+  }
+}
+
+/**
+ * Get graph snapshot at a specific point in time.
+ * This is the core of temporal knowledge graphs - ability to query historical state.
+ *
+ * @param asOfDate - The point in time to query
+ * @returns Graph stats at that point in time
+ */
+export function getGraphStatsAsOf(asOfDate: Date): {
+  total_memories: number;
+  total_links: number;
+  avg_links_per_memory: number;
+  relations: Record<string, number>;
+} {
+  const database = getDb();
+  const asOfStr = asOfDate.toISOString();
+
+  // Count memories that existed at that time
+  const totalMemories = (database
+    .prepare('SELECT COUNT(*) as count FROM memories WHERE created_at <= ?')
+    .get(asOfStr) as { count: number }).count;
+
+  // Count links that were valid at that time
+  const totalLinks = (database
+    .prepare(`
+      SELECT COUNT(*) as count FROM memory_links
+      WHERE created_at <= ?
+        AND (valid_from IS NULL OR valid_from <= ?)
+        AND (valid_until IS NULL OR valid_until > ?)
+    `)
+    .get(asOfStr, asOfStr, asOfStr) as { count: number }).count;
+
+  // Count by relation type at that time
+  const relationCounts = database
+    .prepare(`
+      SELECT relation, COUNT(*) as count FROM memory_links
+      WHERE created_at <= ?
+        AND (valid_from IS NULL OR valid_from <= ?)
+        AND (valid_until IS NULL OR valid_until > ?)
+      GROUP BY relation
+    `)
+    .all(asOfStr, asOfStr, asOfStr) as Array<{ relation: string; count: number }>;
+
+  const relations: Record<string, number> = {};
+  for (const row of relationCounts) {
+    relations[row.relation] = row.count;
+  }
+
+  return {
+    total_memories: totalMemories,
+    total_links: totalLinks,
+    avg_links_per_memory: totalMemories > 0 ? totalLinks / totalMemories : 0,
+    relations,
+  };
+}
+
+/**
+ * Search memories as they existed at a specific point in time.
+ * Core function for point-in-time queries.
+ */
+export function searchMemoriesAsOf(
+  queryEmbedding: number[],
+  asOfDate: Date,
+  limit: number = 5,
+  threshold: number = 0.3
+): MemorySearchResult[] {
+  const database = getDb();
+  const asOfStr = asOfDate.toISOString();
+  const asOfTime = asOfDate.getTime();
+
+  // Get memories that existed at that time
+  const rows = database.prepare(`
+    SELECT * FROM memories
+    WHERE created_at <= ?
+  `).all(asOfStr) as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
+    access_count: number | null;
+    last_accessed: string | null;
+    valid_from: string | null;
+    valid_until: string | null;
+    embedding: Buffer;
+    created_at: string;
+  }>;
+
+  const results: MemorySearchResult[] = [];
+
+  for (const row of rows) {
+    // Check validity period at asOfDate
+    if (row.valid_from) {
+      const validFrom = new Date(row.valid_from).getTime();
+      if (asOfTime < validFrom) continue;
+    }
+    if (row.valid_until) {
+      const validUntil = new Date(row.valid_until).getTime();
+      if (asOfTime > validUntil) continue;
+    }
+
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+
+    if (similarity >= threshold) {
+      results.push({
+        id: row.id,
+        content: row.content,
+        tags: row.tags ? JSON.parse(row.tags) : [],
+        source: row.source,
+        quality_score: row.quality_score,
+        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+        access_count: row.access_count ?? 0,
+        last_accessed: row.last_accessed,
+        valid_from: row.valid_from,
+        valid_until: row.valid_until,
+        created_at: row.created_at,
+        similarity,
+      });
+    }
+  }
+
+  results.sort((a, b) => b.similarity - a.similarity);
+  return results.slice(0, limit);
 }
 
 // ============================================================================
