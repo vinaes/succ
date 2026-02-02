@@ -1269,6 +1269,101 @@ server.tool(
   }
 );
 
+// Tool: succ_config_set - Update configuration values
+server.tool(
+  'succ_config_set',
+  'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: embedding_mode (local/openrouter/custom), analyze_mode (claude/local/openrouter), openrouter_api_key, embedding_api_url, analyze_api_url, analyze_model, quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled',
+  {
+    key: z.string().describe('Config key to set (e.g., "embedding_mode", "analyze_model", "idle_reflection.enabled")'),
+    value: z.string().describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
+    scope: z.enum(['global', 'project']).optional().default('global').describe('Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'),
+  },
+  async ({ key, value, scope }) => {
+    try {
+      const os = await import('os');
+
+      // Determine config path based on scope
+      let configDir: string;
+      let configPath: string;
+
+      if (scope === 'project') {
+        const succDir = getSuccDir();
+        if (!fs.existsSync(succDir)) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: 'Project not initialized. Run `succ init` first or use scope="global".',
+              },
+            ],
+            isError: true,
+          };
+        }
+        configDir = succDir;
+        configPath = path.join(succDir, 'config.json');
+      } else {
+        configDir = path.join(os.homedir(), '.succ');
+        configPath = path.join(configDir, 'config.json');
+      }
+
+      // Load existing config
+      let config: Record<string, unknown> = {};
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+
+      // Parse value (handle booleans and numbers)
+      let parsedValue: unknown = value;
+      if (value === 'true') parsedValue = true;
+      else if (value === 'false') parsedValue = false;
+      else if (!isNaN(Number(value)) && value.trim() !== '') parsedValue = Number(value);
+
+      // Handle nested keys (e.g., "idle_reflection.enabled")
+      const keys = key.split('.');
+      if (keys.length === 1) {
+        config[key] = parsedValue;
+      } else {
+        // Navigate/create nested object
+        let current: Record<string, unknown> = config;
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!current[keys[i]] || typeof current[keys[i]] !== 'object') {
+            current[keys[i]] = {};
+          }
+          current = current[keys[i]] as Record<string, unknown>;
+        }
+        current[keys[keys.length - 1]] = parsedValue;
+      }
+
+      // Ensure config directory exists
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+
+      // Save config
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Config updated (${scope}): ${key} = ${JSON.stringify(parsedValue)}\nSaved to: ${configPath}`,
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error setting config: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);

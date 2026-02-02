@@ -141,7 +141,10 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 → Use at session start to understand what's indexed, or when debugging search issues
 
 **succ_config** → show current configuration with all effective values
-→ Use when user asks about settings, embedding model, or to debug config issues
+→ Use when user asks about settings, or to see available keys before changing
+
+**succ_config_set** key="..." value="..." [global=true]
+→ First run succ_config to see keys, then set. global=true for user config, false for project
 
 ---
 **recall** = memories (from remember) | **search** = documents (brain/) | **search_code** = source files
