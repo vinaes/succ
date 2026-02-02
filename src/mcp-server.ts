@@ -1586,6 +1586,98 @@ server.tool(
   }
 );
 
+// Tool: succ_checkpoint - Create and manage checkpoints (full backup/restore)
+server.tool(
+  'succ_checkpoint',
+  'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).',
+  {
+    action: z.enum(['create', 'list']).describe('Action: create (new checkpoint) or list (show available)'),
+    compress: z.boolean().optional().describe('Compress with gzip (default: false)'),
+    include_brain: z.boolean().optional().describe('Include brain vault files (default: true)'),
+    include_documents: z.boolean().optional().describe('Include indexed documents (default: true)'),
+  },
+  async ({ action, compress, include_brain, include_documents }) => {
+    try {
+      const {
+        createCheckpoint,
+        listCheckpoints,
+        formatSize,
+      } = await import('./lib/checkpoint.js');
+
+      if (action === 'create') {
+        const { checkpoint: cp, outputPath } = createCheckpoint({
+          includeBrain: include_brain ?? true,
+          includeDocuments: include_documents ?? true,
+          includeConfig: true,
+          compress: compress ?? false,
+        });
+
+        const fs = await import('fs');
+        const stat = fs.statSync(outputPath);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Checkpoint created successfully!
+
+File: ${outputPath}
+Project: ${cp.project_name}
+Size: ${formatSize(stat.size)}
+
+Contents:
+  Memories: ${cp.stats.memories_count}
+  Documents: ${cp.stats.documents_count}
+  Memory links: ${cp.stats.links_count}
+  Brain files: ${cp.stats.brain_files_count}
+
+To restore: succ checkpoint restore "${outputPath}"`,
+          }],
+        };
+      } else {
+        // list
+        const checkpoints = listCheckpoints();
+
+        if (checkpoints.length === 0) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: 'No checkpoints found. Create one with: succ_checkpoint action="create"',
+            }],
+          };
+        }
+
+        const lines = ['Available checkpoints:\n'];
+        for (const cp of checkpoints) {
+          const compressed = cp.compressed ? ' (compressed)' : '';
+          const date = cp.created_at ? new Date(cp.created_at).toLocaleString() : 'unknown';
+          lines.push(`  ${cp.name}${compressed}`);
+          lines.push(`    Created: ${date}`);
+          lines.push(`    Size: ${formatSize(cp.size)}`);
+          lines.push('');
+        }
+        lines.push(`Total: ${checkpoints.length} checkpoint(s)`);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: lines.join('\n'),
+          }],
+        };
+      }
+    } catch (error: any) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Error: ${error.message}`,
+        }],
+        isError: true,
+      };
+    } finally {
+      closeDb();
+    }
+  }
+);
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
