@@ -79,6 +79,6 @@ Close other succ processes or Claude Code sessions accessing the same project.
 succ clear -f
 
 # Or delete database manually
-rm .claude/succ.db
+rm .succ/succ.db
 rm ~/.succ/global.db
 ```
