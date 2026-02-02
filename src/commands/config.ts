@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import inquirer from 'inquirer';
-import { LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
+import { LOCAL_MODEL, OPENROUTER_MODEL, getConfigDisplay, formatConfigDisplay } from '../lib/config.js';
 
 interface ConfigData {
   embedding_mode: 'local' | 'openrouter' | 'custom';
@@ -14,10 +14,33 @@ interface ConfigData {
   chunk_overlap?: number;
 }
 
+export interface ConfigOptions {
+  show?: boolean;
+  json?: boolean;
+}
+
+/**
+ * Show current configuration (non-interactive)
+ */
+export async function showConfig(options: { json?: boolean } = {}): Promise<void> {
+  const display = getConfigDisplay(true);
+
+  if (options.json) {
+    console.log(JSON.stringify(display, null, 2));
+  } else {
+    console.log(formatConfigDisplay(display));
+  }
+}
+
 /**
  * Interactive configuration wizard
  */
-export async function config(): Promise<void> {
+export async function config(options: ConfigOptions = {}): Promise<void> {
+  // If --show flag, display current config and exit
+  if (options.show) {
+    await showConfig({ json: options.json });
+    return;
+  }
   const globalConfigDir = path.join(os.homedir(), '.succ');
   const globalConfigPath = path.join(globalConfigDir, 'config.json');
 

@@ -42,6 +42,15 @@ export interface SuccConfig {
   idle_reflection?: IdleReflectionConfig;
   // Idle watcher settings (smart activity-based reflections)
   idle_watcher?: IdleWatcherConfig;
+  // BPE tokenizer settings (optional enhancement to Ronin segmentation)
+  bpe?: BPETokenizerConfig;
+}
+
+export interface BPETokenizerConfig {
+  enabled?: boolean;  // Enable BPE tokenizer (default: false)
+  vocab_size?: number;  // Target vocabulary size (default: 5000)
+  min_frequency?: number;  // Minimum pair frequency to merge (default: 2)
+  retrain_interval?: 'hourly' | 'daily';  // When to retrain (default: 'hourly')
 }
 
 export interface IdleWatcherConfig {
@@ -407,6 +416,322 @@ export function getAgentOperations(agent: 'claude' | 'sleep'): IdleOperation[] {
   return getOperationAssignments()
     .filter(a => a.agent === agent && a.enabled)
     .map(a => a.operation);
+}
+
+/**
+ * Mask sensitive values (API keys, etc.)
+ */
+function maskSensitive(value: string | undefined): string {
+  if (!value) return '(not set)';
+  if (value.length <= 8) return '****';
+  return value.slice(0, 4) + '****' + value.slice(-4);
+}
+
+/**
+ * Get full configuration with all defaults applied
+ * Returns a structured object showing current effective values
+ */
+export interface ConfigDisplay {
+  // Sources
+  sources: {
+    global: string;
+    project: string | null;
+    env: string[];
+    openrouter_api_key?: string;
+  };
+  // Embedding settings
+  embedding: {
+    mode: 'local' | 'openrouter' | 'custom';
+    model: string;
+    api_url?: string;
+    api_key?: string;
+    batch_size: number;
+    dimensions?: number;
+  };
+  // Chunking settings
+  chunking: {
+    chunk_size: number;
+    chunk_overlap: number;
+  };
+  // GPU settings
+  gpu: {
+    enabled: boolean;
+    device?: string;
+  };
+  // Analyze settings
+  analyze: {
+    mode: 'claude' | 'openrouter' | 'local';
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+    temperature: number;
+    max_tokens: number;
+  };
+  // Quality scoring settings
+  quality: {
+    enabled: boolean;
+    mode: 'local' | 'custom' | 'openrouter';
+    model?: string;
+    api_url?: string;
+    threshold: number;
+  };
+  // Sensitive filter settings
+  sensitive: {
+    enabled: boolean;
+    auto_redact: boolean;
+  };
+  // Knowledge graph settings
+  graph: {
+    auto_link: boolean;
+    link_threshold: number;
+    auto_export: boolean;
+    export_format: 'obsidian' | 'json';
+    export_path?: string;
+  };
+  // Idle reflection settings
+  idle_reflection: {
+    enabled: boolean;
+    agent_model: 'haiku' | 'sonnet' | 'opus';
+    operations: {
+      memory_consolidation: boolean;
+      graph_refinement: boolean;
+      session_summary: boolean;
+      precompute_context: boolean;
+      write_reflection: boolean;
+    };
+    sleep_agent: {
+      enabled: boolean;
+      mode: 'local' | 'openrouter';
+      model?: string;
+    };
+  };
+  // Idle watcher settings
+  idle_watcher: {
+    enabled: boolean;
+    idle_minutes: number;
+    check_interval: number;
+    min_conversation_length: number;
+  };
+}
+
+export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
+  const config = getConfig();
+  const idleReflection = getIdleReflectionConfig();
+  const idleWatcher = getIdleWatcherConfig();
+
+  // Determine sources
+  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
+  const projectConfigPaths = [
+    path.join(process.cwd(), '.succ', 'config.json'),
+    path.join(process.cwd(), '.claude', 'succ.json'),
+  ];
+  let projectConfig: string | null = null;
+  for (const p of projectConfigPaths) {
+    if (fs.existsSync(p)) {
+      projectConfig = p;
+      break;
+    }
+  }
+
+  const envVars: string[] = [];
+  if (process.env.OPENROUTER_API_KEY) envVars.push('OPENROUTER_API_KEY');
+
+  const mask = (val: string | undefined) => maskSecrets ? maskSensitive(val) : (val || '(not set)');
+
+  return {
+    sources: {
+      global: fs.existsSync(globalConfigPath) ? globalConfigPath : '(not found)',
+      project: projectConfig,
+      env: envVars,
+      openrouter_api_key: config.openrouter_api_key ? mask(config.openrouter_api_key) : undefined,
+    },
+    embedding: {
+      mode: config.embedding_mode,
+      model: config.embedding_model,
+      api_url: config.embedding_mode === 'custom' ? config.embedding_api_url : undefined,
+      api_key: config.embedding_mode === 'custom' ? mask(config.embedding_api_key) : undefined,
+      batch_size: config.embedding_batch_size ?? 32,
+      dimensions: config.embedding_dimensions,
+    },
+    chunking: {
+      chunk_size: config.chunk_size,
+      chunk_overlap: config.chunk_overlap,
+    },
+    gpu: {
+      enabled: config.gpu_enabled ?? true,
+      device: config.gpu_device,
+    },
+    analyze: {
+      mode: config.analyze_mode ?? 'claude',
+      model: config.analyze_model,
+      api_url: config.analyze_mode === 'local' ? config.analyze_api_url : undefined,
+      api_key: config.analyze_mode !== 'claude' ? mask(config.analyze_api_key) : undefined,
+      temperature: config.analyze_temperature ?? 0.3,
+      max_tokens: config.analyze_max_tokens ?? 4096,
+    },
+    quality: {
+      enabled: config.quality_scoring_enabled ?? true,
+      mode: config.quality_scoring_mode ?? 'local',
+      model: config.quality_scoring_model,
+      api_url: config.quality_scoring_mode === 'custom' ? config.quality_scoring_api_url : undefined,
+      threshold: config.quality_scoring_threshold ?? 0,
+    },
+    sensitive: {
+      enabled: config.sensitive_filter_enabled ?? true,
+      auto_redact: config.sensitive_auto_redact ?? false,
+    },
+    graph: {
+      auto_link: config.graph_auto_link ?? true,
+      link_threshold: config.graph_link_threshold ?? 0.7,
+      auto_export: config.graph_auto_export ?? false,
+      export_format: config.graph_export_format ?? 'obsidian',
+      export_path: config.graph_export_path,
+    },
+    idle_reflection: {
+      enabled: idleReflection.enabled,
+      agent_model: idleReflection.agent_model,
+      operations: {
+        memory_consolidation: idleReflection.operations.memory_consolidation ?? true,
+        graph_refinement: idleReflection.operations.graph_refinement ?? true,
+        session_summary: idleReflection.operations.session_summary ?? true,
+        precompute_context: idleReflection.operations.precompute_context ?? false,
+        write_reflection: idleReflection.operations.write_reflection ?? true,
+      },
+      sleep_agent: {
+        enabled: idleReflection.sleep_agent.enabled ?? false,
+        mode: idleReflection.sleep_agent.mode ?? 'local',
+        model: idleReflection.sleep_agent.model || undefined,
+      },
+    },
+    idle_watcher: {
+      enabled: idleWatcher.enabled,
+      idle_minutes: idleWatcher.idle_minutes,
+      check_interval: idleWatcher.check_interval,
+      min_conversation_length: idleWatcher.min_conversation_length,
+    },
+  };
+}
+
+/**
+ * Format config display as readable text
+ */
+export function formatConfigDisplay(display: ConfigDisplay): string {
+  const lines: string[] = [];
+
+  lines.push('=== succ Configuration ===\n');
+
+  // Sources
+  lines.push('## Sources');
+  lines.push(`  Global config: ${display.sources.global}`);
+  lines.push(`  Project config: ${display.sources.project || '(none)'}`);
+  if (display.sources.env.length > 0) {
+    lines.push(`  Environment: ${display.sources.env.join(', ')}`);
+  }
+  if (display.sources.openrouter_api_key) {
+    lines.push(`  OpenRouter API Key: ${display.sources.openrouter_api_key}`);
+  }
+  lines.push('');
+
+  // Embedding
+  lines.push('## Embedding');
+  lines.push(`  Mode: ${display.embedding.mode}`);
+  lines.push(`  Model: ${display.embedding.model}`);
+  if (display.embedding.api_url) {
+    lines.push(`  API URL: ${display.embedding.api_url}`);
+  }
+  if (display.embedding.api_key) {
+    lines.push(`  API Key: ${display.embedding.api_key}`);
+  }
+  lines.push(`  Batch size: ${display.embedding.batch_size}`);
+  if (display.embedding.dimensions) {
+    lines.push(`  Dimensions: ${display.embedding.dimensions}`);
+  }
+  lines.push('');
+
+  // Chunking
+  lines.push('## Chunking');
+  lines.push(`  Chunk size: ${display.chunking.chunk_size}`);
+  lines.push(`  Chunk overlap: ${display.chunking.chunk_overlap}`);
+  lines.push('');
+
+  // GPU
+  lines.push('## GPU');
+  lines.push(`  Enabled: ${display.gpu.enabled}`);
+  if (display.gpu.device) {
+    lines.push(`  Device: ${display.gpu.device}`);
+  }
+  lines.push('');
+
+  // Analyze
+  lines.push('## Analyze');
+  lines.push(`  Mode: ${display.analyze.mode}`);
+  if (display.analyze.model) {
+    lines.push(`  Model: ${display.analyze.model}`);
+  }
+  if (display.analyze.api_url) {
+    lines.push(`  API URL: ${display.analyze.api_url}`);
+  }
+  if (display.analyze.api_key) {
+    lines.push(`  API Key: ${display.analyze.api_key}`);
+  }
+  lines.push(`  Temperature: ${display.analyze.temperature}`);
+  lines.push(`  Max tokens: ${display.analyze.max_tokens}`);
+  lines.push('');
+
+  // Quality
+  lines.push('## Quality Scoring');
+  lines.push(`  Enabled: ${display.quality.enabled}`);
+  lines.push(`  Mode: ${display.quality.mode}`);
+  if (display.quality.model) {
+    lines.push(`  Model: ${display.quality.model}`);
+  }
+  if (display.quality.api_url) {
+    lines.push(`  API URL: ${display.quality.api_url}`);
+  }
+  lines.push(`  Threshold: ${display.quality.threshold}`);
+  lines.push('');
+
+  // Sensitive
+  lines.push('## Sensitive Filter');
+  lines.push(`  Enabled: ${display.sensitive.enabled}`);
+  lines.push(`  Auto-redact: ${display.sensitive.auto_redact}`);
+  lines.push('');
+
+  // Graph
+  lines.push('## Knowledge Graph');
+  lines.push(`  Auto-link: ${display.graph.auto_link}`);
+  lines.push(`  Link threshold: ${display.graph.link_threshold}`);
+  lines.push(`  Auto-export: ${display.graph.auto_export}`);
+  lines.push(`  Export format: ${display.graph.export_format}`);
+  if (display.graph.export_path) {
+    lines.push(`  Export path: ${display.graph.export_path}`);
+  }
+  lines.push('');
+
+  // Idle Reflection
+  lines.push('## Idle Reflection');
+  lines.push(`  Enabled: ${display.idle_reflection.enabled}`);
+  lines.push(`  Agent model: ${display.idle_reflection.agent_model}`);
+  lines.push('  Operations:');
+  const ops = display.idle_reflection.operations;
+  lines.push(`    - Memory consolidation: ${ops.memory_consolidation}`);
+  lines.push(`    - Graph refinement: ${ops.graph_refinement}`);
+  lines.push(`    - Session summary: ${ops.session_summary}`);
+  lines.push(`    - Precompute context: ${ops.precompute_context}`);
+  lines.push(`    - Write reflection: ${ops.write_reflection}`);
+  if (display.idle_reflection.sleep_agent.enabled) {
+    lines.push(`  Sleep agent: ${display.idle_reflection.sleep_agent.mode} (${display.idle_reflection.sleep_agent.model || 'not configured'})`);
+  }
+  lines.push('');
+
+  // Idle Watcher
+  lines.push('## Idle Watcher');
+  lines.push(`  Enabled: ${display.idle_watcher.enabled}`);
+  lines.push(`  Idle minutes: ${display.idle_watcher.idle_minutes}`);
+  lines.push(`  Check interval: ${display.idle_watcher.check_interval}s`);
+  lines.push(`  Min conversation length: ${display.idle_watcher.min_conversation_length}`);
+
+  return lines.join('\n');
 }
 
 /**
