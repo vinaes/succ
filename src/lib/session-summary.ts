@@ -11,6 +11,7 @@ import { saveMemory, searchMemories, closeDb } from './db.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
+import { scanSensitive } from './sensitive-filter.js';
 
 /**
  * Extracted fact from session
@@ -277,8 +278,24 @@ async function saveFactsAsMemories(
     onProgress?.(i + 1, facts.length);
 
     try {
+      // Check for sensitive info and redact if configured
+      const config = getConfig();
+      let content = fact.content;
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(content);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            content = scanResult.redactedText;
+          } else {
+            // Skip facts with sensitive info when auto-redact is off
+            skipped++;
+            continue;
+          }
+        }
+      }
+
       // Get embedding
-      const embedding = await getEmbedding(fact.content);
+      const embedding = await getEmbedding(content);
 
       // Check for duplicates
       const existing = searchMemories(embedding, 1, 0.9);
@@ -288,7 +305,7 @@ async function saveFactsAsMemories(
       }
 
       // Score quality
-      const qualityScore = await scoreMemory(fact.content);
+      const qualityScore = await scoreMemory(content);
       if (qualityScore.score < minQuality) {
         skipped++;
         continue;
@@ -298,7 +315,7 @@ async function saveFactsAsMemories(
       const tags = [...fact.tags, 'session-summary', fact.type];
 
       // Save memory
-      const result = saveMemory(fact.content, embedding, tags, 'session-summary', {
+      const result = saveMemory(content, embedding, tags, 'session-summary', {
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
       });
 

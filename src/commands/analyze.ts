@@ -1252,9 +1252,25 @@ async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
       // Check for duplicates using semantic similarity
       const { saveMemory, searchMemories } = await import('../lib/db.js');
       const { getEmbedding } = await import('../lib/embeddings.js');
+      const { scanSensitive } = await import('../lib/sensitive-filter.js');
+
+      // Check for sensitive info and redact if configured
+      const config = getConfig();
+      let content = discovery.content;
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(content);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            content = scanResult.redactedText;
+          } else {
+            // Skip discoveries with sensitive info when auto-redact is off
+            return false;
+          }
+        }
+      }
 
       // Generate embedding for the discovery
-      const searchText = discovery.title + ' ' + discovery.content;
+      const searchText = discovery.title + ' ' + content;
       const embedding = await getEmbedding(searchText);
 
       // Search for similar memories
@@ -1270,7 +1286,7 @@ async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
       // Save new memory with the embedding we already have
       const memoryTags = discovery.tags.length > 0 ? discovery.tags : ['daemon'];
       saveMemory(
-        discovery.content,
+        content,
         embedding,
         memoryTags,
         `daemon-${discovery.type}`,
