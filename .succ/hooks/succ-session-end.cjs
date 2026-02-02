@@ -96,6 +96,7 @@ process.stdin.on('end', () => {
         timeout: 30000,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: true,
+        windowsHide: true,
       });
     } catch {
       // Failed to save to memory, continue
@@ -126,6 +127,7 @@ Keep each bullet concise (1-2 sentences max).`;
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: true,
         cwd: projectDir,
+        windowsHide: true,
       });
 
       proc.stdin.write(learningsPrompt);

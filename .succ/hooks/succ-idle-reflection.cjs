@@ -101,6 +101,7 @@ function runSuccCommandSync(projectDir, args, timeout = 10000) {
       timeout,
       shell: true,
       encoding: 'utf8',
+      windowsHide: true,
     });
     return {
       success: result.status === 0,
@@ -118,11 +119,14 @@ function runSuccCommandSync(projectDir, args, timeout = 10000) {
  */
 function runSuccCommandDetached(projectDir, args) {
   try {
+    // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
+    // Using stdio: 'pipe' instead of 'ignore' may help reduce window flash
     const proc = spawn('succ', args, {
       cwd: projectDir,
       shell: true,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     proc.unref(); // Allow parent to exit independently
     return true;
@@ -349,6 +353,7 @@ tags:
       cwd: projectDir,
       timeout: 10000,
       shell: true,
+      windowsHide: true,
     });
   } catch {
     // Memory save failed, but file was written
@@ -411,6 +416,7 @@ async function main() {
     const proc = spawn('claude', ['-p', '--tools', '', '--model', claudeModel], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,
+      windowsHide: true,
     });
 
     proc.stdin.write(prompt);
@@ -437,10 +443,13 @@ main();
   fs.writeFileSync(scriptFile, scriptContent);
 
   try {
-    const proc = spawn('node', [scriptFile], {
+    // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
+    // Using stdio: 'pipe' and process.execPath for better compatibility
+    const proc = spawn(process.execPath, [scriptFile], {
       cwd: projectDir,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     proc.unref();
     // Script file will be deleted by the detached process on exit
