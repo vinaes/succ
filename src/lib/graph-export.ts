@@ -44,14 +44,15 @@ function getWikiLinkPath(
   dateStr: string
 ): string {
   const projectName = path.basename(getProjectRoot());
+  const typePascal = targetType.charAt(0).toUpperCase() + targetType.slice(1);
 
   if (targetType === 'decision' || targetTags.includes('decision')) {
-    return `01_Projects/${projectName}/Decisions/${dateStr}-${targetType}-${targetId}`;
+    return `01_Projects/${projectName}/Decisions/${dateStr} ${typePascal} (${targetId})`;
   }
   if (targetType === 'learning' || targetType === 'pattern' || targetTags.includes('learning') || targetTags.includes('pattern')) {
-    return `02_Knowledge/${dateStr}-${targetType}-${targetId}`;
+    return `02_Knowledge/${dateStr} ${typePascal} (${targetId})`;
   }
-  return `00_Inbox/${dateStr}-${targetType}-${targetId}`;
+  return `00_Inbox/${dateStr} ${typePascal} (${targetId})`;
 }
 
 // Debounce state for auto-export
@@ -284,9 +285,11 @@ function exportToObsidian(
     }
 
     // Generate filename with date prefix for better sorting
+    // Format: "2026-02-02 Observation (15).md" (PascalCase type, ID in parens)
     const date = new Date(memory.created_at);
     const dateStr = date.toISOString().split('T')[0];
-    const safeId = `${dateStr}-${type}-${memory.id}`;
+    const typePascal = type.charAt(0).toUpperCase() + type.slice(1);
+    const safeId = `${dateStr} ${typePascal} (${memory.id})`;
     const filename = `${safeId}.md`;
 
     // Generate title from content (first line or truncated)
@@ -595,12 +598,15 @@ function generateIndexContent(
 
 `;
 
+  // Helper to format type as PascalCase
+  const toPascal = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
   // Decisions
   if (byLocation['Decisions'].length > 0) {
     content += `### 📋 Decisions (${byLocation['Decisions'].length})\n\n`;
     content += `Located in: \`01_Projects/${projectName}/Decisions/\`\n\n`;
     for (const { id, type, date } of byLocation['Decisions'].slice(0, 10)) {
-      content += `- [[01_Projects/${projectName}/Decisions/${date}-${type}-${id}]]\n`;
+      content += `- [[01_Projects/${projectName}/Decisions/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Decisions'].length > 10) {
       content += `- ... and ${byLocation['Decisions'].length - 10} more\n`;
@@ -613,7 +619,7 @@ function generateIndexContent(
     content += `### 📚 Knowledge (${byLocation['Knowledge'].length})\n\n`;
     content += `Located in: \`02_Knowledge/\`\n\n`;
     for (const { id, type, date } of byLocation['Knowledge'].slice(0, 10)) {
-      content += `- [[02_Knowledge/${date}-${type}-${id}]]\n`;
+      content += `- [[02_Knowledge/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Knowledge'].length > 10) {
       content += `- ... and ${byLocation['Knowledge'].length - 10} more\n`;
@@ -626,7 +632,7 @@ function generateIndexContent(
     content += `### 📥 Inbox (${byLocation['Inbox'].length})\n\n`;
     content += `Located in: \`00_Inbox/\`\n\n`;
     for (const { id, type, date } of byLocation['Inbox'].slice(0, 10)) {
-      content += `- [[00_Inbox/${date}-${type}-${id}]]\n`;
+      content += `- [[00_Inbox/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Inbox'].length > 10) {
       content += `- ... and ${byLocation['Inbox'].length - 10} more\n`;

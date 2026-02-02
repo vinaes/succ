@@ -255,7 +255,7 @@ describe('Graph Export Module', () => {
       // Find and read the source memory file
       const inboxDir = path.join(tempDir, '00_Inbox');
       const files = fs.readdirSync(inboxDir);
-      const sourceFile = files.find((f) => f.includes('-1.md'));
+      const sourceFile = files.find((f) => f.includes('(1).md'));
 
       expect(sourceFile).toBeDefined();
       if (sourceFile) {
