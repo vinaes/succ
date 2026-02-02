@@ -10,6 +10,9 @@ import {
   serializeIndex,
   deserializeIndex,
   createEmptyIndex,
+  isFlatcase,
+  segmentFlatcase,
+  tokenizeCodeWithSegmentation,
 } from './bm25.js';
 
 describe('tokenizeCode', () => {
@@ -335,5 +338,99 @@ describe('serialization', () => {
     // Search should work on restored index
     const results = search('hello', restored, 'code');
     expect(results[0].docId).toBe(1);
+  });
+});
+
+describe('isFlatcase', () => {
+  it('detects flatcase words', () => {
+    expect(isFlatcase('getusername')).toBe(true);
+    expect(isFlatcase('fetchdata')).toBe(true);
+    expect(isFlatcase('handle')).toBe(true); // 6 chars, valid
+  });
+
+  it('rejects non-flatcase', () => {
+    expect(isFlatcase('getUserName')).toBe(false); // has uppercase
+    expect(isFlatcase('get_user')).toBe(false); // has underscore
+    expect(isFlatcase('get')).toBe(false); // too short (< 4)
+    expect(isFlatcase('abc')).toBe(false); // too short
+    expect(isFlatcase('GET')).toBe(false); // uppercase
+    expect(isFlatcase('user123')).toBe(false); // has numbers
+  });
+});
+
+describe('segmentFlatcase', () => {
+  // Mock frequency function
+  const frequencies: Record<string, number> = {
+    get: 100,
+    user: 80,
+    name: 70,
+    data: 60,
+    fetch: 50,
+    handle: 40,
+    error: 30,
+    request: 25,
+    response: 20,
+  };
+  const getFreq = (token: string) => frequencies[token] || 0;
+  const total = Object.values(frequencies).reduce((a, b) => a + b, 0);
+
+  it('segments known compound words', () => {
+    const result = segmentFlatcase('getusername', getFreq, total);
+    expect(result).toContain('get');
+    expect(result).toContain('user');
+    expect(result).toContain('name');
+  });
+
+  it('segments fetchdata', () => {
+    const result = segmentFlatcase('fetchdata', getFreq, total);
+    expect(result).toContain('fetch');
+    expect(result).toContain('data');
+  });
+
+  it('handles unknown words gracefully', () => {
+    const result = segmentFlatcase('xyzabc', getFreq, total);
+    // Should still return something (may not split well)
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.join('')).toBe('xyzabc');
+  });
+
+  it('returns original for short words', () => {
+    const result = segmentFlatcase('get', getFreq, total);
+    expect(result).toEqual(['get']);
+  });
+});
+
+describe('tokenizeCodeWithSegmentation', () => {
+  const frequencies: Record<string, number> = {
+    get: 100,
+    user: 80,
+    name: 70,
+    id: 50,
+  };
+  const getFreq = (token: string) => frequencies[token] || 0;
+  const total = 300;
+
+  it('uses standard tokenization without frequencies', () => {
+    const tokens = tokenizeCodeWithSegmentation('getUserName');
+    expect(tokens).toContain('get');
+    expect(tokens).toContain('user');
+    expect(tokens).toContain('name');
+  });
+
+  it('segments flatcase with frequencies', () => {
+    const tokens = tokenizeCodeWithSegmentation('getusername', getFreq, total);
+    // Should segment the flatcase part
+    expect(tokens).toContain('get');
+    expect(tokens).toContain('user');
+    expect(tokens).toContain('name');
+    // Should also keep original
+    expect(tokens).toContain('getusername');
+  });
+
+  it('does not segment already split identifiers', () => {
+    const tokens = tokenizeCodeWithSegmentation('get_user_name', getFreq, total);
+    expect(tokens).toContain('get');
+    expect(tokens).toContain('user');
+    expect(tokens).toContain('name');
   });
 });

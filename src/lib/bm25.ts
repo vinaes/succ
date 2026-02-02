@@ -447,3 +447,146 @@ export function createEmptyIndex(): BM25Index {
     totalDocs: 0,
   };
 }
+
+// ============================================================================
+// Ronin-style Word Segmentation (for flatcase identifiers)
+// ============================================================================
+
+/**
+ * Check if a word looks like flatcase (all lowercase, no separators)
+ */
+export function isFlatcase(word: string): boolean {
+  // Must be lowercase, only letters, length > 3 (to avoid false positives)
+  return /^[a-z]{4,}$/.test(word);
+}
+
+/**
+ * Ronin-style DP segmentation for flatcase identifiers.
+ * Uses token frequencies from indexed code to find optimal split.
+ *
+ * Algorithm (based on Peter Norvig's word segmentation):
+ * - For each position, try all possible splits
+ * - Score = sum of log(frequency) for each token
+ * - Prefer longer tokens (reward = log(freq) * sqrt(length))
+ * - Use DP to find globally optimal segmentation
+ *
+ * @param word - The flatcase word to segment (e.g., "getusername")
+ * @param getFrequency - Function to get token frequency from DB
+ * @param totalTokens - Total token count for probability calculation
+ * @param minTokenLength - Minimum token length (default: 2)
+ * @returns Array of tokens (e.g., ["get", "user", "name"])
+ */
+export function segmentFlatcase(
+  word: string,
+  getFrequency: (token: string) => number,
+  totalTokens: number,
+  minTokenLength: number = 2
+): string[] {
+  const n = word.length;
+  if (n <= minTokenLength) return [word];
+
+  // DP arrays
+  // bestScore[i] = best score for segmenting word[0:i]
+  // bestSplit[i] = position of last split for word[0:i]
+  const bestScore: number[] = new Array(n + 1).fill(-Infinity);
+  const bestSplit: number[] = new Array(n + 1).fill(0);
+  bestScore[0] = 0;
+
+  // Small constant for unknown tokens (prevents -Infinity)
+  const unknownScore = Math.log10(0.1 / Math.max(totalTokens, 1));
+
+  for (let i = 1; i <= n; i++) {
+    // Try all possible last tokens ending at position i
+    for (let j = Math.max(0, i - 15); j < i; j++) {
+      // Max token length 15
+      const tokenLen = i - j;
+      if (tokenLen < minTokenLength) continue;
+
+      const token = word.slice(j, i);
+      const freq = getFrequency(token);
+
+      // Score: log probability with length bonus
+      // Longer known tokens get higher scores
+      let tokenScore: number;
+      if (freq > 0) {
+        // Known token: log(freq/total) + length bonus
+        const prob = freq / Math.max(totalTokens, 1);
+        tokenScore = Math.log10(prob) + Math.sqrt(tokenLen) * 0.5;
+      } else {
+        // Unknown token: penalize, but less for longer tokens
+        tokenScore = unknownScore - (15 - tokenLen) * 0.1;
+      }
+
+      const totalScore = bestScore[j] + tokenScore;
+      if (totalScore > bestScore[i]) {
+        bestScore[i] = totalScore;
+        bestSplit[i] = j;
+      }
+    }
+  }
+
+  // Backtrack to find the optimal segmentation
+  const tokens: string[] = [];
+  let pos = n;
+  while (pos > 0) {
+    const splitPos = bestSplit[pos];
+    tokens.unshift(word.slice(splitPos, pos));
+    pos = splitPos;
+  }
+
+  return tokens;
+}
+
+/**
+ * Enhanced tokenizeCode that handles flatcase using Ronin-style segmentation.
+ * This version accepts a frequency lookup function for dynamic segmentation.
+ *
+ * @param text - The text to tokenize
+ * @param getFrequency - Optional function to get token frequency (for flatcase segmentation)
+ * @param totalTokens - Optional total token count
+ */
+export function tokenizeCodeWithSegmentation(
+  text: string,
+  getFrequency?: (token: string) => number,
+  totalTokens?: number
+): string[] {
+  // First, apply standard tokenization rules
+  const standardTokens = tokenizeCode(text);
+
+  // If no frequency function provided, return standard tokens
+  if (!getFrequency || !totalTokens || totalTokens === 0) {
+    return standardTokens;
+  }
+
+  // Process each token - if it looks like flatcase, try to segment it
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const token of standardTokens) {
+    if (seen.has(token)) continue;
+    seen.add(token);
+
+    if (isFlatcase(token) && token.length >= 6) {
+      // Try to segment flatcase
+      const segments = segmentFlatcase(token, getFrequency, totalTokens);
+
+      // Only use segmentation if it found meaningful splits
+      if (segments.length > 1 && segments.every((s) => s.length >= 2)) {
+        for (const seg of segments) {
+          if (!seen.has(seg)) {
+            result.push(seg);
+            seen.add(seg);
+          }
+        }
+        // Also keep original for exact match
+        result.push(token);
+      } else {
+        result.push(token);
+      }
+    } else {
+      result.push(token);
+    }
+  }
+
+  return result;
+}
