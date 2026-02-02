@@ -18,6 +18,7 @@ import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
 import { consolidate } from './commands/consolidate.js';
+import { sessionSummary } from './commands/session-summary.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -314,6 +315,18 @@ program
       threshold: options.threshold,
       limit: options.limit,
       stats: options.stats,
+      verbose: options.verbose,
+    });
+  });
+
+program
+  .command('session-summary <transcript>')
+  .description('Extract facts from session transcript and save as memories')
+  .option('--dry-run', 'Preview facts without saving')
+  .option('-v, --verbose', 'Show detailed output')
+  .action((transcript, options) => {
+    sessionSummary(transcript, {
+      dryRun: options.dryRun,
       verbose: options.verbose,
     });
   });

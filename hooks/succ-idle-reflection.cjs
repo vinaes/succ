@@ -141,6 +141,22 @@ function runGraphRefinement(projectDir, config) {
 }
 
 /**
+ * Session Summary - extract facts from transcript and save as memories
+ */
+function runSessionSummary(projectDir, transcriptPath) {
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) {
+    return false;
+  }
+
+  const result = runSuccCommand(projectDir, [
+    'session-summary',
+    transcriptPath,
+  ], 45000); // Allow more time for LLM extraction
+
+  return result.success;
+}
+
+/**
  * Write Reflection - generate reflection text via Claude
  */
 function writeReflection(projectDir, transcriptContext, config) {
@@ -299,6 +315,7 @@ process.stdin.on('end', async () => {
     const results = {
       consolidation: null,
       graph: null,
+      sessionSummary: null,
       reflection: null,
     };
 
@@ -312,7 +329,12 @@ process.stdin.on('end', async () => {
       results.graph = runGraphRefinement(projectDir, config);
     }
 
-    // 3. Write Reflection (needs transcript context)
+    // 3. Session Summary (extract facts from transcript)
+    if (config.operations.session_summary && hookInput.transcript_path) {
+      results.sessionSummary = runSessionSummary(projectDir, hookInput.transcript_path);
+    }
+
+    // 4. Write Reflection (needs transcript context)
     if (config.operations.write_reflection) {
       const transcriptContext = extractTranscriptContext(hookInput);
 
@@ -321,7 +343,6 @@ process.stdin.on('end', async () => {
       }
     }
 
-    // TODO: Session Summary (requires LLM call to extract facts)
     // TODO: Precompute Context (requires LLM call to prepare context)
 
     process.exit(0);
