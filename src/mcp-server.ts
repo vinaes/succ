@@ -1678,6 +1678,35 @@ To restore: succ checkpoint restore "${outputPath}"`,
   }
 );
 
+// Tool: succ_score - Get AI-readiness score
+server.tool(
+  'succ_score',
+  'Get the AI-readiness score for the project. Shows how well-prepared the project is for AI collaboration, with metrics for brain vault, memories, code index, and more.',
+  {},
+  async () => {
+    try {
+      const { calculateAIReadinessScore, formatAIReadinessScore } = await import('./lib/ai-readiness.js');
+      const result = calculateAIReadinessScore();
+      return {
+        content: [{
+          type: 'text' as const,
+          text: formatAIReadinessScore(result),
+        }],
+      };
+    } catch (error: any) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Error calculating score: ${error.message}`,
+        }],
+        isError: true,
+      };
+    } finally {
+      closeDb();
+    }
+  }
+);
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
