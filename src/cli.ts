@@ -21,6 +21,7 @@ import { consolidate } from './commands/consolidate.js';
 import { sessionSummary } from './commands/session-summary.js';
 import { precomputeContext } from './commands/precompute-context.js';
 import { trainBPE } from './commands/train-bpe.js';
+import { stats } from './commands/stats.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -388,6 +389,18 @@ program
       vocabSize: parseInt(options.vocabSize, 10),
       minFrequency: parseInt(options.minFrequency, 10),
       showStats: options.stats,
+    });
+  });
+
+program
+  .command('stats')
+  .description('Show succ usage statistics')
+  .option('--tokens', 'Show token savings statistics')
+  .option('--clear', 'Clear token statistics')
+  .action((options) => {
+    stats({
+      tokens: options.tokens,
+      clear: options.clear,
     });
   });
 

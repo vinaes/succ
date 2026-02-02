@@ -44,6 +44,9 @@ import {
   getGraphStats,
   LINK_RELATIONS,
   type LinkRelation,
+  // Token stats
+  getTokenStatsAggregated,
+  getTokenStatsSummary,
 } from './lib/db.js';
 import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses } from './lib/config.js';
 import path from 'path';
@@ -53,6 +56,9 @@ import { index } from './commands/index.js';
 import { analyzeFile } from './commands/analyze.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore, cleanupQualityScoring } from './lib/quality.js';
 import { scanSensitive, formatMatches } from './lib/sensitive-filter.js';
+import { countTokens, countTokensArray, formatTokens, compressionPercent } from './lib/token-counter.js';
+import { recordTokenStat, type TokenEventType } from './lib/db.js';
+import { getIdleReflectionConfig } from './lib/config.js';
 
 // Graceful shutdown handler
 function setupGracefulShutdown() {
@@ -67,6 +73,81 @@ function setupGracefulShutdown() {
   process.on('SIGTERM', cleanup);
   process.on('SIGINT', cleanup);
   process.on('SIGHUP', cleanup);
+}
+
+// Helper: Track token savings for RAG queries
+interface SearchResult {
+  file_path: string;
+  content: string;
+}
+
+function trackTokenSavings(
+  eventType: TokenEventType,
+  query: string,
+  results: SearchResult[]
+): void {
+  if (results.length === 0) return;
+
+  try {
+    // Count tokens in returned chunks
+    const returnedTokens = countTokensArray(results.map((r) => r.content));
+
+    // Get unique file paths
+    const uniqueFiles = [...new Set(results.map((r) => r.file_path))];
+
+    // For documents/code: read full files and count tokens
+    // For memories: full_source = returned (no file to compare)
+    let fullSourceTokens = returnedTokens; // default for memories
+
+    if (eventType === 'search' || eventType === 'search_code') {
+      const projectRoot = getProjectRoot();
+      const succDir = getSuccDir();
+
+      fullSourceTokens = 0;
+      for (const filePath of uniqueFiles) {
+        try {
+          // Handle code: prefix
+          const cleanPath = filePath.replace(/^code:/, '');
+
+          // Try multiple locations: project root, brain dir
+          const candidates = [
+            path.join(projectRoot, cleanPath),
+            path.join(succDir, 'brain', cleanPath),
+            cleanPath, // absolute path
+          ];
+
+          for (const candidate of candidates) {
+            if (fs.existsSync(candidate)) {
+              const content = fs.readFileSync(candidate, 'utf-8');
+              fullSourceTokens += countTokens(content);
+              break;
+            }
+          }
+        } catch {
+          // File not readable, skip
+        }
+      }
+
+      // If we couldn't read any files, use returned as estimate
+      if (fullSourceTokens === 0) {
+        fullSourceTokens = returnedTokens;
+      }
+    }
+
+    const savingsTokens = Math.max(0, fullSourceTokens - returnedTokens);
+
+    recordTokenStat({
+      event_type: eventType,
+      query,
+      returned_tokens: returnedTokens,
+      full_source_tokens: fullSourceTokens,
+      savings_tokens: savingsTokens,
+      files_count: uniqueFiles.length,
+      chunks_count: results.length,
+    });
+  } catch {
+    // Don't fail the search if tracking fails
+  }
 }
 
 // Create MCP server
@@ -252,6 +333,9 @@ server.tool(
           ],
         };
       }
+
+      // Track token savings
+      trackTokenSavings('search', query, results);
 
       const formatted = results
         .map((r, i) => {
@@ -541,6 +625,13 @@ server.tool(
         };
       }
 
+      // Track token savings for recall (memories don't have source files, so we track returned vs total memories)
+      trackTokenSavings(
+        'recall',
+        query,
+        allResults.map((m) => ({ file_path: `memory:${m.id || 'unknown'}`, content: m.content }))
+      );
+
       const formatted = allResults
         .map((m, i) => {
           const similarity = (m.similarity * 100).toFixed(0);
@@ -772,6 +863,9 @@ server.tool(
         };
       }
 
+      // Track token savings
+      trackTokenSavings('search_code', query, codeResults);
+
       const formatted = codeResults
         .map((r, i) => {
           const score = (r.similarity * 100).toFixed(1);
@@ -861,6 +955,92 @@ server.tool(
           {
             type: 'text' as const,
             text: `Error getting status: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    } finally {
+      closeDb();
+    }
+  }
+);
+
+// Tool: succ_stats - Get token savings statistics
+server.tool(
+  'succ_stats',
+  'Get token savings statistics. Shows how many tokens were saved by using RAG search instead of loading full files.',
+  {},
+  async () => {
+    try {
+      const idleConfig = getIdleReflectionConfig();
+      const summaryEnabled = idleConfig.operations?.session_summary ?? true;
+
+      const aggregated = getTokenStatsAggregated();
+      const summary = getTokenStatsSummary();
+
+      const lines: string[] = ['## Token Savings\n'];
+
+      // Session Summaries
+      const sessionStats = aggregated.find((s) => s.event_type === 'session_summary');
+      lines.push('### Session Summaries');
+      if (!summaryEnabled) {
+        lines.push('  Status: disabled');
+      } else if (sessionStats) {
+        lines.push(`  Sessions: ${sessionStats.query_count}`);
+        lines.push(`  Transcript: ${formatTokens(sessionStats.total_full_source_tokens)} tokens`);
+        lines.push(`  Summary: ${formatTokens(sessionStats.total_returned_tokens)} tokens`);
+        lines.push(
+          `  Compression: ${compressionPercent(sessionStats.total_full_source_tokens, sessionStats.total_returned_tokens)}`
+        );
+        lines.push(`  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens`);
+      } else {
+        lines.push('  No session summaries recorded yet.');
+      }
+
+      // RAG Queries
+      lines.push('\n### RAG Queries');
+
+      const ragTypes: TokenEventType[] = ['recall', 'search', 'search_code'];
+      let hasRagStats = false;
+
+      for (const type of ragTypes) {
+        const stat = aggregated.find((s) => s.event_type === type);
+        if (stat) {
+          hasRagStats = true;
+          lines.push(
+            `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
+          );
+        }
+      }
+
+      if (!hasRagStats) {
+        lines.push('  No RAG queries recorded yet.');
+      }
+
+      // Total
+      lines.push('\n### Total');
+      if (summary.total_queries > 0) {
+        lines.push(`  Queries: ${summary.total_queries}`);
+        lines.push(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
+        lines.push(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
+      } else {
+        lines.push('  No stats recorded yet.');
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: lines.join('\n'),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error getting stats: ${error.message}`,
           },
         ],
         isError: true,
