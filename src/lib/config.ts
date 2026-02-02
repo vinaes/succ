@@ -82,6 +82,7 @@ export interface IdleReflectionConfig {
     session_summary?: boolean;  // Extract key facts from session transcript (default: true)
     precompute_context?: boolean;  // Prepare context for next session-start (default: false)
     write_reflection?: boolean;  // Write human-like reflection text (default: true)
+    retention_cleanup?: boolean;  // Delete decayed memories below threshold (default: true if retention.enabled)
   };
   // Thresholds for operations
   thresholds?: {
@@ -157,6 +158,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG = {
     session_summary: true,
     precompute_context: true,
     write_reflection: true,
+    retention_cleanup: true,  // Enabled by default (only runs if retention.enabled=true in config)
   },
   thresholds: {
     similarity_for_merge: 0.85,
@@ -376,6 +378,7 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
       session_summary: userConfig.operations?.session_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
       precompute_context: userConfig.operations?.precompute_context ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,
       write_reflection: userConfig.operations?.write_reflection ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.write_reflection,
+      retention_cleanup: userConfig.operations?.retention_cleanup ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.retention_cleanup,
     },
     thresholds: {
       similarity_for_merge: userConfig.thresholds?.similarity_for_merge ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.similarity_for_merge,
@@ -542,6 +545,7 @@ export interface ConfigDisplay {
       session_summary: boolean;
       precompute_context: boolean;
       write_reflection: boolean;
+      retention_cleanup: boolean;
     };
     sleep_agent: {
       enabled: boolean;
@@ -640,6 +644,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         session_summary: idleReflection.operations.session_summary ?? true,
         precompute_context: idleReflection.operations.precompute_context ?? false,
         write_reflection: idleReflection.operations.write_reflection ?? true,
+        retention_cleanup: idleReflection.operations.retention_cleanup ?? true,
       },
       sleep_agent: {
         enabled: idleReflection.sleep_agent.enabled ?? false,
@@ -763,6 +768,7 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`    - Session summary: ${ops.session_summary}`);
   lines.push(`    - Precompute context: ${ops.precompute_context}`);
   lines.push(`    - Write reflection: ${ops.write_reflection}`);
+  lines.push(`    - Retention cleanup: ${ops.retention_cleanup}`);
   if (display.idle_reflection.sleep_agent.enabled) {
     lines.push(`  Sleep agent: ${display.idle_reflection.sleep_agent.mode} (${display.idle_reflection.sleep_agent.model || 'not configured'})`);
   }

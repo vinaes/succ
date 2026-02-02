@@ -285,6 +285,7 @@ Configure in `.succ/config.json`:
 **Idle Reflection Operations:**
 - `memory_consolidation` — merge similar memories, remove duplicates
 - `graph_refinement` — auto-link related memories
+- `retention_cleanup` — delete decayed low-score memories (if `retention.enabled`)
 - `session_summary` — extract key points from conversation
 - `precompute_context` — generate next-session briefing (`.succ/next-session-context.md`)
 - `write_reflection` — save AI insights as markdown with YAML frontmatter
@@ -471,13 +472,17 @@ Configure in `.succ/config.json`:
 ```json
 {
   "retention": {
+    "enabled": true,
     "decay_rate": 0.01,
     "access_weight": 0.1,
     "keep_threshold": 0.3,
-    "delete_threshold": 0.15
+    "delete_threshold": 0.15,
+    "auto_cleanup_interval_days": 7
   }
 }
 ```
+
+**Automatic cleanup:** When `retention.enabled: true`, the idle reflection hook will automatically run cleanup at the configured interval. This happens during idle time without interrupting your work.
 
 ## Memory System
 
