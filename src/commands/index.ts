@@ -1,11 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearDocuments } from '../lib/db.js';
-import { getEmbedding } from '../lib/embeddings.js';
+import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/db.js';
+import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 
 interface IndexOptions {
   recursive?: boolean;
@@ -105,4 +106,98 @@ export async function index(
   });
 
   printResults(result);
+}
+
+/**
+ * Compute content hash for a file
+ */
+function computeHash(content: string): string {
+  return crypto.createHash('md5').update(content).digest('hex');
+}
+
+export interface IndexDocFileResult {
+  success: boolean;
+  chunks?: number;
+  error?: string;
+  skipped?: boolean;
+  reason?: string;
+}
+
+/**
+ * Index a single documentation file
+ */
+export async function indexDocFile(filePath: string, options: { force?: boolean } = {}): Promise<IndexDocFileResult> {
+  const { force = false } = options;
+  const projectRoot = getProjectRoot();
+  const claudeDir = getClaudeDir();
+  const absolutePath = path.resolve(filePath);
+
+  // Check file exists
+  if (!fs.existsSync(absolutePath)) {
+    return { success: false, error: `File not found: ${filePath}` };
+  }
+
+  // Check it's a file, not directory
+  const stats = fs.statSync(absolutePath);
+  if (!stats.isFile()) {
+    return { success: false, error: `Not a file: ${filePath}` };
+  }
+
+  // Check it's a markdown file
+  if (!absolutePath.endsWith('.md')) {
+    return { success: false, error: `Not a markdown file: ${filePath}` };
+  }
+
+  // Read file content
+  const content = fs.readFileSync(absolutePath, 'utf-8');
+  const contentHash = computeHash(content);
+
+  // Get relative path for storage (relative to brain dir if inside, else project root)
+  const brainDir = path.join(claudeDir, 'brain');
+  let relativePath: string;
+  if (absolutePath.startsWith(brainDir)) {
+    relativePath = path.relative(brainDir, absolutePath);
+  } else {
+    relativePath = path.relative(projectRoot, absolutePath);
+  }
+
+  // Check if file already indexed with same hash
+  if (!force) {
+    const existingHash = getFileHash(relativePath);
+    if (existingHash === contentHash) {
+      return { success: true, skipped: true, reason: 'File unchanged (same hash)' };
+    }
+  }
+
+  // Process content (extract frontmatter, check for succ-ignore)
+  const { frontmatter, body } = extractFrontmatter(content);
+  if (frontmatter['succ-ignore']) {
+    return { success: true, skipped: true, reason: 'File has succ-ignore frontmatter' };
+  }
+
+  // Chunk the text
+  const chunks = chunkText(body, absolutePath);
+  if (chunks.length === 0) {
+    return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
+  }
+
+  // Generate embeddings
+  const texts = chunks.map(c => c.content);
+  const embeddings = await getEmbeddings(texts);
+
+  // Prepare documents for upsert (with hash for each document)
+  const documents = chunks.map((chunk, i) => ({
+    filePath: relativePath,
+    chunkIndex: i,
+    content: chunk.content,
+    startLine: chunk.startLine,
+    endLine: chunk.endLine,
+    embedding: embeddings[i],
+    hash: contentHash,
+  }));
+
+  // Upsert to database
+  upsertDocumentsBatchWithHashes(documents);
+
+  return { success: true, chunks: chunks.length };
 }
