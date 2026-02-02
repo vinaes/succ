@@ -69,7 +69,7 @@ npm test -- --coverage
 | `commands/watch.ts` | 9 | PID files, debouncing, race conditions |
 | Integration | 9 | CLI commands, MCP server, daemon |
 
-**Total: 242+ tests**
+**Total: 630+ tests**
 
 Tests are designed to:
 - Use isolated temp directories to avoid affecting real data
