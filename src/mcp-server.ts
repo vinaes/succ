@@ -552,39 +552,47 @@ server.tool(
 );
 
 
-// Tool: succ_index_file - Index a single file
+// Tool: succ_index_file - Index a single documentation file
 server.tool(
   'succ_index_file',
   'Index a single file for semantic search. Faster than full reindex for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).',
   {
     file: z.string().describe('Path to the file to index'),
+    force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
   },
-  async ({ file }) => {
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (...args) => logs.push(args.join(' '));
-
+  async ({ file, force }) => {
     try {
-      // Check if file exists
-      if (!fs.existsSync(file)) {
+      const { indexDocFile } = await import('./commands/index.js');
+      const result = await indexDocFile(file, { force });
+
+      if (!result.success) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `File not found: ${file}`,
+              text: result.error || 'Failed to index file',
             },
           ],
           isError: true,
         };
       }
 
-      await index(file, { recursive: false, pattern: '*' });
+      if (result.skipped) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Skipped: ${result.reason}`,
+            },
+          ],
+        };
+      }
 
       return {
         content: [
           {
             type: 'text' as const,
-            text: logs.length > 0 ? logs.join('\n') : `Indexed: ${file}`,
+            text: `Indexed: ${file} (${result.chunks} chunks)`,
           },
         ],
       };
@@ -598,8 +606,6 @@ server.tool(
         ],
         isError: true,
       };
-    } finally {
-      console.log = originalLog;
     }
   }
 );

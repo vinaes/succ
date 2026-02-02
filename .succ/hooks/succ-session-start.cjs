@@ -12,7 +12,7 @@
  * Uses execFileSync for security (no shell injection)
  */
 
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -101,6 +101,47 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 \`\`\`
 </commit-guidelines>`);
 
+    // Phase 0.45: succ MCP Tools Reference (tested & verified)
+    contextParts.push(`<succ-mcp-tools>
+## succ MCP Tools - Use Actively!
+
+### MEMORY (use frequently!)
+
+**succ_recall** query="..." [tags=["x"]] [since="last week"] [limit=5]
+→ Before implementing, when stuck, before decisions
+
+**succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true]
+→ Types: observation, decision, learning, error, pattern
+
+**succ_forget** id=N | older_than="30d" | tag="temp"
+
+### SEARCH
+
+**succ_search** query="..." [limit=5] [threshold=0.2]
+→ Search .succ/brain/ docs
+
+**succ_search_code** query="..." [limit=5]
+→ Search indexed source code
+
+### SINGLE-FILE OPS
+
+**succ_index_file** file="path/to/doc.md" [force=true]
+**succ_index_code_file** file="src/file.ts" [force=true]
+**succ_analyze_file** file="src/file.ts" [mode="claude|local|openrouter"]
+
+### KNOWLEDGE GRAPH
+
+**succ_link** action="create|delete|show|graph|auto" [source_id=N] [target_id=N] [relation="leads_to"]
+**succ_explore** memory_id=N [depth=2]
+
+### STATUS
+
+**succ_status** → docs indexed, memories count, daemon status
+
+---
+Save learnings, decisions, patterns - they persist across sessions!
+</succ-mcp-tools>`);
+
     // Phase 0.5: Soul Document
     const soulPaths = [
       path.join(succDir, 'soul.md'),
@@ -116,6 +157,28 @@ Co-Authored-By: succ <mindpalace@succ.ai>
           contextParts.push('<soul>\n' + soulContent + '\n</soul>');
         }
         break;
+      }
+    }
+
+    // Phase 0.6: Precomputed Context from previous session
+    const precomputedContextPath = path.join(succDir, 'next-session-context.md');
+    if (fs.existsSync(precomputedContextPath)) {
+      try {
+        const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
+        if (precomputedContent) {
+          contextParts.push('<previous-session-context>\n' + precomputedContent + '\n</previous-session-context>');
+
+          // Archive the file after loading (move to .context-archive)
+          const archiveDir = path.join(succDir, '.context-archive');
+          if (!fs.existsSync(archiveDir)) {
+            fs.mkdirSync(archiveDir, { recursive: true });
+          }
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
+          fs.renameSync(precomputedContextPath, archivePath);
+        }
+      } catch {
+        // Ignore errors reading precomputed context
       }
     }
 
@@ -169,6 +232,31 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       }
     } catch {
       // npx succ not available
+    }
+
+    // Launch idle watcher daemon
+    try {
+      const watcherPath = path.join(__dirname, 'succ-idle-watcher.cjs');
+      if (fs.existsSync(watcherPath)) {
+        // Save transcript path for watcher if available
+        if (hookInput.transcript_path) {
+          const tmpDir = path.join(succDir, '.tmp');
+          if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(tmpDir, 'current-transcript.txt'), hookInput.transcript_path);
+        }
+
+        // Launch watcher as detached process
+        const watcher = spawn('node', [watcherPath, projectDir], {
+          cwd: projectDir,
+          detached: true,
+          stdio: 'ignore',
+        });
+        watcher.unref();
+      }
+    } catch {
+      // Watcher launch failed, continue without it
     }
 
     if (contextParts.length > 0) {
