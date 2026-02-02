@@ -14,11 +14,17 @@ succ benchmark --advanced
 # Custom K for Recall@K/NDCG
 succ benchmark --advanced -k 10
 
+# Larger dataset (64 memories, 36 queries)
+succ benchmark --advanced --size medium
+
 # JSON output for automation
 succ benchmark --advanced --json
 
 # Benchmark on existing memories (latency only)
 succ benchmark --existing
+
+# Test different embedding model
+succ benchmark --advanced --model Xenova/bge-base-en-v1.5
 ```
 
 ## Latest Results
@@ -43,7 +49,7 @@ succ benchmark --existing
 
 **Key Finding:** MiniLM-L6 (default) is the fastest local model at **154x faster** than API calls.
 
-### Accuracy Comparison by Model
+### Accuracy Comparison by Model (Small Dataset: 20 memories, 12 queries)
 
 | Model | Recall@5 | MRR | NDCG@5 | Basic |
 |-------|----------|-----|--------|-------|
@@ -52,7 +58,20 @@ succ benchmark --existing
 | BGE-small (384d) | 86.5% | 95.8% | 89.4% | 100% |
 | OpenRouter API | 87.5% | 95.8% | 90.0% | 100% |
 
-**Key Finding:** MiniLM-L6 achieves the **best accuracy** on our test dataset while being the fastest.
+**Key Finding:** MiniLM-L6 achieves the **best accuracy** on the small dataset while being the fastest.
+
+### Accuracy on Larger Dataset (Medium: 64 memories, 36 queries)
+
+| Model | Recall@5 | Recall@10 | MRR | NDCG@5 | NDCG@10 |
+|-------|----------|-----------|-----|--------|---------|
+| MiniLM-L6 (default) | 37.4% | 60.6% | **98.6%** | 74.6% | 71.2% |
+| OpenRouter API | 40.5% | 64.6% | **98.6%** | **78.7%** | **75.2%** |
+
+**Key Findings:**
+- **MRR improved to 98.6%** - first result is almost always relevant
+- **Lower Recall@5** is expected: with 8 items per category, only ~5 can fit in top-5
+- **OpenRouter slightly better** on larger dataset (+4% NDCG) due to higher-dimensional embeddings
+- For typical usage (small projects), MiniLM-L6 is sufficient
 
 ### Latency Percentiles (MiniLM-L6)
 
@@ -160,24 +179,41 @@ Test latency on your actual project's memories:
 succ benchmark --existing
 ```
 
-## Test Dataset
+## Test Datasets
 
-The benchmark uses a synthetic dataset with 20 memories across 5 categories:
+Three dataset sizes are available via `--size`:
+
+| Size | Memories | Queries | Categories | Use Case |
+|------|----------|---------|------------|----------|
+| `small` (default) | 20 | 12 | 5 | Quick benchmarks |
+| `medium` | 64 | 36 | 8 | Realistic testing |
+| `large` | 64 | 36 | 8 | Same as medium |
+
+**Categories:**
 - TypeScript/JavaScript
 - React/Frontend
 - Database/SQL
 - DevOps/Containers
 - Architecture patterns
+- Security (medium+)
+- Testing (medium+)
+- Performance (medium+)
 
-12 queries test both category-specific and cross-category retrieval.
+Queries test both category-specific and cross-category retrieval.
 
 ## Historical Results
 
 Track your benchmark results over time to detect regressions:
 
+### Small Dataset (20 memories)
 | Date | Version | Recall@5 | MRR | NDCG@5 | Embed (ms) |
 |------|---------|----------|-----|--------|------------|
-| 2026-02 | 1.0.58 | 88.5% | 95.8% | 90.7% | 4.0 |
+| 2026-02 | 1.0.59 | 88.5% | 95.8% | 90.7% | 4.0 |
+
+### Medium Dataset (64 memories)
+| Date | Version | Recall@10 | MRR | NDCG@10 | Embed (ms) |
+|------|---------|-----------|-----|---------|------------|
+| 2026-02 | 1.0.59 | 60.6% | 98.6% | 71.2% | 16.0 |
 
 ## Comparison with Competitors
 
