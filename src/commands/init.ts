@@ -69,6 +69,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     path.join(succDir, 'brain', '00_Inbox'),
     path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions'),
     path.join(succDir, 'brain', '01_Projects', projectName, 'Features'),
+    path.join(succDir, 'brain', '01_Projects', projectName, 'Files'),
     path.join(succDir, 'brain', '01_Projects', projectName, 'Technical'),
     path.join(succDir, 'brain', '01_Projects', projectName, 'Systems'),
     path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy'),
@@ -154,6 +155,7 @@ Run \`succ index\` to index this brain for semantic search.
     { path: path.join(succDir, 'brain', '01_Projects', projectName, `${projectName}.md`), content: getProjectMocTemplate(projectName) },
     { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'), content: getDecisionsMocTemplate(projectName) },
     { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'), content: getFeaturesMocTemplate(projectName) },
+    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Files', 'Files.md'), content: getFilesMocTemplate(projectName) },
     { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'), content: getTechnicalMocTemplate(projectName) },
     { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'), content: getSystemsMocTemplate(projectName) },
     { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'), content: getStrategyMocTemplate(projectName) },
@@ -930,6 +932,7 @@ relevance: high
 | [[Technical]] | Architecture, API, patterns |
 | [[Decisions]] | Architecture decisions |
 | [[Features]] | Feature specs |
+| [[Files]] | Source code file documentation |
 | [[Systems]] | System designs |
 | [[Strategy]] | Business strategy |
 | [[Sessions]] | Research sessions |
@@ -1008,6 +1011,33 @@ _Shipped features._
 ## Backlog
 
 _Features planned for future._
+`;
+}
+
+function getFilesMocTemplate(projectName: string): string {
+  return `---
+description: "MOC - Source code file documentation"
+project: ${projectName}
+type: moc
+relevance: high
+---
+
+# Files
+
+Source code file documentation for ${projectName}.
+
+**Parent:** [[${projectName}]]
+
+Map of documented source files. Each file analysis includes purpose, key components, dependencies, and usage.
+
+## Documented Files
+
+_Files are automatically added here when analyzed with \`succ_analyze_file\` or \`succ analyze\`._
+
+## Related
+
+- **Technical:** [[Technical]]
+- **Systems:** [[Systems]]
 `;
 }
 

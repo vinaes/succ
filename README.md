@@ -61,6 +61,8 @@ succ search "how does authentication work"
 | `succ memories` | List and search memories |
 | `succ forget` | Delete memories |
 | `succ graph <action>` | Knowledge graph operations |
+| `succ consolidate` | Merge duplicate memories |
+| `succ soul` | Generate personalized soul.md |
 | `succ config` | Interactive configuration |
 | `succ status` | Show index statistics |
 | `succ clear` | Clear index and/or memories |

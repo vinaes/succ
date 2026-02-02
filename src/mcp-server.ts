@@ -41,12 +41,12 @@ import {
   LINK_RELATIONS,
   type LinkRelation,
 } from './lib/db.js';
-import { getConfig, getProjectRoot, getSuccDir } from './lib/config.js';
+import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses } from './lib/config.js';
 import path from 'path';
 import fs from 'fs';
 import { getEmbedding, cleanupEmbeddings } from './lib/embeddings.js';
 import { index } from './commands/index.js';
-import { indexCode } from './commands/index-code.js';
+import { analyzeFile } from './commands/analyze.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore, cleanupQualityScoring } from './lib/quality.js';
 import { scanSensitive, formatMatches } from './lib/sensitive-filter.js';
 
@@ -551,27 +551,40 @@ server.tool(
   }
 );
 
-// Tool: succ_index - Index or reindex files
+
+// Tool: succ_index_file - Index a single file
 server.tool(
-  'succ_index',
-  'Index files for semantic search. Run after adding or modifying documentation.',
+  'succ_index_file',
+  'Index a single file for semantic search. Faster than full reindex for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).',
   {
-    path: z.string().optional().describe('Path to index (default: .succ/brain)'),
-    force: z.boolean().optional().default(false).describe('Force reindex all files'),
+    file: z.string().describe('Path to the file to index'),
   },
-  async ({ path, force }) => {
+  async ({ file }) => {
     const logs: string[] = [];
     const originalLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
 
     try {
-      await index(path, { force });
+      // Check if file exists
+      if (!fs.existsSync(file)) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `File not found: ${file}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      await index(file, { recursive: false, pattern: '*' });
 
       return {
         content: [
           {
             type: 'text' as const,
-            text: logs.join('\n'),
+            text: logs.length > 0 ? logs.join('\n') : `Indexed: ${file}`,
           },
         ],
       };
@@ -580,7 +593,7 @@ server.tool(
         content: [
           {
             type: 'text' as const,
-            text: `Error indexing: ${error.message}`,
+            text: `Error indexing file: ${error.message}`,
           },
         ],
         isError: true,
@@ -591,27 +604,93 @@ server.tool(
   }
 );
 
-// Tool: succ_index_code - Index source code
+// Tool: succ_analyze_file - Analyze a single file and generate documentation
 server.tool(
-  'succ_index_code',
-  'Index source code files for semantic search. Use this to make codebase searchable.',
+  'succ_analyze_file',
+  'Analyze a single source file and generate documentation in brain vault. Modes: claude (CLI with Haiku), local (Ollama/LM Studio), openrouter (cloud API). Check succ_status first - if analyze daemon is running, it handles this automatically.',
   {
-    path: z.string().optional().describe('Path to index (default: project root)'),
-    force: z.boolean().optional().default(false).describe('Force reindex all files'),
+    file: z.string().describe('Path to the file to analyze'),
+    mode: z.enum(['claude', 'local', 'openrouter']).optional().describe('claude = Claude CLI (Haiku), local = Ollama/LM Studio/llama.cpp, openrouter = cloud API (default: from config)'),
   },
-  async ({ path, force }) => {
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (...args) => logs.push(args.join(' '));
-
+  async ({ file, mode }) => {
     try {
-      await indexCode(path, { force });
+      const result = await analyzeFile(file, { mode });
+
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Analyzed: ${file}\nOutput: ${result.outputPath}`,
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error analyzing file: ${result.error}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error analyzing file: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Tool: succ_index_code_file - Index a single code file
+server.tool(
+  'succ_index_code_file',
+  'Index a single source code file for semantic search. Faster than full index-code for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).',
+  {
+    file: z.string().describe('Path to the code file to index'),
+    force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
+  },
+  async ({ file, force }) => {
+    try {
+      const { indexCodeFile } = await import('./commands/index-code.js');
+      const result = await indexCodeFile(file, { force });
+
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: result.error || 'Failed to index file',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (result.skipped) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Skipped: ${result.reason}`,
+            },
+          ],
+        };
+      }
 
       return {
         content: [
           {
             type: 'text' as const,
-            text: logs.join('\n'),
+            text: `Indexed: ${file} (${result.chunks} chunks)`,
           },
         ],
       };
@@ -620,13 +699,11 @@ server.tool(
         content: [
           {
             type: 'text' as const,
-            text: `Error indexing code: ${error.message}`,
+            text: `Error indexing code file: ${error.message}`,
           },
         ],
         isError: true,
       };
-    } finally {
-      console.log = originalLog;
     }
   }
 );
@@ -696,17 +773,25 @@ server.tool(
 // Tool: succ_status - Get index status
 server.tool(
   'succ_status',
-  'Get the current status of succ (indexed files, memories, last update).',
+  'Get the current status of succ (indexed files, memories, last update, daemon statuses).',
   {},
   async () => {
     try {
       const stats = getStats();
       const memStats = getMemoryStats();
+      const daemons = getDaemonStatuses();
 
       // Format type breakdown
       const typeBreakdown = Object.entries(memStats.by_type)
         .map(([type, count]) => `    ${type}: ${count}`)
         .join('\n');
+
+      // Format daemon statuses
+      const daemonLines = daemons.map(d => {
+        const statusIcon = d.running ? '🟢' : '⚫';
+        const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
+        return `  ${statusIcon} ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`;
+      }).join('\n');
 
       const status = [
         '## Documents',
@@ -720,6 +805,9 @@ server.tool(
         memStats.oldest_memory ? `  Oldest: ${new Date(memStats.oldest_memory).toLocaleDateString()}` : '',
         memStats.newest_memory ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}` : '',
         memStats.stale_count > 0 ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget` : '',
+        '',
+        '## Daemons',
+        daemonLines,
       ]
         .filter(Boolean)
         .join('\n');
