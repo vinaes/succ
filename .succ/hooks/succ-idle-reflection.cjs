@@ -5,16 +5,17 @@
  * Performs multiple operations during Claude's idle time:
  * 1. Memory Consolidation - merge/delete duplicate memories
  * 2. Graph Refinement - auto-link memories by similarity
- * 3. Session Summary - extract key facts (async, detached)
- * 4. Precompute Context - prepare next session (future)
+ * 3. Retention Cleanup - delete decayed low-score memories (if enabled)
+ * 4. Session Summary - extract key facts (async, detached)
  * 5. Write Reflection - human-like reflection text (async, detached)
+ * 6. Precompute Context - prepare next session (async, detached)
  *
  * Heavy LLM operations run as detached processes to not block the session.
  *
  * Fires on Notification event with idle_prompt matcher (after ~60 seconds idle)
  */
 
-const { spawn, spawnSync } = require('child_process');
+const spawn = require('cross-spawn');
 const fs = require('fs');
 const path = require('path');
 
@@ -25,8 +26,9 @@ const DEFAULT_CONFIG = {
     memory_consolidation: true,
     graph_refinement: true,
     session_summary: true,
-    precompute_context: false,
+    precompute_context: true,
     write_reflection: true,
+    retention_cleanup: true,  // Only runs if retention.enabled=true
   },
   thresholds: {
     similarity_for_merge: 0.85,
@@ -50,6 +52,12 @@ const DEFAULT_CONFIG = {
   timeout_seconds: 25,
 };
 
+// Default retention config
+const DEFAULT_RETENTION_CONFIG = {
+  enabled: false,  // Manual only by default
+  auto_cleanup_interval_days: 7,
+};
+
 /**
  * Load idle reflection config from project or global config
  */
@@ -64,6 +72,7 @@ function loadConfig(projectDir) {
       try {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         const idleConfig = config.idle_reflection || {};
+        const retentionConfig = config.retention || {};
 
         // Merge with defaults
         return {
@@ -81,6 +90,11 @@ function loadConfig(projectDir) {
           },
           max_memories_to_process: idleConfig.max_memories_to_process ?? DEFAULT_CONFIG.max_memories_to_process,
           timeout_seconds: idleConfig.timeout_seconds ?? DEFAULT_CONFIG.timeout_seconds,
+          // Retention config (for auto-cleanup)
+          retention: {
+            enabled: retentionConfig.enabled ?? DEFAULT_RETENTION_CONFIG.enabled,
+            auto_cleanup_interval_days: retentionConfig.auto_cleanup_interval_days ?? DEFAULT_RETENTION_CONFIG.auto_cleanup_interval_days,
+          },
         };
       } catch {
         // Config parse error, use defaults
@@ -88,20 +102,19 @@ function loadConfig(projectDir) {
     }
   }
 
-  return DEFAULT_CONFIG;
+  return { ...DEFAULT_CONFIG, retention: DEFAULT_RETENTION_CONFIG };
 }
 
 /**
  * Run succ CLI command synchronously (for fast operations)
+ * Uses cross-spawn for cross-platform compatibility without shell
  */
 function runSuccCommandSync(projectDir, args, timeout = 10000) {
   try {
-    const result = spawnSync('succ', args, {
+    const result = spawn.sync('npx', ['succ', ...args], {
       cwd: projectDir,
       timeout,
-      shell: true,
       encoding: 'utf8',
-      windowsHide: true,
     });
     return {
       success: result.status === 0,
@@ -116,17 +129,14 @@ function runSuccCommandSync(projectDir, args, timeout = 10000) {
 /**
  * Run succ CLI command as detached process (for heavy LLM operations)
  * Returns immediately, process continues in background
+ * Uses cross-spawn for cross-platform compatibility without shell
  */
 function runSuccCommandDetached(projectDir, args) {
   try {
-    // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
-    // Using stdio: 'pipe' instead of 'ignore' may help reduce window flash
-    const proc = spawn('succ', args, {
+    const proc = spawn('npx', ['succ', ...args], {
       cwd: projectDir,
-      shell: true,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      stdio: 'ignore',
     });
     proc.unref(); // Allow parent to exit independently
     return true;
@@ -346,14 +356,11 @@ tags:
 
   fs.writeFileSync(reflectionFile, content);
 
-  // Save to memory via succ remember
+  // Save to memory via succ remember (using cross-spawn from parent scope)
   try {
-    const { spawnSync } = require('child_process');
-    spawnSync('npx', ['succ', 'remember', text.trim(), '--tags', 'reflection', '--source', 'idle-reflection'], {
+    spawn.sync('npx', ['succ', 'remember', text.trim(), '--tags', 'reflection', '--source', 'idle-reflection'], {
       cwd: projectDir,
       timeout: 10000,
-      shell: true,
-      windowsHide: true,
     });
   } catch {
     // Memory save failed, but file was written
@@ -393,16 +400,8 @@ async function callSleepAgentLocal(prompt) {
   } catch { return null; }
 }
 
-const scriptFile = ${JSON.stringify(scriptFile)};
-
 async function main() {
   try { fs.unlinkSync(contextFile); } catch {}
-
-  // Cleanup function to delete script file on exit
-  const cleanup = () => {
-    try { fs.unlinkSync(scriptFile); } catch {}
-  };
-  process.on('exit', cleanup);
 
   if (useSleepAgent) {
     // Use local LLM via sleep_agent
@@ -412,11 +411,9 @@ async function main() {
     }
     process.exit(0);
   } else {
-    // Use Claude CLI
+    // Use Claude CLI (cross-spawn handles .cmd on Windows)
     const proc = spawn('claude', ['-p', '--tools', '', '--model', claudeModel], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      windowsHide: true,
     });
 
     proc.stdin.write(prompt);
@@ -443,22 +440,67 @@ main();
   fs.writeFileSync(scriptFile, scriptContent);
 
   try {
-    // Note: windowsHide doesn't work with detached on Windows (Node.js bug)
-    // Using stdio: 'pipe' and process.execPath for better compatibility
-    const proc = spawn(process.execPath, [scriptFile], {
+    const proc = spawn('node', [scriptFile], {
       cwd: projectDir,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      stdio: 'ignore',
     });
     proc.unref();
-    // Script file will be deleted by the detached process on exit
+
+    // Clean up script file after a delay (the detached process should have started)
+    setTimeout(() => {
+      try { fs.unlinkSync(scriptFile); } catch {}
+    }, 5000);
+
     return true;
   } catch (err) {
     try { fs.unlinkSync(scriptFile); } catch {}
     try { fs.unlinkSync(contextFile); } catch {}
     return false;
   }
+}
+
+/**
+ * Retention Cleanup - delete decayed memories (sync - fast, no LLM)
+ * Only runs if retention.enabled=true and enough time has passed since last cleanup
+ */
+function runRetentionCleanup(projectDir, config) {
+  // Check if retention is enabled
+  if (!config.retention?.enabled) {
+    return false;
+  }
+
+  // Check if enough time has passed since last cleanup
+  const tmpDir = path.join(projectDir, '.succ', '.tmp');
+  const lastRunFile = path.join(tmpDir, 'last-retention-cleanup.txt');
+  const intervalDays = config.retention.auto_cleanup_interval_days || 7;
+  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+
+  if (fs.existsSync(lastRunFile)) {
+    try {
+      const lastRun = parseInt(fs.readFileSync(lastRunFile, 'utf8').trim(), 10);
+      const now = Date.now();
+      if (now - lastRun < intervalMs) {
+        // Not enough time has passed
+        return false;
+      }
+    } catch {
+      // Invalid file, proceed with cleanup
+    }
+  }
+
+  // Run retention cleanup
+  const result = runSuccCommandSync(projectDir, ['retention', '--apply'], 15000);
+
+  if (result.success) {
+    // Update last run timestamp
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    fs.writeFileSync(lastRunFile, String(Date.now()));
+  }
+
+  return result.success;
 }
 
 /**
@@ -550,16 +592,21 @@ process.stdin.on('end', () => {
       runGraphRefinement(projectDir, config);
     }
 
+    // 3. Retention Cleanup (sync - only if retention.enabled=true)
+    if (config.operations.retention_cleanup) {
+      runRetentionCleanup(projectDir, config);
+    }
+
     // === ASYNC OPERATIONS (slow, uses LLM) ===
     // These spawn detached processes and complete in background
     // Hook exits immediately, processes continue independently
 
-    // 3. Session Summary (async/detached)
+    // 4. Session Summary (async/detached)
     if (config.operations.session_summary && hookInput.transcript_path) {
       runSessionSummaryAsync(projectDir, hookInput.transcript_path, config);
     }
 
-    // 4. Write Reflection (async/detached)
+    // 5. Write Reflection (async/detached)
     if (config.operations.write_reflection) {
       const transcriptContext = extractTranscriptContext(hookInput);
       if (transcriptContext && transcriptContext.length >= 100) {
@@ -567,7 +614,7 @@ process.stdin.on('end', () => {
       }
     }
 
-    // 5. Precompute Context (async/detached)
+    // 6. Precompute Context (async/detached)
     if (config.operations.precompute_context && hookInput.transcript_path) {
       const precomputeArgs = ['precompute-context', hookInput.transcript_path];
 
