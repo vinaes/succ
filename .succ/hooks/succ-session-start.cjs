@@ -140,6 +140,9 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 **succ_status** → docs indexed, memories count, daemon status
 → Use at session start to understand what's indexed, or when debugging search issues
 
+**succ_stats** → token savings statistics (RAG queries, session summaries)
+→ Shows how many tokens saved by using succ instead of loading full files
+
 **succ_config** → show current configuration with all effective values
 → Use when user asks about settings, or to see available keys before changing
 
