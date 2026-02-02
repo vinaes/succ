@@ -19,7 +19,8 @@ import {
   LinkRelation,
 } from './db.js';
 import { cosineSimilarity } from './embeddings.js';
-import { getIdleReflectionConfig } from './config.js';
+import { getIdleReflectionConfig, getConfig } from './config.js';
+import { scanSensitive } from './sensitive-filter.js';
 
 /**
  * Candidate pair for consolidation
@@ -314,12 +315,15 @@ function transferLinks(fromId: number, toId: number): void {
 /**
  * Merge two memories into one (simple concatenation)
  * TODO: Add LLM-based intelligent merging
+ * NOTE: When implementing LLM merge, use scanSensitive() to check merged content
+ *       before saving. If sensitive_auto_redact is true, redact; otherwise skip.
  */
 async function mergeMemories(
   m1: Memory & { embedding: number[] },
   m2: Memory & { embedding: number[] }
 ): Promise<number> {
-  // Simple strategy: keep the one with higher quality, append unique info from other
+  // Simple strategy: keep the one with higher quality, delete the other
+  // No new content is created, so sensitive filter not needed here
   const q1 = m1.quality_score ?? 0.5;
   const q2 = m2.quality_score ?? 0.5;
 
