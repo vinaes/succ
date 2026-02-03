@@ -20,6 +20,22 @@
 const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+
+// Logging helper - writes to .succ/.tmp/hooks.log
+function log(succDir, message) {
+  try {
+    const tmpDir = path.join(succDir, '.tmp');
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    const logFile = path.join(tmpDir, 'hooks.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] [session-start] ${message}\n`);
+  } catch {
+    // Logging failed, not critical
+  }
+}
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -191,6 +207,8 @@ Co-Authored-By order (succ always LAST):
     // Check if this is a compact event (after /compact)
     const isCompactEvent = hookInput.source === 'compact';
 
+    log(succDir, `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`);
+
     // Precomputed Context from previous session (only on fresh start, not compact)
     if (!isCompactEvent) {
       const precomputedContextPath = path.join(succDir, 'next-session-context.md');
@@ -287,6 +305,7 @@ Co-Authored-By order (succ always LAST):
     // Skip for service sessions (reflection subagents) - they shouldn't trigger compact briefing
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
     if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
+      log(succDir, `Generating compact briefing for ${hookInput.transcript_path}`);
       try {
         const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
           method: 'POST',
@@ -298,10 +317,33 @@ Co-Authored-By order (succ always LAST):
           const result = await response.json();
           if (result.success && result.briefing) {
             contextParts.push(`<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`);
+            log(succDir, `Briefing generated: ${result.briefing.length} chars`);
+          } else {
+            log(succDir, `Briefing failed: ${result.error || 'no briefing returned'}`);
           }
+        } else {
+          log(succDir, `Briefing API error: ${response.status} ${response.statusText}`);
         }
-      } catch {
+      } catch (err) {
+        log(succDir, `Briefing exception: ${err.message || err}`);
         // Briefing generation failed, continue without it
+      }
+    }
+
+    // Create compact-pending flag for UserPromptSubmit fallback
+    // This ensures context is injected even if SessionStart output is lost
+    if (isCompactEvent && !isServiceSession) {
+      const compactPendingFile = path.join(succDir, '.tmp', 'compact-pending');
+      try {
+        if (!fs.existsSync(path.join(succDir, '.tmp'))) {
+          fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
+        }
+        // Store the full context that should be injected
+        const contextForFallback = contextParts.join('\n\n');
+        fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
+        log(succDir, `Created compact-pending flag (${contextForFallback.length} chars)`);
+      } catch (err) {
+        log(succDir, `Failed to create compact-pending: ${err.message || err}`);
       }
     }
 
@@ -353,13 +395,17 @@ Co-Authored-By order (succ always LAST):
 
     // Output context
     if (contextParts.length > 0) {
+      const additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
       const output = {
         hookSpecificOutput: {
           hookEventName: 'SessionStart',
-          additionalContext: `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`
+          additionalContext
         }
       };
       console.log(JSON.stringify(output));
+      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}`);
+    } else {
+      log(succDir, `No context parts to output`);
     }
 
     // Register session with daemon
