@@ -75,6 +75,8 @@ export function getDb(): Database.Database {
 export function getGlobalDb(): Database.Database {
   if (!globalDb) {
     globalDb = new Database(getGlobalDbPath());
+    // WAL mode for better concurrent access from multiple MCP processes
+    globalDb.pragma('journal_mode = WAL');
     globalDb.pragma('busy_timeout = 5000'); // 5 second timeout for locked database
     initGlobalDb(globalDb);
   }
@@ -1638,7 +1640,12 @@ export function saveGlobalMemory(
     `)
     .run(content, tagsJson, source ?? null, project ?? null, type, embeddingBlob);
 
-  return { id: result.lastInsertRowid as number, isDuplicate: false };
+  const memoryId = result.lastInsertRowid as number;
+
+  // Update BM25 index
+  updateGlobalMemoriesBm25Index(memoryId, content);
+
+  return { id: memoryId, isDuplicate: false };
 }
 
 /**
@@ -1742,6 +1749,184 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
     created_at: row.created_at,
     isGlobal: true as const,
   }));
+}
+
+// ============================================================================
+// BM25 Index for Global Memories
+// ============================================================================
+
+let globalMemoriesBm25Index: bm25.BM25Index | null = null;
+
+/**
+ * Get or build BM25 index for global memories
+ */
+function getGlobalMemoriesBm25Index(): bm25.BM25Index {
+  if (globalMemoriesBm25Index) return globalMemoriesBm25Index;
+
+  const database = getGlobalDb();
+
+  // Try to load from metadata
+  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'").get() as
+    | { value: string }
+    | undefined;
+
+  if (stored) {
+    try {
+      globalMemoriesBm25Index = bm25.deserializeIndex(stored.value);
+      return globalMemoriesBm25Index;
+    } catch {
+      // Invalid stored index, rebuild
+    }
+  }
+
+  // Build from memories
+  const rows = database.prepare('SELECT id, content FROM memories').all() as Array<{
+    id: number;
+    content: string;
+  }>;
+
+  globalMemoriesBm25Index = bm25.buildIndex(rows, 'docs'); // Use docs tokenizer with stemming
+
+  // Store for future use
+  saveGlobalMemoriesBm25Index();
+
+  return globalMemoriesBm25Index;
+}
+
+/**
+ * Save global memories BM25 index to metadata
+ */
+function saveGlobalMemoriesBm25Index(): void {
+  if (!globalMemoriesBm25Index) return;
+  const database = getGlobalDb();
+  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)").run(
+    bm25.serializeIndex(globalMemoriesBm25Index)
+  );
+}
+
+/**
+ * Invalidate global memories BM25 index
+ */
+export function invalidateGlobalMemoriesBm25Index(): void {
+  globalMemoriesBm25Index = null;
+  try {
+    const database = getGlobalDb();
+    database.prepare("DELETE FROM metadata WHERE key = 'bm25_memories_index'").run();
+  } catch {
+    // DB not initialized yet
+  }
+}
+
+/**
+ * Update global memories BM25 index when a memory is added
+ */
+export function updateGlobalMemoriesBm25Index(memoryId: number, content: string): void {
+  const index = getGlobalMemoriesBm25Index();
+  bm25.removeFromIndex(index, memoryId);
+  bm25.addToIndex(index, { id: memoryId, content }, 'docs');
+  saveGlobalMemoriesBm25Index();
+}
+
+export interface HybridGlobalMemoryResult {
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  project: string | null;
+  created_at: string;
+  similarity: number;
+  bm25Score?: number;
+  vectorScore?: number;
+  isGlobal: true;
+}
+
+/**
+ * Hybrid search for global memories (BM25 + vector with RRF fusion)
+ */
+export function hybridSearchGlobalMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5,
+  tags?: string[],
+  since?: Date
+): HybridGlobalMemoryResult[] {
+  const database = getGlobalDb();
+
+  let sqlQuery = 'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+  const params: any[] = [];
+
+  if (since) {
+    sqlQuery += ' AND created_at >= ?';
+    params.push(since.toISOString());
+  }
+
+  const rows = database.prepare(sqlQuery).all(...params) as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    project: string | null;
+    embedding: Buffer;
+    created_at: string;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search
+  const bm25Index = getGlobalMemoriesBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridGlobalMemoryResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+
+    // Parse and filter by tags if specified
+    const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    if (tags && tags.length > 0) {
+      const hasMatchingTag = tags.some((t) =>
+        rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
+      );
+      if (!hasMatchingTag) continue;
+    }
+
+    results.push({
+      id: row.id,
+      content: row.content,
+      tags: rowTags,
+      source: row.source,
+      project: row.project,
+      created_at: row.created_at,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+      isGlobal: true,
+    });
+  }
+
+  return results;
 }
 
 /**
