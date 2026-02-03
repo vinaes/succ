@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.0.91",
+  "version": "1.0.92",
   "description": "Local memory system for Claude Code - RAG with local or API embeddings",
   "type": "module",
   "bin": {
@@ -58,7 +58,8 @@
   },
   "files": [
     "dist",
-    "hooks"
+    "hooks",
+    "agents"
   ],
   "engines": {
     "node": ">=18.0.0"
