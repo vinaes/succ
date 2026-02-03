@@ -861,6 +861,37 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     return { port: state.port, pid: process.pid };
   }
 
+  // Check if another daemon is already running (prevent duplicate processes)
+  const existingPidFile = getDaemonPidFile();
+  if (fs.existsSync(existingPidFile)) {
+    try {
+      const existingPid = parseInt(fs.readFileSync(existingPidFile, 'utf8').trim(), 10);
+      if (existingPid && existingPid !== process.pid) {
+        // Check if process is actually running
+        try {
+          process.kill(existingPid, 0); // Signal 0 = check if process exists
+          // Process exists, read port and return
+          const portFile = getDaemonPortFile();
+          if (fs.existsSync(portFile)) {
+            const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+            log(`[daemon] Another daemon already running (pid=${existingPid}, port=${port})`);
+            process.exit(0); // Exit silently - another daemon is handling things
+          }
+        } catch {
+          // Process doesn't exist, clean up stale files
+          log(`[daemon] Cleaning up stale PID file (pid=${existingPid} not running)`);
+          fs.unlinkSync(existingPidFile);
+          const portFile = getDaemonPortFile();
+          if (fs.existsSync(portFile)) {
+            fs.unlinkSync(portFile);
+          }
+        }
+      }
+    } catch {
+      // Ignore errors reading PID file
+    }
+  }
+
   const cwd = getProjectRoot();
   const watcherConfig = getIdleWatcherConfig();
   const idleConfig = getIdleReflectionConfig();
