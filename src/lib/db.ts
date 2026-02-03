@@ -1,7 +1,11 @@
 import Database from 'better-sqlite3';
+import * as sqliteVec from 'sqlite-vec';
 import { getDbPath, getGlobalDbPath, getConfig } from './config.js';
 import { cosineSimilarity, getModelDimension } from './embeddings.js';
 import * as bm25 from './bm25.js';
+
+// Flag to track if sqlite-vec is available
+let sqliteVecAvailable = true;
 
 // Lazy import to avoid circular dependency
 let scheduleAutoExport: (() => void) | null = null;
@@ -31,6 +35,28 @@ function bufferToFloatArray(buffer: Buffer): number[] {
     aligned.byteLength / Float32Array.BYTES_PER_ELEMENT
   );
   return Array.from(floatArray);
+}
+
+/**
+ * Convert number[] to Buffer for sqlite-vec
+ */
+function floatArrayToBuffer(arr: number[]): Buffer {
+  const float32 = new Float32Array(arr);
+  return Buffer.from(float32.buffer, float32.byteOffset, float32.byteLength);
+}
+
+/**
+ * Load sqlite-vec extension into database
+ */
+function loadSqliteVec(database: Database.Database): boolean {
+  if (!sqliteVecAvailable) return false;
+  try {
+    sqliteVec.load(database);
+    return true;
+  } catch {
+    sqliteVecAvailable = false;
+    return false;
+  }
 }
 
 export interface Document {
@@ -64,6 +90,7 @@ export function getDb(): Database.Database {
   if (!db) {
     db = new Database(getDbPath());
     db.pragma('busy_timeout = 5000'); // 5 second timeout for locked database
+    loadSqliteVec(db);
     initDb(db);
   }
   return db;
@@ -78,6 +105,7 @@ export function getGlobalDb(): Database.Database {
     // WAL mode for better concurrent access from multiple MCP processes
     globalDb.pragma('journal_mode = WAL');
     globalDb.pragma('busy_timeout = 5000'); // 5 second timeout for locked database
+    loadSqliteVec(globalDb);
     initGlobalDb(globalDb);
   }
   return globalDb;
@@ -246,6 +274,9 @@ function initDb(database: Database.Database): void {
 
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
+
+  // Migration: create sqlite-vec virtual tables for fast vector search
+  initVecTables(database);
 }
 
 // Valid memory types
@@ -285,6 +316,144 @@ function checkModelCompatibility(database: Database.Database): void {
   database
     .prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)')
     .run('embedding_model', currentModel);
+}
+
+/**
+ * Initialize sqlite-vec virtual tables for fast KNN search.
+ * Creates vec_memories and vec_documents tables, migrates existing data.
+ *
+ * Note: sqlite-vec doesn't support custom primary keys well, so we use a mapping table
+ * that maps vec rowid -> memory/document id.
+ */
+function initVecTables(database: Database.Database): void {
+  if (!sqliteVecAvailable) return;
+
+  const config = getConfig();
+  const dims = getModelDimension(config.embedding_model) || 384;
+
+  // Check if vec tables already exist
+  const vecMemoriesExists = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")
+    .get();
+
+  // Check if migration is needed (table empty but memories exist)
+  let needsMemoriesMigration = false;
+  if (vecMemoriesExists) {
+    try {
+      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
+      const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
+      needsMemoriesMigration = vecCount.cnt === 0 && memCount.cnt > 0;
+    } catch {
+      // Table might be corrupted, recreate it
+      needsMemoriesMigration = false;
+    }
+  }
+
+  if (!vecMemoriesExists || needsMemoriesMigration) {
+    try {
+      if (needsMemoriesMigration) {
+        // Drop old table with wrong schema
+        database.prepare('DROP TABLE IF EXISTS vec_memories').run();
+        database.prepare('DROP TABLE IF EXISTS vec_memories_map').run();
+      }
+
+      // Create vec0 virtual table for memories (simple schema, rowid auto-assigned)
+      database.prepare(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
+          embedding float[${dims}] distance_metric=cosine
+        )
+      `).run();
+
+      // Create mapping table: vec rowid -> memory id
+      database.prepare(`
+        CREATE TABLE IF NOT EXISTS vec_memories_map (
+          vec_rowid INTEGER PRIMARY KEY,
+          memory_id INTEGER NOT NULL UNIQUE
+        )
+      `).run();
+
+      // Migrate existing embeddings
+      const memories = database
+        .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
+        .all() as Array<{ id: number; embedding: Buffer }>;
+
+      if (memories.length > 0) {
+        const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
+        const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+
+        const migrate = database.transaction(() => {
+          for (const mem of memories) {
+            const result = insertVec.run(mem.embedding);
+            insertMap.run(result.lastInsertRowid, mem.id);
+          }
+        });
+        migrate();
+      }
+    } catch {
+      // sqlite-vec may not support this syntax or other error
+      sqliteVecAvailable = false;
+    }
+  }
+
+  const vecDocumentsExists = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_documents'")
+    .get();
+
+  // Check if migration is needed for documents
+  let needsDocumentsMigration = false;
+  if (vecDocumentsExists && sqliteVecAvailable) {
+    try {
+      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as { cnt: number };
+      const docCount = database.prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL').get() as { cnt: number };
+      needsDocumentsMigration = vecCount.cnt === 0 && docCount.cnt > 0;
+    } catch {
+      needsDocumentsMigration = false;
+    }
+  }
+
+  if ((!vecDocumentsExists || needsDocumentsMigration) && sqliteVecAvailable) {
+    try {
+      if (needsDocumentsMigration) {
+        database.prepare('DROP TABLE IF EXISTS vec_documents').run();
+        database.prepare('DROP TABLE IF EXISTS vec_documents_map').run();
+      }
+
+      // Create vec0 virtual table for documents
+      database.prepare(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_documents USING vec0(
+          embedding float[${dims}] distance_metric=cosine
+        )
+      `).run();
+
+      // Create mapping table: vec rowid -> document id
+      database.prepare(`
+        CREATE TABLE IF NOT EXISTS vec_documents_map (
+          vec_rowid INTEGER PRIMARY KEY,
+          doc_id INTEGER NOT NULL UNIQUE
+        )
+      `).run();
+
+      // Migrate existing embeddings
+      const docs = database
+        .prepare('SELECT id, embedding FROM documents WHERE embedding IS NOT NULL ORDER BY id')
+        .all() as Array<{ id: number; embedding: Buffer }>;
+
+      if (docs.length > 0) {
+        const insertVec = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)');
+        const insertMap = database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)');
+
+        const migrate = database.transaction(() => {
+          for (const doc of docs) {
+            const result = insertVec.run(doc.embedding);
+            insertMap.run(result.lastInsertRowid, doc.id);
+          }
+        });
+        migrate();
+      }
+    } catch {
+      // Ignore errors for documents table
+    }
+  }
 }
 
 function initGlobalDb(database: Database.Database): void {
@@ -367,6 +536,79 @@ function initGlobalDb(database: Database.Database): void {
   } catch {
     // Column already exists, ignore
   }
+
+  // Migration: create sqlite-vec virtual table for global memories
+  initGlobalVecTable(database);
+}
+
+/**
+ * Initialize sqlite-vec virtual table for global memories
+ */
+function initGlobalVecTable(database: Database.Database): void {
+  if (!sqliteVecAvailable) return;
+
+  const config = getConfig();
+  const dims = getModelDimension(config.embedding_model) || 384;
+
+  const vecMemoriesExists = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")
+    .get();
+
+  // Check if migration is needed
+  let needsMigration = false;
+  if (vecMemoriesExists) {
+    try {
+      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
+      const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
+      needsMigration = vecCount.cnt === 0 && memCount.cnt > 0;
+    } catch {
+      needsMigration = false;
+    }
+  }
+
+  if (!vecMemoriesExists || needsMigration) {
+    try {
+      if (needsMigration) {
+        database.prepare('DROP TABLE IF EXISTS vec_memories').run();
+        database.prepare('DROP TABLE IF EXISTS vec_memories_map').run();
+      }
+
+      // Create vec0 virtual table (simple schema)
+      database.prepare(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
+          embedding float[${dims}] distance_metric=cosine
+        )
+      `).run();
+
+      // Create mapping table
+      database.prepare(`
+        CREATE TABLE IF NOT EXISTS vec_memories_map (
+          vec_rowid INTEGER PRIMARY KEY,
+          memory_id INTEGER NOT NULL UNIQUE
+        )
+      `).run();
+
+      // Migrate existing embeddings
+      const memories = database
+        .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
+        .all() as Array<{ id: number; embedding: Buffer }>;
+
+      if (memories.length > 0) {
+        const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
+        const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+
+        const migrate = database.transaction(() => {
+          for (const mem of memories) {
+            const result = insertVec.run(mem.embedding);
+            insertMap.run(result.lastInsertRowid, mem.id);
+          }
+        });
+        migrate();
+      }
+    } catch {
+      // sqlite-vec may not be available for global db
+    }
+  }
 }
 
 export function upsertDocument(
@@ -379,6 +621,11 @@ export function upsertDocument(
 ): void {
   const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+
+  // Get existing doc ID if any (for vec table update)
+  const existing = database
+    .prepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
+    .get(filePath, chunkIndex) as { id: number } | undefined;
 
   database
     .prepare(
@@ -394,6 +641,31 @@ export function upsertDocument(
   `
     )
     .run(filePath, chunkIndex, content, startLine, endLine, embeddingBlob);
+
+  // Update vec_documents with mapping table
+  if (sqliteVecAvailable) {
+    try {
+      if (existing) {
+        // Update existing: delete old mapping and vec entry, insert new
+        const oldMapping = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(existing.id) as { vec_rowid: number } | undefined;
+        if (oldMapping) {
+          database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(oldMapping.vec_rowid);
+          database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(existing.id);
+        }
+        const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
+        database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, existing.id);
+      } else {
+        // New doc - get the inserted ID
+        const newDoc = database
+          .prepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
+          .get(filePath, chunkIndex) as { id: number };
+        const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
+        database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newDoc.id);
+      }
+    } catch {
+      // Ignore vec table errors
+    }
+  }
 }
 
 export interface DocumentBatch {
@@ -433,6 +705,45 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): void {
   });
 
   transaction(documents);
+
+  // Rebuild vec_documents for affected files
+  rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
+}
+
+/**
+ * Rebuild vec_documents entries for specific files
+ */
+function rebuildVecDocumentsForFiles(filePaths: string[]): void {
+  if (!sqliteVecAvailable || filePaths.length === 0) return;
+
+  const database = getDb();
+  const uniquePaths = [...new Set(filePaths)];
+
+  try {
+    const transaction = database.transaction(() => {
+      for (const filePath of uniquePaths) {
+        // Get all docs for this file
+        const docs = database
+          .prepare('SELECT id, embedding FROM documents WHERE file_path = ?')
+          .all(filePath) as Array<{ id: number; embedding: Buffer }>;
+
+        for (const doc of docs) {
+          // Delete existing vec entry if any (using mapping table)
+          const existing = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(doc.id) as { vec_rowid: number } | undefined;
+          if (existing) {
+            database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(existing.vec_rowid);
+            database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(doc.id);
+          }
+          // Insert new vec entry with mapping
+          const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(doc.embedding);
+          database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, doc.id);
+        }
+      }
+    });
+    transaction();
+  } catch {
+    // Ignore vec table errors
+  }
 }
 
 export interface DocumentBatchWithHash extends DocumentBatch {
@@ -484,10 +795,32 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   });
 
   transaction(documents);
+
+  // Rebuild vec_documents for affected files
+  rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
 }
 
 export function deleteDocumentsByPath(filePath: string): void {
   const database = getDb();
+
+  // Also delete from vec_documents using mapping table
+  if (sqliteVecAvailable) {
+    try {
+      const docIds = database
+        .prepare('SELECT id FROM documents WHERE file_path = ?')
+        .all(filePath) as Array<{ id: number }>;
+      for (const { id } of docIds) {
+        const mapping = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(id) as { vec_rowid: number } | undefined;
+        if (mapping) {
+          database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
+          database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
+        }
+      }
+    } catch {
+      // Ignore vec table errors
+    }
+  }
+
   database.prepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
 }
 
@@ -497,6 +830,63 @@ export function searchDocuments(
   threshold: number = 0.5
 ): SearchResult[] {
   const database = getDb();
+
+  // Try sqlite-vec fast path
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = Math.max(limit * 3, 30);
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_documents v
+        JOIN vec_documents_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        const docIds = vecResults.map(r => r.doc_id);
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+
+        const placeholders = docIds.map(() => '?').join(',');
+        const rows = database.prepare(`
+          SELECT id, file_path, content, start_line, end_line
+          FROM documents WHERE id IN (${placeholders})
+        `).all(...docIds) as Array<{
+          id: number;
+          file_path: string;
+          content: string;
+          start_line: number;
+          end_line: number;
+        }>;
+
+        const results: SearchResult[] = [];
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+
+          if (similarity >= threshold) {
+            results.push({
+              file_path: row.file_path,
+              content: row.content,
+              start_line: row.start_line,
+              end_line: row.end_line,
+              similarity,
+            });
+          }
+        }
+
+        results.sort((a, b) => b.similarity - a.similarity);
+        return results.slice(0, limit);
+      }
+    } catch {
+      // Fall through to brute-force
+    }
+  }
+
+  // Brute-force fallback
   const rows = database.prepare('SELECT * FROM documents').all() as Array<{
     file_path: string;
     content: string;
@@ -522,9 +912,7 @@ export function searchDocuments(
     }
   }
 
-  // Sort by similarity descending
   results.sort((a, b) => b.similarity - a.similarity);
-
   return results.slice(0, limit);
 }
 
@@ -611,7 +999,8 @@ export interface HybridSearchResult extends SearchResult {
 }
 
 /**
- * Hybrid search combining BM25 and vector similarity
+ * Hybrid search combining BM25 and vector similarity.
+ * Uses sqlite-vec for fast KNN vector search when available.
  *
  * @param query - Search query string
  * @param queryEmbedding - Query embedding vector
@@ -628,18 +1017,6 @@ export function hybridSearchCode(
 ): HybridSearchResult[] {
   const database = getDb();
 
-  // Get all code documents
-  const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
-    id: number;
-    file_path: string;
-    content: string;
-    start_line: number;
-    end_line: number;
-    embedding: Buffer;
-  }>;
-
-  if (rows.length === 0) return [];
-
   // 1. BM25 search with Ronin-style segmentation for flatcase queries
   const bm25Index = getCodeBm25Index();
 
@@ -652,7 +1029,6 @@ export function hybridSearchCode(
       (token) => getTokenFrequency(token),
       totalTokens
     );
-    // If segmentation produced more tokens, use them
     if (tokens.length > query.split(/\s+/).length) {
       enhancedQuery = tokens.join(' ');
     }
@@ -660,23 +1036,109 @@ export function hybridSearchCode(
 
   const bm25Results = bm25.search(enhancedQuery, bm25Index, 'code', limit * 3);
 
-  // 2. Vector search
-  const vectorResults: { docId: number; score: number }[] = [];
-  for (const row of rows) {
-    const embedding = bufferToFloatArray(row.embedding);
-    const similarity = cosineSimilarity(queryEmbedding, embedding);
-    if (similarity >= threshold) {
-      vectorResults.push({ docId: row.id, score: similarity });
+  // 2. Vector search - try sqlite-vec first
+  let vectorResults: { docId: number; score: number }[] = [];
+  let rowMap: Map<number, { id: number; file_path: string; content: string; start_line: number; end_line: number }> = new Map();
+
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = limit * 5;
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_documents v
+        JOIN vec_documents_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        // Filter to only code documents
+        const docIds = vecResults.map(r => r.doc_id);
+        const placeholders = docIds.map(() => '?').join(',');
+        const rows = database.prepare(`
+          SELECT id, file_path, content, start_line, end_line
+          FROM documents
+          WHERE id IN (${placeholders}) AND file_path LIKE 'code:%'
+        `).all(...docIds) as Array<{
+          id: number;
+          file_path: string;
+          content: string;
+          start_line: number;
+          end_line: number;
+        }>;
+
+        rowMap = new Map(rows.map(r => [r.id, r]));
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+          if (similarity >= threshold) {
+            vectorResults.push({ docId: row.id, score: similarity });
+          }
+        }
+        vectorResults.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      // Fall through to brute-force
+      vectorResults = [];
     }
   }
-  vectorResults.sort((a, b) => b.score - a.score);
+
+  // Brute-force fallback for vector search
+  if (vectorResults.length === 0) {
+    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+      id: number;
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: Buffer;
+    }>;
+
+    if (rows.length === 0) return [];
+
+    rowMap = new Map(rows.map(r => [r.id, r]));
+
+    for (const row of rows) {
+      const embedding = bufferToFloatArray(row.embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= threshold) {
+        vectorResults.push({ docId: row.id, score: similarity });
+      }
+    }
+    vectorResults.sort((a, b) => b.score - a.score);
+  }
+
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
   const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
 
-  // 4. Map back to full results
-  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  // 4. Ensure we have all needed rows in the map (for BM25 results that might not be in vec results)
+  if (combined.length > 0) {
+    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map(() => '?').join(',');
+      const missingRows = getDb().prepare(`
+        SELECT id, file_path, content, start_line, end_line
+        FROM documents WHERE id IN (${placeholders})
+      `).all(...missingIds) as Array<{
+        id: number;
+        file_path: string;
+        content: string;
+        start_line: number;
+        end_line: number;
+      }>;
+      for (const row of missingRows) {
+        rowMap.set(row.id, row);
+      }
+    }
+  }
+
   const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 
@@ -1233,6 +1695,16 @@ export function saveMemory(
     );
 
   const newId = result.lastInsertRowid as number;
+
+  // Also insert into vec_memories for fast KNN search
+  if (sqliteVecAvailable) {
+    try {
+      const vecResult = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(embeddingBlob);
+      database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newId);
+    } catch {
+      // Ignore vec table errors
+    }
+  }
   let linksCreated = 0;
 
   // Auto-link to similar existing memories
@@ -1288,7 +1760,8 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
 }
 
 /**
- * Search memories by semantic similarity with temporal awareness
+ * Search memories by semantic similarity with temporal awareness.
+ * Uses sqlite-vec for fast KNN search when available, falls back to brute-force.
  */
 export function searchMemories(
   queryEmbedding: number[],
@@ -1302,11 +1775,114 @@ export function searchMemories(
   }
 ): MemorySearchResult[] {
   const database = getDb();
+  const now = options?.asOfDate?.getTime() ?? Date.now();
+  const includeExpired = options?.includeExpired ?? false;
 
+  // Try sqlite-vec fast path first
+  if (sqliteVecAvailable) {
+    try {
+      // KNN search via sqlite-vec with mapping table
+      const candidateLimit = Math.max(limit * 5, 50); // Get extra for filtering
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+
+      const vecResults = database.prepare(`
+        SELECT m.memory_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ memory_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        // Get memory IDs
+        const memoryIds = vecResults.map(r => r.memory_id);
+        const distanceMap = new Map(vecResults.map(r => [r.memory_id, r.distance]));
+
+        // Fetch full memory data for candidates
+        const placeholders = memoryIds.map(() => '?').join(',');
+        let query = `SELECT * FROM memories WHERE id IN (${placeholders})`;
+        const params: any[] = [...memoryIds];
+
+        if (since) {
+          query += ' AND created_at >= ?';
+          params.push(since.toISOString());
+        }
+
+        const rows = database.prepare(query).all(...params) as Array<{
+          id: number;
+          content: string;
+          tags: string | null;
+          source: string | null;
+          quality_score: number | null;
+          quality_factors: string | null;
+          access_count: number | null;
+          last_accessed: string | null;
+          valid_from: string | null;
+          valid_until: string | null;
+          created_at: string;
+        }>;
+
+        const results: MemorySearchResult[] = [];
+
+        for (const row of rows) {
+          // Check validity period
+          if (!includeExpired) {
+            if (row.valid_from) {
+              const validFrom = new Date(row.valid_from).getTime();
+              if (now < validFrom) continue;
+            }
+            if (row.valid_until) {
+              const validUntil = new Date(row.valid_until).getTime();
+              if (now > validUntil) continue;
+            }
+          }
+
+          const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+
+          // Filter by tags if specified
+          if (tags && tags.length > 0) {
+            const hasMatchingTag = tags.some((t) =>
+              rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
+            );
+            if (!hasMatchingTag) continue;
+          }
+
+          // Convert distance to similarity (cosine distance = 1 - similarity)
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+
+          if (similarity >= threshold) {
+            results.push({
+              id: row.id,
+              content: row.content,
+              tags: rowTags,
+              source: row.source,
+              quality_score: row.quality_score,
+              quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+              access_count: row.access_count ?? 0,
+              last_accessed: row.last_accessed,
+              valid_from: row.valid_from,
+              valid_until: row.valid_until,
+              created_at: row.created_at,
+              similarity,
+            });
+          }
+        }
+
+        // Sort by similarity (already mostly sorted but need to re-sort after filtering)
+        results.sort((a, b) => b.similarity - a.similarity);
+        return results.slice(0, limit);
+      }
+    } catch {
+      // Fall through to brute-force
+    }
+  }
+
+  // Brute-force fallback
   let query = 'SELECT * FROM memories WHERE 1=1';
   const params: any[] = [];
 
-  // Filter by date if specified
   if (since) {
     query += ' AND created_at >= ?';
     params.push(since.toISOString());
@@ -1328,26 +1904,21 @@ export function searchMemories(
   }>;
 
   const results: MemorySearchResult[] = [];
-  const now = options?.asOfDate?.getTime() ?? Date.now();
-  const includeExpired = options?.includeExpired ?? false;
 
   for (const row of rows) {
-    // Check validity period
     if (!includeExpired) {
       if (row.valid_from) {
         const validFrom = new Date(row.valid_from).getTime();
-        if (now < validFrom) continue; // Not yet valid
+        if (now < validFrom) continue;
       }
       if (row.valid_until) {
         const validUntil = new Date(row.valid_until).getTime();
-        if (now > validUntil) continue; // Expired
+        if (now > validUntil) continue;
       }
     }
 
-    // Parse tags
     const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
 
-    // Filter by tags if specified
     if (tags && tags.length > 0) {
       const hasMatchingTag = tags.some((t) =>
         rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
@@ -1376,9 +1947,7 @@ export function searchMemories(
     }
   }
 
-  // Sort by similarity descending
   results.sort((a, b) => b.similarity - a.similarity);
-
   return results.slice(0, limit);
 }
 
@@ -1428,6 +1997,20 @@ export function getRecentMemories(limit: number = 10): Memory[] {
  */
 export function deleteMemory(id: number): boolean {
   const database = getDb();
+
+  // Also delete from vec_memories using mapping table
+  if (sqliteVecAvailable) {
+    try {
+      const mapping = database.prepare('SELECT vec_rowid FROM vec_memories_map WHERE memory_id = ?').get(id) as { vec_rowid: number } | undefined;
+      if (mapping) {
+        database.prepare('DELETE FROM vec_memories WHERE rowid = ?').run(mapping.vec_rowid);
+        database.prepare('DELETE FROM vec_memories_map WHERE memory_id = ?').run(id);
+      }
+    } catch {
+      // Ignore vec table errors
+    }
+  }
+
   const result = database.prepare('DELETE FROM memories WHERE id = ?').run(id);
   return result.changes > 0;
 }
