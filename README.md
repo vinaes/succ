@@ -21,8 +21,8 @@ Local memory system that adds persistent, semantic memory to any Claude Code pro
 - **Quality scoring** — local ONNX classification to filter noise
 - **Token savings tracking** — measure how many tokens saved by RAG vs loading full files
 - **Temporal awareness** — time decay, validity periods, point-in-time queries
-- **Watch mode** — auto-reindex on file changes with debouncing
-- **Daemon mode** — continuous background analysis
+- **Unified daemon** — single background process for watch, analyze, idle tracking
+- **Watch mode** — auto-reindex on file changes via @parcel/watcher (native, reliable on Windows)
 - **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
 - **Sleep agent** — offload heavy operations to local LLM
 - **MCP integration** — Claude can use succ tools directly
@@ -73,6 +73,7 @@ succ search "how does authentication work"
 | `succ retention` | Memory retention analysis and cleanup |
 | `succ checkpoint <action>` | Create, restore, or list checkpoints |
 | `succ score` | Show AI-readiness score for the project |
+| `succ daemon <action>` | Manage unified daemon (status, sessions, start, stop, logs) |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
@@ -105,9 +106,6 @@ succ analyze --sequential         # Run agents one by one
 succ analyze --background         # Run in background
 succ analyze --openrouter         # Use OpenRouter API
 succ analyze --local              # Use local LLM (Ollama, LM Studio)
-succ analyze --daemon             # Continuous background analysis
-succ analyze --status             # Check daemon status
-succ analyze --stop               # Stop daemon
 ```
 
 **What it creates:**
@@ -126,17 +124,60 @@ succ analyze --stop               # Stop daemon
 
 ### succ watch
 
-Watches for file changes and auto-reindexes. By default watches both docs and code:
+Watches for file changes and auto-reindexes via the unified daemon:
 
 ```bash
-succ watch                        # Watch docs + code (foreground)
-succ watch --daemon               # Run as background daemon
+succ watch                        # Start watch service (via daemon)
 succ watch --ignore-code          # Watch only docs (skip code files)
-succ watch --status               # Check daemon status
-succ watch --stop                 # Stop daemon
+succ watch --status               # Check watch service status
+succ watch --stop                 # Stop watch service
 ```
 
-Supports 120+ file extensions (based on GitHub Linguist) with comprehensive ignore patterns for build artifacts, dependencies, etc.
+**Features:**
+- Uses `@parcel/watcher` (native C++, reliable on Windows with `ReadDirectoryChangesW`)
+- Supports 120+ file extensions (based on GitHub Linguist)
+- Comprehensive ignore patterns for build artifacts, dependencies, etc.
+- Debounced indexing (default 500ms)
+- Integrated into unified daemon (no separate process)
+
+### succ daemon
+
+Unified background daemon that handles watch, analyze, and session tracking:
+
+```bash
+succ daemon status                # Show daemon status (port, uptime, sessions)
+succ daemon sessions              # List active Claude Code sessions
+succ daemon sessions --all        # Include service sessions (analyzers, reflections)
+succ daemon start                 # Start daemon manually (usually auto-started by hooks)
+succ daemon stop                  # Stop daemon (warns if sessions active)
+succ daemon stop --force          # Force stop even with active sessions
+succ daemon logs                  # Show recent daemon logs
+succ daemon logs --lines=100      # Show more lines
+```
+
+**Multi-session support:**
+- Daemon tracks multiple Claude Code sessions per project
+- Each session has independent idle tracking and reflection
+- Daemon exits only when ALL sessions end
+- Service sessions (reflection subagents, analyzers) are filtered by default
+
+**Auto-started services:**
+Configure in `.succ/config.json`:
+```json
+{
+  "daemon": {
+    "watch": {
+      "auto_start": true,
+      "patterns": ["**/*.md"],
+      "include_code": true
+    },
+    "analyze": {
+      "auto_start": false,
+      "interval_minutes": 30
+    }
+  }
+}
+```
 
 ## Hybrid Search
 
@@ -257,11 +298,17 @@ Configure in `~/.succ/config.json`:
 The idle watcher monitors user activity and triggers reflections only when you stop interacting — true idle detection instead of simple throttling.
 
 **How it works:**
-- SessionStart launches a background watcher daemon
-- UserPromptSubmit signals "user is active"
-- Stop signals "Claude responded"
-- If no user activity for N minutes after Claude responds → reflection triggers
-- SessionEnd cleanly shuts down the watcher
+- SessionStart hook ensures daemon is running and registers the session
+- UserPromptSubmit signals "user is active" to daemon
+- Stop signals "Claude responded" to daemon
+- Daemon tracks each session independently
+- If no user activity for N minutes after Claude responds → reflection triggers for that session
+- SessionEnd unregisters session; daemon exits when ALL sessions end
+
+**Multi-session aware:**
+- Multiple Claude Code sessions can run in the same project
+- Each session has its own idle timer and reflection state
+- Service sessions (reflection subagents, analyzers) are automatically excluded from reflection
 
 Configure in `.succ/config.json`:
 
@@ -283,7 +330,7 @@ Configure in `.succ/config.json`:
 | `check_interval` | `30` | Seconds between activity checks |
 | `min_conversation_length` | `5` | Minimum transcript entries before reflecting |
 
-**Safety:** Watcher auto-exits after 90 minutes of no activity to prevent zombie processes.
+**Safety:** Daemon auto-exits when all sessions end. Service sessions (spawned for reflection/analysis) are automatically marked and excluded from reflection to prevent infinite loops.
 
 **Idle Reflection Operations:**
 - `memory_consolidation` — merge similar memories, remove duplicates
@@ -619,12 +666,43 @@ your-project/
 └── .succ/
     ├── brain/           # Obsidian-compatible vault
     ├── hooks/           # Hook scripts
+    ├── .tmp/            # Runtime files
+    │   ├── daemon.port  # Daemon HTTP port
+    │   └── daemon.pid   # Daemon process ID
+    ├── config.json      # Project configuration
+    ├── daemon.log       # Daemon logs
     ├── soul.md          # AI personality
     └── succ.db          # Vector database
 
 ~/.succ/
 ├── global.db            # Global memories
 └── config.json          # Global configuration
+```
+
+### Unified Daemon
+
+The daemon is a single HTTP server per project that handles:
+- **Session tracking** — multiple Claude Code sessions with independent idle detection
+- **Watch service** — file monitoring via @parcel/watcher
+- **Analyze service** — periodic code analysis
+- **Reflection** — triggered per-session when idle
+
+```
+┌─────────────────────────────────────────────────┐
+│ Daemon (HTTP on 127.0.0.1:37846)                │
+│                                                 │
+│  Sessions:                                      │
+│    session-abc → idle 2m, 0 reflections         │
+│    session-def → active, 1 reflection           │
+│                                                 │
+│  Services:                                      │
+│    Watch: running, 42 files                     │
+│    Analyze: running, last run 5m ago            │
+└─────────────────────────────────────────────────┘
+         ▲              ▲              ▲
+         │              │              │
+    session-start   user-prompt      stop
+       hook            hook          hook
 ```
 
 ## Documentation

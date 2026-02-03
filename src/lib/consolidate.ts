@@ -7,6 +7,9 @@
  * - Update quality scores
  */
 
+import { Worker } from 'worker_threads';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   getDb,
   Memory,
@@ -21,6 +24,13 @@ import {
 import { cosineSimilarity } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Worker pool configuration
+const WORKER_COUNT = Math.max(1, Math.min(4, (await import('os')).cpus().length - 1));
+const MIN_PAIRS_FOR_WORKERS = 1000; // Only use workers if we have enough pairs
 
 /**
  * Candidate pair for consolidation
@@ -100,9 +110,114 @@ function bufferToFloatArray(buffer: Buffer): number[] {
 }
 
 /**
- * Find consolidation candidates (similar memory pairs)
+ * Run similarity calculations in worker threads for large datasets
  */
-export function findConsolidationCandidates(
+async function runSimilarityWorkers(
+  embeddings: number[][],
+  pairs: Array<[number, number]>,
+  threshold: number
+): Promise<Array<{ i: number; j: number; similarity: number }>> {
+  // Split pairs among workers
+  const chunkSize = Math.ceil(pairs.length / WORKER_COUNT);
+  const chunks: Array<Array<[number, number]>> = [];
+
+  for (let i = 0; i < pairs.length; i += chunkSize) {
+    chunks.push(pairs.slice(i, i + chunkSize));
+  }
+
+  // Worker path - always use compiled JS (workers don't support TS directly)
+  // When running from src via tsx, __dirname points to src/lib but we need dist/lib
+  const workerPath = __filename.endsWith('.ts')
+    ? path.join(__dirname, '../../dist/lib/similarity-worker.js')
+    : path.join(__dirname, 'similarity-worker.js');
+
+  // Run workers in parallel
+  const workerPromises = chunks.map(
+    (chunk) =>
+      new Promise<Array<{ i: number; j: number; similarity: number }>>((resolve, reject) => {
+        const worker = new Worker(workerPath, {
+          workerData: { pairs: chunk, embeddings, threshold },
+        });
+
+        worker.on('message', resolve);
+        worker.on('error', reject);
+        worker.on('exit', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Worker stopped with exit code ${code}`));
+          }
+        });
+      })
+  );
+
+  const results = await Promise.all(workerPromises);
+  return results.flat();
+}
+
+/**
+ * Find consolidation candidates (similar memory pairs)
+ * Uses worker threads for large datasets (1000+ pairs)
+ */
+export async function findConsolidationCandidates(
+  threshold?: number,
+  maxCandidates?: number
+): Promise<ConsolidationCandidate[]> {
+  const config = getIdleReflectionConfig();
+  const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.85;
+  const limit = maxCandidates ?? config.max_memories_to_process ?? 50;
+
+  const memories = getAllMemoriesWithEmbeddings();
+
+  // Generate all pairs
+  const pairs: Array<[number, number]> = [];
+  for (let i = 0; i < memories.length; i++) {
+    for (let j = i + 1; j < memories.length; j++) {
+      pairs.push([i, j]);
+    }
+  }
+
+  // Decide whether to use workers or process sequentially
+  let similarPairs: Array<{ i: number; j: number; similarity: number }>;
+
+  if (pairs.length >= MIN_PAIRS_FOR_WORKERS && WORKER_COUNT > 1) {
+    // Use worker threads for large datasets
+    const embeddings = memories.map((m) => m.embedding);
+    similarPairs = await runSimilarityWorkers(embeddings, pairs, similarityThreshold);
+  } else {
+    // Process sequentially for small datasets (faster due to no worker overhead)
+    similarPairs = [];
+    for (const [i, j] of pairs) {
+      const similarity = cosineSimilarity(memories[i].embedding, memories[j].embedding);
+      if (similarity >= similarityThreshold) {
+        similarPairs.push({ i, j, similarity });
+      }
+    }
+  }
+
+  // Sort by similarity descending and take top candidates
+  similarPairs.sort((a, b) => b.similarity - a.similarity);
+  const topPairs = similarPairs.slice(0, limit);
+
+  // Build candidates with action determination
+  const candidates: ConsolidationCandidate[] = topPairs.map(({ i, j, similarity }) => {
+    const m1 = memories[i];
+    const m2 = memories[j];
+    const action = determineAction(m1, m2, similarity);
+
+    return {
+      memory1: m1,
+      memory2: m2,
+      similarity,
+      ...action,
+    };
+  });
+
+  return candidates;
+}
+
+/**
+ * Sync version for backwards compatibility (uses sequential processing)
+ */
+export function findConsolidationCandidatesSync(
   threshold?: number,
   maxCandidates?: number
 ): ConsolidationCandidate[] {
@@ -112,24 +227,16 @@ export function findConsolidationCandidates(
 
   const memories = getAllMemoriesWithEmbeddings();
   const candidates: ConsolidationCandidate[] = [];
-  const processed = new Set<string>();
 
   for (let i = 0; i < memories.length && candidates.length < limit; i++) {
     for (let j = i + 1; j < memories.length && candidates.length < limit; j++) {
       const m1 = memories[i];
       const m2 = memories[j];
 
-      // Skip if already processed this pair
-      const pairKey = `${Math.min(m1.id, m2.id)}-${Math.max(m1.id, m2.id)}`;
-      if (processed.has(pairKey)) continue;
-      processed.add(pairKey);
-
       const similarity = cosineSimilarity(m1.embedding, m2.embedding);
 
       if (similarity >= similarityThreshold) {
-        // Determine action based on content and quality
         const action = determineAction(m1, m2, similarity);
-
         candidates.push({
           memory1: m1,
           memory2: m2,
@@ -140,9 +247,7 @@ export function findConsolidationCandidates(
     }
   }
 
-  // Sort by similarity descending (most similar first)
   candidates.sort((a, b) => b.similarity - a.similarity);
-
   return candidates;
 }
 
@@ -360,7 +465,7 @@ export async function consolidateMemories(options: {
     console.log('Finding consolidation candidates...');
   }
 
-  const candidates = findConsolidationCandidates(threshold, maxCandidates);
+  const candidates = await findConsolidationCandidates(threshold, maxCandidates);
 
   if (verbose) {
     console.log(`Found ${candidates.length} candidate pairs`);
@@ -402,14 +507,14 @@ export async function consolidateMemories(options: {
 /**
  * Get consolidation statistics without making changes
  */
-export function getConsolidationStats(threshold?: number): {
+export async function getConsolidationStats(threshold?: number): Promise<{
   totalMemories: number;
   duplicatePairs: number;
   mergeCandidates: number;
   potentialReduction: number;
-} {
+}> {
   const memories = getAllMemoriesWithEmbeddings();
-  const candidates = findConsolidationCandidates(threshold, 1000);
+  const candidates = await findConsolidationCandidates(threshold, 1000);
 
   const duplicates = candidates.filter((c) => c.action === 'delete_duplicate').length;
   const merges = candidates.filter((c) => c.action === 'merge').length;

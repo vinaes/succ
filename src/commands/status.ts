@@ -33,7 +33,7 @@ export async function status(): Promise<void> {
         }
         console.log(`   Updated: ${Math.round(age / 1000)}s ago`);
         if (fs.existsSync(logFile)) {
-          console.log(`   Log: tail -f "${logFile}"`);
+          console.log(`   Log: succ daemon logs`);
         }
         console.log();
       } else if (progress.status === 'completed') {
@@ -53,7 +53,7 @@ export async function status(): Promise<void> {
       console.log('📊 Background analysis may be running');
       console.log(`   Log file: ${logFile}`);
       console.log(`   Last update: ${Math.round(logAge / 1000)}s ago`);
-      console.log(`   Check: tail -f "${logFile}"`);
+      console.log(`   Check: succ daemon logs`);
       console.log();
     }
   }

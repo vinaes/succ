@@ -112,6 +112,7 @@ async function extractWithClaudeCLI(prompt: string, model: string): Promise<Extr
   return new Promise((resolve) => {
     const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
     });
 
     proc.stdin?.write(prompt);

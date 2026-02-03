@@ -11,10 +11,10 @@
  * - Questions about past: "why did we", "what was decided", "last time"
  * - Context requests: "bring me up to speed", "background on"
  *
- * Uses cross-spawn for cross-platform compatibility without shell
+ * Uses execFileSync for security (no shell injection)
  */
 
-const spawn = require('cross-spawn');
+const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -27,7 +27,7 @@ process.stdin.on('readable', () => {
   }
 });
 
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const hookInput = JSON.parse(input);
     let projectDir = hookInput.cwd || process.cwd();
@@ -37,18 +37,49 @@ process.stdin.on('end', () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    // Signal user activity to idle watcher
+    const tmpDir = path.join(projectDir, '.succ', '.tmp');
+
+    // Get session_id from transcript_path (unique per session)
+    const transcriptPath = hookInput.transcript_path || '';
+    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
+
+    // Read daemon port
+    let daemonPort = null;
     try {
-      const tmpDir = path.join(projectDir, '.succ', '.tmp');
-      if (fs.existsSync(tmpDir)) {
-        fs.writeFileSync(path.join(tmpDir, 'last-user-prompt.txt'), Date.now().toString());
+      const portFile = path.join(tmpDir, 'daemon.port');
+      if (fs.existsSync(portFile)) {
+        daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
       }
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
+
+    // Check if this is a service session (e.g., reflection subagent)
+    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+    // Notify daemon of user activity (awaited)
+    const notifyDaemon = async () => {
+      if (!daemonPort || !sessionId) return;
+
+      try {
+        await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            type: 'user_prompt',
+            transcript_path: transcriptPath,
+            is_service: isServiceSession,
+          }),
+          signal: AbortSignal.timeout(2000),
+        });
+      } catch {}
+    };
+
+    // Start daemon notification
+    const daemonPromise = notifyDaemon();
 
     const prompt = hookInput.prompt || hookInput.message || '';
     if (!prompt || prompt.length < 5) {
+      await daemonPromise;
       process.exit(0);
     }
 
@@ -79,6 +110,7 @@ process.stdin.on('end', () => {
     const isMemorySeeking = memorySeekingPatterns.some((p) => p.test(promptLower));
 
     if (!isExplicitMemoryCommand && !isMemorySeeking) {
+      await daemonPromise;
       process.exit(0);
     }
 
@@ -101,6 +133,7 @@ process.stdin.on('end', () => {
     const searchQuery = words.slice(0, 6).join(' ');
 
     if (!searchQuery || searchQuery.length < 3) {
+      await daemonPromise;
       process.exit(0);
     }
 
@@ -108,7 +141,7 @@ process.stdin.on('end', () => {
     const contextParts = [];
 
     try {
-      const result = spawn.sync(
+      const result = execFileSync(
         'npx',
         ['succ', 'memories', '--search', searchQuery, '--limit', '3'],
         {
@@ -116,11 +149,12 @@ process.stdin.on('end', () => {
           encoding: 'utf8',
           timeout: 5000,
           stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
         }
       );
 
-      if (result.stdout && result.stdout.trim() && !result.stdout.includes('No memories found')) {
-        contextParts.push(result.stdout.trim());
+      if (result.trim() && !result.includes('No memories found')) {
+        contextParts.push(result.trim());
       }
     } catch {
       // Memory search failed
@@ -129,7 +163,7 @@ process.stdin.on('end', () => {
     // For explicit commands, also search brain vault
     if (isExplicitMemoryCommand) {
       try {
-        const brainResult = spawn.sync(
+        const brainResult = execFileSync(
           'npx',
           ['succ', 'search', searchQuery, '--limit', '2'],
           {
@@ -137,11 +171,12 @@ process.stdin.on('end', () => {
             encoding: 'utf8',
             timeout: 5000,
             stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true,
           }
         );
 
-        if (brainResult.stdout && brainResult.stdout.trim() && !brainResult.stdout.includes('No results')) {
-          contextParts.push('\n--- From Knowledge Base ---\n' + brainResult.stdout.trim());
+        if (brainResult.trim() && !brainResult.includes('No results')) {
+          contextParts.push('\n--- From Knowledge Base ---\n' + brainResult.trim());
         }
       } catch {
         // Brain search failed
@@ -159,6 +194,7 @@ process.stdin.on('end', () => {
       console.log(JSON.stringify(output));
     }
 
+    await daemonPromise;
     process.exit(0);
   } catch (err) {
     process.exit(0);

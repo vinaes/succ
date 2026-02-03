@@ -25,6 +25,7 @@ import { stats } from './commands/stats.js';
 import { retention } from './commands/retention.js';
 import { checkpoint } from './commands/checkpoint.js';
 import { score } from './commands/score.js';
+import { daemon } from './commands/daemon.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -81,38 +82,12 @@ program
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
   .option('--local', 'Use local LLM API (Ollama, LM Studio, llama.cpp)')
   .option('--background', 'Run analysis in background (detached process)')
-  .option('--daemon', 'Start daemon (continuous background analysis)')
-  .option('--stop', 'Stop daemon')
-  .option('--status', 'Show daemon status')
-  .option('--daemon-worker', 'Internal: run daemon worker')
-  .option('--interval <minutes>', 'Interval for daemon mode in minutes', '30')
   .action(async (options) => {
-    // Import daemon control functions
-    const { stopAnalyzeDaemon, analyzeDaemonStatus, runDaemonWorker } = await import('./commands/analyze.js');
-
-    if (options.stop) {
-      await stopAnalyzeDaemon();
-      return;
-    }
-
-    if (options.status) {
-      await analyzeDaemonStatus();
-      return;
-    }
-
-    if (options.daemonWorker) {
-      // Internal: called by daemon process
-      await runDaemonWorker(parseInt(options.interval, 10), options.openrouter || options.local);
-      return;
-    }
-
     analyze({
       parallel: !options.sequential,
       openrouter: options.openrouter,
       local: options.local,
       background: options.background,
-      daemon: options.daemon,
-      interval: parseInt(options.interval, 10),
     });
   });
 
@@ -135,12 +110,10 @@ program
   .description('Watch for file changes and auto-reindex (docs + code by default)')
   .option('--pattern <glob>', 'File pattern to match for docs', '**/*.md')
   .option('--ignore-code', 'Skip watching source code files (watch docs only)')
-  .option('--daemon', 'Start as background daemon')
-  .option('--stop', 'Stop watch daemon')
-  .option('--status', 'Show watch daemon status')
-  .option('--daemon-worker', 'Internal: run daemon worker')
+  .option('--stop', 'Stop watch service')
+  .option('--status', 'Show watch service status')
   .action(async (targetPath, options) => {
-    const { stopWatchDaemon, watchDaemonStatus, runWatchDaemonWorker } = await import('./commands/watch.js');
+    const { stopWatchDaemon, watchDaemonStatus } = await import('./commands/watch.js');
 
     if (options.stop) {
       await stopWatchDaemon();
@@ -155,15 +128,8 @@ program
     // Code watching is ON by default, --ignore-code turns it off
     const includeCode = !options.ignoreCode;
 
-    if (options.daemonWorker) {
-      // Internal: called by daemon process
-      await runWatchDaemonWorker(targetPath, options.pattern, includeCode);
-      return;
-    }
-
     watch(targetPath, {
       pattern: options.pattern,
-      daemon: options.daemon,
       includeCode,
     });
   });
@@ -478,6 +444,22 @@ program
   .action((options) => {
     score({
       json: options.json,
+    });
+  });
+
+program
+  .command('daemon [subcommand]')
+  .description('Manage the succ daemon (status, sessions, start, stop, logs)')
+  .option('--json', 'Output as JSON')
+  .option('--force', 'Force stop even if sessions active')
+  .option('--lines <number>', 'Number of log lines to show', '50')
+  .option('--all', 'Include service sessions in list')
+  .action((subcommand, options) => {
+    daemon(subcommand || 'status', {
+      json: options.json,
+      force: options.force,
+      lines: parseInt(options.lines, 10),
+      all: options.all,
     });
   });
 

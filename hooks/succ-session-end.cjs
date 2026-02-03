@@ -10,7 +10,7 @@
  * Uses process.execPath to find node and handles cross-platform paths
  */
 
-const spawn = require('cross-spawn');
+const { spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -33,22 +33,48 @@ process.stdin.on('end', () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    // Signal idle watcher to shutdown by removing active file
+    // Unregister session from daemon (triggers final reflection)
+    const tmpDir = path.join(projectDir, '.succ', '.tmp');
+    const portFile = path.join(tmpDir, 'daemon.port');
+
+    // Get session_id from transcript_path (unique per session)
+    const transcriptPath = hookInput.transcript_path || '';
+    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
+
+    // Read daemon port
+    let daemonPort = null;
     try {
-      const watcherActiveFile = path.join(projectDir, '.succ', '.tmp', 'watcher-active.txt');
-      if (fs.existsSync(watcherActiveFile)) {
-        fs.unlinkSync(watcherActiveFile);
+      if (fs.existsSync(portFile)) {
+        daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
       }
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
+
+    // Async function to unregister from daemon
+    const unregisterFromDaemon = async () => {
+      if (!sessionId || !daemonPort) return;
+
+      try {
+        await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, run_reflection: true }),
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch {
+        // Daemon communication failed
+      }
+    };
+
+    // Start daemon unregistration (will complete async)
+    const daemonUnregisterPromise = unregisterFromDaemon();
 
     // SessionEnd hook receives: { transcript_summary, ... }
     const summary = hookInput.transcript_summary || hookInput.session_summary;
 
     if (!summary || summary.length < 50) {
-      // Session too short or no summary, skip
-      process.exit(0);
+      // Session too short or no summary - still unregister from daemon, then exit
+      daemonUnregisterPromise.finally(() => process.exit(0));
+      return;
     }
 
     // Extract key info from session
@@ -83,7 +109,7 @@ process.stdin.on('end', () => {
 
     // 1. Save to SQLite memory via succ
     try {
-      spawn.sync('npx', [
+      spawnSync('npx', [
         'succ',
         'remember',
         memoryContent,
@@ -94,6 +120,8 @@ process.stdin.on('end', () => {
         encoding: 'utf8',
         timeout: 30000,
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
+        windowsHide: true,
       });
     } catch {
       // Failed to save to memory, continue
@@ -122,7 +150,10 @@ Keep each bullet concise (1-2 sentences max).`;
 
       const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
         cwd: projectDir,
+        windowsHide: true,
+        env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
       });
 
       proc.stdin.write(learningsPrompt);
@@ -160,7 +191,7 @@ Keep each bullet concise (1-2 sentences max).`;
       finishHook();
     }
 
-    function finishHook() {
+    async function finishHook() {
       // 3. Create session note in Inbox
       if (fs.existsSync(inboxDir)) {
         try {
@@ -197,6 +228,8 @@ ${content}
         }
       }
 
+      // Wait for daemon unregistration to complete before exiting
+      await daemonUnregisterPromise;
       process.exit(0);
     }
   } catch (err) {
