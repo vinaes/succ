@@ -38,6 +38,8 @@ export interface SuccConfig {
   // Sensitive info filter settings
   sensitive_filter_enabled?: boolean;  // Enable sensitive info detection (default: true)
   sensitive_auto_redact?: boolean;  // Auto-redact sensitive info without prompting (default: false)
+  // Consolidation settings
+  consolidation_llm_default?: boolean;  // Use LLM merge by default in consolidate (default: true)
   // Idle reflection settings (sleep-time compute)
   idle_reflection?: IdleReflectionConfig;
   // Idle watcher settings (smart activity-based reflections)
@@ -50,6 +52,17 @@ export interface SuccConfig {
   temporal?: TemporalConfig;
   // Daemon settings (unified service)
   daemon?: DaemonConfig;
+  // Compact briefing settings (context after /compact)
+  compact_briefing?: CompactBriefingConfig;
+}
+
+export interface CompactBriefingConfig {
+  enabled?: boolean;  // Enable compact briefing (default: true)
+  format?: 'structured' | 'prose' | 'minimal';  // Output format (default: 'structured')
+  model?: 'haiku' | 'sonnet' | 'opus';  // Claude model for generation (default: 'haiku')
+  include_learnings?: boolean;  // Include extracted learnings (default: true)
+  include_memories?: boolean;  // Include relevant memories (default: true)
+  max_memories?: number;  // Max relevant memories to include (default: 3)
 }
 
 export interface DaemonConfig {
@@ -187,6 +200,16 @@ export const DEFAULT_SLEEP_AGENT_CONFIG = {
   },
 };
 
+// Default compact briefing config
+export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = {
+  enabled: true,
+  format: 'structured',
+  model: 'haiku',
+  include_learnings: true,
+  include_memories: true,
+  max_memories: 3,
+};
+
 // Default idle reflection config
 export const DEFAULT_IDLE_REFLECTION_CONFIG = {
   enabled: true,
@@ -308,6 +331,21 @@ export function getProjectRoot(): string {
 
 export function getSuccDir(): string {
   return path.join(getProjectRoot(), '.succ');
+}
+
+/**
+ * Check if succ is initialized in current project
+ */
+export function isProjectInitialized(): boolean {
+  const succDir = getSuccDir();
+  return fs.existsSync(succDir) && fs.existsSync(path.join(succDir, 'succ.db'));
+}
+
+/**
+ * Check if only global memory is available (no project .succ/)
+ */
+export function isGlobalOnlyMode(): boolean {
+  return !isProjectInitialized();
 }
 
 // Legacy alias for backwards compatibility
@@ -439,6 +477,23 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     },
     max_memories_to_process: userConfig.max_memories_to_process ?? DEFAULT_IDLE_REFLECTION_CONFIG.max_memories_to_process,
     timeout_seconds: userConfig.timeout_seconds ?? DEFAULT_IDLE_REFLECTION_CONFIG.timeout_seconds,
+  };
+}
+
+/**
+ * Get compact briefing configuration with defaults
+ */
+export function getCompactBriefingConfig(): Required<CompactBriefingConfig> {
+  const config = getConfig();
+  const userConfig = config.compact_briefing || {};
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_COMPACT_BRIEFING_CONFIG.enabled,
+    format: userConfig.format ?? DEFAULT_COMPACT_BRIEFING_CONFIG.format,
+    model: userConfig.model ?? DEFAULT_COMPACT_BRIEFING_CONFIG.model,
+    include_learnings: userConfig.include_learnings ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_learnings,
+    include_memories: userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
+    max_memories: userConfig.max_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.max_memories,
   };
 }
 

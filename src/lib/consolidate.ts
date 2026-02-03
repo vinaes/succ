@@ -21,9 +21,10 @@ import {
   createMemoryLink,
   LinkRelation,
 } from './db.js';
-import { cosineSimilarity } from './embeddings.js';
-import { getIdleReflectionConfig, getConfig } from './config.js';
+import { cosineSimilarity, getEmbedding } from './embeddings.js';
+import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
+import spawn from 'cross-spawn';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -320,10 +321,11 @@ export async function executeConsolidation(
   options: {
     dryRun?: boolean;
     mergeWithLLM?: boolean;
+    llmOptions?: LLMMergeOptions;
     onProgress?: (current: number, total: number, action: string) => void;
   } = {}
 ): Promise<ConsolidationResult> {
-  const { dryRun = false, mergeWithLLM = false, onProgress } = options;
+  const { dryRun = false, mergeWithLLM = false, llmOptions, onProgress } = options;
 
   const result: ConsolidationResult = {
     candidatesFound: candidates.length,
@@ -358,20 +360,8 @@ export async function executeConsolidation(
         result.deleted++;
       } else if (candidate.action === 'merge') {
         if (!dryRun) {
-          if (mergeWithLLM) {
-            // TODO: Use LLM to merge content intelligently
-            // For now, just concatenate
-            await mergeMemories(candidate.memory1, candidate.memory2);
-          } else {
-            // Simple merge: keep higher quality, delete other
-            const q1 = candidate.memory1.quality_score ?? 0.5;
-            const q2 = candidate.memory2.quality_score ?? 0.5;
-            const keepId = q1 >= q2 ? candidate.memory1.id : candidate.memory2.id;
-            const deleteId = q1 >= q2 ? candidate.memory2.id : candidate.memory1.id;
-
-            transferLinks(deleteId, keepId);
-            deleteMemory(deleteId);
-          }
+          // Use LLM merge if enabled, otherwise simple merge
+          await mergeMemories(candidate.memory1, candidate.memory2, mergeWithLLM, llmOptions);
         }
         result.merged++;
       } else {
@@ -425,29 +415,324 @@ function transferLinks(fromId: number, toId: number): void {
   }
 }
 
+// ============================================================================
+// LLM-based Memory Merge
+// ============================================================================
+
 /**
- * Merge two memories into one (simple concatenation)
- * TODO: Add LLM-based intelligent merging
- * NOTE: When implementing LLM merge, use scanSensitive() to check merged content
- *       before saving. If sensitive_auto_redact is true, redact; otherwise skip.
+ * LLM merge configuration options
+ */
+export interface LLMMergeOptions {
+  mode: 'claude' | 'local' | 'openrouter';
+  model?: string;
+  apiUrl?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}
+
+/**
+ * Prompt for merging two memories
+ */
+const MERGE_PROMPT = `You are merging two similar memory entries into one unified memory.
+
+Memory 1: "{memory1}"
+Memory 2: "{memory2}"
+
+Rules:
+1. Preserve ALL unique information from both memories
+2. Remove redundancy and repetition
+3. Keep it concise (1-2 sentences maximum)
+4. Maintain factual accuracy - do not add information not present in the originals
+5. Use clear, professional language
+
+Output ONLY the merged memory text, nothing else.`;
+
+/**
+ * Call Claude CLI for memory merge
+ */
+async function mergeWithClaudeCLI(
+  prompt: string,
+  model: string = 'haiku',
+  timeoutMs: number = 30000
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true,
+      windowsHide: true,
+      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+    });
+
+    let stdout = '';
+
+    proc.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    proc.on('close', (code: number) => {
+      if (code === 0 && stdout.trim()) {
+        resolve(stdout.trim());
+      } else {
+        resolve(null);
+      }
+    });
+
+    proc.on('error', () => {
+      resolve(null);
+    });
+
+    proc.stdin?.write(prompt);
+    proc.stdin?.end();
+
+    setTimeout(() => {
+      proc.kill();
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
+/**
+ * Call local LLM API (Ollama, LM Studio) for memory merge
+ */
+async function mergeWithLocalAPI(
+  prompt: string,
+  apiUrl: string,
+  model: string
+): Promise<string | null> {
+  try {
+    const response = await fetch(`${apiUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You merge similar memory entries into one concise unified memory. Output only the merged text.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    return content?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Call OpenRouter API for memory merge
+ */
+async function mergeWithOpenRouter(
+  prompt: string,
+  apiKey: string,
+  model: string
+): Promise<string | null> {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://github.com/anthropics/succ',
+        'X-Title': 'succ - Memory Consolidation',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You merge similar memory entries into one concise unified memory. Output only the merged text.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    return content?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge two memory contents using LLM
+ */
+export async function llmMergeContent(
+  content1: string,
+  content2: string,
+  options: LLMMergeOptions
+): Promise<string | null> {
+  const prompt = MERGE_PROMPT.replace('{memory1}', content1).replace('{memory2}', content2);
+
+  if (options.mode === 'claude') {
+    return mergeWithClaudeCLI(prompt, options.model || 'haiku', options.timeoutMs || 30000);
+  } else if (options.mode === 'local') {
+    if (!options.apiUrl || !options.model) {
+      return null;
+    }
+    return mergeWithLocalAPI(prompt, options.apiUrl, options.model);
+  } else if (options.mode === 'openrouter') {
+    if (!options.apiKey || !options.model) {
+      return null;
+    }
+    return mergeWithOpenRouter(prompt, options.apiKey, options.model);
+  }
+
+  return null;
+}
+
+/**
+ * Get LLM merge options from config
+ */
+export function getLLMMergeOptionsFromConfig(): LLMMergeOptions {
+  const config = getConfig();
+  const reflectionConfig = getIdleReflectionConfig();
+
+  // Check if sleep agent is configured for memory consolidation
+  const sleepAgent = reflectionConfig.sleep_agent;
+  if (sleepAgent?.enabled && sleepAgent.handle_operations?.memory_consolidation) {
+    if (sleepAgent.mode === 'local' && sleepAgent.api_url && sleepAgent.model) {
+      return {
+        mode: 'local',
+        model: sleepAgent.model,
+        apiUrl: sleepAgent.api_url,
+      };
+    } else if (sleepAgent.mode === 'openrouter') {
+      return {
+        mode: 'openrouter',
+        model: sleepAgent.model || 'anthropic/claude-3-haiku',
+        apiKey: sleepAgent.api_key || config.openrouter_api_key,
+      };
+    }
+  }
+
+  // Check analyze mode settings
+  if (config.analyze_mode === 'local' && config.analyze_api_url && config.analyze_model) {
+    return {
+      mode: 'local',
+      model: config.analyze_model,
+      apiUrl: config.analyze_api_url,
+    };
+  } else if (config.analyze_mode === 'openrouter' && config.openrouter_api_key) {
+    return {
+      mode: 'openrouter',
+      model: config.analyze_model || 'anthropic/claude-3-haiku',
+      apiKey: config.openrouter_api_key,
+    };
+  }
+
+  // Default to Claude CLI with haiku
+  return {
+    mode: 'claude',
+    model: reflectionConfig.agent_model || 'haiku',
+  };
+}
+
+/**
+ * Merge two memories into one
+ * Supports simple merge (keep best) or LLM-based intelligent merge
  */
 async function mergeMemories(
   m1: Memory & { embedding: number[] },
-  m2: Memory & { embedding: number[] }
+  m2: Memory & { embedding: number[] },
+  useLLM: boolean = false,
+  llmOptions?: LLMMergeOptions
 ): Promise<number> {
-  // Simple strategy: keep the one with higher quality, delete the other
-  // No new content is created, so sensitive filter not needed here
   const q1 = m1.quality_score ?? 0.5;
   const q2 = m2.quality_score ?? 0.5;
 
-  const keep = q1 >= q2 ? m1 : m2;
-  const merge = q1 >= q2 ? m2 : m1;
+  if (!useLLM) {
+    // Simple strategy: keep the one with higher quality, delete the other
+    const keep = q1 >= q2 ? m1 : m2;
+    const merge = q1 >= q2 ? m2 : m1;
 
-  // For now, just transfer links and delete the lower quality one
-  transferLinks(merge.id, keep.id);
-  deleteMemory(merge.id);
+    transferLinks(merge.id, keep.id);
+    deleteMemory(merge.id);
 
-  return keep.id;
+    return keep.id;
+  }
+
+  // LLM-based merge
+  const options = llmOptions || getLLMMergeOptionsFromConfig();
+  const mergedContent = await llmMergeContent(m1.content, m2.content, options);
+
+  if (!mergedContent) {
+    // Fallback to simple merge if LLM fails
+    const keep = q1 >= q2 ? m1 : m2;
+    const merge = q1 >= q2 ? m2 : m1;
+
+    transferLinks(merge.id, keep.id);
+    deleteMemory(merge.id);
+
+    return keep.id;
+  }
+
+  // Check for sensitive info in merged content
+  const config = getConfig();
+  let finalContent = mergedContent;
+
+  if (config.sensitive_filter_enabled !== false) {
+    const scanResult = scanSensitive(mergedContent);
+    if (scanResult.hasSensitive) {
+      if (config.sensitive_auto_redact) {
+        finalContent = scanResult.redactedText;
+      } else {
+        // Skip LLM merge if it contains sensitive info and auto-redact is off
+        // Fall back to simple merge
+        const keep = q1 >= q2 ? m1 : m2;
+        const merge = q1 >= q2 ? m2 : m1;
+
+        transferLinks(merge.id, keep.id);
+        deleteMemory(merge.id);
+
+        return keep.id;
+      }
+    }
+  }
+
+  // Generate new embedding for merged content
+  const newEmbedding = await getEmbedding(finalContent);
+
+  // Merge tags from both memories
+  const combinedTags = [...new Set([...m1.tags, ...m2.tags])];
+
+  // Save new memory with merged content
+  const result = saveMemory(finalContent, newEmbedding, combinedTags, 'consolidation-llm', {
+    deduplicate: false, // We're consolidating, not deduping
+    autoLink: true,
+    qualityScore: {
+      score: Math.max(q1, q2), // Keep best quality score
+      factors: { merged_from: 2 },
+    },
+  });
+
+  // Transfer links from both memories to the new one
+  transferLinks(m1.id, result.id);
+  transferLinks(m2.id, result.id);
+
+  // Delete both original memories
+  deleteMemory(m1.id);
+  deleteMemory(m2.id);
+
+  return result.id;
 }
 
 /**
@@ -458,8 +743,10 @@ export async function consolidateMemories(options: {
   threshold?: number;
   maxCandidates?: number;
   verbose?: boolean;
+  useLLM?: boolean;
+  llmOptions?: LLMMergeOptions;
 }): Promise<ConsolidationResult> {
-  const { dryRun = false, threshold, maxCandidates, verbose = false } = options;
+  const { dryRun = false, threshold, maxCandidates, verbose = false, useLLM = false, llmOptions } = options;
 
   if (verbose) {
     console.log('Finding consolidation candidates...');
@@ -479,10 +766,17 @@ export async function consolidateMemories(options: {
         console.log(`    ${c.reason}`);
       }
     }
+
+    if (useLLM) {
+      const mergeOpts = llmOptions || getLLMMergeOptionsFromConfig();
+      console.log(`\nLLM merge enabled: ${mergeOpts.mode} (${mergeOpts.model || 'default'})`);
+    }
   }
 
   const result = await executeConsolidation(candidates, {
     dryRun,
+    mergeWithLLM: useLLM,
+    llmOptions: llmOptions || (useLLM ? getLLMMergeOptionsFromConfig() : undefined),
     onProgress: verbose
       ? (current, total, action) => {
           process.stdout.write(`\rProcessing ${current}/${total}: ${action}...`);
@@ -493,7 +787,7 @@ export async function consolidateMemories(options: {
   if (verbose) {
     console.log('\n\nConsolidation complete:');
     console.log(`  Candidates found: ${result.candidatesFound}`);
-    console.log(`  Merged: ${result.merged}`);
+    console.log(`  Merged: ${result.merged}${useLLM ? ' (LLM)' : ''}`);
     console.log(`  Deleted: ${result.deleted}`);
     console.log(`  Kept (linked): ${result.kept}`);
     if (result.errors.length > 0) {
