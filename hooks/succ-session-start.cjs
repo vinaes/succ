@@ -301,9 +301,29 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Generate compact briefing if this is a compact event (replaces recent-memories)
-    // Skip for service sessions (reflection subagents) - they shouldn't trigger compact briefing
+    // Skip for service sessions (reflection subagents)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+    // IMPORTANT: Create compact-pending flag FIRST (before any slow operations)
+    // This ensures fallback context is available even if hook times out during briefing
+    // Hook timeout is 10s, briefing can take 60s+ → would block flag creation
+    if (isCompactEvent && !isServiceSession) {
+      const compactPendingFile = path.join(succDir, '.tmp', 'compact-pending');
+      try {
+        if (!fs.existsSync(path.join(succDir, '.tmp'))) {
+          fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
+        }
+        // Store the full context that should be injected (without briefing, that comes later)
+        const contextForFallback = contextParts.join('\n\n');
+        fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
+        log(succDir, `Created compact-pending flag (${contextForFallback.length} chars)`);
+      } catch (err) {
+        log(succDir, `Failed to create compact-pending: ${err.message || err}`);
+      }
+    }
+
+    // Generate compact briefing (slow operation - may timeout)
+    // Even if this times out, we have the compact-pending fallback above
     if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
       log(succDir, `Generating compact briefing for ${hookInput.transcript_path}`);
       try {
@@ -311,7 +331,7 @@ Co-Authored-By order (succ always LAST):
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
-          signal: AbortSignal.timeout(60000), // Allow up to 60s for LLM generation
+          signal: AbortSignal.timeout(8000), // 8s timeout - must complete before 10s hook timeout
         });
         if (response.ok) {
           const result = await response.json();
@@ -327,23 +347,6 @@ Co-Authored-By order (succ always LAST):
       } catch (err) {
         log(succDir, `Briefing exception: ${err.message || err}`);
         // Briefing generation failed, continue without it
-      }
-    }
-
-    // Create compact-pending flag for UserPromptSubmit fallback
-    // This ensures context is injected even if SessionStart output is lost
-    if (isCompactEvent && !isServiceSession) {
-      const compactPendingFile = path.join(succDir, '.tmp', 'compact-pending');
-      try {
-        if (!fs.existsSync(path.join(succDir, '.tmp'))) {
-          fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
-        }
-        // Store the full context that should be injected
-        const contextForFallback = contextParts.join('\n\n');
-        fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
-        log(succDir, `Created compact-pending flag (${contextForFallback.length} chars)`);
-      } catch (err) {
-        log(succDir, `Failed to create compact-pending: ${err.message || err}`);
       }
     }
 
