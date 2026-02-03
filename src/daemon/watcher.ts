@@ -229,12 +229,12 @@ export async function startWatcher(
 
   const patterns = config.patterns || ['**/*.md'];
   const includeCode = config.includeCode ?? false;
-  const debounceMs = config.debounceMs ?? 500;
+  const debounceMs = config.debounceMs ?? 5000; // 5 seconds debounce per file
 
   const pending = new Map<string, NodeJS.Timeout>();
   const pendingBatch = new Map<string, { event: Event; fileType: 'code' | 'doc'; relativePath: string }>();
   let batchTimer: NodeJS.Timeout | null = null;
-  const BATCH_FLUSH_MS = 500; // Collect events for 500ms before processing
+  const BATCH_FLUSH_MS = 2000; // Collect events for 2s before processing batch
 
   // Process batch of files in parallel
   const flushBatch = async () => {

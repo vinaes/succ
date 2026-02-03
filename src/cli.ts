@@ -14,6 +14,7 @@ import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
 import { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } from './commands/benchmark.js';
 import { benchmarkQuality } from './commands/benchmark-quality.js';
+import { benchmarkSqliteVec } from './commands/benchmark-sqlite-vec.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
 import { graph } from './commands/graph.js';
@@ -308,6 +309,24 @@ program
       openrouter: options.openrouter,
       models: options.models,
       ollamaUrl: options.ollamaUrl,
+    });
+  });
+
+program
+  .command('benchmark-vec')
+  .description('Compare brute-force vs sqlite-vec indexed vector search')
+  .option('--sizes <sizes>', 'Vector counts to test (comma-separated)', '100,500,1000,5000')
+  .option('-q, --queries <number>', 'Number of queries per size', '50')
+  .option('-k <number>', 'Top-K results to retrieve', '10')
+  .option('-m, --model <model>', 'Local embedding model')
+  .option('--json', 'Output results as JSON')
+  .action((options) => {
+    benchmarkSqliteVec({
+      sizes: options.sizes.split(',').map((s: string) => parseInt(s, 10)),
+      queries: parseInt(options.queries, 10),
+      k: parseInt(options.k, 10),
+      model: options.model,
+      json: options.json,
     });
   });
 
