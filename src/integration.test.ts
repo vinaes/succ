@@ -143,7 +143,7 @@ describe('Integration Tests', () => {
     });
   });
 
-  describe('Analyze Daemon', { timeout: INTEGRATION_TIMEOUT }, () => {
+  describe('Unified Daemon', { timeout: INTEGRATION_TIMEOUT }, () => {
     let tempDir: string;
     let originalCwd: string;
 
@@ -158,6 +158,7 @@ describe('Integration Tests', () => {
         JSON.stringify({ name: 'test-project', version: '1.0.0' })
       );
       fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, '.succ'), { recursive: true });
 
       // Initialize git repo
       try {
@@ -177,7 +178,7 @@ describe('Integration Tests', () => {
       // Clean up
       if (fs.existsSync(tempDir)) {
         // Stop any running daemon
-        const pidFile = path.join(tempDir, '.claude', 'daemon.pid');
+        const pidFile = path.join(tempDir, '.succ', '.tmp', 'daemon.pid');
         if (fs.existsSync(pidFile)) {
           try {
             const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
@@ -191,24 +192,24 @@ describe('Integration Tests', () => {
     });
 
     it('should show daemon status when not running', () => {
-      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--status'], {
+      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'status'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
       });
 
       expect(result.stdout).toContain('Daemon Status');
-      expect(result.stdout).toContain('Stopped');
+      expect(result.stdout).toContain('Not running');
     });
 
-    it('should handle --stop when not running', () => {
-      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'analyze', '--stop'], {
+    it('should handle stop when not running', () => {
+      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'stop'], {
         encoding: 'utf-8',
         cwd: tempDir,
         timeout: 30000,
       });
 
-      expect(result.stdout).toContain('No daemon running');
+      expect(result.stdout).toContain('not running');
     });
   });
 

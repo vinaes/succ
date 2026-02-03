@@ -254,13 +254,18 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
 
   // Batch processing - transformers.js supports arrays natively
   // Process in smaller batches to avoid memory issues
+  // Use concurrent batch processing for better performance
   const BATCH_SIZE = 16;
-  const results: number[][] = [];
+  const CONCURRENT_BATCHES = 2; // Process 2 batches in parallel
 
+  // Split texts into batches
+  const batches: string[][] = [];
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
+    batches.push(texts.slice(i, i + BATCH_SIZE));
+  }
 
-    // Process batch with error handling for individual items
+  // Process batch helper
+  const processBatch = async (batch: string[], startIndex: number): Promise<number[][]> => {
     const batchResults = await Promise.allSettled(
       batch.map(async (text) => {
         const output = await pipe(text, { pooling: 'mean', normalize: true });
@@ -268,15 +273,28 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
       })
     );
 
-    for (const [idx, result] of batchResults.entries()) {
+    return batchResults.map((result, idx) => {
       if (result.status === 'rejected') {
-        console.warn(`Failed to embed text at index ${i + idx}: ${result.reason}`);
-        // Use zero vector as fallback (will have low similarity scores)
+        console.warn(`Failed to embed text at index ${startIndex + idx}: ${result.reason}`);
         const expectedDim = getModelDimension(config.embedding_model) || 384;
-        results.push(new Array(expectedDim).fill(0));
-      } else {
-        results.push(result.value);
+        return new Array(expectedDim).fill(0);
       }
+      return result.value;
+    });
+  };
+
+  // Process batches concurrently
+  const results: number[][] = [];
+  for (let i = 0; i < batches.length; i += CONCURRENT_BATCHES) {
+    const concurrentBatches = batches.slice(i, i + CONCURRENT_BATCHES);
+    const startIndices = concurrentBatches.map((_, idx) => (i + idx) * BATCH_SIZE);
+
+    const batchResults = await Promise.all(
+      concurrentBatches.map((batch, idx) => processBatch(batch, startIndices[idx]))
+    );
+
+    for (const batchResult of batchResults) {
+      results.push(...batchResult);
     }
   }
 

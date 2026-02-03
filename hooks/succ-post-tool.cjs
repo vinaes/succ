@@ -11,7 +11,7 @@
  * Uses execFileSync for security (no shell injection)
  */
 
-const spawn = require('cross-spawn');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -43,10 +43,10 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // Helper to call succ CLI (cross-spawn for cross-platform without shell)
+    // Helper to call succ CLI
     const succRemember = (content, tags) => {
       try {
-        spawn.sync('npx', [
+        execFileSync('npx', [
           'succ', 'remember',
           content,
           '--tags', tags,
@@ -56,6 +56,7 @@ process.stdin.on('end', () => {
           encoding: 'utf8',
           timeout: 5000,
           stdio: ['pipe', 'pipe', 'pipe'],
+          shell: true,
         });
       } catch {}
     };

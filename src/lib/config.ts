@@ -48,6 +48,24 @@ export interface SuccConfig {
   retention?: RetentionPolicyConfig;
   // Temporal awareness settings (time-weighted scoring)
   temporal?: TemporalConfig;
+  // Daemon settings (unified service)
+  daemon?: DaemonConfig;
+}
+
+export interface DaemonConfig {
+  enabled?: boolean;  // Enable daemon (default: true)
+  port_range_start?: number;  // Starting port to try (default: 37842)
+  watch?: {
+    auto_start?: boolean;  // Auto-start watch service (default: false)
+    patterns?: string[];  // Patterns to watch (default: ['**/*.md'])
+    include_code?: boolean;  // Also watch code files (default: false)
+    debounce_ms?: number;  // Debounce interval (default: 500)
+  };
+  analyze?: {
+    auto_start?: boolean;  // Auto-start analyze service (default: false)
+    interval_minutes?: number;  // Analysis interval (default: 30)
+    mode?: 'claude' | 'openrouter' | 'local';  // Analysis mode (default: 'claude')
+  };
 }
 
 export interface RetentionPolicyConfig {
@@ -89,6 +107,7 @@ export interface IdleWatcherConfig {
   idle_minutes?: number;  // Minutes of inactivity before reflection (default: 2)
   check_interval?: number;  // Seconds between activity checks (default: 30)
   min_conversation_length?: number;  // Minimum transcript entries before reflecting (default: 5)
+  reflection_cooldown_minutes?: number;  // Minutes between reflections for same session (default: 30)
 }
 
 export interface IdleReflectionConfig {
@@ -139,6 +158,7 @@ export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
   idle_minutes: 2,
   check_interval: 30,
   min_conversation_length: 5,
+  reflection_cooldown_minutes: 30,
 };
 
 // Default retention policy config
@@ -353,6 +373,7 @@ export function getIdleWatcherConfig(): Required<IdleWatcherConfig> {
     idle_minutes: userConfig.idle_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.idle_minutes,
     check_interval: userConfig.check_interval ?? DEFAULT_IDLE_WATCHER_CONFIG.check_interval,
     min_conversation_length: userConfig.min_conversation_length ?? DEFAULT_IDLE_WATCHER_CONFIG.min_conversation_length,
+    reflection_cooldown_minutes: userConfig.reflection_cooldown_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.reflection_cooldown_minutes,
   };
 }
 

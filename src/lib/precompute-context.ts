@@ -177,6 +177,7 @@ async function generateWithClaudeCLI(prompt: string, model: string): Promise<str
   return new Promise((resolve) => {
     const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
     });
 
     proc.stdin?.write(prompt);

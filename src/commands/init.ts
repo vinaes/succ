@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import spawn from 'cross-spawn';
 import { fileURLToPath } from 'url';
 import inquirer from 'inquirer';
 import ora from 'ora';
@@ -29,18 +28,6 @@ interface ConfigData {
   analyze_mode?: 'claude' | 'openrouter' | 'local';
   analyze_api_url?: string;
   analyze_model?: string;
-}
-
-/**
- * Start a daemon process in the background
- */
-function startDaemon(command: string, args: string[], cwd: string): void {
-  const child = spawn(command, args, {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
@@ -156,12 +143,12 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Global install uses hooks from the succ package directory
   if (!useGlobalHooks) {
     // Copy hooks from package hooks/ directory (source of truth)
+    // Note: succ-idle-reflection.cjs and succ-idle-watcher.cjs removed -
+    // all idle operations now handled by unified daemon
     const hooksToCreate = [
       'succ-session-start.cjs',
       'succ-session-end.cjs',
       'succ-stop-reflection.cjs',
-      'succ-idle-reflection.cjs',
-      'succ-idle-watcher.cjs',
       'succ-user-prompt.cjs',
       'succ-post-tool.cjs',
     ];
@@ -571,54 +558,14 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
     console.log(`\nConfiguration saved to ${globalConfigPath}`);
   }
 
-  // Step 3: Start daemons
-  console.log('\n--- Start Services ---\n');
-
-  const { startAnalyze } = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'startAnalyze',
-      message: 'Start analyze daemon? (continuous background analysis)',
-      default: false,
-    },
-  ]);
-
-  if (startAnalyze) {
-    const analyzeArgs = ['analyze', '--daemon'];
-    if (analyzeMode === 'local') {
-      analyzeArgs.push('--local');
-    } else if (analyzeMode === 'openrouter') {
-      analyzeArgs.push('--openrouter');
-    }
-    startDaemon('npx', ['succ', ...analyzeArgs], projectRoot);
-    console.log('  ✓ Analyze daemon started');
-  }
-
-  const { startWatch } = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'startWatch',
-      message: 'Start watch daemon? (auto-reindex on file changes)',
-      default: false,
-    },
-  ]);
-
-  if (startWatch) {
-    startDaemon('npx', ['succ', 'watch', '--daemon'], projectRoot);
-    console.log('  ✓ Watch daemon started');
-  }
-
   // Final message
   console.log('\n--- Done ---\n');
   console.log('succ is ready! Try:');
   console.log('  succ analyze          # Generate brain documentation');
   console.log('  succ index            # Create embeddings');
   console.log('  succ search <query>   # Find relevant content');
-  if (startAnalyze || startWatch) {
-    console.log('\nDaemon status:');
-    if (startAnalyze) console.log('  succ analyze --status');
-    if (startWatch) console.log('  succ watch --status');
-  }
+  console.log('\nThe unified daemon starts automatically when Claude Code session begins.');
+  console.log('Check status: succ daemon status');
 }
 
 /**

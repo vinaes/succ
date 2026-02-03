@@ -11,8 +11,12 @@ dist/
 .succ/next-session-context.md
 .succ/brain/
 .succ/soul.md
+.succ/config.json
+.succ/daemon.log
 
 # MCP config (local)
 .mcp.json
 
-# Hooks are tracked in git (see .succ/hooks/)
+# Hooks source of truth is hooks/ directory
+# .succ/hooks/ is a generated copy for local dev (created by succ init)
+.succ/hooks/

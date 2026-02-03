@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 /**
- * SessionStart Hook - Complete Context Injection
+ * SessionStart Hook - Context Injection
+ *
+ * Best practices applied:
+ * - XML tags for semantic boundaries (<task>, <context>, <tools>)
+ * - Progressive disclosure (index → details via MCP tools)
+ * - Compact format (~100-200 tokens for tools reference)
+ * - Quick decision guide at top
  *
  * Loads:
- * - Git context (branch, uncommitted changes)
- * - Soul document (personality/values)
+ * - Git context (branch, changes)
+ * - succ tools reference (compact)
+ * - Soul document
  * - Previous session context
- * - Recent memories (prioritized by type)
+ * - Recent memories (compact index)
  * - Knowledge base stats
- *
- * Uses execFileSync for security (no shell injection)
  */
 
 const { execFileSync, spawn } = require('child_process');
@@ -41,14 +46,12 @@ process.stdin.on('end', () => {
 
     // Git Context
     try {
-      const gitParts = [];
       const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
         cwd: projectDir,
         encoding: 'utf8',
         timeout: 3000,
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
-      gitParts.push('Branch: ' + branch);
 
       const statusOutput = execFileSync('git', ['status', '--porcelain'], {
         cwd: projectDir,
@@ -57,49 +60,76 @@ process.stdin.on('end', () => {
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
 
-      if (statusOutput) {
-        const changes = statusOutput.split('\n').filter((l) => l.trim());
-        gitParts.push('Uncommitted: ' + changes.length + ' files');
-      }
+      const changes = statusOutput ? statusOutput.split('\n').filter((l) => l.trim()).length : 0;
 
-      if (gitParts.length > 0) {
-        contextParts.push('<git-context>\n' + gitParts.join('\n') + '\n</git-context>');
-      }
+      contextParts.push(`<git branch="${branch}" uncommitted="${changes}" />`);
     } catch {
       // Not a git repo
     }
 
-    // Commit Guidelines (succ attribution)
-    contextParts.push(`<commit-guidelines>
-When making git commits, add succ to the attribution footer.
+    // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
+    contextParts.push(`<succ-tools>
+<decision-guide>
+| Question | Tool |
+|----------|------|
+| How did we solve X? | succ_recall |
+| What do docs say about X? | succ_search |
+| Where is X implemented? | succ_search_code |
+| Find regex pattern | Grep |
+| List files by pattern | Glob |
+</decision-guide>
 
-Format (order matters):
-1. "Generated with" line (Claude Code)
-2. "via" line (if using Happy or other wrapper)
-3. "powered by" line → ADD: powered by [succ](https://succ.ai)
-4. Blank line
-5. All Co-Authored-By lines together → ADD: Co-Authored-By: succ <mindpalace@succ.ai>
+<search note="All use hybrid semantic + BM25 keyword matching. Recent memories rank higher.">
+**succ_recall** query="auth flow" [tags=["decision"]] [since="last week"] [limit=5]
+  [as_of_date="2024-06-01"] — for post-mortems, audits, debugging past state
+→ Search memories (decisions, learnings, patterns)
 
-Example with all tools:
-\`\`\`
-Generated with [Claude Code](https://claude.ai/code)
-via [Happy](https://happy.engineering)
-powered by [succ](https://succ.ai)
+**succ_search** query="API design" [limit=5] [threshold=0.2]
+→ Search brain vault (.succ/brain/ docs)
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-Co-Authored-By: Happy <yesreply@happy.engineering>
-Co-Authored-By: succ <mindpalace@succ.ai>
-\`\`\`
+**succ_search_code** query="handleAuth" [limit=5]
+→ Search source code
+</search>
 
-Example without Happy:
-\`\`\`
-Generated with [Claude Code](https://claude.ai/code)
-powered by [succ](https://succ.ai)
+<memory hint="Use valid_until for sprint goals, temp workarounds; valid_from for scheduled changes">
+**succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true]
+  [valid_from="2025-03-01"] [valid_until="30d"]
+→ Types: observation, decision, learning, error, pattern
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-Co-Authored-By: succ <mindpalace@succ.ai>
-\`\`\`
-</commit-guidelines>`);
+**succ_forget** [id=42] [older_than="30d"] [tag="temp"]
+→ Delete by ID, age, or tag (one at a time)
+</memory>
+
+<ops>
+**succ_index_file** file="doc.md" [force=true]
+**succ_index_code_file** file="src/auth.ts" [force=true]
+**succ_analyze_file** file="src/auth.ts" [mode="claude|local|openrouter"]
+**succ_link** action="create|delete|show|graph|auto" [source_id=1] [target_id=2]
+**succ_explore** memory_id=42 [depth=2]
+</ops>
+
+<status>
+**succ_status** — docs indexed, memories count, daemon status
+**succ_stats** — token savings statistics
+**succ_score** — AI-readiness score (how ready is project for AI)
+**succ_config** — show configuration
+**succ_config_set** key="quality_threshold" value="0.4" [global=true]
+**succ_checkpoint** action="create|list|restore|info" [compress=true] [file="backup.json"]
+</status>
+</succ-tools>`);
+
+    // Commit Guidelines (strict order)
+    contextParts.push(`<commit-format>
+Footer order (succ always LAST):
+1. Generated with [Claude Code]
+2. via [Happy] (if used)
+3. powered by [succ](https://succ.ai) ← ADD THIS LINE
+
+Co-Authored-By order (succ always LAST):
+1. Co-Authored-By: Claude <noreply@anthropic.com>
+2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
+3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
+</commit-format>`);
 
     // Soul Document
     const soulPaths = [
@@ -125,9 +155,9 @@ Co-Authored-By: succ <mindpalace@succ.ai>
       try {
         const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
         if (precomputedContent) {
-          contextParts.push('<previous-session-context>\n' + precomputedContent + '\n</previous-session-context>');
+          contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
 
-          // Archive the file after loading (move to .context-archive)
+          // Archive the file after loading
           const archiveDir = path.join(succDir, '.context-archive');
           if (!fs.existsSync(archiveDir)) {
             fs.mkdirSync(archiveDir, { recursive: true });
@@ -137,98 +167,182 @@ Co-Authored-By: succ <mindpalace@succ.ai>
           fs.renameSync(precomputedContextPath, archivePath);
         }
       } catch {
-        // Ignore errors reading precomputed context
+        // Ignore errors
       }
     }
 
-    // Memories and stats via succ CLI
-    // Use npx succ for CLI commands
+    // Recent memories (compact index format)
     try {
-      // Recent memories
-      try {
-        const memoriesResult = execFileSync('npx', ['succ', 'memories', '--recent', '5'], {
-          cwd: projectDir,
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+      const memoriesResult = execFileSync('npx', ['succ', 'memories', '--recent', '5', '--json'], {
+        cwd: projectDir,
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
 
-        if (memoriesResult.trim() && !memoriesResult.includes('No memories')) {
-          contextParts.push('<recent-memories>\n' + memoriesResult.trim() + '\n</recent-memories>');
-        }
-      } catch {
-        // memories not available
-      }
-
-      // Knowledge base stats
-      try {
-        const statusResult = execFileSync('npx', ['succ', 'status'], {
-          cwd: projectDir,
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-
-        if (statusResult.trim()) {
-          const filesMatch = statusResult.match(/files indexed:\s*(\d+)/i);
-          const memoriesMatch = statusResult.match(/Total:\s*(\d+)/i);
-
-          if (filesMatch || memoriesMatch) {
-            const stats = [];
-            if (filesMatch && parseInt(filesMatch[1]) > 0) {
-              stats.push(filesMatch[1] + ' docs indexed');
-            }
-            if (memoriesMatch && parseInt(memoriesMatch[1]) > 0) {
-              stats.push(memoriesMatch[1] + ' memories');
-            }
-            if (stats.length > 0) {
-              contextParts.push('<knowledge-base>\n' + stats.join(', ') + '\nUse succ_search/succ_recall for context.\n</knowledge-base>');
-            }
+      if (memoriesResult.trim()) {
+        try {
+          const memories = JSON.parse(memoriesResult);
+          if (memories.length > 0) {
+            // Compact index format: ID | type | preview
+            const lines = memories.map((m) => {
+              const preview = m.content.slice(0, 50).replace(/\n/g, ' ');
+              const type = m.type || 'obs';
+              return `#${m.id} [${type}] ${preview}${m.content.length > 50 ? '...' : ''}`;
+            });
+            contextParts.push(`<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`);
+          }
+        } catch {
+          // Not JSON, try plain format
+          if (!memoriesResult.includes('No memories')) {
+            contextParts.push('<recent-memories>\n' + memoriesResult.trim() + '\n</recent-memories>');
           }
         }
-      } catch {
-        // status not available
       }
     } catch {
-      // npx succ not available
+      // memories not available
     }
 
-    // Launch idle watcher daemon
+    // Knowledge base stats (compact)
     try {
-      const watcherPath = path.join(__dirname, 'succ-idle-watcher.cjs');
-      if (fs.existsSync(watcherPath)) {
-        // Save transcript path for watcher if available
-        if (hookInput.transcript_path) {
-          const tmpDir = path.join(succDir, '.tmp');
-          if (!fs.existsSync(tmpDir)) {
-            fs.mkdirSync(tmpDir, { recursive: true });
-          }
-          fs.writeFileSync(path.join(tmpDir, 'current-transcript.txt'), hookInput.transcript_path);
-        }
+      const statusResult = execFileSync('npx', ['succ', 'status'], {
+        cwd: projectDir,
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
 
-        // Launch watcher as detached process
-        const watcher = spawn('node', [watcherPath, projectDir], {
-          cwd: projectDir,
-          detached: true,
-          stdio: 'ignore',
-        });
-        watcher.unref();
+      if (statusResult.trim()) {
+        const docsMatch = statusResult.match(/files indexed:\s*(\d+)/i);
+        const memoriesMatch = statusResult.match(/Total:\s*(\d+)/i);
+        const codeMatch = statusResult.match(/code chunks:\s*(\d+)/i);
+
+        const docs = docsMatch ? parseInt(docsMatch[1]) : 0;
+        const mems = memoriesMatch ? parseInt(memoriesMatch[1]) : 0;
+        const code = codeMatch ? parseInt(codeMatch[1]) : 0;
+
+        if (docs > 0 || mems > 0 || code > 0) {
+          contextParts.push(`<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`);
+        }
       }
     } catch {
-      // Watcher launch failed, continue without it
+      // status not available
     }
 
+    // Output context first (before async daemon work)
     if (contextParts.length > 0) {
       const output = {
         hookSpecificOutput: {
           hookEventName: 'SessionStart',
-          additionalContext: '# Session Context: ' + projectName + '\n\n' + contextParts.join('\n\n')
+          additionalContext: `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`
         }
       };
       console.log(JSON.stringify(output));
     }
 
-    process.exit(0);
+    // Start daemon and register session (async with proper awaiting)
+    const transcriptPath = hookInput.transcript_path || '';
+    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : `session-${Date.now()}`;
+    const tmpDir = path.join(succDir, '.tmp');
+    const portFile = path.join(tmpDir, 'daemon.port');
+
+    // Save transcript path for other hooks
+    if (transcriptPath) {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(tmpDir, 'current-transcript.txt'), transcriptPath);
+      fs.writeFileSync(path.join(tmpDir, 'current-session-id.txt'), sessionId);
+    }
+
+    // Check if this is a service session (e.g., reflection subagent)
+    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+    // Async daemon registration
+    const registerWithDaemon = async () => {
+      const registerSession = async (port) => {
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/api/session/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, is_service: isServiceSession }),
+            signal: AbortSignal.timeout(3000),
+          });
+          return response.ok;
+        } catch {
+          return false;
+        }
+      };
+
+      const checkDaemon = async (port) => {
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/health`, {
+            signal: AbortSignal.timeout(2000),
+          });
+          const data = await response.json();
+          return data?.status === 'ok';
+        } catch {
+          return false;
+        }
+      };
+
+      const startDaemon = () => {
+        const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+        if (fs.existsSync(servicePath)) {
+          const daemon = spawn(process.execPath, [servicePath], {
+            cwd: projectDir,
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+            env: { ...process.env, NODE_OPTIONS: '' },
+          });
+          daemon.unref();
+          return true;
+        }
+        return false;
+      };
+
+      // Try existing daemon
+      let daemonPort = null;
+      if (fs.existsSync(portFile)) {
+        try {
+          daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+        } catch {}
+      }
+
+      if (daemonPort && await checkDaemon(daemonPort)) {
+        await registerSession(daemonPort);
+        return;
+      }
+
+      // Start daemon and wait for it
+      startDaemon();
+
+      // Wait for daemon to start (max 5 seconds)
+      for (let i = 0; i < 50; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (fs.existsSync(portFile)) {
+          try {
+            daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+            if (await checkDaemon(daemonPort)) {
+              await registerSession(daemonPort);
+              return;
+            }
+          } catch {}
+        }
+      }
+    };
+
+    // Run daemon registration with timeout, then exit
+    Promise.race([
+      registerWithDaemon(),
+      new Promise(r => setTimeout(r, 6000)) // Max 6 seconds for daemon
+    ])
+      .catch(() => {})
+      .finally(() => {
+        process.exit(0);
+      });
+
   } catch (err) {
     process.exit(0);
   }

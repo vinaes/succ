@@ -26,7 +26,7 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
   if (options.stats) {
     console.log('Analyzing memories for consolidation...\n');
 
-    const stats = getConsolidationStats(threshold);
+    const stats = await getConsolidationStats(threshold);
 
     console.log('Consolidation Statistics:');
     console.log(`  Total memories: ${stats.totalMemories}`);

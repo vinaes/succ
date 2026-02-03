@@ -3,15 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
-import { withLock, getLockStatus } from '../lib/lock.js';
+import { withLock } from '../lib/lock.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
   openrouter?: boolean;
   local?: boolean;  // Use local LLM API
   background?: boolean;
-  daemon?: boolean;  // Continuous background analysis mode
-  interval?: number;  // Interval in minutes for daemon mode (default: 30)
 }
 
 interface Agent {
@@ -24,7 +22,7 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, local = false, background = false, daemon = false, interval = 30 } = options;
+  const { parallel = true, openrouter = false, local = false, background = false } = options;
 
   // Determine mode from options or config
   const config = getConfig();
@@ -39,12 +37,6 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const projectRoot = getProjectRoot();
   const succDir = getSuccDir();
   const brainDir = path.join(succDir, 'brain');
-
-  // Daemon mode: continuous background analysis as separate daemon
-  if (daemon) {
-    await manageDaemon(projectRoot, succDir, brainDir, interval, openrouter);
-    return;
-  }
 
   // Background mode: spawn detached process and exit
   if (background) {
@@ -64,8 +56,8 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
     console.log('🚀 Analysis started in background');
     console.log(`   Log file: ${logFile}`);
-    console.log(`   Check progress: tail -f "${logFile}"`);
-    console.log(`   Or run: succ status`);
+    console.log(`   Check progress: succ status`);
+    console.log(`   Or view log: succ daemon logs`);
     return;
   }
 
@@ -509,167 +501,7 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
   }
 }
 
-/**
- * Manage daemon - start, stop, or check status
- */
-async function manageDaemon(
-  projectRoot: string,
-  succDir: string,
-  brainDir: string,
-  intervalMinutes: number,
-  openrouter: boolean
-): Promise<void> {
-  const pidFile = path.join(succDir, 'daemon.pid');
-  const logFile = path.join(succDir, 'daemon.log');
-
-  // Check if daemon is already running
-  if (fs.existsSync(pidFile)) {
-    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-    if (isProcessRunning(pid)) {
-      console.log(`🔄 Daemon already running (PID: ${pid})`);
-      console.log(`   Log: ${logFile}`);
-      console.log(`   Stop: succ analyze --stop`);
-      console.log(`   Status: succ analyze --status`);
-      return;
-    } else {
-      // Stale pid file, remove it
-      fs.unlinkSync(pidFile);
-    }
-  }
-
-  console.log('🚀 Starting daemon...');
-
-  // Spawn detached process that runs the actual daemon loop
-  const child = spawn(process.execPath, [
-    process.argv[1],
-    'analyze',
-    '--daemon-worker',
-    '--interval', String(intervalMinutes),
-    ...(openrouter ? ['--openrouter'] : [])
-  ], {
-    detached: true,
-    stdio: ['ignore', fs.openSync(logFile, 'a'), fs.openSync(logFile, 'a')],
-    cwd: projectRoot,
-    env: { ...process.env, SUCC_DAEMON: '1' }
-  });
-
-  // Write PID file
-  fs.writeFileSync(pidFile, String(child.pid));
-  child.unref();
-
-  console.log(`✅ Daemon started (PID: ${child.pid})`);
-  console.log(`   Log: ${logFile}`);
-  console.log(`   Interval: ${intervalMinutes} minutes`);
-  console.log(`\n   Stop:   succ analyze --stop`);
-  console.log(`   Status: succ analyze --status`);
-}
-
-/**
- * Check if a process is running by PID
- */
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Stop daemon
- */
-export async function stopAnalyzeDaemon(): Promise<void> {
-  const succDir = getSuccDir();
-  const pidFile = path.join(succDir, 'daemon.pid');
-
-  if (!fs.existsSync(pidFile)) {
-    console.log('No daemon running');
-    return;
-  }
-
-  const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-
-  if (isProcessRunning(pid)) {
-    try {
-      process.kill(pid, 'SIGTERM');
-      console.log(`✅ Daemon stopped (PID: ${pid})`);
-    } catch (e) {
-      console.error(`Failed to stop daemon: ${e}`);
-    }
-  } else {
-    console.log('Daemon not running (stale PID file)');
-  }
-
-  fs.unlinkSync(pidFile);
-}
-
-/**
- * Show daemon status
- */
-export async function analyzeDaemonStatus(): Promise<void> {
-  const succDir = getSuccDir();
-  const pidFile = path.join(succDir, 'daemon.pid');
-  const stateFile = path.join(succDir, 'daemon.state.json');
-  const logFile = path.join(succDir, 'daemon.log');
-
-  console.log('📊 Daemon Status\n');
-
-  // Check daemon
-  if (fs.existsSync(pidFile)) {
-    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-    if (isProcessRunning(pid)) {
-      console.log(`Daemon: ✅ Running (PID: ${pid})`);
-    } else {
-      console.log('Daemon: ⚠️  Not running (stale PID file)');
-    }
-  } else {
-    console.log('Daemon: ⏹️  Stopped');
-  }
-
-  // Check lock status
-  const lockStatus = getLockStatus();
-  if (lockStatus.locked && lockStatus.info) {
-    console.log(`Lock: 🔒 Held by PID ${lockStatus.info.pid} (${lockStatus.info.operation})`);
-  } else {
-    console.log('Lock: 🔓 Free');
-  }
-
-  // Check state
-  if (fs.existsSync(stateFile)) {
-    try {
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as DaemonState;
-      console.log(`\nRuns completed: ${state.runsCompleted}`);
-      console.log(`Memories created: ${state.memoriesCreated}`);
-      console.log(`Documents updated: ${state.documentsUpdated}`);
-      if (state.lastRun) {
-        console.log(`Last run: ${state.lastRun}`);
-      }
-    } catch {
-      console.log('\nState: Unable to read');
-    }
-  }
-
-  console.log(`\nLog file: ${logFile}`);
-}
-
-/**
- * Internal: Run daemon worker (called by daemon process)
- */
-export async function runDaemonWorker(intervalMinutes: number, openrouter: boolean): Promise<void> {
-  const projectRoot = getProjectRoot();
-  const succDir = getSuccDir();
-  const brainDir = path.join(succDir, 'brain');
-
-  await runDaemonMode(projectRoot, succDir, brainDir, intervalMinutes, openrouter);
-}
-
-interface RunAgentOptions {
-  noTimeout?: boolean;  // For daemon mode - no timeout
-}
-
-function runClaudeAgent(agent: Agent, context: string, options: RunAgentOptions = {}): Promise<void> {
-  const { noTimeout = false } = options;
+function runClaudeAgent(agent: Agent, context: string): Promise<void> {
 
   return new Promise((resolve, reject) => {
     // Ensure output directory exists
@@ -700,6 +532,7 @@ ${agent.prompt}`;
       '--model', 'haiku',
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
     });
 
     // Send prompt via stdin
@@ -735,14 +568,12 @@ ${agent.prompt}`;
       reject(err);
     });
 
-    // Timeout only for non-daemon mode (3 minutes for multi-file agents)
-    if (!noTimeout) {
-      setTimeout(() => {
-        proc.kill();
-        try { fs.unlinkSync(tempPromptFile); } catch {}
-        reject(new Error('Timeout (3 min)'));
-      }, 180000);
-    }
+    // Timeout (3 minutes for multi-file agents)
+    setTimeout(() => {
+      proc.kill();
+      try { fs.unlinkSync(tempPromptFile); } catch {}
+      reject(new Error('Timeout (3 min)'));
+    }, 180000);
   });
 }
 
@@ -956,382 +787,6 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
   }
 
   return parts.join('\n');
-}
-
-/**
- * Daemon mode: continuous background analysis
- * Runs periodically to discover new patterns, update docs, save to memory
- */
-async function runDaemonMode(
-  projectRoot: string,
-  succDir: string,
-  brainDir: string,
-  intervalMinutes: number,
-  openrouter: boolean
-): Promise<void> {
-  const { execFileSync } = await import('child_process');
-  const logFile = path.join(succDir, 'daemon.log');
-  const stateFile = path.join(succDir, 'daemon.state.json');
-
-  const log = (msg: string) => {
-    const timestamp = new Date().toISOString();
-    const line = `[${timestamp}] ${msg}\n`;
-    fs.appendFileSync(logFile, line);
-    console.log(msg);
-  };
-
-  log(`🔄 Starting daemon mode (interval: ${intervalMinutes} min)`);
-  log(`   Log: ${logFile}`);
-  log(`   Stop: kill the process or Ctrl+C`);
-
-  // Load or initialize state
-  let state: DaemonState = {
-    lastRun: null,
-    runsCompleted: 0,
-    memoriesCreated: 0,
-    documentsUpdated: 0,
-    lastGitCommit: null,
-  };
-
-  if (fs.existsSync(stateFile)) {
-    try {
-      state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-    } catch {
-      // Invalid state, use default
-    }
-  }
-
-  const saveState = () => {
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
-  };
-
-  // Get current git commit safely
-  const getCurrentCommit = (): string | null => {
-    try {
-      return execFileSync('git', ['rev-parse', 'HEAD'], {
-        cwd: projectRoot,
-        encoding: 'utf8',
-        timeout: 5000,
-      }).trim();
-    } catch {
-      return null;
-    }
-  };
-
-  // Check if this is the first run (no brain vault exists yet)
-  const projectName = path.basename(projectRoot);
-  const systemsOverviewPath = path.join(brainDir, '01_Projects', projectName, 'Systems', 'Systems Overview.md');
-  const isFirstRun = !fs.existsSync(systemsOverviewPath);
-
-  // Run analysis loop
-  const runAnalysis = async (forceFullAnalysis: boolean = false) => {
-    log(`\n--- Daemon run #${state.runsCompleted + 1} ---`);
-
-    try {
-      // Check if codebase changed since last run
-      const currentCommit = getCurrentCommit();
-      const codeChanged = currentCommit !== state.lastGitCommit;
-
-      // Gather context
-      const context = await gatherProjectContext(projectRoot);
-
-      // First run or force full: run all 7 agents to create brain vault
-      if (forceFullAnalysis || (isFirstRun && state.runsCompleted === 0)) {
-        log('🧠 Running full analysis (first run or forced)...');
-
-        // Ensure brain structure exists
-        await ensureBrainStructure(brainDir, projectRoot);
-
-        const agents = getAgents(brainDir, projectName);
-
-        for (const agent of agents) {
-          try {
-            log(`  Running ${agent.name}...`);
-            if (openrouter) {
-              await runAgentOpenRouter(agent, context);
-            } else {
-              await runClaudeAgent(agent, context, { noTimeout: true });
-            }
-            state.documentsUpdated++;
-            log(`  ✓ ${agent.name}`);
-          } catch (e) {
-            log(`  ✗ ${agent.name}: ${e}`);
-          }
-        }
-
-        // Generate index files
-        await generateIndexFiles(brainDir, projectName);
-        log('✅ Full brain vault generated');
-      } else {
-        // Incremental analysis
-        if (!codeChanged && state.lastRun) {
-          log('No code changes detected, running discovery only...');
-        }
-
-        // Run discovery agent to find new patterns/learnings
-        const discoveries = await runDiscoveryAgent(context, openrouter);
-
-        if (discoveries.length > 0) {
-          log(`Found ${discoveries.length} discoveries`);
-
-          // Save discoveries to memory (with deduplication)
-          for (const discovery of discoveries) {
-            const saved = await saveDiscoveryToMemory(discovery);
-            if (saved) {
-              state.memoriesCreated++;
-              log(`  + Saved: ${discovery.title.substring(0, 50)}...`);
-            } else {
-              log(`  ~ Skipped (duplicate): ${discovery.title.substring(0, 30)}...`);
-            }
-          }
-        } else {
-          log('No new discoveries found');
-        }
-
-        // Update technical docs if code changed significantly
-        if (codeChanged) {
-          log('Code changed, updating documentation...');
-          const agents = getAgents(brainDir, projectName);
-          // Update architecture, api, systems-overview, features on code change
-          const agentsToUpdate = agents.filter(a =>
-            ['architecture', 'api', 'systems-overview', 'features'].includes(a.name)
-          );
-
-          for (const agent of agentsToUpdate) {
-            try {
-              log(`  Updating ${agent.name}...`);
-              if (openrouter) {
-                await runAgentOpenRouter(agent, context);
-              } else {
-                await runClaudeAgent(agent, context, { noTimeout: true });
-              }
-              state.documentsUpdated++;
-              log(`  ✓ Updated ${agent.name}`);
-            } catch (e) {
-              log(`  ✗ Failed ${agent.name}: ${e}`);
-            }
-          }
-        }
-      }
-
-      state.lastRun = new Date().toISOString();
-      state.lastGitCommit = currentCommit;
-      state.runsCompleted++;
-      saveState();
-
-      log(`Run completed. Total: ${state.memoriesCreated} memories, ${state.documentsUpdated} docs updated`);
-    } catch (error) {
-      log(`Error in daemon run: ${error}`);
-    }
-  };
-
-  // Initial run (full analysis if first time)
-  await runAnalysis(isFirstRun);
-
-  // Schedule periodic runs (incremental)
-  const intervalMs = intervalMinutes * 60 * 1000;
-  setInterval(() => runAnalysis(false), intervalMs);
-
-  // Keep process alive
-  log(`\nNext run in ${intervalMinutes} minutes. Press Ctrl+C to stop.`);
-}
-
-interface DaemonState {
-  lastRun: string | null;
-  runsCompleted: number;
-  memoriesCreated: number;
-  documentsUpdated: number;
-  lastGitCommit: string | null;
-}
-
-interface Discovery {
-  type: 'learning' | 'pattern' | 'decision' | 'observation';
-  title: string;
-  content: string;
-  tags: string[];
-}
-
-/**
- * Run a discovery agent to find patterns, learnings, and insights
- */
-async function runDiscoveryAgent(
-  context: string,
-  openrouter: boolean
-): Promise<Discovery[]> {
-  const prompt = `You are analyzing a software project to discover patterns, learnings, and insights worth remembering.
-
-Project context:
-${context}
-
----
-
-Analyze this codebase and identify:
-1. **Patterns** - Recurring code patterns, architectural patterns, design decisions
-2. **Learnings** - Interesting techniques, workarounds, solutions to problems
-3. **Observations** - Notable things about code quality, structure, dependencies
-
-Output a JSON array of discoveries. Each discovery should have:
-- type: "learning" | "pattern" | "observation"
-- title: Short title (max 60 chars)
-- content: Detailed description (2-4 sentences)
-- tags: Array of relevant tags
-
-Example output:
-[
-  {
-    "type": "pattern",
-    "title": "Command pattern for CLI",
-    "content": "Uses command pattern with separate files per command in src/commands/. Each exports an async function matching the command name.",
-    "tags": ["architecture", "cli", "patterns"]
-  }
-]
-
-Output ONLY the JSON array, no other text.`;
-
-  try {
-    let response: string;
-
-    if (openrouter) {
-      const config = getConfig();
-      const result = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.openrouter_api_key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3.5-haiku',
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 2048,
-        }),
-      });
-      const data = await result.json() as { choices: Array<{ message: { content: string } }> };
-      response = data.choices[0]?.message?.content || '[]';
-    } else {
-      // Use Claude CLI via spawn (cross-spawn for cross-platform)
-      response = await new Promise<string>((resolve, reject) => {
-        const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-
-        proc.stdin?.write(prompt);
-        proc.stdin?.end();
-
-        let stdout = '';
-        proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
-        proc.on('close', (code: number | null) => {
-          if (code === 0) resolve(stdout);
-          else reject(new Error(`Exit code ${code}`));
-        });
-        proc.on('error', reject);
-
-        setTimeout(() => { proc.kill(); reject(new Error('Timeout')); }, 60000);
-      });
-    }
-
-    // Parse JSON from response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Save discovery to memory with deduplication
- * Uses file-based locking to prevent race conditions with CLI
- */
-async function saveDiscoveryToMemory(discovery: Discovery): Promise<boolean> {
-  try {
-    return await withLock('daemon-memory', async () => {
-      // Check for duplicates using semantic similarity
-      const { saveMemory, searchMemories } = await import('../lib/db.js');
-      const { getEmbedding } = await import('../lib/embeddings.js');
-      const { scanSensitive } = await import('../lib/sensitive-filter.js');
-
-      // Check for sensitive info and redact if configured
-      const config = getConfig();
-      let content = discovery.content;
-      if (config.sensitive_filter_enabled !== false) {
-        const scanResult = scanSensitive(content);
-        if (scanResult.hasSensitive) {
-          if (config.sensitive_auto_redact) {
-            content = scanResult.redactedText;
-          } else {
-            // Skip discoveries with sensitive info when auto-redact is off
-            return false;
-          }
-        }
-      }
-
-      // Generate embedding for the discovery
-      const searchText = discovery.title + ' ' + content;
-      const embedding = await getEmbedding(searchText);
-
-      // Search for similar memories
-      const similar = searchMemories(embedding, 3, 0.3);
-
-      // If very similar memory exists (>0.85 similarity), skip
-      for (const mem of similar) {
-        if (mem.similarity > 0.85) {
-          return false; // Duplicate found
-        }
-      }
-
-      // Save new memory with the embedding we already have
-      const memoryTags = discovery.tags.length > 0 ? discovery.tags : ['daemon'];
-      saveMemory(
-        content,
-        embedding,
-        memoryTags,
-        `daemon-${discovery.type}`,
-        {
-          type: discovery.type as 'observation' | 'decision' | 'learning' | 'error' | 'pattern',
-          deduplicate: false, // Already checked above
-        }
-      );
-
-      return true;
-    });
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Run single agent via OpenRouter
- */
-async function runAgentOpenRouter(agent: Agent, context: string): Promise<void> {
-  const config = getConfig();
-  const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`;
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.openrouter_api_key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'anthropic/claude-3.5-haiku',
-      messages: [{ role: 'user', content: fullPrompt }],
-      max_tokens: 4096,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
-  }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-  const content = data.choices[0]?.message?.content;
-
-  if (content) {
-    // Write output (handles both single and multi-file)
-    await writeAgentOutput(agent, content);
-  }
 }
 
 async function ensureBrainStructure(brainDir: string, projectRoot: string): Promise<void> {
@@ -1802,6 +1257,7 @@ CRITICAL FORMATTING RULES:
         input: prompt,
         encoding: 'utf-8',
         timeout: 120000, // 2 minutes timeout
+        env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
       });
 
       if (result.error) {

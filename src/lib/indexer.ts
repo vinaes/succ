@@ -107,7 +107,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
   const totalBatches = Math.ceil(uniqueFiles.length / batchSize);
 
-  // Process files in batches - but embed each file individually to reduce memory
+  // Process files in batches with parallel file reading and single batch embedding
   for (let i = 0; i < uniqueFiles.length; i += batchSize) {
     const batchNum = Math.floor(i / batchSize) + 1;
     const progress = Math.round((batchNum / totalBatches) * 100);
@@ -115,14 +115,22 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
     const batch = uniqueFiles.slice(i, i + batchSize);
 
-    // Process each file individually to reduce memory footprint
-    for (const filePath of batch) {
+    // 1. Parallel file reading and chunking
+    interface FileData {
+      filePath: string;
+      relativePath: string;
+      hash: string;
+      chunks: Array<{ content: string; startLine: number; endLine: number }>;
+      isNew: boolean;
+    }
+
+    const fileDataPromises = batch.map(async (filePath): Promise<FileData | null> => {
       // Check file size if limit specified
       if (maxFileSize) {
         const stats = fs.statSync(filePath);
         if (stats.size > maxFileSize * 1024) {
           skippedLargeFiles++;
-          continue;
+          return null;
         }
       }
 
@@ -137,61 +145,121 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       // Skip if unchanged (unless force mode)
       if (!force && existingHash === hash) {
         skippedFiles++;
-        continue;
+        return null;
       }
 
       // Process content if processor provided
       let content = rawContent;
       if (contentProcessor) {
         const processed = contentProcessor(rawContent);
-        if (processed.skip) continue;
+        if (processed.skip) return null;
         content = processed.content;
       }
 
       // Track if new or updated
-      if (existingHash) {
-        updatedFiles++;
-      } else {
-        newFiles++;
-      }
-
-      // Delete existing chunks for this file
-      deleteDocumentsByPath(relativePath);
+      const isNew = !existingHash;
 
       // Chunk the content
       const chunks = chunker(content, filePath);
-      if (chunks.length === 0) continue;
+      if (chunks.length === 0) return null;
 
-      try {
-        // Embed and store this file's chunks immediately (reduces memory)
-        const texts = chunks.map((c) => c.content);
-        const embeddings = await getEmbeddings(texts);
+      return { filePath, relativePath, hash, chunks, isNew };
+    });
 
-        const documents = chunks.map((chunk, j) => ({
-          filePath: relativePath,
-          chunkIndex: j,
+    const fileDataResults = await Promise.all(fileDataPromises);
+    const validFiles = fileDataResults.filter((f): f is FileData => f !== null);
+
+    if (validFiles.length === 0) continue;
+
+    // 2. Collect all chunks from batch for single embedding call
+    const allChunksWithMeta: Array<{
+      fileIndex: number;
+      chunkIndex: number;
+      content: string;
+      startLine: number;
+      endLine: number;
+    }> = [];
+
+    for (let fileIdx = 0; fileIdx < validFiles.length; fileIdx++) {
+      const file = validFiles[fileIdx];
+      for (let chunkIdx = 0; chunkIdx < file.chunks.length; chunkIdx++) {
+        const chunk = file.chunks[chunkIdx];
+        allChunksWithMeta.push({
+          fileIndex: fileIdx,
+          chunkIndex: chunkIdx,
           content: chunk.content,
           startLine: chunk.startLine,
           endLine: chunk.endLine,
-          embedding: embeddings[j],
-          hash,
-        }));
+        });
+      }
+    }
+
+    try {
+      // 3. Single batch embedding for all chunks in batch
+      const allTexts = allChunksWithMeta.map(c => c.content);
+      const allEmbeddings = await getEmbeddings(allTexts);
+
+      // 4. Group by file and save
+      const documentsByFile = new Map<number, Array<{
+        filePath: string;
+        chunkIndex: number;
+        content: string;
+        startLine: number;
+        endLine: number;
+        embedding: number[];
+        hash: string;
+      }>>();
+
+      for (let i = 0; i < allChunksWithMeta.length; i++) {
+        const chunkMeta = allChunksWithMeta[i];
+        const file = validFiles[chunkMeta.fileIndex];
+
+        if (!documentsByFile.has(chunkMeta.fileIndex)) {
+          documentsByFile.set(chunkMeta.fileIndex, []);
+        }
+
+        documentsByFile.get(chunkMeta.fileIndex)!.push({
+          filePath: file.relativePath,
+          chunkIndex: chunkMeta.chunkIndex,
+          content: chunkMeta.content,
+          startLine: chunkMeta.startLine,
+          endLine: chunkMeta.endLine,
+          embedding: allEmbeddings[i],
+          hash: file.hash,
+        });
+      }
+
+      // 5. Save documents and update stats
+      for (const [fileIdx, documents] of documentsByFile) {
+        const file = validFiles[fileIdx];
+
+        // Track stats
+        if (file.isNew) {
+          newFiles++;
+        } else {
+          updatedFiles++;
+        }
+
+        // Delete existing chunks for this file
+        deleteDocumentsByPath(file.relativePath);
+
+        // Save new documents
         upsertDocumentsBatchWithHashes(documents);
 
-        // Update token frequencies for code files (for Ronin-style segmentation)
+        // Update token frequencies for code files
         if (pathPrefix === 'code:') {
           const allTokens: string[] = [];
-          for (const chunk of chunks) {
-            const tokens = tokenizeCode(chunk.content);
+          for (const doc of documents) {
+            const tokens = tokenizeCode(doc.content);
             allTokens.push(...tokens);
           }
           updateTokenFrequencies(allTokens);
         }
 
-        totalChunks += chunks.length;
-      } catch (error) {
-        console.error(`\n  Error processing ${relativePath}:`, error);
+        totalChunks += documents.length;
       }
+    } catch (error) {
+      console.error(`\n  Error processing batch ${batchNum}:`, error);
     }
   }
 

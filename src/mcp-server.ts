@@ -78,7 +78,10 @@ function setupGracefulShutdown() {
 
   process.on('SIGTERM', cleanup);
   process.on('SIGINT', cleanup);
-  process.on('SIGHUP', cleanup);
+  // SIGHUP only exists on Unix
+  if (process.platform !== 'win32') {
+    process.on('SIGHUP', cleanup);
+  }
 }
 
 // Helper: Track token savings for RAG queries
