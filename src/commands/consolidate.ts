@@ -9,6 +9,7 @@ import {
   findConsolidationCandidates,
   getConsolidationStats,
 } from '../lib/consolidate.js';
+import { getConfig } from '../lib/config.js';
 
 interface ConsolidateOptions {
   dryRun?: boolean;
@@ -16,11 +17,18 @@ interface ConsolidateOptions {
   limit?: string;
   verbose?: boolean;
   stats?: boolean;
+  llm?: boolean;
+  noLlm?: boolean;
 }
 
 export async function consolidate(options: ConsolidateOptions = {}): Promise<void> {
   const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
   const limit = options.limit ? parseInt(options.limit, 10) : undefined;
+
+  // Determine LLM usage: explicit flags override config default
+  const config = getConfig();
+  const configDefault = config.consolidation_llm_default !== false; // default true
+  const useLLM = options.noLlm ? false : (options.llm ?? configDefault);
 
   // Stats only mode
   if (options.stats) {
@@ -51,12 +59,18 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
     console.log('DRY RUN - No changes will be made\n');
   }
 
+  // LLM merge mode
+  if (useLLM) {
+    console.log('LLM merge enabled - will use AI to intelligently merge similar memories\n');
+  }
+
   // Run consolidation
   const result = await consolidateMemories({
     dryRun: options.dryRun,
     threshold,
     maxCandidates: limit,
     verbose: options.verbose ?? true,
+    useLLM,
   });
 
   // Summary
