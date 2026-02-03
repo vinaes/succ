@@ -17,10 +17,11 @@ import {
   closeGlobalDb,
 } from '../lib/db.js';
 import { getEmbedding } from '../lib/embeddings.js';
-import { getConfig, getProjectRoot } from '../lib/config.js';
+import { getConfig, getProjectRoot, getIdleReflectionConfig } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
 import { parseDuration } from '../lib/temporal.js';
+import { extractFactsWithLLM, ExtractedFact } from '../lib/session-summary.js';
 import path from 'path';
 
 /**
@@ -194,17 +195,34 @@ interface RememberOptions {
   // Temporal validity
   validFrom?: string;   // When fact becomes valid (e.g., "2024-01-01" or "7d")
   validUntil?: string;  // When fact expires (e.g., "2024-12-31" or "30d")
+  // LLM extraction
+  extract?: boolean;    // Force extract structured facts using LLM
+  noExtract?: boolean;  // Disable LLM extraction (override config default)
+  local?: boolean;      // Use local LLM (Ollama/LM Studio)
+  openrouter?: boolean; // Use OpenRouter
+  model?: string;       // Model to use for extraction
+  apiUrl?: string;      // API URL for local LLM
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil } = options;
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, extract, noExtract, local, openrouter, model, apiUrl } = options;
 
   try {
     const config = getConfig();
     const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
+
+    // Determine if LLM extraction should be used: explicit flags override config default
+    const configDefault = config.remember_extract_default !== false; // default true
+    const useExtract = noExtract ? false : (extract ?? configDefault);
+
+    // LLM extraction mode: extract structured facts from content
+    if (useExtract) {
+      await rememberWithExtraction(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, local, openrouter, model, apiUrl });
+      return;
+    }
 
     // Parse temporal validity periods
     let validFromDate: Date | undefined;
@@ -318,6 +336,214 @@ export async function remember(content: string, options: RememberOptions = {}): 
     closeDb();
     closeGlobalDb();
     process.exit(1);
+  }
+}
+
+/**
+ * Save memory with LLM extraction - extracts structured facts from content
+ */
+async function rememberWithExtraction(
+  content: string,
+  options: Omit<RememberOptions, 'extract'>
+): Promise<void> {
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, local, openrouter, model, apiUrl } = options;
+  const config = getConfig();
+  const idleConfig = getIdleReflectionConfig();
+
+  console.log('Extracting facts using LLM...\n');
+
+  // Determine LLM options
+  let llmOptions: {
+    mode: 'claude' | 'local' | 'openrouter';
+    model?: string;
+    apiUrl?: string;
+    apiKey?: string;
+  };
+
+  if (local) {
+    llmOptions = {
+      mode: 'local',
+      model: model || idleConfig.sleep_agent?.model || 'qwen2.5-coder:14b',
+      apiUrl: apiUrl || idleConfig.sleep_agent?.api_url || 'http://localhost:11434/v1',
+    };
+  } else if (openrouter) {
+    llmOptions = {
+      mode: 'openrouter',
+      model: model || idleConfig.sleep_agent?.model || 'anthropic/claude-3-haiku',
+      apiKey: idleConfig.sleep_agent?.api_key || config.openrouter_api_key,
+    };
+  } else {
+    // Default to Claude CLI
+    llmOptions = {
+      mode: 'claude',
+      model: model || idleConfig.agent_model || 'haiku',
+    };
+  }
+
+  console.log(`Using ${llmOptions.mode} mode (model: ${llmOptions.model || 'default'})`);
+
+  // Extract facts from content
+  const facts = await extractFactsWithLLM(content, llmOptions);
+
+  if (facts.length === 0) {
+    console.log('No meaningful facts extracted. Saving original content as-is.');
+    // Fall back to saving the original content
+    await saveSingleFact(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil });
+    return;
+  }
+
+  console.log(`\nExtracted ${facts.length} facts:\n`);
+
+  // Parse temporal validity periods once
+  let validFromDate: Date | undefined;
+  let validUntilDate: Date | undefined;
+  if (validFrom) {
+    validFromDate = parseDuration(validFrom);
+  }
+  if (validUntil) {
+    validUntilDate = parseDuration(validUntil);
+  }
+
+  // Parse tags
+  const baseTags = tags ? tags.split(',').map((t) => t.trim()) : [];
+
+  let saved = 0;
+  let skipped = 0;
+
+  for (const fact of facts) {
+    let factContent = fact.content;
+
+    // Check for sensitive information
+    const sensitiveCheckEnabled = config.sensitive_filter_enabled !== false && !skipSensitiveCheck;
+    if (sensitiveCheckEnabled) {
+      const scanResult = scanSensitive(factContent);
+      if (scanResult.hasSensitive) {
+        if (redactSensitive || config.sensitive_auto_redact) {
+          factContent = scanResult.redactedText;
+        } else {
+          console.log(`  ⚠ [${fact.type}] Skipped (sensitive info): "${fact.content.substring(0, 50)}..."`);
+          skipped++;
+          continue;
+        }
+      }
+    }
+
+    try {
+      const embedding = await getEmbedding(factContent);
+
+      // Merge fact tags with base tags
+      const factTags = [...baseTags, ...fact.tags, fact.type, 'extracted'];
+
+      // Score quality
+      let qualityScore = null;
+      if (!skipQuality && config.quality_scoring_enabled !== false) {
+        qualityScore = await scoreMemory(factContent);
+        if (!passesQualityThreshold(qualityScore)) {
+          console.log(`  ⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 50)}..."`);
+          skipped++;
+          continue;
+        }
+      }
+
+      if (useGlobal) {
+        const projectName = path.basename(getProjectRoot());
+        const result = saveGlobalMemory(factContent, embedding, factTags, source || 'extraction');
+        if (result.isDuplicate) {
+          console.log(`  ⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 50)}..."`);
+          skipped++;
+        } else {
+          console.log(`  ✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 60)}..."`);
+          saved++;
+        }
+      } else {
+        const result = saveMemory(factContent, embedding, factTags, source || 'extraction', {
+          qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+          validFrom: validFromDate,
+          validUntil: validUntilDate,
+        });
+        if (result.isDuplicate) {
+          console.log(`  ⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 50)}..."`);
+          skipped++;
+        } else {
+          console.log(`  ✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 60)}..."`);
+          saved++;
+        }
+      }
+    } catch (error: any) {
+      console.error(`  ✗ [${fact.type}] Error: ${error.message}`);
+      skipped++;
+    }
+  }
+
+  closeDb();
+  closeGlobalDb();
+
+  console.log(`\nSummary: ${saved} saved, ${skipped} skipped`);
+}
+
+/**
+ * Helper to save a single fact (used as fallback when extraction yields nothing)
+ */
+async function saveSingleFact(
+  content: string,
+  options: Omit<RememberOptions, 'extract' | 'local' | 'openrouter' | 'model' | 'apiUrl'>
+): Promise<void> {
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil } = options;
+  const config = getConfig();
+  const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
+
+  // Parse temporal validity periods
+  let validFromDate: Date | undefined;
+  let validUntilDate: Date | undefined;
+  if (validFrom) {
+    validFromDate = parseDuration(validFrom);
+  }
+  if (validUntil) {
+    validUntilDate = parseDuration(validUntil);
+  }
+
+  // Check for sensitive information
+  const sensitiveCheckEnabled = config.sensitive_filter_enabled !== false && !skipSensitiveCheck;
+  if (sensitiveCheckEnabled) {
+    const scanResult = scanSensitive(content);
+    if (scanResult.hasSensitive) {
+      if (redactSensitive || config.sensitive_auto_redact) {
+        content = scanResult.redactedText;
+      } else {
+        console.log(`⚠ Sensitive information detected. Use --redact-sensitive or --skip-sensitive.`);
+        closeDb();
+        closeGlobalDb();
+        return;
+      }
+    }
+  }
+
+  const embedding = await getEmbedding(content);
+
+  let qualityScore = null;
+  if (!skipQuality && config.quality_scoring_enabled !== false) {
+    qualityScore = await scoreMemory(content);
+    if (!passesQualityThreshold(qualityScore)) {
+      console.log(`⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`);
+      closeDb();
+      closeGlobalDb();
+      return;
+    }
+  }
+
+  if (useGlobal) {
+    const projectName = path.basename(getProjectRoot());
+    const result = saveGlobalMemory(content, embedding, tagList, source);
+    closeGlobalDb();
+    console.log(`✓ Remembered globally (id: ${result.id})`);
+  } else {
+    const result = saveMemory(content, embedding, tagList, source, {
+      qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+      validFrom: validFromDate,
+      validUntil: validUntilDate,
+    });
+    closeDb();
+    console.log(`✓ Remembered (id: ${result.id})`);
   }
 }
 

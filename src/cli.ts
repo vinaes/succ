@@ -175,7 +175,7 @@ program
 
 program
   .command('remember <content>')
-  .description('Save something to memory')
+  .description('Save something to memory (uses LLM extraction by default)')
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--source <source>', 'Source context')
   .option('-g, --global', 'Save to global memory (shared across projects)')
@@ -184,6 +184,12 @@ program
   .option('--redact-sensitive', 'Auto-redact sensitive info and save')
   .option('--valid-from <date>', 'When fact becomes valid (e.g., "2024-01-01" or "7d")')
   .option('--valid-until <date>', 'When fact expires (e.g., "2024-12-31" or "30d")')
+  .option('-e, --extract', 'Force LLM extraction (default: enabled)')
+  .option('--no-extract', 'Disable LLM extraction (save content as-is)')
+  .option('--local', 'Use local LLM (Ollama/LM Studio) for extraction')
+  .option('--openrouter', 'Use OpenRouter for extraction')
+  .option('--model <model>', 'Model to use for extraction')
+  .option('--api-url <url>', 'API URL for local LLM')
   .action((content, options) => {
     remember(content, {
       tags: options.tags,
@@ -194,6 +200,12 @@ program
       redactSensitive: options.redactSensitive,
       validFrom: options.validFrom,
       validUntil: options.validUntil,
+      extract: options.extract === true ? true : undefined,
+      noExtract: options.extract === false,
+      local: options.local,
+      openrouter: options.openrouter,
+      model: options.model,
+      apiUrl: options.apiUrl,
     });
   });
 

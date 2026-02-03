@@ -33,6 +33,7 @@ import {
   // Global memory
   saveGlobalMemory,
   searchGlobalMemories,
+  hybridSearchGlobalMemories,
   getRecentGlobalMemories,
   closeGlobalDb,
   // Knowledge graph
@@ -50,7 +51,7 @@ import {
   // Retention/access tracking
   incrementMemoryAccessBatch,
 } from './lib/db.js';
-import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses } from './lib/config.js';
+import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses, isProjectInitialized, isGlobalOnlyMode } from './lib/config.js';
 import path from 'path';
 import fs from 'fs';
 import { getEmbedding, cleanupEmbeddings } from './lib/embeddings.js';
@@ -63,6 +64,7 @@ import { recordTokenStat, type TokenEventType } from './lib/db.js';
 import { getIdleReflectionConfig } from './lib/config.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from './lib/temporal.js';
 import { estimateSavings, getCurrentModel } from './lib/pricing.js';
+import { extractFactsWithLLM, ExtractedFact } from './lib/session-summary.js';
 
 // Get model from env var or default to sonnet
 
@@ -195,6 +197,261 @@ function trackMemoryAccess(
   } catch {
     // Don't fail the search if tracking fails
   }
+}
+
+/**
+ * Remember with LLM extraction - extracts structured facts from content
+ */
+async function rememberWithLLMExtraction(params: {
+  content: string;
+  tags: string[];
+  source?: string;
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  useGlobal: boolean;
+  valid_from?: string;
+  valid_until?: string;
+  config: ReturnType<typeof getConfig>;
+}): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  const { content, tags, source, useGlobal, valid_from, valid_until, config } = params;
+  const idleConfig = getIdleReflectionConfig();
+
+  // Determine LLM options (default to Claude CLI)
+  const llmOptions: {
+    mode: 'claude' | 'local' | 'openrouter';
+    model?: string;
+    apiUrl?: string;
+    apiKey?: string;
+  } = {
+    mode: 'claude',
+    model: idleConfig.agent_model || 'haiku',
+  };
+
+  try {
+    // Extract facts from content
+    const facts = await extractFactsWithLLM(content, llmOptions);
+
+    if (facts.length === 0) {
+      // No facts extracted, fall back to saving original content
+      return await saveSingleMemory({
+        content,
+        tags,
+        source,
+        type: params.type,
+        useGlobal,
+        valid_from,
+        valid_until,
+        config,
+      });
+    }
+
+    // Parse temporal validity periods once
+    let validFromDate: Date | undefined;
+    let validUntilDate: Date | undefined;
+    if (valid_from) {
+      validFromDate = parseDuration(valid_from);
+    }
+    if (valid_until) {
+      validUntilDate = parseDuration(valid_until);
+    }
+
+    let saved = 0;
+    let skipped = 0;
+    const results: string[] = [];
+
+    for (const fact of facts) {
+      let factContent = fact.content;
+
+      // Check for sensitive information
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(factContent);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            factContent = scanResult.redactedText;
+          } else {
+            results.push(`⚠ [${fact.type}] Skipped (sensitive): "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+            continue;
+          }
+        }
+      }
+
+      try {
+        const embedding = await getEmbedding(factContent);
+
+        // Merge fact tags with base tags
+        const factTags = [...tags, ...fact.tags, fact.type, 'extracted'];
+
+        // Score quality
+        let qualityScore = null;
+        if (config.quality_scoring_enabled !== false) {
+          qualityScore = await scoreMemory(factContent);
+          if (!passesQualityThreshold(qualityScore)) {
+            results.push(`⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+            continue;
+          }
+        }
+
+        if (useGlobal) {
+          const projectName = path.basename(getProjectRoot());
+          const result = saveGlobalMemory(factContent, embedding, factTags, source || 'extraction', projectName, { type: fact.type });
+          if (result.isDuplicate) {
+            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+          } else {
+            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
+            saved++;
+          }
+        } else {
+          const result = saveMemory(factContent, embedding, factTags, source || 'extraction', {
+            type: fact.type,
+            qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+            validFrom: validFromDate,
+            validUntil: validUntilDate,
+          });
+          if (result.isDuplicate) {
+            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+          } else {
+            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
+            saved++;
+          }
+        }
+      } catch (error: any) {
+        results.push(`✗ [${fact.type}] Error: ${error.message}`);
+        skipped++;
+      }
+    }
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Extracted ${facts.length} facts:\n${results.join('\n')}\n\nSummary: ${saved} saved, ${skipped} skipped`,
+      }],
+    };
+  } catch (error: any) {
+    // If extraction fails, fall back to saving original content
+    return await saveSingleMemory({
+      content,
+      tags,
+      source,
+      type: params.type,
+      useGlobal,
+      valid_from,
+      valid_until,
+      config,
+      fallbackReason: `LLM extraction failed: ${error.message}`,
+    });
+  } finally {
+    closeDb();
+    closeGlobalDb();
+  }
+}
+
+/**
+ * Save a single memory (used as fallback or when extraction is disabled)
+ */
+async function saveSingleMemory(params: {
+  content: string;
+  tags: string[];
+  source?: string;
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  useGlobal: boolean;
+  valid_from?: string;
+  valid_until?: string;
+  config: ReturnType<typeof getConfig>;
+  fallbackReason?: string;
+}): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  const { content, tags, source, type, useGlobal, valid_from, valid_until, config, fallbackReason } = params;
+
+  // Check for sensitive information
+  let processedContent = content;
+  if (config.sensitive_filter_enabled !== false) {
+    const scanResult = scanSensitive(content);
+    if (scanResult.hasSensitive) {
+      if (config.sensitive_auto_redact) {
+        processedContent = scanResult.redactedText;
+      } else {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved.`,
+          }],
+        };
+      }
+    }
+  }
+
+  // Parse temporal validity periods
+  let validFromDate: Date | undefined;
+  let validUntilDate: Date | undefined;
+  if (valid_from) {
+    validFromDate = parseDuration(valid_from);
+  }
+  if (valid_until) {
+    validUntilDate = parseDuration(valid_until);
+  }
+
+  const embedding = await getEmbedding(processedContent);
+
+  let qualityScore = null;
+  if (config.quality_scoring_enabled !== false) {
+    qualityScore = await scoreMemory(processedContent);
+    if (!passesQualityThreshold(qualityScore)) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
+        }],
+      };
+    }
+  }
+
+  const fallbackPrefix = fallbackReason ? `(${fallbackReason})\n` : '';
+
+  if (useGlobal) {
+    const projectName = path.basename(getProjectRoot());
+    const result = saveGlobalMemory(processedContent, embedding, tags, source, projectName, { type });
+    closeGlobalDb();
+
+    if (result.isDuplicate) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
+        }],
+      };
+    }
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+      }],
+    };
+  }
+
+  const result = saveMemory(processedContent, embedding, tags, source, {
+    type,
+    qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+    validFrom: validFromDate,
+    validUntil: validUntilDate,
+  });
+  closeDb();
+
+  if (result.isDuplicate) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
+      }],
+    };
+  }
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+    }],
+  };
 }
 
 // Create MCP server
@@ -365,13 +622,25 @@ server.resource(
 // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
 server.tool(
   'succ_search',
-  'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation.',
+  'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. In projects without .succ/, returns a hint to initialize or use global memory.',
   {
     query: z.string().describe('The search query'),
     limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
     threshold: z.number().optional().default(0.2).describe('Similarity threshold 0-1 (default: 0.2)'),
   },
   async ({ query, limit, threshold }) => {
+    // Check if project is initialized
+    if (isGlobalOnlyMode()) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable project-local search.\n\nTip: Use succ_recall for global memories that work across all projects.`,
+          },
+        ],
+      };
+    }
+
     try {
       const queryEmbedding = await getEmbedding(query);
       // Use hybrid search for docs
@@ -425,7 +694,7 @@ server.tool(
 // Tool: succ_remember - Save important information to memory
 server.tool(
   'succ_remember',
-  'Save important information to long-term memory. Use this to remember decisions, learnings, user preferences, or anything worth recalling later. Use global=true for cross-project memories. Use valid_until for temporary info (sprint goals, workarounds), valid_from for scheduled changes.',
+  'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.',
   {
     content: z.string().describe('The information to remember'),
     tags: z
@@ -446,7 +715,7 @@ server.tool(
       .boolean()
       .optional()
       .default(false)
-      .describe('Save to global memory (shared across all projects)'),
+      .describe('Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'),
     valid_from: z
       .string()
       .optional()
@@ -455,10 +724,38 @@ server.tool(
       .string()
       .optional()
       .describe('When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'),
+    extract: z
+      .boolean()
+      .optional()
+      .describe('Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'),
   },
-  async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until }) => {
+  async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until, extract }) => {
+    // Force global mode if project not initialized
+    const globalOnlyMode = isGlobalOnlyMode();
+    if (globalOnlyMode && !useGlobal) {
+      useGlobal = true;
+    }
+
     try {
       const config = getConfig();
+
+      // Determine if LLM extraction should be used
+      const configDefault = config.remember_extract_default !== false; // default true
+      const useExtract = extract ?? configDefault;
+
+      // If extraction is enabled, use LLM to extract structured facts
+      if (useExtract) {
+        return await rememberWithLLMExtraction({
+          content,
+          tags,
+          source,
+          type,
+          useGlobal,
+          valid_from,
+          valid_until,
+          config,
+        });
+      }
 
       // Check for sensitive information (non-interactive mode for MCP)
       if (config.sensitive_filter_enabled !== false) {
@@ -610,7 +907,7 @@ server.tool(
 // Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
 server.tool(
   'succ_recall',
-  'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Use as_of_date for point-in-time queries (post-mortems, audits, debugging past state).',
+  'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.',
   {
     query: z.string().describe('What to recall (semantic search)'),
     limit: z.number().optional().default(5).describe('Maximum number of memories (default: 5)'),
@@ -628,6 +925,8 @@ server.tool(
       .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
   },
   async ({ query, limit, tags, since, as_of_date }) => {
+    const globalOnlyMode = isGlobalOnlyMode();
+
     try {
       // Parse relative date strings
       let sinceDate: Date | undefined;
@@ -653,8 +952,9 @@ server.tool(
       const queryEmbedding = await getEmbedding(query);
 
       // Use hybrid search for local memories (BM25 + vector with RRF)
+      // Skip local search if project not initialized (global-only mode)
       // Note: tags and since filtering applied after hybrid search
-      let localResults = hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
+      let localResults = globalOnlyMode ? [] : hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
 
       // Apply tag filter if specified
       if (tags && tags.length > 0) {
@@ -709,8 +1009,8 @@ server.tool(
 
       localResults = localResults.slice(0, limit);
 
-      // Global memories still use vector-only search (separate DB)
-      const globalResults = searchGlobalMemories(queryEmbedding, limit, 0.3, tags, sinceDate);
+      // Global memories now use hybrid search (BM25 + vector)
+      const globalResults = hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, 0.5, tags, sinceDate);
 
       // Helper to parse tags (can be string or array)
       const parseTags = (t: string | string[] | null): string[] => {
@@ -1018,13 +1318,25 @@ server.tool(
 // Tool: succ_search_code - Search indexed code (hybrid BM25 + vector)
 server.tool(
   'succ_search_code',
-  'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Works well for both exact identifiers and conceptual queries.',
+  'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Requires project to be initialized with .succ/',
   {
     query: z.string().describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
     limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
     threshold: z.number().optional().default(0.25).describe('Similarity threshold 0-1 (default: 0.25)'),
   },
   async ({ query, limit, threshold }) => {
+    // Check if project is initialized
+    if (isGlobalOnlyMode()) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable code search.`,
+          },
+        ],
+      };
+    }
+
     try {
       const queryEmbedding = await getEmbedding(query);
       // Hybrid search: BM25 + vector with RRF fusion
@@ -1080,10 +1392,27 @@ server.tool(
 // Tool: succ_status - Get index status
 server.tool(
   'succ_status',
-  'Get the current status of succ (indexed files, memories, last update, daemon statuses).',
+  'Get the current status of succ (indexed files, memories, last update, daemon statuses). Shows global-only mode if project not initialized.',
   {},
   async () => {
+    const globalOnlyMode = isGlobalOnlyMode();
+
     try {
+      // In global-only mode, show limited status
+      if (globalOnlyMode) {
+        const globalMemStats = getRecentGlobalMemories(1);
+        const globalCount = globalMemStats.length > 0 ? 'available' : 'empty';
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories`,
+            },
+          ],
+        };
+      }
+
       const stats = getStats();
       const memStats = getMemoryStats();
       const daemons = getDaemonStatuses();
