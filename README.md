@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.86-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.87-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -305,6 +305,7 @@ your-project/
 
 ## Documentation
 
+- [Configuration Reference](docs/configuration.md) — All config options with examples
 - [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
 - [Temporal Awareness](docs/temporal.md) — Time decay, validity periods
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup
