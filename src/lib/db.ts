@@ -288,7 +288,7 @@ function checkModelCompatibility(database: Database.Database): void {
 }
 
 function initGlobalDb(database: Database.Database): void {
-  // Global DB only has memories table (shared across projects)
+  // Global DB has memories table (shared across projects) and metadata for BM25 index
   database.exec(`
     CREATE TABLE IF NOT EXISTS memories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,6 +301,11 @@ function initGlobalDb(database: Database.Database): void {
       quality_factors TEXT,
       embedding BLOB NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_global_memories_created_at ON memories(created_at);
