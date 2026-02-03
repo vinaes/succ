@@ -352,7 +352,7 @@ export async function ensureDaemonRunning(projectDir?: string): Promise<boolean>
     const servicePath = path.join(resolvedProjectDir, 'dist', 'daemon', 'service.js');
 
     // Spawn node directly with the service file
-    const proc = spawn(process.execPath, [servicePath], {
+    const proc = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
       cwd: resolvedProjectDir,
       detached: true,
       stdio: 'ignore',

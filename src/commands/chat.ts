@@ -86,6 +86,7 @@ ${query}`;
   // Use --print for non-interactive output, pipe prompt via stdin
   const claude = spawn('claude', ['--print'], {
     stdio: ['pipe', 'inherit', 'inherit'],
+    windowsHide: true, // Hide CMD window on Windows (works without detached)
   });
 
   // Write prompt to stdin
