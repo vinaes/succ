@@ -30,7 +30,11 @@ export interface SearchResult {
 export interface AccuracyMetrics {
   /** Recall@K: fraction of relevant items in top K (0-1) */
   recallAtK: number;
-  /** K value used for Recall@K */
+  /** Precision@K: fraction of top K that are relevant (0-1) */
+  precisionAtK: number;
+  /** F1@K: harmonic mean of precision and recall (0-1) */
+  f1AtK: number;
+  /** K value used for metrics */
   k: number;
   /** Mean Reciprocal Rank (0-1) */
   mrr: number;
@@ -94,6 +98,43 @@ export function recallAtK(results: SearchResult[], relevantIds: Set<number>, k: 
   const retrievedRelevant = topK.filter((r) => relevantIds.has(r.id)).length;
 
   return retrievedRelevant / relevantIds.size;
+}
+
+/**
+ * Calculate Precision@K
+ *
+ * What fraction of top K results are relevant?
+ * Precision@K = |relevant ∩ retrieved@K| / K
+ *
+ * @param results - Ranked search results (ordered by score desc)
+ * @param relevantIds - Set of relevant item IDs (ground truth)
+ * @param k - Number of top results to consider
+ */
+export function precisionAtK(results: SearchResult[], relevantIds: Set<number>, k: number): number {
+  if (k === 0) return 0;
+
+  const topK = results.slice(0, k);
+  const retrievedRelevant = topK.filter((r) => relevantIds.has(r.id)).length;
+
+  return retrievedRelevant / Math.min(k, results.length || 1);
+}
+
+/**
+ * Calculate F1@K
+ *
+ * Harmonic mean of Precision@K and Recall@K
+ * F1@K = 2 * (Precision@K * Recall@K) / (Precision@K + Recall@K)
+ *
+ * @param results - Ranked search results (ordered by score desc)
+ * @param relevantIds - Set of relevant item IDs (ground truth)
+ * @param k - Number of top results to consider
+ */
+export function f1AtK(results: SearchResult[], relevantIds: Set<number>, k: number): number {
+  const precision = precisionAtK(results, relevantIds, k);
+  const recall = recallAtK(results, relevantIds, k);
+
+  if (precision + recall === 0) return 0;
+  return (2 * precision * recall) / (precision + recall);
 }
 
 /**
@@ -201,6 +242,8 @@ export function calculateAccuracyMetrics(
   if (queries.length === 0) {
     return {
       recallAtK: 0,
+      precisionAtK: 0,
+      f1AtK: 0,
       k,
       mrr: 0,
       ndcg: 0,
@@ -210,6 +253,8 @@ export function calculateAccuracyMetrics(
   }
 
   let totalRecall = 0;
+  let totalPrecision = 0;
+  let totalF1 = 0;
   let totalNdcg = 0;
   let queriesWithHits = 0;
 
@@ -219,6 +264,8 @@ export function calculateAccuracyMetrics(
       q.relevanceScores ?? new Map([...q.relevantIds].map((id) => [id, 1.0]));
 
     totalRecall += recallAtK(q.results, q.relevantIds, k);
+    totalPrecision += precisionAtK(q.results, q.relevantIds, k);
+    totalF1 += f1AtK(q.results, q.relevantIds, k);
     totalNdcg += ndcg(q.results, relScores, k);
 
     // Check if any relevant item was found
@@ -229,6 +276,8 @@ export function calculateAccuracyMetrics(
 
   return {
     recallAtK: totalRecall / queries.length,
+    precisionAtK: totalPrecision / queries.length,
+    f1AtK: totalF1 / queries.length,
     k,
     mrr: meanReciprocalRank(queries),
     ndcg: totalNdcg / queries.length,
@@ -287,12 +336,14 @@ export function formatAccuracyMetrics(metrics: AccuracyMetrics): string {
     '┌─────────────────────────────────────────┐',
     '│         Accuracy Metrics                │',
     '├─────────────────────────────────────────┤',
-    `│ Recall@${metrics.k}:    ${(metrics.recallAtK * 100).toFixed(1).padStart(6)}%              │`,
-    `│ MRR:         ${(metrics.mrr * 100).toFixed(1).padStart(6)}%              │`,
-    `│ NDCG@${metrics.k}:     ${(metrics.ndcg * 100).toFixed(1).padStart(6)}%              │`,
+    `│ Recall@${metrics.k}:     ${(metrics.recallAtK * 100).toFixed(1).padStart(6)}%             │`,
+    `│ Precision@${metrics.k}: ${(metrics.precisionAtK * 100).toFixed(1).padStart(6)}%             │`,
+    `│ F1@${metrics.k}:        ${(metrics.f1AtK * 100).toFixed(1).padStart(6)}%             │`,
+    `│ MRR:         ${(metrics.mrr * 100).toFixed(1).padStart(6)}%             │`,
+    `│ NDCG@${metrics.k}:      ${(metrics.ndcg * 100).toFixed(1).padStart(6)}%             │`,
     '├─────────────────────────────────────────┤',
-    `│ Queries:     ${metrics.queryCount.toString().padStart(6)}               │`,
-    `│ With hits:   ${metrics.queriesWithHits.toString().padStart(6)} (${((metrics.queriesWithHits / Math.max(metrics.queryCount, 1)) * 100).toFixed(0)}%)          │`,
+    `│ Queries:     ${metrics.queryCount.toString().padStart(6)}              │`,
+    `│ With hits:   ${metrics.queriesWithHits.toString().padStart(6)} (${((metrics.queriesWithHits / Math.max(metrics.queryCount, 1)) * 100).toFixed(0)}%)         │`,
     '└─────────────────────────────────────────┘',
   ];
   return lines.join('\n');
@@ -566,4 +617,193 @@ export function generateTestDataset(size: 'small' | 'medium' | 'large' = 'small'
   }
 
   return { memories, queries };
+}
+
+// ============================================================================
+// Benchmark History
+// ============================================================================
+
+export interface BenchmarkHistoryEntry {
+  id: string;
+  timestamp: string;
+  mode: string;
+  model: string;
+  datasetSize: 'small' | 'medium' | 'large';
+  searchMode: 'semantic' | 'hybrid';
+  accuracy: AccuracyMetrics;
+  latency: LatencyMetrics;
+  config: {
+    embeddingModel: string;
+    embeddingMode: string;
+    totalMemories: number;
+    testQueries: number;
+    hybridWeight?: number;
+  };
+}
+
+export interface BenchmarkHistory {
+  version: number;
+  entries: BenchmarkHistoryEntry[];
+}
+
+/**
+ * Generate a unique benchmark ID based on timestamp and random suffix
+ */
+export function generateBenchmarkId(): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `bench-${timestamp}-${suffix}`;
+}
+
+/**
+ * Compare two benchmark results and return regression/improvement info
+ */
+export function compareBenchmarks(
+  current: AccuracyMetrics,
+  previous: AccuracyMetrics
+): {
+  recallDelta: number;
+  precisionDelta: number;
+  f1Delta: number;
+  mrrDelta: number;
+  ndcgDelta: number;
+  isRegression: boolean;
+  isImprovement: boolean;
+} {
+  const recallDelta = current.recallAtK - previous.recallAtK;
+  const precisionDelta = current.precisionAtK - previous.precisionAtK;
+  const f1Delta = current.f1AtK - previous.f1AtK;
+  const mrrDelta = current.mrr - previous.mrr;
+  const ndcgDelta = current.ndcg - previous.ndcg;
+
+  // Consider it a regression if F1 or MRR dropped by more than 5%
+  const isRegression = f1Delta < -0.05 || mrrDelta < -0.05;
+  // Consider it an improvement if F1 or MRR improved by more than 5%
+  const isImprovement = f1Delta > 0.05 || mrrDelta > 0.05;
+
+  return {
+    recallDelta,
+    precisionDelta,
+    f1Delta,
+    mrrDelta,
+    ndcgDelta,
+    isRegression,
+    isImprovement,
+  };
+}
+
+/**
+ * Format benchmark comparison as human-readable string
+ */
+export function formatBenchmarkComparison(
+  current: AccuracyMetrics,
+  previous: AccuracyMetrics,
+  previousTimestamp: string
+): string {
+  const comparison = compareBenchmarks(current, previous);
+  const formatDelta = (d: number) => {
+    const sign = d >= 0 ? '+' : '';
+    return `${sign}${(d * 100).toFixed(1)}%`;
+  };
+
+  const status = comparison.isRegression
+    ? '⚠️  REGRESSION DETECTED'
+    : comparison.isImprovement
+      ? '✅ IMPROVEMENT'
+      : '➡️  NO SIGNIFICANT CHANGE';
+
+  const lines = [
+    '┌─────────────────────────────────────────────────┐',
+    '│         Benchmark Comparison                    │',
+    '├─────────────────────────────────────────────────┤',
+    `│ ${status.padEnd(47)} │`,
+    `│ Previous: ${previousTimestamp.padEnd(36)} │`,
+    '├─────────────────────────────────────────────────┤',
+    `│ Recall@K:    ${formatDelta(comparison.recallDelta).padStart(8)}  (${(previous.recallAtK * 100).toFixed(1)}% → ${(current.recallAtK * 100).toFixed(1)}%) │`,
+    `│ Precision@K: ${formatDelta(comparison.precisionDelta).padStart(8)}  (${(previous.precisionAtK * 100).toFixed(1)}% → ${(current.precisionAtK * 100).toFixed(1)}%) │`,
+    `│ F1@K:        ${formatDelta(comparison.f1Delta).padStart(8)}  (${(previous.f1AtK * 100).toFixed(1)}% → ${(current.f1AtK * 100).toFixed(1)}%) │`,
+    `│ MRR:         ${formatDelta(comparison.mrrDelta).padStart(8)}  (${(previous.mrr * 100).toFixed(1)}% → ${(current.mrr * 100).toFixed(1)}%) │`,
+    `│ NDCG@K:      ${formatDelta(comparison.ndcgDelta).padStart(8)}  (${(previous.ndcg * 100).toFixed(1)}% → ${(current.ndcg * 100).toFixed(1)}%) │`,
+    '└─────────────────────────────────────────────────┘',
+  ];
+  return lines.join('\n');
+}
+
+// ============================================================================
+// Hybrid Search Benchmark Support
+// ============================================================================
+
+export interface HybridSearchMetrics {
+  /** Semantic-only search results */
+  semantic: AccuracyMetrics;
+  /** BM25-only search results */
+  bm25: AccuracyMetrics;
+  /** Hybrid (RRF fusion) search results */
+  hybrid: AccuracyMetrics;
+  /** Best performing mode */
+  bestMode: 'semantic' | 'bm25' | 'hybrid';
+  /** Hybrid improvement over semantic (percentage points) */
+  hybridVsSemantic: number;
+  /** Hybrid improvement over BM25 (percentage points) */
+  hybridVsBm25: number;
+}
+
+/**
+ * Compare hybrid search modes and determine best performer
+ */
+export function compareHybridModes(
+  semantic: AccuracyMetrics,
+  bm25: AccuracyMetrics,
+  hybrid: AccuracyMetrics
+): HybridSearchMetrics {
+  // Use F1 as the primary comparison metric
+  const semanticF1 = semantic.f1AtK;
+  const bm25F1 = bm25.f1AtK;
+  const hybridF1 = hybrid.f1AtK;
+
+  let bestMode: 'semantic' | 'bm25' | 'hybrid' = 'hybrid';
+  if (semanticF1 >= hybridF1 && semanticF1 >= bm25F1) {
+    bestMode = 'semantic';
+  } else if (bm25F1 >= hybridF1 && bm25F1 >= semanticF1) {
+    bestMode = 'bm25';
+  }
+
+  return {
+    semantic,
+    bm25,
+    hybrid,
+    bestMode,
+    hybridVsSemantic: hybridF1 - semanticF1,
+    hybridVsBm25: hybridF1 - bm25F1,
+  };
+}
+
+/**
+ * Format hybrid search comparison as human-readable string
+ */
+export function formatHybridComparison(metrics: HybridSearchMetrics): string {
+  const formatPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+  const formatDelta = (d: number) => {
+    const sign = d >= 0 ? '+' : '';
+    return `${sign}${(d * 100).toFixed(1)}%`;
+  };
+
+  const bestIndicator = (mode: string) =>
+    mode === metrics.bestMode ? ' ⭐' : '';
+
+  const lines = [
+    '┌───────────────────────────────────────────────────────────────┐',
+    '│              Hybrid Search Comparison                         │',
+    '├───────────┬──────────┬──────────┬──────────┬──────────┬──────┤',
+    '│ Mode      │ Recall@K │ Prec@K   │ F1@K     │ MRR      │ Best │',
+    '├───────────┼──────────┼──────────┼──────────┼──────────┼──────┤',
+    `│ Semantic  │ ${formatPct(metrics.semantic.recallAtK).padStart(8)} │ ${formatPct(metrics.semantic.precisionAtK).padStart(8)} │ ${formatPct(metrics.semantic.f1AtK).padStart(8)} │ ${formatPct(metrics.semantic.mrr).padStart(8)} │${bestIndicator('semantic').padStart(5)} │`,
+    `│ BM25      │ ${formatPct(metrics.bm25.recallAtK).padStart(8)} │ ${formatPct(metrics.bm25.precisionAtK).padStart(8)} │ ${formatPct(metrics.bm25.f1AtK).padStart(8)} │ ${formatPct(metrics.bm25.mrr).padStart(8)} │${bestIndicator('bm25').padStart(5)} │`,
+    `│ Hybrid    │ ${formatPct(metrics.hybrid.recallAtK).padStart(8)} │ ${formatPct(metrics.hybrid.precisionAtK).padStart(8)} │ ${formatPct(metrics.hybrid.f1AtK).padStart(8)} │ ${formatPct(metrics.hybrid.mrr).padStart(8)} │${bestIndicator('hybrid').padStart(5)} │`,
+    '├───────────┴──────────┴──────────┴──────────┴──────────┴──────┤',
+    `│ Hybrid vs Semantic: ${formatDelta(metrics.hybridVsSemantic).padStart(7)} F1                            │`,
+    `│ Hybrid vs BM25:     ${formatDelta(metrics.hybridVsBm25).padStart(7)} F1                            │`,
+    '└───────────────────────────────────────────────────────────────┘',
+  ];
+  return lines.join('\n');
 }

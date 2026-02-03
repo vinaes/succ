@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   recallAtK,
+  precisionAtK,
+  f1AtK,
   reciprocalRank,
   meanReciprocalRank,
   dcg,
@@ -8,6 +10,9 @@ import {
   calculateAccuracyMetrics,
   calculateLatencyStats,
   generateTestDataset,
+  compareBenchmarks,
+  compareHybridModes,
+  generateBenchmarkId,
 } from './benchmark.js';
 
 describe('Benchmark Metrics', () => {
@@ -50,6 +55,72 @@ describe('Benchmark Metrics', () => {
       const results = [{ id: 1, score: 0.9 }];
       const relevant = new Set([1, 2]);
       expect(recallAtK(results, relevant, 5)).toBe(0.5);
+    });
+  });
+
+  describe('precisionAtK', () => {
+    it('returns 1.0 when all top K results are relevant', () => {
+      const results = [
+        { id: 1, score: 0.9 },
+        { id: 2, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2, 3, 4]);
+      expect(precisionAtK(results, relevant, 2)).toBe(1.0);
+    });
+
+    it('returns 0.5 when half of top K results are relevant', () => {
+      const results = [
+        { id: 1, score: 0.9 },
+        { id: 3, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2]);
+      expect(precisionAtK(results, relevant, 2)).toBe(0.5);
+    });
+
+    it('returns 0 when no top K results are relevant', () => {
+      const results = [
+        { id: 3, score: 0.9 },
+        { id: 4, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2]);
+      expect(precisionAtK(results, relevant, 2)).toBe(0);
+    });
+
+    it('returns 0 when K is 0', () => {
+      const results = [{ id: 1, score: 0.9 }];
+      const relevant = new Set([1]);
+      expect(precisionAtK(results, relevant, 0)).toBe(0);
+    });
+  });
+
+  describe('f1AtK', () => {
+    it('returns 1.0 when precision and recall are both 1.0', () => {
+      const results = [
+        { id: 1, score: 0.9 },
+        { id: 2, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2]);
+      expect(f1AtK(results, relevant, 2)).toBe(1.0);
+    });
+
+    it('returns 0 when both precision and recall are 0', () => {
+      const results = [
+        { id: 3, score: 0.9 },
+        { id: 4, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2]);
+      expect(f1AtK(results, relevant, 2)).toBe(0);
+    });
+
+    it('calculates harmonic mean correctly', () => {
+      // precision = 1/2 = 0.5, recall = 1/4 = 0.25
+      // F1 = 2 * (0.5 * 0.25) / (0.5 + 0.25) = 0.333...
+      const results = [
+        { id: 1, score: 0.9 },
+        { id: 3, score: 0.8 },
+      ];
+      const relevant = new Set([1, 2, 5, 6]);
+      expect(f1AtK(results, relevant, 2)).toBeCloseTo(1 / 3, 5);
     });
   });
 
@@ -201,12 +272,16 @@ describe('Benchmark Metrics', () => {
       expect(metrics.queriesWithHits).toBe(1);
       expect(metrics.k).toBe(2);
       expect(metrics.recallAtK).toBe(0.5); // First query: 100%, second: 0%
+      expect(metrics.precisionAtK).toBe(0.5); // First query: 100%, second: 0%
+      expect(metrics.f1AtK).toBe(0.5); // First query: 100%, second: 0%
       expect(metrics.mrr).toBe(0.5); // First query: 1.0, second: 0
     });
 
     it('returns zeros for empty queries', () => {
       const metrics = calculateAccuracyMetrics([], 5);
       expect(metrics.recallAtK).toBe(0);
+      expect(metrics.precisionAtK).toBe(0);
+      expect(metrics.f1AtK).toBe(0);
       expect(metrics.mrr).toBe(0);
       expect(metrics.ndcg).toBe(0);
       expect(metrics.queryCount).toBe(0);
@@ -268,6 +343,177 @@ describe('Benchmark Metrics', () => {
       const dataset = generateTestDataset();
       const categories = new Set(dataset.memories.map((m) => m.category));
       expect(categories.size).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe('compareBenchmarks', () => {
+    it('detects regression when F1 drops significantly', () => {
+      const current = {
+        recallAtK: 0.8,
+        precisionAtK: 0.7,
+        f1AtK: 0.7,
+        k: 5,
+        mrr: 0.8,
+        ndcg: 0.75,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+      const previous = {
+        recallAtK: 0.85,
+        precisionAtK: 0.8,
+        f1AtK: 0.8,
+        k: 5,
+        mrr: 0.85,
+        ndcg: 0.8,
+        queryCount: 10,
+        queriesWithHits: 9,
+      };
+      const comparison = compareBenchmarks(current, previous);
+      expect(comparison.isRegression).toBe(true);
+      expect(comparison.isImprovement).toBe(false);
+      expect(comparison.f1Delta).toBeCloseTo(-0.1, 5);
+    });
+
+    it('detects improvement when F1 increases significantly', () => {
+      const current = {
+        recallAtK: 0.9,
+        precisionAtK: 0.85,
+        f1AtK: 0.87,
+        k: 5,
+        mrr: 0.9,
+        ndcg: 0.85,
+        queryCount: 10,
+        queriesWithHits: 9,
+      };
+      const previous = {
+        recallAtK: 0.8,
+        precisionAtK: 0.75,
+        f1AtK: 0.77,
+        k: 5,
+        mrr: 0.8,
+        ndcg: 0.75,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+      const comparison = compareBenchmarks(current, previous);
+      expect(comparison.isRegression).toBe(false);
+      expect(comparison.isImprovement).toBe(true);
+      expect(comparison.f1Delta).toBeCloseTo(0.1, 5);
+    });
+
+    it('reports no significant change for small differences', () => {
+      const current = {
+        recallAtK: 0.81,
+        precisionAtK: 0.76,
+        f1AtK: 0.78,
+        k: 5,
+        mrr: 0.81,
+        ndcg: 0.76,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+      const previous = {
+        recallAtK: 0.8,
+        precisionAtK: 0.75,
+        f1AtK: 0.77,
+        k: 5,
+        mrr: 0.8,
+        ndcg: 0.75,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+      const comparison = compareBenchmarks(current, previous);
+      expect(comparison.isRegression).toBe(false);
+      expect(comparison.isImprovement).toBe(false);
+    });
+  });
+
+  describe('compareHybridModes', () => {
+    it('identifies hybrid as best when it has highest F1', () => {
+      const semantic = {
+        recallAtK: 0.7,
+        precisionAtK: 0.6,
+        f1AtK: 0.65,
+        k: 5,
+        mrr: 0.7,
+        ndcg: 0.65,
+        queryCount: 10,
+        queriesWithHits: 7,
+      };
+      const bm25 = {
+        recallAtK: 0.6,
+        precisionAtK: 0.5,
+        f1AtK: 0.55,
+        k: 5,
+        mrr: 0.6,
+        ndcg: 0.55,
+        queryCount: 10,
+        queriesWithHits: 6,
+      };
+      const hybrid = {
+        recallAtK: 0.8,
+        precisionAtK: 0.7,
+        f1AtK: 0.75,
+        k: 5,
+        mrr: 0.8,
+        ndcg: 0.75,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+
+      const result = compareHybridModes(semantic, bm25, hybrid);
+      expect(result.bestMode).toBe('hybrid');
+      expect(result.hybridVsSemantic).toBeCloseTo(0.1, 5);
+      expect(result.hybridVsBm25).toBeCloseTo(0.2, 5);
+    });
+
+    it('identifies semantic as best when it has highest F1', () => {
+      const semantic = {
+        recallAtK: 0.9,
+        precisionAtK: 0.85,
+        f1AtK: 0.87,
+        k: 5,
+        mrr: 0.9,
+        ndcg: 0.85,
+        queryCount: 10,
+        queriesWithHits: 9,
+      };
+      const bm25 = {
+        recallAtK: 0.6,
+        precisionAtK: 0.5,
+        f1AtK: 0.55,
+        k: 5,
+        mrr: 0.6,
+        ndcg: 0.55,
+        queryCount: 10,
+        queriesWithHits: 6,
+      };
+      const hybrid = {
+        recallAtK: 0.8,
+        precisionAtK: 0.7,
+        f1AtK: 0.75,
+        k: 5,
+        mrr: 0.8,
+        ndcg: 0.75,
+        queryCount: 10,
+        queriesWithHits: 8,
+      };
+
+      const result = compareHybridModes(semantic, bm25, hybrid);
+      expect(result.bestMode).toBe('semantic');
+    });
+  });
+
+  describe('generateBenchmarkId', () => {
+    it('generates unique IDs', () => {
+      const id1 = generateBenchmarkId();
+      const id2 = generateBenchmarkId();
+      expect(id1).not.toBe(id2);
+    });
+
+    it('starts with bench- prefix', () => {
+      const id = generateBenchmarkId();
+      expect(id.startsWith('bench-')).toBe(true);
     });
   });
 });
