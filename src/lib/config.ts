@@ -63,10 +63,14 @@ export interface SuccConfig {
 export interface CompactBriefingConfig {
   enabled?: boolean;  // Enable compact briefing (default: true)
   format?: 'structured' | 'prose' | 'minimal';  // Output format (default: 'structured')
-  model?: 'haiku' | 'sonnet' | 'opus';  // Claude model for generation (default: 'haiku')
+  mode?: 'local' | 'openrouter' | 'custom';  // Generation mode: local (Claude CLI), openrouter (API), custom (Ollama/LM Studio)
+  model?: string;  // Model name: 'haiku'/'sonnet'/'opus' for local, 'anthropic/claude-3-haiku' for openrouter, etc.
+  api_url?: string;  // Custom API URL (for custom mode, e.g., http://localhost:11434/v1)
+  api_key?: string;  // Custom API key (for custom mode or openrouter override)
   include_learnings?: boolean;  // Include extracted learnings (default: true)
   include_memories?: boolean;  // Include relevant memories (default: true)
   max_memories?: number;  // Max relevant memories to include (default: 3)
+  timeout_ms?: number;  // API timeout in ms (default: 15000)
 }
 
 export interface DaemonConfig {
@@ -208,10 +212,14 @@ export const DEFAULT_SLEEP_AGENT_CONFIG = {
 export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = {
   enabled: true,
   format: 'structured',
-  model: 'haiku',
+  mode: 'local',  // Default to local Claude CLI (safe fallback)
+  model: 'haiku',  // Model name depends on mode
+  api_url: '',  // Only needed for custom mode
+  api_key: '',  // Only needed for custom mode or openrouter override
   include_learnings: true,
   include_memories: true,
   max_memories: 3,
+  timeout_ms: 15000,  // 15s default timeout
 };
 
 // Default idle reflection config
@@ -494,10 +502,14 @@ export function getCompactBriefingConfig(): Required<CompactBriefingConfig> {
   return {
     enabled: userConfig.enabled ?? DEFAULT_COMPACT_BRIEFING_CONFIG.enabled,
     format: userConfig.format ?? DEFAULT_COMPACT_BRIEFING_CONFIG.format,
+    mode: userConfig.mode ?? DEFAULT_COMPACT_BRIEFING_CONFIG.mode,
     model: userConfig.model ?? DEFAULT_COMPACT_BRIEFING_CONFIG.model,
+    api_url: userConfig.api_url ?? DEFAULT_COMPACT_BRIEFING_CONFIG.api_url,
+    api_key: userConfig.api_key ?? DEFAULT_COMPACT_BRIEFING_CONFIG.api_key,
     include_learnings: userConfig.include_learnings ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_learnings,
     include_memories: userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
     max_memories: userConfig.max_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.max_memories,
+    timeout_ms: userConfig.timeout_ms ?? DEFAULT_COMPACT_BRIEFING_CONFIG.timeout_ms,
   };
 }
 
