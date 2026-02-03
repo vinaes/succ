@@ -77,6 +77,15 @@ let state: DaemonState | null = null;
 let sessionManager: ReturnType<typeof createSessionManager> | null = null;
 let idleWatcher: ReturnType<typeof createIdleWatcher> | null = null;
 
+// Briefing cache for pre-generated compact briefings
+interface BriefingCache {
+  briefing: string;
+  generatedAt: number;
+  transcriptSize: number;
+}
+const briefingCache = new Map<string, BriefingCache>();
+let briefingGenerationInProgress = new Set<string>();
+
 // ============================================================================
 // File Paths
 // ============================================================================
@@ -152,6 +161,110 @@ function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 
   const content = buffer.toString('utf8');
   const firstNewline = content.indexOf('\n');
   return firstNewline > 0 ? content.slice(firstNewline + 1) : content;
+}
+
+// ============================================================================
+// Briefing Pre-Generation
+// ============================================================================
+
+const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000;  // 5 minutes
+const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000;  // Re-generate after 5KB growth
+const BRIEFING_PREGENERATE_IDLE_MS = 30 * 1000;  // Pre-generate after 30s idle
+
+/**
+ * Pre-generate briefing for a session in background
+ * Called when session is idle or transcript grows significantly
+ */
+async function preGenerateBriefing(sessionId: string, transcriptPath: string): Promise<void> {
+  // Skip if already generating
+  if (briefingGenerationInProgress.has(sessionId)) {
+    return;
+  }
+
+  if (!fs.existsSync(transcriptPath)) {
+    return;
+  }
+
+  const stats = fs.statSync(transcriptPath);
+  const currentSize = stats.size;
+
+  // Check if we need to regenerate
+  const cached = briefingCache.get(sessionId);
+  if (cached) {
+    const age = Date.now() - cached.generatedAt;
+    const growth = currentSize - cached.transcriptSize;
+
+    // Skip if cache is fresh and transcript hasn't grown much
+    if (age < BRIEFING_CACHE_MAX_AGE_MS && growth < BRIEFING_MIN_TRANSCRIPT_GROWTH) {
+      return;
+    }
+  }
+
+  briefingGenerationInProgress.add(sessionId);
+  log(`[briefing] Pre-generating for session ${sessionId.slice(0, 8)}...`);
+
+  try {
+    const transcriptContent = fs.readFileSync(transcriptPath, 'utf-8');
+    const result = await generateCompactBriefing(transcriptContent);
+
+    if (result.success && result.briefing) {
+      briefingCache.set(sessionId, {
+        briefing: result.briefing,
+        generatedAt: Date.now(),
+        transcriptSize: currentSize,
+      });
+      log(`[briefing] Pre-generated for session ${sessionId.slice(0, 8)} (${result.briefing.length} chars)`);
+    } else {
+      log(`[briefing] Pre-generation failed: ${result.error}`);
+    }
+  } catch (error) {
+    log(`[briefing] Pre-generation error: ${error}`);
+  } finally {
+    briefingGenerationInProgress.delete(sessionId);
+  }
+}
+
+/**
+ * Get cached briefing or generate on-demand
+ */
+async function getCachedBriefing(sessionId: string, transcriptPath: string): Promise<{ briefing?: string; cached: boolean }> {
+  const cached = briefingCache.get(sessionId);
+
+  if (cached) {
+    // Check if cache is still valid
+    const age = Date.now() - cached.generatedAt;
+    if (age < BRIEFING_CACHE_MAX_AGE_MS) {
+      return { briefing: cached.briefing, cached: true };
+    }
+  }
+
+  // Cache miss or stale - generate fresh
+  if (!fs.existsSync(transcriptPath)) {
+    return { cached: false };
+  }
+
+  const transcriptContent = fs.readFileSync(transcriptPath, 'utf-8');
+  const result = await generateCompactBriefing(transcriptContent);
+
+  if (result.success && result.briefing) {
+    const stats = fs.statSync(transcriptPath);
+    briefingCache.set(sessionId, {
+      briefing: result.briefing,
+      generatedAt: Date.now(),
+      transcriptSize: stats.size,
+    });
+    return { briefing: result.briefing, cached: false };
+  }
+
+  return { cached: false };
+}
+
+/**
+ * Clear briefing cache for a session (called when session ends)
+ */
+function clearBriefingCache(sessionId: string): void {
+  briefingCache.delete(sessionId);
+  briefingGenerationInProgress.delete(sessionId);
 }
 
 function getDaemonPortFile(): string {
@@ -551,6 +664,7 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
 
     // Unregister the session immediately (don't block on processing)
     const removed = sessionManager!.unregister(session_id);
+    clearBriefingCache(session_id);  // Clean up any cached briefing
     log(`[session] Unregistered: ${session_id} (removed=${removed})`);
 
     // Process session asynchronously (summarize transcript, extract learnings, save to memory)
@@ -730,8 +844,21 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
   }
 
   // Compact briefing endpoint (for /compact hook)
+  // Supports pre-generated cache for instant responses
   if (pathname === '/api/briefing' && method === 'POST') {
-    const { transcript, transcript_path, format, model, include_learnings, include_memories, max_memories } = body;
+    const { transcript, transcript_path, session_id, format, model, include_learnings, include_memories, max_memories, use_cache } = body;
+
+    // Try cached briefing first if session_id provided and use_cache not explicitly false
+    if (session_id && use_cache !== false) {
+      const cached = briefingCache.get(session_id);
+      if (cached) {
+        const age = Date.now() - cached.generatedAt;
+        if (age < BRIEFING_CACHE_MAX_AGE_MS) {
+          log(`[briefing] Serving cached briefing for ${session_id.slice(0, 8)} (age: ${Math.round(age / 1000)}s)`);
+          return { success: true, briefing: cached.briefing, cached: true };
+        }
+      }
+    }
 
     // Either transcript content or path to transcript file
     let transcriptContent: string;
@@ -751,7 +878,17 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
       max_memories,
     });
 
-    return result;
+    // Cache the result if session_id provided
+    if (session_id && result.success && result.briefing && transcript_path) {
+      const stats = fs.existsSync(transcript_path) ? fs.statSync(transcript_path) : null;
+      briefingCache.set(session_id, {
+        briefing: result.briefing,
+        generatedAt: Date.now(),
+        transcriptSize: stats?.size || 0,
+      });
+    }
+
+    return { ...result, cached: false };
   }
 
   // Status endpoints
@@ -952,13 +1089,15 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   fs.writeFileSync(getDaemonPidFile(), String(process.pid));
   fs.writeFileSync(getDaemonPortFile(), String(port));
 
-  // Start idle watcher
+  // Start idle watcher with briefing pre-generation
   idleWatcher = createIdleWatcher({
     sessionManager,
     onIdle: handleReflection,
+    onPreGenerateBriefing: preGenerateBriefing,
     checkIntervalSeconds: watcherConfig.check_interval,
     idleMinutes: watcherConfig.idle_minutes,
     reflectionCooldownMinutes: watcherConfig.reflection_cooldown_minutes,
+    preGenerateIdleSeconds: 30,  // Pre-generate briefing after 30s idle
     log,
   });
   idleWatcher.start();

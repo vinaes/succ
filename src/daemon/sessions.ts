@@ -185,9 +185,11 @@ export interface IdleWatcher {
 export interface IdleWatcherOptions {
   sessionManager: SessionManager;
   onIdle: (sessionId: string, session: SessionState) => Promise<void>;
+  onPreGenerateBriefing?: (sessionId: string, transcriptPath: string) => Promise<void>;
   checkIntervalSeconds?: number;
   idleMinutes?: number;
   reflectionCooldownMinutes?: number;
+  preGenerateIdleSeconds?: number;  // Pre-generate briefing after this many seconds idle (default: 30)
   log?: (message: string) => void;
 }
 
@@ -195,6 +197,7 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
   const {
     sessionManager,
     onIdle,
+    onPreGenerateBriefing,
     log = console.log,
   } = options;
 
@@ -203,24 +206,48 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
   const checkIntervalSeconds = options.checkIntervalSeconds ?? watcherConfig.check_interval;
   const idleMinutes = options.idleMinutes ?? watcherConfig.idle_minutes;
   const cooldownMinutes = options.reflectionCooldownMinutes ?? watcherConfig.reflection_cooldown_minutes;
+  const preGenerateIdleSeconds = options.preGenerateIdleSeconds ?? 30;  // Default 30s
 
   let intervalId: NodeJS.Timeout | null = null;
 
   async function check(): Promise<void> {
-    const idleSessions = sessionManager.getIdleSessions(idleMinutes);
+    const now = Date.now();
+    const idleMs = idleMinutes * 60 * 1000;
+    const preGenerateIdleMs = preGenerateIdleSeconds * 1000;
 
-    for (const { sessionId, session } of idleSessions) {
-      // Check reflection cooldown
-      const timeSinceReflection = Date.now() - session.lastReflection;
-      const cooldownMs = cooldownMinutes * 60 * 1000;
+    // Check all non-service sessions
+    for (const [sessionId, session] of sessionManager.getAll(false)) {
+      // Skip service sessions
+      if (session.isService) continue;
 
-      if (session.lastReflection === 0 || timeSinceReflection >= cooldownMs) {
-        log(`[idle-watcher] Session ${sessionId} is idle, triggering reflection`);
-        try {
-          await onIdle(sessionId, session);
-          sessionManager.markReflection(sessionId);
-        } catch (err) {
-          log(`[idle-watcher] Reflection failed for ${sessionId}: ${err}`);
+      // Only consider sessions that ended with 'stop' (assistant finished responding)
+      if (session.lastActivityType !== 'stop') continue;
+
+      const timeSinceActivity = now - session.lastActivity;
+
+      // Pre-generate briefing after short idle (30s by default)
+      // This runs in background, doesn't block
+      if (onPreGenerateBriefing && session.transcriptPath && timeSinceActivity >= preGenerateIdleMs) {
+        // Fire and forget - don't await
+        onPreGenerateBriefing(sessionId, session.transcriptPath).catch(err => {
+          log(`[idle-watcher] Briefing pre-generation failed for ${sessionId}: ${err}`);
+        });
+      }
+
+      // Full idle check for reflection (longer threshold)
+      if (timeSinceActivity >= idleMs) {
+        // Check reflection cooldown
+        const timeSinceReflection = now - session.lastReflection;
+        const cooldownMs = cooldownMinutes * 60 * 1000;
+
+        if (session.lastReflection === 0 || timeSinceReflection >= cooldownMs) {
+          log(`[idle-watcher] Session ${sessionId} is idle, triggering reflection`);
+          try {
+            await onIdle(sessionId, session);
+            sessionManager.markReflection(sessionId);
+          } catch (err) {
+            log(`[idle-watcher] Reflection failed for ${sessionId}: ${err}`);
+          }
         }
       }
     }
