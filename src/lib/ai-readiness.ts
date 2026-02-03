@@ -303,6 +303,7 @@ export function calculateHooksActiveScore(): MetricResult {
 
   // Check session-end hook (or idle watcher)
   const sessionEndPaths = [
+    path.join(hooksDir, 'succ-session-end.cjs'),
     path.join(hooksDir, 'succ-idle-watcher.cjs'),
     path.join(hooksDir, 'session-end.cjs'),
     path.join(hooksDir, 'session-end.js'),
