@@ -30,7 +30,7 @@ process.stdin.on('readable', () => {
   }
 });
 
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const hookInput = JSON.parse(input);
     let projectDir = hookInput.cwd || process.cwd();
@@ -40,8 +40,14 @@ process.stdin.on('end', () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    const contextParts = [];
     const succDir = path.join(projectDir, '.succ');
+
+    // Skip if succ is not initialized in this project
+    if (!fs.existsSync(succDir)) {
+      process.exit(0);
+    }
+
+    const contextParts = [];
     const projectName = path.basename(projectDir);
 
     // Git Context
@@ -69,13 +75,24 @@ process.stdin.on('end', () => {
 
     // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
     contextParts.push(`<succ-tools>
+<critical>
+⚠️ ALWAYS use succ tools for knowledge retrieval:
+- User says "brain", "docs", "vault", "spec" → **succ_search**
+- User says "remember", "decided", "learned", "how did we" → **succ_recall**
+- User says "where is", "find code", "implementation" → **succ_search_code**
+
+❌ NEVER use Glob/Grep to search .succ/brain/ — use succ_search instead
+❌ NEVER use Grep to find memories — use succ_recall instead
+❌ NEVER use Read to browse brain vault — use succ_search first
+</critical>
+
 <decision-guide>
 | Question | Tool |
 |----------|------|
 | How did we solve X? | succ_recall |
 | What do docs say about X? | succ_search |
 | Where is X implemented? | succ_search_code |
-| Find regex pattern | Grep |
+| Find regex pattern in code | Grep |
 | List files by pattern | Glob |
 </decision-guide>
 
@@ -149,42 +166,136 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Precomputed Context from previous session
-    const precomputedContextPath = path.join(succDir, 'next-session-context.md');
-    if (fs.existsSync(precomputedContextPath)) {
-      try {
-        const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
-        if (precomputedContent) {
-          contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
+    // Check if this is a compact event (after /compact)
+    const isCompactEvent = hookInput.source === 'compact';
 
-          // Archive the file after loading
-          const archiveDir = path.join(succDir, '.context-archive');
-          if (!fs.existsSync(archiveDir)) {
-            fs.mkdirSync(archiveDir, { recursive: true });
+    // Precomputed Context from previous session (only on fresh start, not compact)
+    if (!isCompactEvent) {
+      const precomputedContextPath = path.join(succDir, 'next-session-context.md');
+      if (fs.existsSync(precomputedContextPath)) {
+        try {
+          const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
+          if (precomputedContent) {
+            contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
+
+            // Archive the file after loading
+            const archiveDir = path.join(succDir, '.context-archive');
+            if (!fs.existsSync(archiveDir)) {
+              fs.mkdirSync(archiveDir, { recursive: true });
+            }
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
+            fs.renameSync(precomputedContextPath, archivePath);
+
+            // Cleanup old archives (keep last 10)
+            try {
+              const archives = fs.readdirSync(archiveDir)
+                .filter(f => f.startsWith('context-') && f.endsWith('.md'))
+                .sort()
+                .reverse();
+              for (const oldArchive of archives.slice(10)) {
+                fs.unlinkSync(path.join(archiveDir, oldArchive));
+              }
+            } catch {
+              // Cleanup failed, not critical
+            }
           }
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
-          fs.renameSync(precomputedContextPath, archivePath);
+        } catch {
+          // Ignore errors
         }
-      } catch {
-        // Ignore errors
       }
     }
 
-    // Recent memories (compact index format)
-    try {
-      const memoriesResult = execFileSync('npx', ['succ', 'memories', '--recent', '5', '--json'], {
-        cwd: projectDir,
-        encoding: 'utf8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+    // Helper to get daemon port
+    const tmpDir = path.join(succDir, '.tmp');
+    const portFile = path.join(tmpDir, 'daemon.port');
 
-      if (memoriesResult.trim()) {
-        try {
-          const memories = JSON.parse(memoriesResult);
+    const getDaemonPort = () => {
+      try {
+        if (fs.existsSync(portFile)) {
+          return parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+        }
+      } catch {}
+      return null;
+    };
+
+    const checkDaemon = async (port) => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/health`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        const data = await response.json();
+        return data?.status === 'ok';
+      } catch {
+        return false;
+      }
+    };
+
+    const startDaemon = () => {
+      const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+      if (fs.existsSync(servicePath)) {
+        const daemon = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
+          cwd: projectDir,
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: { ...process.env, NODE_OPTIONS: '' },
+        });
+        daemon.unref();
+        return true;
+      }
+      return false;
+    };
+
+    // Ensure daemon is running and get port
+    let daemonPort = getDaemonPort();
+    if (!daemonPort || !(await checkDaemon(daemonPort))) {
+      startDaemon();
+      // Wait for daemon to start (max 3 seconds)
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        daemonPort = getDaemonPort();
+        if (daemonPort && await checkDaemon(daemonPort)) {
+          break;
+        }
+      }
+    }
+
+    // Generate compact briefing if this is a compact event (replaces recent-memories)
+    // Skip for service sessions (reflection subagents) - they shouldn't trigger compact briefing
+    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+    if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
+          signal: AbortSignal.timeout(60000), // Allow up to 60s for LLM generation
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.briefing) {
+            contextParts.push(`<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`);
+          }
+        }
+      } catch {
+        // Briefing generation failed, continue without it
+      }
+    }
+
+    // Recent memories via daemon API (only on fresh start, compact uses briefing instead)
+    if (daemonPort && !isCompactEvent) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/recall`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: '', limit: 5 }),
+          signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const memories = data.results || [];
           if (memories.length > 0) {
-            // Compact index format: ID | type | preview
             const lines = memories.map((m) => {
               const preview = m.content.slice(0, 50).replace(/\n/g, ' ');
               const type = m.type || 'obs';
@@ -192,44 +303,33 @@ Co-Authored-By order (succ always LAST):
             });
             contextParts.push(`<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`);
           }
-        } catch {
-          // Not JSON, try plain format
-          if (!memoriesResult.includes('No memories')) {
-            contextParts.push('<recent-memories>\n' + memoriesResult.trim() + '\n</recent-memories>');
+        }
+      } catch {
+        // memories not available
+      }
+    }
+
+    // Knowledge base stats via daemon API
+    if (daemonPort) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/status`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok) {
+          const status = await response.json();
+          const docs = status.documents || 0;
+          const mems = status.memories || 0;
+          const code = status.codeChunks || 0;
+          if (docs > 0 || mems > 0 || code > 0) {
+            contextParts.push(`<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`);
           }
         }
+      } catch {
+        // status not available
       }
-    } catch {
-      // memories not available
     }
 
-    // Knowledge base stats (compact)
-    try {
-      const statusResult = execFileSync('npx', ['succ', 'status'], {
-        cwd: projectDir,
-        encoding: 'utf8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      if (statusResult.trim()) {
-        const docsMatch = statusResult.match(/files indexed:\s*(\d+)/i);
-        const memoriesMatch = statusResult.match(/Total:\s*(\d+)/i);
-        const codeMatch = statusResult.match(/code chunks:\s*(\d+)/i);
-
-        const docs = docsMatch ? parseInt(docsMatch[1]) : 0;
-        const mems = memoriesMatch ? parseInt(memoriesMatch[1]) : 0;
-        const code = codeMatch ? parseInt(codeMatch[1]) : 0;
-
-        if (docs > 0 || mems > 0 || code > 0) {
-          contextParts.push(`<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`);
-        }
-      }
-    } catch {
-      // status not available
-    }
-
-    // Output context first (before async daemon work)
+    // Output context
     if (contextParts.length > 0) {
       const output = {
         hookSpecificOutput: {
@@ -240,108 +340,25 @@ Co-Authored-By order (succ always LAST):
       console.log(JSON.stringify(output));
     }
 
-    // Start daemon and register session (async with proper awaiting)
-    const transcriptPath = hookInput.transcript_path || '';
-    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : `session-${Date.now()}`;
-    const tmpDir = path.join(succDir, '.tmp');
-    const portFile = path.join(tmpDir, 'daemon.port');
+    // Register session with daemon
+    if (daemonPort) {
+      const transcriptPath = hookInput.transcript_path || '';
+      const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : `session-${Date.now()}`;
+      // isServiceSession already defined above
 
-    // Save transcript path for other hooks
-    if (transcriptPath) {
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
+      try {
+        await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, is_service: isServiceSession }),
+          signal: AbortSignal.timeout(3000),
+        });
+      } catch {
+        // Registration failed, continue anyway
       }
-      fs.writeFileSync(path.join(tmpDir, 'current-transcript.txt'), transcriptPath);
-      fs.writeFileSync(path.join(tmpDir, 'current-session-id.txt'), sessionId);
     }
 
-    // Check if this is a service session (e.g., reflection subagent)
-    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
-
-    // Async daemon registration
-    const registerWithDaemon = async () => {
-      const registerSession = async (port) => {
-        try {
-          const response = await fetch(`http://127.0.0.1:${port}/api/session/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, is_service: isServiceSession }),
-            signal: AbortSignal.timeout(3000),
-          });
-          return response.ok;
-        } catch {
-          return false;
-        }
-      };
-
-      const checkDaemon = async (port) => {
-        try {
-          const response = await fetch(`http://127.0.0.1:${port}/health`, {
-            signal: AbortSignal.timeout(2000),
-          });
-          const data = await response.json();
-          return data?.status === 'ok';
-        } catch {
-          return false;
-        }
-      };
-
-      const startDaemon = () => {
-        const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
-        if (fs.existsSync(servicePath)) {
-          const daemon = spawn(process.execPath, [servicePath], {
-            cwd: projectDir,
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true,
-            env: { ...process.env, NODE_OPTIONS: '' },
-          });
-          daemon.unref();
-          return true;
-        }
-        return false;
-      };
-
-      // Try existing daemon
-      let daemonPort = null;
-      if (fs.existsSync(portFile)) {
-        try {
-          daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-        } catch {}
-      }
-
-      if (daemonPort && await checkDaemon(daemonPort)) {
-        await registerSession(daemonPort);
-        return;
-      }
-
-      // Start daemon and wait for it
-      startDaemon();
-
-      // Wait for daemon to start (max 5 seconds)
-      for (let i = 0; i < 50; i++) {
-        await new Promise(r => setTimeout(r, 100));
-        if (fs.existsSync(portFile)) {
-          try {
-            daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-            if (await checkDaemon(daemonPort)) {
-              await registerSession(daemonPort);
-              return;
-            }
-          } catch {}
-        }
-      }
-    };
-
-    // Run daemon registration with timeout, then exit
-    Promise.race([
-      registerWithDaemon(),
-      new Promise(r => setTimeout(r, 6000)) // Max 6 seconds for daemon
-    ])
-      .catch(() => {})
-      .finally(() => {
-        process.exit(0);
-      });
+    process.exit(0);
 
   } catch (err) {
     process.exit(0);

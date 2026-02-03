@@ -113,6 +113,7 @@ async function extractWithClaudeCLI(prompt: string, model: string): Promise<Extr
     const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+      windowsHide: true, // Hide CMD window on Windows (works without detached)
     });
 
     proc.stdin?.write(prompt);

@@ -17,8 +17,10 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
+import { processSessionEnd } from './session-processor.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
 import { startAnalyzer, stopAnalyzer, getAnalyzerStatus, triggerAnalysis } from './analyzer.js';
 import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConfig, getConfig } from '../lib/config.js';
@@ -31,6 +33,7 @@ import {
   getMemoryStats,
   incrementMemoryAccessBatch,
   autoLinkSimilarMemories,
+  getRecentMemories,
   // Global memory
   saveGlobalMemory,
   closeGlobalDb,
@@ -39,6 +42,7 @@ import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { extractSessionSummary } from '../lib/session-summary.js';
+import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import spawn from 'cross-spawn';
 
 // ============================================================================
@@ -85,6 +89,70 @@ function getDaemonPidFile(): string {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
   return path.join(tmpDir, 'daemon.pid');
+}
+
+// ============================================================================
+// Progress File Management
+// ============================================================================
+
+/**
+ * Get path to session progress file
+ * Progress files accumulate idle reflection briefings for session-end processing
+ */
+function getProgressFilePath(sessionId: string): string {
+  const succDir = getSuccDir();
+  const tmpDir = path.join(succDir, '.tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
+  return path.join(tmpDir, `session-${sessionId}-progress.md`);
+}
+
+/**
+ * Append a briefing to the session progress file
+ * Creates file with header if it doesn't exist
+ */
+function appendToProgressFile(sessionId: string, briefing: string): void {
+  const progressPath = getProgressFilePath(sessionId);
+  const timestamp = new Date().toISOString();
+  const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+  let content = '';
+  if (!fs.existsSync(progressPath)) {
+    content = `---\nsession_id: ${sessionId}\ncreated: ${timestamp}\n---\n\n`;
+  }
+
+  content += `## ${timeStr} - Idle Reflection\n\n`;
+  content += briefing;
+  content += '\n\n---\n\n';
+
+  fs.appendFileSync(progressPath, content);
+}
+
+/**
+ * Read tail of transcript file (for fallback when no progress file)
+ * Returns the last maxBytes of the file, starting from a complete line
+ */
+function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 * 1024): string {
+  if (!fs.existsSync(transcriptPath)) {
+    return '';
+  }
+
+  const stats = fs.statSync(transcriptPath);
+  if (stats.size <= maxBytes) {
+    return fs.readFileSync(transcriptPath, 'utf8');
+  }
+
+  // Read only tail
+  const fd = fs.openSync(transcriptPath, 'r');
+  const buffer = Buffer.alloc(maxBytes);
+  fs.readSync(fd, buffer, 0, maxBytes, stats.size - maxBytes);
+  fs.closeSync(fd);
+
+  // Find first complete line (skip partial line at start)
+  const content = buffer.toString('utf8');
+  const firstNewline = content.indexOf('\n');
+  return firstNewline > 0 ? content.slice(firstNewline + 1) : content;
 }
 
 function getDaemonPortFile(): string {
@@ -310,83 +378,30 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
   }
 
   try {
-    // Read transcript
-    const transcriptContent = fs.readFileSync(session.transcriptPath, 'utf-8');
+    // Generate briefing and append to progress file
+    // Read only tail of transcript to avoid OOM on 70MB+ files
+    // compact-briefing internally limits to ~6000 chars anyway
+    const transcriptContent = readTailTranscript(session.transcriptPath, 100 * 1024); // 100KB max
 
-    // Parse JSONL transcript
-    const lines = transcriptContent.trim().split('\n');
+    const briefingResult = await generateCompactBriefing(transcriptContent, {
+      format: 'structured',
+      include_memories: true,
+      max_memories: 3,
+    });
 
-    // Patterns to filter out (meta-prompts, system messages, extraction prompts)
-    const filterPatterns = [
-      /You are analyzing a coding session/i,
-      /You are analyzing a software project/i,
-      /Extract concrete, actionable facts/i,
-      /Output as JSON array/i,
-      /Session transcript:/i,
-    ];
-
-    const shouldFilter = (text: string): boolean => {
-      return filterPatterns.some(pattern => pattern.test(text));
-    };
-
-    const transcript = lines
-      .map((line) => {
-        try {
-          const entry = JSON.parse(line);
-          const getTextContent = (content: any): string => {
-            if (typeof content === 'string') return content;
-            if (Array.isArray(content)) {
-              return content
-                .filter((block: any) => block.type === 'text' && block.text)
-                .map((block: any) => block.text)
-                .join(' ');
-            }
-            return '';
-          };
-
-          if (entry.type === 'assistant' && entry.message?.content) {
-            const text = getTextContent(entry.message.content);
-            // Filter out meta-prompts and extraction responses
-            if (text && !shouldFilter(text)) {
-              return `Assistant: ${text.substring(0, 1000)}`;
-            }
-          }
-          if ((entry.type === 'human' || entry.type === 'user') && entry.message?.content) {
-            const text = getTextContent(entry.message.content);
-            // Filter out meta-prompts
-            if (text && !shouldFilter(text)) {
-              return `User: ${text.substring(0, 500)}`;
-            }
-          }
-        } catch {
-          return null;
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .join('\n\n');
-
-    if (transcript.length < 200) {
-      log(`[reflection] Transcript too short for session ${sessionId}`);
-      return;
+    if (briefingResult.success && briefingResult.briefing) {
+      appendToProgressFile(sessionId, briefingResult.briefing);
+      log(`[reflection] Appended briefing to progress file (${briefingResult.briefing.length} chars)`);
+    } else {
+      log(`[reflection] Failed to generate briefing for ${sessionId}`);
     }
 
     // Run independent operations in parallel for better performance
     const globalConfig = getConfig();
-
     const parallelOps: Promise<void>[] = [];
 
-    // session_summary - independent
-    if (idleConfig.operations?.session_summary !== false) {
-      parallelOps.push((async () => {
-        log(`[reflection] Extracting session summary for ${sessionId}`);
-        const result = await extractSessionSummary(transcript, {
-          verbose: false,
-          dryRun: false,
-        });
-        log(`[reflection] Session summary: ${result.factsSaved} facts saved, ${result.factsSkipped} skipped`);
-      })());
-    }
+    // NOTE: session_summary and precompute_context moved to processSessionEnd()
+    // They now run at session end using the progress file instead of parsing full transcript
 
     // memory_consolidation - independent
     if (idleConfig.operations?.memory_consolidation !== false) {
@@ -414,23 +429,6 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
       })());
     }
 
-    // precompute_context - independent
-    if (idleConfig.operations?.precompute_context !== false) {
-      parallelOps.push((async () => {
-        log(`[reflection] Precomputing context for next session`);
-        try {
-          const { precomputeContext } = await import('../commands/precompute-context.js');
-          await precomputeContext(session.transcriptPath, {
-            verbose: false,
-            dryRun: false,
-          });
-          log(`[reflection] Precomputed context saved`);
-        } catch (err) {
-          log(`[reflection] Precompute context error: ${err}`);
-        }
-      })());
-    }
-
     // Wait for all parallel operations
     await Promise.all(parallelOps);
 
@@ -443,11 +441,20 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
     }
 
     // write_reflection - runs last (may use LLM)
+    // Note: uses briefing from progress file, not full transcript parsing
     if (idleConfig.operations?.write_reflection !== false) {
       log(`[reflection] Writing reflection for ${sessionId}`);
       try {
-        await writeReflection(transcript, idleConfig);
-        log(`[reflection] Reflection written`);
+        // Read briefing from progress file for reflection
+        const progressPath = getProgressFilePath(sessionId);
+        const briefingContent = fs.existsSync(progressPath)
+          ? fs.readFileSync(progressPath, 'utf-8')
+          : briefingResult.briefing || '';
+
+        if (briefingContent.length >= 100) {
+          await writeReflection(briefingContent, idleConfig);
+          log(`[reflection] Reflection written`);
+        }
       } catch (err) {
         log(`[reflection] Write reflection error: ${err}`);
       }
@@ -535,30 +542,39 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
   }
 
   if (pathname === '/api/session/unregister' && method === 'POST') {
-    const { session_id, run_reflection } = body;
+    const { session_id, transcript_path, run_reflection } = body;
     if (!session_id) {
       throw new Error('session_id required');
     }
 
-    // Optionally run final reflection before unregistering
-    if (run_reflection) {
-      const session = sessionManager!.get(session_id);
-      if (session) {
-        await handleReflection(session_id, session);
-      }
-    }
+    const session = sessionManager!.get(session_id);
+    const transcriptFile = transcript_path || session?.transcriptPath || '';
 
+    // Unregister the session immediately (don't block on processing)
     const removed = sessionManager!.unregister(session_id);
     log(`[session] Unregistered: ${session_id} (removed=${removed})`);
 
-    // Check if daemon should exit (no more sessions)
-    if (sessionManager!.isEmpty()) {
-      log(`[daemon] No more sessions, scheduling shutdown`);
-      setTimeout(() => {
-        if (sessionManager!.isEmpty()) {
-          shutdownDaemon();
+    // Process session asynchronously (summarize transcript, extract learnings, save to memory)
+    if (run_reflection && transcriptFile) {
+      sessionManager!.incrementPendingWork();
+      log(`[session] Queuing async processing for ${session_id}`);
+
+      // Fire-and-forget async processing
+      (async () => {
+        try {
+          const result = await processSessionEnd(transcriptFile, session_id, log);
+          log(`[session] Processing complete for ${session_id}: summary=${result.summary.length}chars, learnings=${result.learnings.length}, saved=${result.saved}`);
+        } catch (err) {
+          log(`[session] Processing failed for ${session_id}: ${err}`);
+        } finally {
+          sessionManager!.decrementPendingWork();
+          // Check shutdown after work completes
+          checkShutdown();
         }
-      }, 5000); // Give 5 seconds for new sessions to connect
+      })();
+    } else {
+      // No processing needed, check shutdown immediately
+      checkShutdown();
     }
 
     return { success: removed, remaining_sessions: sessionManager!.count() };
@@ -624,9 +640,13 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
 
   if (pathname === '/api/recall' && method === 'POST') {
     const { query, limit = 5 } = body;
+
+    // Empty query returns recent memories
     if (!query) {
-      throw new Error('query required');
+      const memories = getRecentMemories(limit);
+      return { results: memories };
     }
+
     // Use hybridSearchDocs for memories (they're indexed there)
     const results = hybridSearchDocs(query, limit, 0.3);
 
@@ -708,6 +728,31 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
       }
       return { success: true, sessions_processed: idleSessions.length };
     }
+  }
+
+  // Compact briefing endpoint (for /compact hook)
+  if (pathname === '/api/briefing' && method === 'POST') {
+    const { transcript, transcript_path, format, model, include_learnings, include_memories, max_memories } = body;
+
+    // Either transcript content or path to transcript file
+    let transcriptContent: string;
+    if (transcript) {
+      transcriptContent = transcript;
+    } else if (transcript_path && fs.existsSync(transcript_path)) {
+      transcriptContent = fs.readFileSync(transcript_path, 'utf-8');
+    } else {
+      throw new Error('transcript or transcript_path required');
+    }
+
+    const result = await generateCompactBriefing(transcriptContent, {
+      format,
+      model,
+      include_learnings,
+      include_memories,
+      max_memories,
+    });
+
+    return result;
   }
 
   // Status endpoints
@@ -932,6 +977,20 @@ function setupShutdownHandlers(): void {
   // SIGHUP only exists on Unix
   if (process.platform !== 'win32') {
     process.on('SIGHUP', shutdown);
+  }
+}
+
+/**
+ * Check if daemon should shutdown (no sessions and no pending work)
+ */
+function checkShutdown(): void {
+  if (sessionManager?.canShutdown()) {
+    log(`[daemon] No more sessions and no pending work, scheduling shutdown`);
+    setTimeout(() => {
+      if (sessionManager?.canShutdown()) {
+        shutdownDaemon();
+      }
+    }, 5000); // Give 5 seconds for new sessions to connect
   }
 }
 

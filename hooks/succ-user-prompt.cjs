@@ -1,20 +1,14 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit Hook - Smart Memory Recall
+ * UserPromptSubmit Hook - Notify daemon of user activity
  *
- * Two modes:
- * 1. FAST PATH: Log prompt, check for explicit memory commands
- * 2. SMART PATH: Detect memory-seeking patterns and inject relevant memories
+ * Used for idle detection - tracks when user sends prompts
+ * so daemon knows session is active.
  *
- * Triggers on:
- * - Explicit: "check memory", "what do you remember", "напомни"
- * - Questions about past: "why did we", "what was decided", "last time"
- * - Context requests: "bring me up to speed", "background on"
- *
- * Uses execFileSync for security (no shell injection)
+ * NOTE: Auto-recall logic is disabled. Claude can use succ_recall MCP tool
+ * when it needs memory context - it's smarter than regex pattern matching.
  */
 
-const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -37,6 +31,11 @@ process.stdin.on('end', async () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
+    // Skip if succ is not initialized in this project
+    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
+      process.exit(0);
+    }
+
     const tmpDir = path.join(projectDir, '.succ', '.tmp');
 
     // Get session_id from transcript_path (unique per session)
@@ -55,10 +54,8 @@ process.stdin.on('end', async () => {
     // Check if this is a service session (e.g., reflection subagent)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
 
-    // Notify daemon of user activity (awaited)
-    const notifyDaemon = async () => {
-      if (!daemonPort || !sessionId) return;
-
+    // Notify daemon of user activity
+    if (daemonPort && sessionId) {
       try {
         await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
           method: 'POST',
@@ -72,20 +69,20 @@ process.stdin.on('end', async () => {
           signal: AbortSignal.timeout(2000),
         });
       } catch {}
-    };
-
-    // Start daemon notification
-    const daemonPromise = notifyDaemon();
-
-    const prompt = hookInput.prompt || hookInput.message || '';
-    if (!prompt || prompt.length < 5) {
-      await daemonPromise;
-      process.exit(0);
     }
 
+    // --- Auto-recall disabled ---
+    // Claude can use succ_recall MCP tool when it needs memory context.
+    // Pattern-based auto-injection was removed because:
+    // 1. Claude is smarter at knowing when it needs memory
+    // 2. Avoids duplicate context if Claude also calls recall
+    // 3. Reduces latency on every prompt
+    //
+    // To re-enable, uncomment the code below:
+    /*
+    const prompt = hookInput.prompt || hookInput.message || '';
     const promptLower = prompt.toLowerCase();
 
-    // Explicit memory commands
     const explicitMemoryCommands = [
       /\bcheck\s+(the\s+)?memor(y|ies)\b/i,
       /\bsearch\s+(the\s+)?memor(y|ies)\b/i,
@@ -93,9 +90,6 @@ process.stdin.on('end', async () => {
       /\brecall\s+(everything|all)\b/i,
     ];
 
-    const isExplicitMemoryCommand = explicitMemoryCommands.some((p) => p.test(promptLower));
-
-    // Memory-seeking patterns
     const memorySeekingPatterns = [
       /\bwhy\s+did\s+(we|i|you)\b/i,
       /\bwhat\s+was\s+the\s+reason\b/i,
@@ -107,94 +101,14 @@ process.stdin.on('end', async () => {
       /\bcatch\s+me\s+up\b/i,
     ];
 
+    const isExplicitMemoryCommand = explicitMemoryCommands.some((p) => p.test(promptLower));
     const isMemorySeeking = memorySeekingPatterns.some((p) => p.test(promptLower));
 
-    if (!isExplicitMemoryCommand && !isMemorySeeking) {
-      await daemonPromise;
-      process.exit(0);
+    if (isExplicitMemoryCommand || isMemorySeeking) {
+      // Extract search query and call daemon API...
     }
+    */
 
-    // Extract search query
-    const stopWords = new Set([
-      'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-      'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-      'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him',
-      'what', 'which', 'who', 'where', 'when', 'why', 'how',
-      'and', 'but', 'or', 'so', 'if', 'then', 'than', 'because',
-    ]);
-
-    const words = prompt
-      .toLowerCase()
-      .replace(/[^\w\s]/gi, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !stopWords.has(w));
-
-    const searchQuery = words.slice(0, 6).join(' ');
-
-    if (!searchQuery || searchQuery.length < 3) {
-      await daemonPromise;
-      process.exit(0);
-    }
-
-    // Search memories
-    const contextParts = [];
-
-    try {
-      const result = execFileSync(
-        'npx',
-        ['succ', 'memories', '--search', searchQuery, '--limit', '3'],
-        {
-          cwd: projectDir,
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          shell: true,
-        }
-      );
-
-      if (result.trim() && !result.includes('No memories found')) {
-        contextParts.push(result.trim());
-      }
-    } catch {
-      // Memory search failed
-    }
-
-    // For explicit commands, also search brain vault
-    if (isExplicitMemoryCommand) {
-      try {
-        const brainResult = execFileSync(
-          'npx',
-          ['succ', 'search', searchQuery, '--limit', '2'],
-          {
-            cwd: projectDir,
-            encoding: 'utf8',
-            timeout: 5000,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true,
-          }
-        );
-
-        if (brainResult.trim() && !brainResult.includes('No results')) {
-          contextParts.push('\n--- From Knowledge Base ---\n' + brainResult.trim());
-        }
-      } catch {
-        // Brain search failed
-      }
-    }
-
-    if (contextParts.length > 0) {
-      const triggerType = isExplicitMemoryCommand ? 'explicit-command' : 'pattern-detected';
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: `<memory-recall trigger="${triggerType}" query="${searchQuery}">\n${contextParts.join('\n')}\n</memory-recall>`,
-        },
-      };
-      console.log(JSON.stringify(output));
-    }
-
-    await daemonPromise;
     process.exit(0);
   } catch (err) {
     process.exit(0);
