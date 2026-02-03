@@ -50,6 +50,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
       detached: true,
       stdio: ['ignore', fs.openSync(logFile, 'w'), fs.openSync(logFile, 'a')],
       cwd: projectRoot,
+      windowsHide: true, // Hide CMD window on Windows (works without detached)
     });
 
     child.unref();
@@ -533,6 +534,7 @@ ${agent.prompt}`;
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+      windowsHide: true, // Hide CMD window on Windows (works without detached)
     });
 
     // Send prompt via stdin

@@ -98,6 +98,7 @@ async function generateViaClaude(context: string, prompt: string): Promise<strin
     const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+      windowsHide: true, // Hide CMD window on Windows (works without detached)
     });
 
     proc.stdin?.write(fullPrompt);
