@@ -56,6 +56,8 @@ export interface SuccConfig {
   daemon?: DaemonConfig;
   // Compact briefing settings (context after /compact)
   compact_briefing?: CompactBriefingConfig;
+  // Commit format settings
+  includeCoAuthoredBy?: boolean;  // Include commit guidelines in session-start hook (default: true)
 }
 
 export interface CompactBriefingConfig {

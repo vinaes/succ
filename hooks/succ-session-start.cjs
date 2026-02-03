@@ -47,6 +47,26 @@ process.stdin.on('end', async () => {
       process.exit(0);
     }
 
+    // Load config to check includeCoAuthoredBy
+    let includeCoAuthoredBy = true;  // default: true
+    const configPaths = [
+      path.join(succDir, 'config.json'),
+      path.join(require('os').homedir(), '.succ', 'config.json'),
+    ];
+    for (const configPath of configPaths) {
+      if (fs.existsSync(configPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          if (config.includeCoAuthoredBy === false) {
+            includeCoAuthoredBy = false;
+          }
+          break;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+
     const contextParts = [];
     const projectName = path.basename(projectDir);
 
@@ -135,8 +155,9 @@ process.stdin.on('end', async () => {
 </status>
 </succ-tools>`);
 
-    // Commit Guidelines (strict order)
-    contextParts.push(`<commit-format>
+    // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
+    if (includeCoAuthoredBy) {
+      contextParts.push(`<commit-format>
 Footer order (succ always LAST):
 1. Generated with [Claude Code]
 2. via [Happy] (if used)
@@ -147,6 +168,7 @@ Co-Authored-By order (succ always LAST):
 2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
 3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
 </commit-format>`);
+    }
 
     // Soul Document
     const soulPaths = [
