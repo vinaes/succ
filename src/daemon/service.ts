@@ -41,7 +41,6 @@ import {
 import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
-import { extractSessionSummary } from '../lib/session-summary.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import spawn from 'cross-spawn';
 
