@@ -40,6 +40,8 @@ export interface SuccConfig {
   sensitive_auto_redact?: boolean;  // Auto-redact sensitive info without prompting (default: false)
   // Consolidation settings
   consolidation_llm_default?: boolean;  // Use LLM merge by default in consolidate (default: true)
+  // Remember settings
+  remember_extract_default?: boolean;  // Use LLM extraction by default in remember (default: true)
   // Idle reflection settings (sleep-time compute)
   idle_reflection?: IdleReflectionConfig;
   // Idle watcher settings (smart activity-based reflections)

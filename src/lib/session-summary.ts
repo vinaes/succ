@@ -76,9 +76,10 @@ Output as JSON array:
 If no meaningful facts found, return: []`;
 
 /**
- * Call LLM to extract facts from transcript
+ * Call LLM to extract facts from text content
+ * Exported for use by remember command with --extract option
  */
-async function extractFactsWithLLM(
+export async function extractFactsWithLLM(
   transcript: string,
   options: {
     mode: 'claude' | 'local' | 'openrouter';
