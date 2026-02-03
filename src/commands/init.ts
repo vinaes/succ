@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import inquirer from 'inquirer';
+import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
 import { getProjectRoot, getSuccDir, LOCAL_MODEL } from '../lib/config.js';
@@ -28,6 +28,11 @@ interface ConfigData {
   analyze_mode?: 'claude' | 'openrouter' | 'local';
   analyze_api_url?: string;
   analyze_model?: string;
+  daemon?: {
+    enabled?: boolean;
+    watch?: { auto_start?: boolean };
+    analyze?: { auto_start?: boolean };
+  };
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
@@ -203,7 +208,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-session-start.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-session-start.cjs"`,
               timeout: 10,
             },
           ],
@@ -214,7 +219,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-stop-reflection.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-stop-reflection.cjs"`,
               timeout: 60,
             },
           ],
@@ -225,7 +230,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-session-end.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-session-end.cjs"`,
               timeout: 60,
             },
           ],
@@ -236,7 +241,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-user-prompt.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-user-prompt.cjs"`,
               timeout: 10,
             },
           ],
@@ -247,7 +252,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-post-tool.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-post-tool.cjs"`,
               timeout: 5,
             },
           ],
@@ -259,7 +264,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
           hooks: [
             {
               type: 'command',
-              command: `node "${hooksPath}/succ-idle-reflection.cjs"`,
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-idle-reflection.cjs"`,
               timeout: 30,
             },
           ],
@@ -423,149 +428,292 @@ export async function init(options: InitOptions = {}): Promise<void> {
 async function runInteractiveSetup(projectRoot: string, verbose: boolean = false): Promise<void> {
   const globalConfigDir = path.join(os.homedir(), '.succ');
   const globalConfigPath = path.join(globalConfigDir, 'config.json');
+  const projectConfigDir = path.join(projectRoot, '.succ');
+  const projectConfigPath = path.join(projectConfigDir, 'config.json');
 
-  console.log('\n--- Configuration ---\n');
+  const newGlobalConfig: Partial<ConfigData> = {};
+  const newProjectConfig: Partial<ConfigData> = {};
 
-  // Step 1: Embedding mode
-  const { embeddingMode } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'embeddingMode',
-      message: 'Select embedding mode for semantic search:',
+  const projectName = path.basename(projectRoot);
+
+  try {
+    // Header
+    console.log('');
+    console.log('  \x1b[32m●\x1b[0m succ');
+    console.log('');
+    console.log('  Semantic Understanding for Claude Code');
+    console.log('  Memory system for AI assistants');
+    console.log('');
+    console.log('  ─────────────────────────────────────────────────────────');
+    console.log('');
+
+    // Step 1: Config scope
+    const configScope = await select({
+      message: 'Where to save embedding/analyze settings?',
       choices: [
         {
-          name: 'Local (default) - runs on CPU, no API key',
+          name: 'Global (~/.succ/config.json)',
+          value: 'global',
+          description: 'Shared across all projects',
+        },
+        {
+          name: `Project (${projectName}/.succ/config.json)`,
+          value: 'project',
+          description: 'Only for this project',
+        },
+      ],
+      default: 'global',
+    });
+
+    const targetConfig = configScope === 'global' ? newGlobalConfig : newProjectConfig;
+
+    // Step 2: Embedding mode
+    console.log('\n┌─────────────────────────────────────────────────────────┐');
+    console.log('│  succ converts text to vectors (embeddings) for search. │');
+    console.log('└─────────────────────────────────────────────────────────┘\n');
+    const embeddingMode = await select({
+      message: 'How should succ generate embeddings?',
+      choices: [
+        {
+          name: 'Local CPU (recommended for most users)',
           value: 'local',
+          description: 'Runs on your CPU, no API key needed',
         },
         {
-          name: 'Local LLM - Ollama/llama.cpp with nomic-embed-text',
-          value: 'ollama',
+          name: 'Custom API (Ollama, LM Studio, llama.cpp)',
+          value: 'custom',
+          description: 'Use your own embedding server',
         },
         {
-          name: 'OpenRouter - cloud embeddings',
+          name: 'OpenRouter Cloud',
           value: 'openrouter',
+          description: 'Cloud embeddings, requires API key',
         },
       ],
       default: 'local',
-    },
-  ]);
+    });
 
-  const newConfig: Partial<ConfigData> = {};
+    if (embeddingMode === 'local') {
+      targetConfig.embedding_mode = 'local';
+      targetConfig.embedding_model = LOCAL_MODEL;
+      console.log('\n  ✓ Using local embeddings (no API key needed)');
+      console.log('    Model: Xenova/all-MiniLM-L6-v2 (runs on CPU)\n');
+    } else if (embeddingMode === 'custom') {
+      console.log('\n  Custom API Configuration');
+      console.log('  ─────────────────────────');
+      console.log('  Examples:');
+      console.log('    Ollama:    http://localhost:11434/v1/embeddings');
+      console.log('    LM Studio: http://localhost:1234/v1/embeddings');
+      console.log('    llama.cpp: http://localhost:8080/v1/embeddings\n');
 
-  if (embeddingMode === 'local') {
-    newConfig.embedding_mode = 'local';
-    newConfig.embedding_model = LOCAL_MODEL;
-  } else if (embeddingMode === 'ollama') {
-    const { embeddingApiUrl, embeddingModel } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'embeddingApiUrl',
-        message: 'Embedding API URL:',
+      const embeddingApiUrl = await input({
+        message: 'API URL:',
         default: 'http://localhost:11434/v1/embeddings',
-      },
-      {
-        type: 'input',
-        name: 'embeddingModel',
-        message: 'Embedding model:',
+      });
+      const embeddingModel = await input({
+        message: 'Model name:',
         default: 'nomic-embed-text',
-      },
-    ]);
-    newConfig.embedding_mode = 'custom';
-    newConfig.embedding_api_url = embeddingApiUrl;
-    newConfig.embedding_model = embeddingModel;
-    newConfig.embedding_dimensions = 768;
-    console.log(`  Tip: Run \`ollama pull ${embeddingModel}\` to download the model`);
-  } else if (embeddingMode === 'openrouter') {
-    const { apiKey } = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'apiKey',
-        message: 'OpenRouter API key:',
-        validate: (input: string) => input?.trim() ? true : 'API key is required',
-      },
-    ]);
-    newConfig.embedding_mode = 'openrouter';
-    newConfig.openrouter_api_key = apiKey;
-    newConfig.embedding_model = 'openai/text-embedding-3-small';
-  }
+      });
+      const embeddingDimensionsStr = await input({
+        message: 'Embedding dimensions:',
+        default: '768',
+      });
+      const embeddingDimensions = parseInt(embeddingDimensionsStr, 10) || 768;
 
-  // Step 2: Analysis mode
-  const { analyzeMode } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'analyzeMode',
-      message: 'Select analysis mode for `succ analyze`:',
+      targetConfig.embedding_mode = 'custom';
+      targetConfig.embedding_api_url = embeddingApiUrl;
+      targetConfig.embedding_model = embeddingModel;
+      targetConfig.embedding_dimensions = embeddingDimensions;
+      console.log(`\n  ✓ Using custom API: ${embeddingApiUrl}`);
+      console.log(`    Model: ${embeddingModel} (${embeddingDimensions}d)`);
+      if (embeddingApiUrl.includes('11434')) {
+        console.log(`\n  Tip: Run \`ollama pull ${embeddingModel}\` to download the model`);
+      }
+    } else if (embeddingMode === 'openrouter') {
+      console.log('\n  OpenRouter Configuration');
+      console.log('  ─────────────────────────');
+      console.log('  Get your API key at: https://openrouter.ai/keys\n');
+
+      const apiKey = await password({
+        message: 'OpenRouter API key:',
+        mask: '*',
+        validate: (val: string) => val?.trim() ? true : 'API key is required',
+      });
+      targetConfig.embedding_mode = 'openrouter';
+      targetConfig.openrouter_api_key = apiKey;
+      targetConfig.embedding_model = 'openai/text-embedding-3-small';
+      console.log('\n  ✓ Using OpenRouter cloud embeddings');
+      console.log('    Model: openai/text-embedding-3-small\n');
+    }
+
+    // Step 3: Analysis mode
+    console.log('┌─────────────────────────────────────────────────────────┐');
+    console.log('│  succ can analyze your codebase to generate docs.       │');
+    console.log('│  Choose which LLM to use for `succ analyze`:            │');
+    console.log('└─────────────────────────────────────────────────────────┘\n');
+
+    const analyzeMode = await select({
+      message: 'How should succ analyze your code?',
       choices: [
         {
-          name: 'Claude CLI (default) - uses claude command',
+          name: 'Claude CLI (recommended)',
           value: 'claude',
+          description: 'Uses the `claude` command',
         },
         {
-          name: 'Local LLM - Ollama/llama.cpp/LM Studio',
+          name: 'Custom API (Ollama, LM Studio, llama.cpp)',
           value: 'local',
+          description: 'Use your own LLM server',
         },
         {
-          name: 'OpenRouter - uses OpenRouter API',
+          name: 'OpenRouter Cloud',
           value: 'openrouter',
+          description: 'Cloud LLM, requires API key',
         },
       ],
       default: 'claude',
-    },
-  ]);
+    });
 
-  if (analyzeMode === 'local') {
-    const { analyzeApiUrl, analyzeModel } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'analyzeApiUrl',
-        message: 'Analysis API URL:',
+    if (analyzeMode === 'claude') {
+      console.log('\n  ✓ Using Claude CLI for analysis');
+      console.log('    Make sure `claude` command is available\n');
+    } else if (analyzeMode === 'local') {
+      console.log('\n  Custom API Configuration');
+      console.log('  ─────────────────────────');
+      console.log('  Examples:');
+      console.log('    Ollama:    http://localhost:11434/v1');
+      console.log('    LM Studio: http://localhost:1234/v1');
+      console.log('    llama.cpp: http://localhost:8080/v1\n');
+
+      const analyzeApiUrl = await input({
+        message: 'API URL:',
         default: 'http://localhost:11434/v1',
-      },
-      {
-        type: 'input',
-        name: 'analyzeModel',
-        message: 'Analysis model:',
+      });
+      const analyzeModel = await input({
+        message: 'Model name:',
         default: 'qwen2.5-coder:14b',
-      },
-    ]);
-    newConfig.analyze_mode = 'local';
-    newConfig.analyze_api_url = analyzeApiUrl;
-    newConfig.analyze_model = analyzeModel;
-    console.log(`  Tip: Run \`ollama pull ${analyzeModel}\` to download the model`);
-  } else if (analyzeMode === 'openrouter') {
-    newConfig.analyze_mode = 'openrouter';
-    // Prompt for API key if not already set for embeddings
-    if (!newConfig.openrouter_api_key) {
-      const { apiKey } = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'apiKey',
+      });
+
+      targetConfig.analyze_mode = 'local';
+      targetConfig.analyze_api_url = analyzeApiUrl;
+      targetConfig.analyze_model = analyzeModel;
+      console.log(`\n  ✓ Using custom API: ${analyzeApiUrl}`);
+      console.log(`    Model: ${analyzeModel}`);
+      if (analyzeApiUrl.includes('11434')) {
+        console.log(`\n  Tip: Run \`ollama pull ${analyzeModel}\` to download the model`);
+      }
+    } else if (analyzeMode === 'openrouter') {
+      targetConfig.analyze_mode = 'openrouter';
+      // Prompt for API key if not already set for embeddings
+      if (!targetConfig.openrouter_api_key) {
+        console.log('\n  OpenRouter Configuration');
+        console.log('  ─────────────────────────');
+        console.log('  Get your API key at: https://openrouter.ai/keys\n');
+
+        const apiKey = await password({
           message: 'OpenRouter API key:',
-          validate: (input: string) => input?.trim() ? true : 'API key is required',
+          mask: '*',
+          validate: (val: string) => val?.trim() ? true : 'API key is required',
+        });
+        targetConfig.openrouter_api_key = apiKey;
+      }
+      console.log('\n  ✓ Using OpenRouter for analysis\n');
+    }
+
+    // Step 4: Background services (always project-specific)
+    console.log('┌─────────────────────────────────────────────────────────┐');
+    console.log('│  succ can run background services during Claude sessions │');
+    console.log('│  Watch: auto-index files when they change               │');
+    console.log('│  Analyze: periodically discover new files               │');
+    console.log('└─────────────────────────────────────────────────────────┘\n');
+
+    const daemonMode = await select({
+      message: 'Enable background services?',
+      choices: [
+        {
+          name: 'None (manual only)',
+          value: 'none',
+          description: 'Run succ index/analyze manually when needed',
         },
-      ]);
-      newConfig.openrouter_api_key = apiKey;
-    }
-  }
-  // claude mode doesn't need extra config
+        {
+          name: 'Watch only',
+          value: 'watch',
+          description: 'Auto-index changed files in background',
+        },
+        {
+          name: 'Both watch and analyze (recommended)',
+          value: 'both',
+          description: 'Full automation: watch + periodic discovery',
+        },
+      ],
+      default: 'none',
+    });
 
-  // Save config
-  if (Object.keys(newConfig).length > 0) {
-    if (!fs.existsSync(globalConfigDir)) {
-      fs.mkdirSync(globalConfigDir, { recursive: true });
-    }
-    fs.writeFileSync(globalConfigPath, JSON.stringify(newConfig, null, 2));
-    console.log(`\nConfiguration saved to ${globalConfigPath}`);
-  }
+    // Initialize daemon config
+    const daemonConfig: any = {
+      enabled: true,
+      watch: { auto_start: false },
+      analyze: { auto_start: false },
+    };
 
-  // Final message
-  console.log('\n--- Done ---\n');
-  console.log('succ is ready! Try:');
-  console.log('  succ analyze          # Generate brain documentation');
-  console.log('  succ index            # Create embeddings');
-  console.log('  succ search <query>   # Find relevant content');
-  console.log('\nThe unified daemon starts automatically when Claude Code session begins.');
-  console.log('Check status: succ daemon status');
+    if (daemonMode === 'watch' || daemonMode === 'both') {
+      daemonConfig.watch.auto_start = true;
+      console.log('\n  ✓ Watch service enabled (auto-index on file changes)');
+    }
+
+    if (daemonMode === 'both') {
+      daemonConfig.analyze.auto_start = true;
+      console.log('  ✓ Analyze service enabled (periodic discovery)');
+    }
+
+    if (daemonMode === 'none') {
+      console.log('\n  ✓ Background services disabled');
+      console.log('    Run `succ index` and `succ analyze` manually when needed');
+    }
+
+    // Save daemon config to target scope
+    if (daemonMode !== 'none') {
+      targetConfig.daemon = daemonConfig;
+    }
+    console.log('');
+
+    // Save config to chosen scope
+    if (configScope === 'global') {
+      if (Object.keys(newGlobalConfig).length > 0) {
+        if (!fs.existsSync(globalConfigDir)) {
+          fs.mkdirSync(globalConfigDir, { recursive: true });
+        }
+        fs.writeFileSync(globalConfigPath, JSON.stringify(newGlobalConfig, null, 2));
+        console.log(`  Saved: ${globalConfigPath}`);
+      }
+    } else {
+      if (Object.keys(newProjectConfig).length > 0) {
+        if (!fs.existsSync(projectConfigDir)) {
+          fs.mkdirSync(projectConfigDir, { recursive: true });
+        }
+        fs.writeFileSync(projectConfigPath, JSON.stringify(newProjectConfig, null, 2));
+        console.log(`  Saved: ${projectConfigPath}`);
+      }
+    }
+
+    // Final message
+    console.log('\n┌─────────────────────────────────────────────────────────┐');
+    console.log('│                    Setup Complete!                      │');
+    console.log('└─────────────────────────────────────────────────────────┘\n');
+    console.log('  Next steps:\n');
+    console.log('    1. succ analyze        Generate brain documentation');
+    console.log('    2. succ index          Create embeddings for search');
+    console.log('    3. succ search <query> Find relevant content\n');
+    console.log('  The daemon starts automatically with Claude Code sessions.');
+    console.log('  Check status anytime: succ daemon status\n');
+  } catch (error: any) {
+    // Handle Ctrl+C gracefully
+    if (error?.name === 'ExitPromptError' || error?.message?.includes('closed')) {
+      console.log('\n\n  Setup cancelled.\n');
+      process.exit(0);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -596,9 +744,10 @@ function addMcpServer(projectRoot: string): boolean {
     // Add succ MCP server
     // No cwd specified - MCP server will use Claude Code's current working directory
     // This allows it to work with whichever project Claude is currently in
+    // Using npx --yes for faster startup (auto-confirm without prompt)
     mcpConfig.mcpServers.succ = {
       command: 'npx',
-      args: ['succ-mcp'],
+      args: ['--yes', 'succ-mcp'],
     };
 
     // Ensure ~/.claude directory exists
