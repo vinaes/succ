@@ -1,11 +1,12 @@
 import { getEmbedding, getEmbeddingInfo, cleanupEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, searchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/db.js';
+import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/db.js';
 import {
   setConfigOverride,
   hasOpenRouterKey,
   LOCAL_MODEL,
   OPENROUTER_MODEL,
   getConfig,
+  getSuccDir,
 } from '../lib/config.js';
 import {
   calculateAccuracyMetrics,
@@ -13,12 +14,22 @@ import {
   formatAccuracyMetrics,
   formatLatencyMetrics,
   generateTestDataset,
+  generateBenchmarkId,
+  compareBenchmarks,
+  formatBenchmarkComparison,
+  compareHybridModes,
+  formatHybridComparison,
   type AccuracyMetrics,
   type LatencyMetrics,
   type LatencyStats,
   type SearchResult as BenchmarkSearchResult,
   type BenchmarkResults,
+  type BenchmarkHistory,
+  type BenchmarkHistoryEntry,
+  type HybridSearchMetrics,
 } from '../lib/benchmark.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface BenchmarkResult {
   name: string;
@@ -302,6 +313,9 @@ export interface BenchmarkOptions {
   json?: boolean;
   model?: string;
   size?: 'small' | 'medium' | 'large';
+  save?: boolean;
+  compare?: boolean;
+  hybrid?: boolean;
 }
 
 // Available local models for benchmarking
@@ -405,6 +419,8 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
         advanced: mr.advancedAccuracy
           ? {
               recallAtK: mr.advancedAccuracy.recallAtK,
+              precisionAtK: mr.advancedAccuracy.precisionAtK,
+              f1AtK: mr.advancedAccuracy.f1AtK,
               k: mr.advancedAccuracy.k,
               mrr: mr.advancedAccuracy.mrr,
               ndcg: mr.advancedAccuracy.ndcg,
@@ -595,4 +611,298 @@ export async function benchmarkExisting(options: { k?: number; json?: boolean } 
   console.log();
 
   closeDb();
+}
+
+// ============================================================================
+// Benchmark History Management
+// ============================================================================
+
+const BENCHMARK_HISTORY_VERSION = 1;
+
+/**
+ * Get the path to the benchmark history file
+ */
+function getBenchmarkHistoryPath(): string {
+  const succDir = getSuccDir();
+  return path.join(succDir, 'benchmarks', 'history.json');
+}
+
+/**
+ * Load benchmark history from disk
+ */
+export function loadBenchmarkHistory(): BenchmarkHistory {
+  const historyPath = getBenchmarkHistoryPath();
+
+  if (!fs.existsSync(historyPath)) {
+    return { version: BENCHMARK_HISTORY_VERSION, entries: [] };
+  }
+
+  try {
+    const content = fs.readFileSync(historyPath, 'utf-8');
+    const history = JSON.parse(content) as BenchmarkHistory;
+    return history;
+  } catch {
+    console.warn('  Warning: Could not load benchmark history, starting fresh');
+    return { version: BENCHMARK_HISTORY_VERSION, entries: [] };
+  }
+}
+
+/**
+ * Save benchmark history to disk
+ */
+export function saveBenchmarkHistory(history: BenchmarkHistory): void {
+  const historyPath = getBenchmarkHistoryPath();
+  const dir = path.dirname(historyPath);
+
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+}
+
+/**
+ * Add a benchmark entry to history
+ */
+export function addBenchmarkToHistory(
+  history: BenchmarkHistory,
+  entry: Omit<BenchmarkHistoryEntry, 'id' | 'timestamp'>
+): BenchmarkHistoryEntry {
+  const newEntry: BenchmarkHistoryEntry = {
+    ...entry,
+    id: generateBenchmarkId(),
+    timestamp: new Date().toISOString(),
+  };
+
+  history.entries.push(newEntry);
+
+  // Keep only last 100 entries
+  if (history.entries.length > 100) {
+    history.entries = history.entries.slice(-100);
+  }
+
+  return newEntry;
+}
+
+/**
+ * Get the most recent benchmark entry matching criteria
+ */
+export function getLatestBenchmark(
+  history: BenchmarkHistory,
+  mode?: string,
+  model?: string
+): BenchmarkHistoryEntry | undefined {
+  const filtered = history.entries.filter((e) => {
+    if (mode && e.mode !== mode) return false;
+    if (model && e.model !== model) return false;
+    return true;
+  });
+
+  return filtered.length > 0 ? filtered[filtered.length - 1] : undefined;
+}
+
+// ============================================================================
+// Hybrid Search Benchmark
+// ============================================================================
+
+/**
+ * Run hybrid search benchmark comparing semantic, BM25, and hybrid modes
+ */
+export async function runHybridBenchmark(
+  k: number = 5,
+  size: 'small' | 'medium' | 'large' = 'small'
+): Promise<HybridSearchMetrics> {
+  console.log(`\n  Running hybrid search benchmark (${size} dataset)...`);
+
+  const dataset = generateTestDataset(size);
+  const savedIds: number[] = [];
+
+  // Insert test memories
+  console.log(`  Inserting ${dataset.memories.length} test memories...`);
+  for (const mem of dataset.memories) {
+    const embedding = await getEmbedding(mem.content);
+    const result = saveMemory(mem.content, embedding, mem.tags, 'benchmark-hybrid', {
+      deduplicate: false,
+      autoLink: false,
+    });
+    savedIds.push(result.id);
+  }
+
+  // Map original indices to saved IDs
+  const idMapping = new Map<number, number>();
+  for (let i = 0; i < savedIds.length; i++) {
+    idMapping.set(i + 1, savedIds[i]);
+  }
+
+  // Collect results for all three modes
+  const semanticResults: Array<{ results: BenchmarkSearchResult[]; relevantIds: Set<number> }> = [];
+  const bm25Results: Array<{ results: BenchmarkSearchResult[]; relevantIds: Set<number> }> = [];
+  const hybridResults: Array<{ results: BenchmarkSearchResult[]; relevantIds: Set<number> }> = [];
+
+  console.log(`  Running ${dataset.queries.length} queries in 3 modes...`);
+
+  for (const q of dataset.queries) {
+    const mappedRelevantIds = new Set(
+      q.relevantIds.map((id) => idMapping.get(id)).filter((id): id is number => id !== undefined)
+    );
+
+    const queryEmbedding = await getEmbedding(q.query);
+
+    // Semantic-only search
+    const semanticSearch = searchMemories(queryEmbedding, k * 2, 0.0);
+    semanticResults.push({
+      results: semanticSearch.map((r) => ({ id: r.id, score: r.similarity })),
+      relevantIds: mappedRelevantIds,
+    });
+
+    // Hybrid search (RRF fusion) - alpha=0.5 for balanced fusion
+    const hybridSearch = hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.5);
+    hybridResults.push({
+      results: hybridSearch.map((r) => ({ id: r.id, score: r.similarity })),
+      relevantIds: mappedRelevantIds,
+    });
+
+    // BM25-only search (use hybrid with alpha=0.0 for pure BM25)
+    const bm25Search = hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.0);
+    bm25Results.push({
+      results: bm25Search.map((r) => ({ id: r.id, score: r.similarity })),
+      relevantIds: mappedRelevantIds,
+    });
+  }
+
+  // Calculate metrics for each mode
+  const semanticMetrics = calculateAccuracyMetrics(semanticResults, k);
+  const bm25Metrics = calculateAccuracyMetrics(bm25Results, k);
+  const hybridMetrics = calculateAccuracyMetrics(hybridResults, k);
+
+  // Cleanup
+  for (const id of savedIds) {
+    deleteMemory(id);
+  }
+
+  return compareHybridModes(semanticMetrics, bm25Metrics, hybridMetrics);
+}
+
+/**
+ * Run benchmark with save and compare options
+ */
+export async function benchmarkWithHistory(options: BenchmarkOptions = {}): Promise<void> {
+  const k = options.k || 5;
+  const datasetSize = options.size || 'small';
+  const localModel = options.model || LOCAL_MODEL;
+
+  // Run the standard benchmark first
+  await benchmark(options);
+
+  // If hybrid mode requested, run hybrid comparison
+  if (options.hybrid && options.advanced) {
+    console.log('\n┌─────────────────────────────────────────────────────────────┐');
+    console.log('│                  HYBRID SEARCH COMPARISON                    │');
+    console.log('└─────────────────────────────────────────────────────────────┘');
+
+    setConfigOverride({
+      embedding_mode: 'local',
+      embedding_model: localModel,
+    });
+    cleanupEmbeddings();
+
+    const hybridMetrics = await runHybridBenchmark(k, datasetSize);
+    console.log('\n' + formatHybridComparison(hybridMetrics));
+
+    setConfigOverride(null);
+  }
+
+  // Handle save/compare
+  if (options.save || options.compare) {
+    const history = loadBenchmarkHistory();
+
+    if (options.advanced) {
+      // We need to re-run to get metrics for saving
+      // For simplicity, assume the last run was with local embeddings
+      setConfigOverride({
+        embedding_mode: 'local',
+        embedding_model: localModel,
+      });
+      cleanupEmbeddings();
+
+      const { accuracy, latency } = await runAdvancedBenchmark(k, datasetSize);
+
+      if (options.compare) {
+        const latest = getLatestBenchmark(history, 'local', localModel);
+        if (latest) {
+          console.log('\n' + formatBenchmarkComparison(accuracy, latest.accuracy, latest.timestamp));
+        } else {
+          console.log('\n  No previous benchmark found for comparison.');
+          console.log('  Run with --save first to establish a baseline.');
+        }
+      }
+
+      if (options.save) {
+        const embeddingInfo = getEmbeddingInfo();
+        addBenchmarkToHistory(history, {
+          mode: embeddingInfo.mode,
+          model: embeddingInfo.model,
+          datasetSize,
+          searchMode: options.hybrid ? 'hybrid' : 'semantic',
+          accuracy,
+          latency,
+          config: {
+            embeddingModel: embeddingInfo.model,
+            embeddingMode: embeddingInfo.mode,
+            totalMemories: generateTestDataset(datasetSize).memories.length,
+            testQueries: generateTestDataset(datasetSize).queries.length,
+          },
+        });
+        saveBenchmarkHistory(history);
+        console.log(`\n  ✓ Benchmark saved to history (${history.entries.length} total entries)`);
+      }
+
+      setConfigOverride(null);
+    } else {
+      console.log('\n  Note: --save and --compare require --advanced mode');
+    }
+  }
+
+  closeDb();
+}
+
+/**
+ * List benchmark history entries
+ */
+export async function listBenchmarkHistory(options: { limit?: number; json?: boolean } = {}): Promise<void> {
+  const limit = options.limit || 10;
+  const history = loadBenchmarkHistory();
+
+  if (history.entries.length === 0) {
+    console.log('No benchmark history found.');
+    console.log('Run `succ benchmark --advanced --save` to start tracking.');
+    return;
+  }
+
+  const entries = history.entries.slice(-limit).reverse();
+
+  if (options.json) {
+    console.log(JSON.stringify(entries, null, 2));
+    return;
+  }
+
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('                   BENCHMARK HISTORY                        ');
+  console.log('═══════════════════════════════════════════════════════════\n');
+
+  console.log('┌────────────────────┬──────────┬──────────┬──────────┬──────────┐');
+  console.log('│ Timestamp          │ Recall@K │ Prec@K   │ F1@K     │ MRR      │');
+  console.log('├────────────────────┼──────────┼──────────┼──────────┼──────────┤');
+
+  for (const entry of entries) {
+    const ts = entry.timestamp.slice(0, 16).replace('T', ' ');
+    const recall = `${(entry.accuracy.recallAtK * 100).toFixed(1)}%`.padStart(8);
+    const precision = `${(entry.accuracy.precisionAtK * 100).toFixed(1)}%`.padStart(8);
+    const f1 = `${(entry.accuracy.f1AtK * 100).toFixed(1)}%`.padStart(8);
+    const mrr = `${(entry.accuracy.mrr * 100).toFixed(1)}%`.padStart(8);
+    console.log(`│ ${ts} │ ${recall} │ ${precision} │ ${f1} │ ${mrr} │`);
+  }
+
+  console.log('└────────────────────┴──────────┴──────────┴──────────┴──────────┘');
+  console.log(`\nShowing last ${entries.length} of ${history.entries.length} entries`);
 }
