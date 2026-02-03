@@ -12,7 +12,7 @@ import { watch } from './commands/watch.js';
 import { config } from './commands/config.js';
 import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
-import { benchmark, benchmarkExisting } from './commands/benchmark.js';
+import { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } from './commands/benchmark.js';
 import { benchmarkQuality } from './commands/benchmark-quality.js';
 import { clear } from './commands/clear.js';
 import { soul } from './commands/soul.js';
@@ -36,8 +36,15 @@ const program = new Command();
 
 program
   .name('succ')
-  .description('Semantic Understanding for Claude Code - local memory system')
-  .version(VERSION);
+  .version(VERSION)
+  .addHelpText('beforeAll', `
+  \x1b[32m●\x1b[0m succ
+
+  Semantic Understanding for Claude Code
+  Memory system for AI assistants
+
+  ─────────────────────────────────────────────────────────
+`);
 
 program
   .command('init')
@@ -230,17 +237,39 @@ program
   .command('benchmark')
   .description('Run performance benchmarks')
   .option('-n, --iterations <number>', 'Number of iterations per test', '10')
-  .option('--advanced', 'Run advanced IR metrics (Recall@K, MRR, NDCG)')
-  .option('-k, --k <number>', 'K value for Recall@K and NDCG', '5')
+  .option('--advanced', 'Run advanced IR metrics (Recall@K, Precision@K, F1@K, MRR, NDCG)')
+  .option('-k, --k <number>', 'K value for metrics', '5')
   .option('--json', 'Output results as JSON')
   .option('--existing', 'Benchmark on existing memories (latency only)')
   .option('-m, --model <model>', 'Local embedding model (e.g., Xenova/bge-base-en-v1.5)')
   .option('--size <size>', 'Dataset size: small (20), medium (64), large (all)', 'small')
+  .option('--save', 'Save results to benchmark history')
+  .option('--compare', 'Compare with previous benchmark')
+  .option('--hybrid', 'Include hybrid search comparison (semantic vs BM25 vs RRF)')
+  .option('--history', 'List benchmark history')
+  .option('--history-limit <n>', 'Number of history entries to show', '10')
   .action((options) => {
-    if (options.existing) {
+    if (options.history) {
+      listBenchmarkHistory({
+        limit: parseInt(options.historyLimit, 10),
+        json: options.json,
+      });
+    } else if (options.existing) {
       benchmarkExisting({
         k: parseInt(options.k, 10),
         json: options.json,
+      });
+    } else if (options.save || options.compare || options.hybrid) {
+      benchmarkWithHistory({
+        iterations: parseInt(options.iterations, 10),
+        advanced: options.advanced,
+        k: parseInt(options.k, 10),
+        json: options.json,
+        model: options.model,
+        size: options.size as 'small' | 'medium' | 'large',
+        save: options.save,
+        compare: options.compare,
+        hybrid: options.hybrid,
       });
     } else {
       benchmark({
@@ -319,6 +348,8 @@ program
   .option('-n, --limit <number>', 'Maximum pairs to process', '50')
   .option('--stats', 'Show consolidation statistics only')
   .option('-v, --verbose', 'Show detailed output')
+  .option('--llm', 'Force LLM merge (default: enabled)')
+  .option('--no-llm', 'Disable LLM merge (use simple quality-based merge)')
   .action((options) => {
     consolidate({
       dryRun: options.dryRun,
@@ -326,6 +357,8 @@ program
       limit: options.limit,
       stats: options.stats,
       verbose: options.verbose,
+      llm: options.llm === true ? true : undefined,
+      noLlm: options.llm === false,
     });
   });
 

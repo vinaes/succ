@@ -1,53 +1,72 @@
-# succ
+<p align="center">
+  <img src="https://img.shields.io/badge/●%20succ-semantic%20memory-3fb950?style=for-the-badge&labelColor=0d1117" alt="succ">
+  <br/><br/>
+  <em>Semantic Understanding for Claude Code</em>
+</p>
 
-**S**emantic **U**nderstanding for **C**laude **C**ode
+<p align="center">
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.73-3fb950?style=flat-square" alt="npm"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
+</p>
 
-Local memory system that adds persistent, semantic memory to any Claude Code project.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#features">Features</a> •
+  <a href="#commands">Commands</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#documentation">Docs</a>
+</p>
 
-## Features
+---
 
-- **Local-first** — all data stays on your machine, no API keys required
-- **Hybrid search** — semantic embeddings + BM25 keyword search for best results
-- **RAG with embeddings** — semantic search via local model (or API)
-- **Brain vault** — Obsidian-compatible markdown knowledge base
-- **Persistent memory** — remember decisions, learnings, preferences across sessions
-- **Cross-project memory** — global memories shared between all your projects
-- **Code indexing** — semantic search across your codebase
-- **Knowledge graph** — link memories, auto-detect relationships, export to Obsidian
-- **Auto-hooks** — context injection at session start, auto-summarize at session end
-- **Idle reflections** — AI generates insights during idle time
-- **Session context** — auto-generated briefings for next session
-- **Sensitive filter** — detect and redact PII, API keys, secrets
-- **Quality scoring** — local ONNX classification to filter noise
-- **Token savings tracking** — measure how many tokens saved by RAG vs loading full files
-- **Temporal awareness** — time decay, validity periods, point-in-time queries
-- **Unified daemon** — single background process for watch, analyze, idle tracking
-- **Watch mode** — auto-reindex on file changes via @parcel/watcher (native, reliable on Windows)
-- **Local LLM support** — Ollama, LM Studio, llama.cpp for analysis
-- **Sleep agent** — offload heavy operations to local LLM
-- **MCP integration** — Claude can use succ tools directly
-- **Soul document** — define AI personality, values, communication style
-- **Zero config** — works out of the box
+> Local memory system that adds persistent, semantic memory to any Claude Code project.
 
 ## Quick Start
 
 ```bash
-# Install globally
 npm install -g succ
+```
 
-# Initialize in your project
+```bash
 cd your-project
 succ init
-
-# Analyze project with Claude agents (generates brain vault)
-succ analyze
-
-# Index for semantic search
 succ index
-
-# Search semantically
-succ search "how does authentication work"
+succ index-code
+succ analyze
 ```
+
+> **That's it.** Claude Code now has persistent memory for your project.
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Hybrid Search** | Semantic embeddings + BM25 keyword matching |
+| **Brain Vault** | Obsidian-compatible markdown knowledge base |
+| **Persistent Memory** | Decisions, learnings, patterns across sessions |
+| **Cross-Project** | Global memories shared between all projects |
+| **Knowledge Graph** | Link memories, auto-detect relationships |
+| **MCP Native** | Claude uses succ tools directly |
+
+<details>
+<summary>All features</summary>
+
+- **Soul Document** — Define AI personality and values
+- **Auto-Hooks** — Context injection at session start/end
+- **Idle Reflections** — AI generates insights during idle time
+- **Session Context** — Auto-generated briefings for next session
+- **Sensitive Filter** — Detect and redact PII, API keys, secrets
+- **Quality Scoring** — Local ONNX classification to filter noise
+- **Token Savings** — Track RAG efficiency vs full files
+- **Temporal Awareness** — Time decay, validity periods, point-in-time queries
+- **Unified Daemon** — Single background process for watch, analyze, idle tracking
+- **Watch Mode** — Auto-reindex on file changes via @parcel/watcher
+- **Local LLM** — Ollama, LM Studio, llama.cpp support
+- **Sleep Agent** — Offload heavy operations to local LLM
+- **Checkpoints** — Backup and restore full succ state
+- **AI-Readiness Score** — Measure project readiness for AI collaboration
+
+</details>
 
 ## Commands
 
@@ -56,192 +75,90 @@ succ search "how does authentication work"
 | `succ init` | Interactive setup wizard |
 | `succ analyze` | Generate brain vault with Claude agents |
 | `succ index [path]` | Index files for semantic search |
-| `succ index-code [path]` | Index source code |
-| `succ search <query>` | Semantic search |
-| `succ chat <query>` | RAG chat with context |
-| `succ watch [path]` | Watch for changes and auto-reindex (docs + code) |
-| `succ train-bpe` | Train BPE vocabulary from indexed code |
+| `succ search <query>` | Semantic search in brain vault |
 | `succ remember <content>` | Save to memory |
 | `succ memories` | List and search memories |
+| `succ watch` | Watch for changes and auto-reindex |
+| `succ daemon <action>` | Manage unified daemon |
+| `succ status` | Show index statistics |
+
+<details>
+<summary>All commands</summary>
+
+| Command | Description |
+|---------|-------------|
+| `succ index-code [path]` | Index source code |
+| `succ chat <query>` | RAG chat with context |
+| `succ train-bpe` | Train BPE vocabulary from indexed code |
 | `succ forget` | Delete memories |
 | `succ graph <action>` | Knowledge graph operations |
 | `succ consolidate` | Merge duplicate memories |
 | `succ soul` | Generate personalized soul.md |
 | `succ config` | Interactive configuration |
-| `succ status` | Show index statistics |
 | `succ stats` | Show token savings statistics |
 | `succ retention` | Memory retention analysis and cleanup |
 | `succ checkpoint <action>` | Create, restore, or list checkpoints |
-| `succ score` | Show AI-readiness score for the project |
-| `succ daemon <action>` | Manage unified daemon (status, sessions, start, stop, logs) |
+| `succ score` | Show AI-readiness score |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 
+</details>
+
 ### succ init
 
-Interactive setup wizard that creates the `.succ/` structure and configures succ:
-
 ```bash
-succ init                         # Interactive mode with prompts
-succ init --yes                   # Non-interactive (use defaults)
-succ init --verbose               # Show detailed output (created files)
-succ init --force                 # Reinitialize existing project
+succ init                # Interactive mode
+succ init --yes          # Non-interactive (defaults)
+succ init --force        # Reinitialize existing project
 ```
 
-**What it does:**
-1. Creates brain vault structure (`.succ/brain/`)
-2. Sets up hooks (session-start, session-end, etc.)
-3. Configures MCP server for Claude Code
-4. Prompts for embedding mode (Local / Local LLM / OpenRouter)
-5. Prompts for analysis mode (Claude CLI / Local LLM / OpenRouter)
-6. Optionally starts analyze/watch daemons
+Creates `.succ/` structure, configures MCP server, sets up hooks.
 
 ### succ analyze
 
-**The magic command.** Analyzes your project and generates a complete brain vault:
-
 ```bash
-succ analyze                      # Run via Claude CLI (recommended)
-succ analyze --sequential         # Run agents one by one
-succ analyze --background         # Run in background
-succ analyze --openrouter         # Use OpenRouter API
-succ analyze --local              # Use local LLM (Ollama, LM Studio)
+succ analyze             # Run via Claude CLI (recommended)
+succ analyze --local     # Use local LLM (Ollama, LM Studio)
+succ analyze --openrouter # Use OpenRouter API
+succ analyze --background # Run in background
 ```
 
-**What it creates:**
+Generates brain vault structure:
 
 ```
 .succ/brain/
-├── CLAUDE.md                    # Navigation hub
+├── CLAUDE.md              # Navigation hub
 ├── 01_Projects/{project}/
-│   ├── Technical/               # Architecture, API, Conventions, Dependencies
-│   ├── Systems/                 # Core systems/modules
-│   ├── Strategy/                # Project goals, differentiators
-│   └── Features/                # Implemented features
-├── 02_Knowledge/                # Research notes
-└── 03_Archive/                  # Old/superseded
+│   ├── Technical/         # Architecture, API, Conventions
+│   ├── Systems/           # Core systems/modules
+│   ├── Strategy/          # Project goals
+│   └── Features/          # Implemented features
+├── 02_Knowledge/          # Research notes
+└── 03_Archive/            # Old/superseded
 ```
 
 ### succ watch
 
-Watches for file changes and auto-reindexes via the unified daemon:
-
 ```bash
-succ watch                        # Start watch service (via daemon)
-succ watch --ignore-code          # Watch only docs (skip code files)
-succ watch --status               # Check watch service status
-succ watch --stop                 # Stop watch service
+succ watch               # Start watch service (via daemon)
+succ watch --ignore-code # Watch only docs
+succ watch --status      # Check watch service status
+succ watch --stop        # Stop watch service
 ```
-
-**Features:**
-- Uses `@parcel/watcher` (native C++, reliable on Windows with `ReadDirectoryChangesW`)
-- Supports 120+ file extensions (based on GitHub Linguist)
-- Comprehensive ignore patterns for build artifacts, dependencies, etc.
-- Debounced indexing (default 500ms)
-- Integrated into unified daemon (no separate process)
 
 ### succ daemon
 
-Unified background daemon that handles watch, analyze, and session tracking:
-
 ```bash
-succ daemon status                # Show daemon status (port, uptime, sessions)
-succ daemon sessions              # List active Claude Code sessions
-succ daemon sessions --all        # Include service sessions (analyzers, reflections)
-succ daemon start                 # Start daemon manually (usually auto-started by hooks)
-succ daemon stop                  # Stop daemon (warns if sessions active)
-succ daemon stop --force          # Force stop even with active sessions
-succ daemon logs                  # Show recent daemon logs
-succ daemon logs --lines=100      # Show more lines
+succ daemon status       # Show daemon status
+succ daemon sessions     # List active Claude Code sessions
+succ daemon start        # Start daemon manually
+succ daemon stop         # Stop daemon
+succ daemon logs         # Show recent logs
 ```
-
-**Multi-session support:**
-- Daemon tracks multiple Claude Code sessions per project
-- Each session has independent idle tracking and reflection
-- Daemon exits only when ALL sessions end
-- Service sessions (reflection subagents, analyzers) are filtered by default
-
-**Auto-started services:**
-Configure in `.succ/config.json`:
-```json
-{
-  "daemon": {
-    "watch": {
-      "auto_start": true,
-      "patterns": ["**/*.md"],
-      "include_code": true
-    },
-    "analyze": {
-      "auto_start": false,
-      "interval_minutes": 30
-    }
-  }
-}
-```
-
-## Hybrid Search
-
-succ combines semantic embeddings with BM25 keyword search for best-of-both-worlds retrieval:
-
-### How It Works
-
-1. **Semantic search** — finds conceptually similar content via embeddings
-2. **BM25 keyword search** — finds exact matches and rare terms
-3. **Reciprocal Rank Fusion** — merges results optimally
-
-### Code-Aware Tokenizer
-
-The code tokenizer understands all naming conventions:
-
-| Convention | Example | Tokens |
-|------------|---------|--------|
-| camelCase | `getUserName` | get, user, name |
-| PascalCase | `UserService` | user, service |
-| snake_case | `get_user_name` | get, user, name |
-| SCREAMING_SNAKE | `MAX_RETRY_COUNT` | max, retry, count |
-| kebab-case | `user-profile` | user, profile |
-| flatcase | `getusername` | get, user, name *(via Ronin)* |
-
-### Ronin-Style Word Segmentation
-
-For flatcase identifiers (no separators), succ uses dynamic programming to find optimal splits:
-
-```
-getusername → get + user + name
-fetchdatafromapi → fetch + data + from + api
-```
-
-**How it works:**
-- Builds token frequency table from your indexed code
-- Uses log-probability scoring with length bonuses
-- Falls back to base dictionary (500+ common programming terms)
-- Learns your project's vocabulary over time
-
-### BPE Tokenizer (Optional)
-
-Train project-specific vocabulary for even better segmentation:
-
-```bash
-succ train-bpe                    # Train from indexed code
-succ train-bpe --stats            # Show current vocabulary stats
-```
-
-BPE learns common token pairs in your codebase (e.g., `get`+`User` → `getUser`), improving search for project-specific terms.
-
-### Docs vs Code
-
-| Aspect | Documents | Code |
-|--------|-----------|------|
-| Tokenizer | Markdown-aware + stemming | Naming convention splitter |
-| Stemming | Yes (running → run) | No (preserves exact terms) |
-| Stop words | Filtered | Kept (important in code) |
-| Segmentation | Standard | Ronin + BPE |
 
 ## Configuration
 
-**No API key required!** succ uses local embeddings by default via [Transformers.js](https://huggingface.co/docs/transformers.js).
-
-Optional `~/.succ/config.json`:
+No API key required. Uses local embeddings by default.
 
 ```json
 {
@@ -252,9 +169,10 @@ Optional `~/.succ/config.json`:
 }
 ```
 
-### Embedding Modes
+<details>
+<summary>Embedding modes</summary>
 
-**1. Local (default)** — runs on your CPU, no API key needed:
+**Local (default):**
 ```json
 {
   "embedding_mode": "local",
@@ -262,7 +180,7 @@ Optional `~/.succ/config.json`:
 }
 ```
 
-**2. OpenRouter** — cloud embeddings via OpenRouter API:
+**OpenRouter:**
 ```json
 {
   "embedding_mode": "openrouter",
@@ -271,7 +189,7 @@ Optional `~/.succ/config.json`:
 }
 ```
 
-**3. Custom API** — any OpenAI-compatible endpoint:
+**Custom API:**
 ```json
 {
   "embedding_mode": "custom",
@@ -281,36 +199,10 @@ Optional `~/.succ/config.json`:
 }
 ```
 
-### Local LLM for Analysis
+</details>
 
-Configure in `~/.succ/config.json`:
-
-```json
-{
-  "analyze_mode": "local",
-  "analyze_api_url": "http://localhost:11434/v1",
-  "analyze_model": "qwen2.5-coder:14b"
-}
-```
-
-### Idle Watcher (Smart Reflections)
-
-The idle watcher monitors user activity and triggers reflections only when you stop interacting — true idle detection instead of simple throttling.
-
-**How it works:**
-- SessionStart hook ensures daemon is running and registers the session
-- UserPromptSubmit signals "user is active" to daemon
-- Stop signals "Claude responded" to daemon
-- Daemon tracks each session independently
-- If no user activity for N minutes after Claude responds → reflection triggers for that session
-- SessionEnd unregisters session; daemon exits when ALL sessions end
-
-**Multi-session aware:**
-- Multiple Claude Code sessions can run in the same project
-- Each session has its own idle timer and reflection state
-- Service sessions (reflection subagents, analyzers) are automatically excluded from reflection
-
-Configure in `.succ/config.json`:
+<details>
+<summary>Idle watcher</summary>
 
 ```json
 {
@@ -323,63 +215,12 @@ Configure in `.succ/config.json`:
 }
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `true` | Enable/disable idle watcher |
-| `idle_minutes` | `2` | Minutes of inactivity before reflection |
-| `check_interval` | `30` | Seconds between activity checks |
-| `min_conversation_length` | `5` | Minimum transcript entries before reflecting |
+</details>
 
-**Safety:** Daemon auto-exits when all sessions end. Service sessions (spawned for reflection/analysis) are automatically marked and excluded from reflection to prevent infinite loops.
+<details>
+<summary>Sleep agent</summary>
 
-**Idle Reflection Operations:**
-- `memory_consolidation` — merge similar memories, remove duplicates
-- `graph_refinement` — auto-link related memories
-- `retention_cleanup` — delete decayed low-score memories (if `retention.enabled`)
-- `session_summary` — extract key points from conversation
-- `precompute_context` — generate next-session briefing (`.succ/next-session-context.md`)
-- `write_reflection` — save AI insights as markdown with YAML frontmatter
-
-Configure operations in `.succ/config.json`:
-
-```json
-{
-  "idle_reflection": {
-    "operations": {
-      "precompute_context": true,
-      "write_reflection": true
-    }
-  }
-}
-```
-
-### BPE Training Config
-
-The idle watcher can automatically retrain BPE vocabulary when code is indexed:
-
-```json
-{
-  "bpe": {
-    "enabled": true,
-    "vocab_size": 5000,
-    "min_frequency": 2,
-    "retrain_interval": "hourly"
-  }
-}
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `false` | Enable BPE tokenizer |
-| `vocab_size` | `5000` | Target vocabulary size |
-| `min_frequency` | `2` | Minimum pair frequency to merge |
-| `retrain_interval` | `hourly` | When to retrain: `hourly` or `daily` |
-
-Set `enabled: false` to disable automatic BPE training during idle time.
-
-### Sleep Agent (Dual-Agent Mode)
-
-Offload heavy idle operations to a local LLM while Claude handles reflections:
+Offload heavy operations to local LLM:
 
 ```json
 {
@@ -388,137 +229,17 @@ Offload heavy idle operations to a local LLM while Claude handles reflections:
       "enabled": true,
       "mode": "local",
       "model": "qwen2.5-coder:14b",
-      "api_url": "http://localhost:11434/v1",
-      "handle_operations": {
-        "memory_consolidation": true,
-        "session_summary": true,
-        "precompute_context": true
-      }
+      "api_url": "http://localhost:11434/v1"
     }
   }
 }
 ```
 
-**Supported backends:** Ollama, LM Studio, llama.cpp, any OpenAI-compatible API.
+</details>
 
-**Recommended models:**
-| Model | Size | Notes |
-|-------|------|-------|
-| `qwen2.5-coder:14b` | ~9GB | Best balance for 8GB VRAM |
-| `qwen2.5-coder:32b` | ~20GB | Best quality, needs 12GB+ VRAM |
-| `deepseek-coder-v2:16b` | ~10GB | Fast, MoE architecture |
+<details>
+<summary>Retention policies</summary>
 
-### Sensitive Info Filter
-
-Automatically detects and redacts sensitive information before saving memories:
-
-- **API keys** — OpenAI, Anthropic, AWS, GitHub, Stripe, etc.
-- **Phone numbers** — international formats
-- **Secrets** — passwords, tokens, private keys, JWTs
-- **PII** — names, emails, addresses
-- **High-entropy strings** — random strings likely to be secrets
-
-Configure in `~/.succ/config.json`:
-
-```json
-{
-  "sensitive_filter_enabled": true,
-  "sensitive_auto_redact": false
-}
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `sensitive_filter_enabled` | `true` | Enable detection |
-| `sensitive_auto_redact` | `false` | Auto-redact without prompting |
-
-### Quality Scoring
-
-Memories are scored for quality to filter noise:
-
-- **Local (default)** — ONNX zero-shot classification, no API needed
-- **Custom** — Ollama, LM Studio, llama.cpp
-- **OpenRouter** — Cloud API
-
-Configure in `~/.succ/config.json`:
-
-```json
-{
-  "quality_scoring_enabled": true,
-  "quality_scoring_mode": "local",
-  "quality_scoring_threshold": 0.3
-}
-```
-
-Scoring factors: specificity, clarity, relevance, uniqueness.
-
-### Token Savings Tracking
-
-succ tracks how many tokens are saved by using RAG search instead of loading full files:
-
-```bash
-succ stats --tokens
-```
-
-Output:
-```
-## Token Savings
-
-### Session Summaries
-  Sessions: 47
-  Transcript: 2.3M tokens
-  Summary: 89K tokens
-  Compression: 96.1%
-  Saved: 2.2M tokens
-
-### RAG Queries
-  recall      : 234 queries, 45K returned, 1.2M saved
-  search      : 156 queries, 32K returned, 890K saved
-  search_code :  89 queries, 28K returned, 2.1M saved
-
-### Total
-  Queries: 479
-  Tokens returned: 105K
-  Tokens saved: 4.2M
-```
-
-**How it works:**
-- For each search/recall, tracks tokens in returned chunks vs full source files
-- For session summaries, tracks transcript tokens vs compressed summary
-- Uses Anthropic's recommended 3.5 chars/token heuristic
-
-MCP tool: `succ_stats`
-
-### Auto-Retention Policies
-
-succ automatically manages memory lifecycle with decay-based retention:
-
-```bash
-succ retention                   # Show retention stats
-succ retention --dry-run         # Preview what would be deleted
-succ retention --apply           # Actually delete low-score memories
-```
-
-**How it works:**
-
-Effective score formula:
-```
-effective_score = quality_score × recency_factor × access_boost
-
-recency_factor = 1 / (1 + decay_rate × days_since_creation)
-access_boost = min(1 + access_weight × access_count, max_boost)
-```
-
-- **Quality score** — from quality scoring system (0-1)
-- **Recency factor** — newer memories score higher, decay over time
-- **Access boost** — frequently recalled memories are preserved
-
-Retention tiers:
-- `keep`: effective_score ≥ 0.3 (kept)
-- `warn`: effective_score 0.15-0.3 (approaching deletion)
-- `delete`: effective_score < 0.15 (removed on --apply)
-
-Configure in `.succ/config.json`:
 ```json
 {
   "retention": {
@@ -526,189 +247,66 @@ Configure in `.succ/config.json`:
     "decay_rate": 0.01,
     "access_weight": 0.1,
     "keep_threshold": 0.3,
-    "delete_threshold": 0.15,
-    "auto_cleanup_interval_days": 7
+    "delete_threshold": 0.15
   }
 }
 ```
 
-**Automatic cleanup:** When `retention.enabled: true`, the idle reflection hook will automatically run cleanup at the configured interval. This happens during idle time without interrupting your work.
+</details>
 
-### Checkpoints (Backup/Restore)
+## Hybrid Search
 
-Create full backups of your succ state:
+Combines semantic embeddings with BM25 keyword search.
 
-```bash
-succ checkpoint create              # Create checkpoint
-succ checkpoint create --compress   # Gzip compressed
-succ checkpoint create -o backup.json
-succ checkpoint list                # List available checkpoints
-succ checkpoint info backup.json    # Show checkpoint details
-succ checkpoint restore backup.json # Restore from checkpoint
-succ checkpoint restore backup.json --overwrite  # Replace existing data
-```
+| Aspect | Documents | Code |
+|--------|-----------|------|
+| Tokenizer | Markdown-aware + stemming | Naming convention splitter |
+| Stemming | Yes | No |
+| Stop words | Filtered | Kept |
+| Segmentation | Standard | Ronin + BPE |
 
-**What's included:**
-- All memories (with embeddings, quality scores, access tracking)
-- Indexed documents (chunks with embeddings)
-- Knowledge graph (memory links)
-- Brain vault (markdown files)
-- Configuration
+Code tokenizer handles all naming conventions:
 
-**Options:**
-- `--compress` — Gzip compress output
-- `--no-brain` — Exclude brain vault files
-- `--no-documents` — Exclude indexed documents
-- `--overwrite` — Replace existing data on restore
-- `--restore-config` — Also restore config on restore
-
-Checkpoints are stored in `.succ/checkpoints/` by default.
-
-MCP tool: `succ_checkpoint`
-
-### AI-Readiness Score
-
-Check how "ready" your project is for AI collaboration:
-
-```bash
-succ score               # Show AI-readiness score
-succ score --json        # Output as JSON
-```
-
-Output:
-```
-AI-Readiness Score: 73/100 ⭐⭐⭐⭐
-
-  Brain Vault       20/25  ✓ CLAUDE.md exists, 12 docs
-  Memory Coverage   15/20    47 memories
-  Code Index        18/20    94% indexed
-  Soul Document      5/10    exists but incomplete
-  Hooks Active      10/10  ✓ session-start, session-end
-  Doc Index          5/10    3/8 files indexed
-  Quality Average    0/5     no quality scores
-
-Suggestions:
-  - Complete your soul.md
-  - Index remaining markdown files
-  - Enable quality scoring
-```
-
-**Metrics:**
-| Metric | Weight | Description |
-|--------|--------|-------------|
-| Brain Vault | 25% | CLAUDE.md exists, brain/ structure, number of docs |
-| Memory Coverage | 20% | Number of memories saved |
-| Code Index | 20% | % of source files indexed |
-| Soul Document | 10% | soul.md exists and is customized |
-| Hooks Active | 10% | session-start/end hooks configured |
-| Doc Index | 10% | % of brain/ markdown files indexed |
-| Quality Average | 5% | Average quality score of memories |
-
-MCP tool: `succ_score`
+| Convention | Example | Tokens |
+|------------|---------|--------|
+| camelCase | `getUserName` | get, user, name |
+| PascalCase | `UserService` | user, service |
+| snake_case | `get_user_name` | get, user, name |
+| SCREAMING_SNAKE | `MAX_RETRY_COUNT` | max, retry, count |
 
 ## Memory System
 
-succ provides two types of memory:
+**Local memory** — stored in `.succ/succ.db`, project-specific.
 
-### Local Memory (per-project)
-- Stored in `.succ/succ.db`
-- Project-specific decisions, learnings, context
-
-### Global Memory (cross-project)
-- Stored in `~/.succ/global.db`
-- Shared across all your projects
-- Use `--global` flag
+**Global memory** — stored in `~/.succ/global.db`, shared across projects.
 
 ```bash
 succ remember "User prefers TypeScript" --global
 succ memories --global
 ```
 
-## Soul Document
-
-The soul document (`.succ/soul.md`) defines who the AI is in your collaboration:
-
-```markdown
-# Soul
-
-## Identity
-I'm your AI collaborator. Not just a tool — a thinking partner.
-
-## Values
-- Honesty over flattery
-- Direct over diplomatic
-- Curious over confident
-
-## About You
-- Preferred frameworks: React, TypeScript
-```
-
-Generate with: `succ soul`
-
-Learn more: [soul.md](https://soul.md/)
-
-## Next Session Context
-
-When idle reflections run, succ generates `.succ/next-session-context.md` — a briefing for the next session containing:
-
-- **Session summary** — key points from the last conversation
-- **Suggested focus** — what to work on next
-- **Relevant memories** — recent decisions, learnings, errors
-
-This file is automatically loaded by the session-start hook, giving Claude context about previous work.
-
 ## Architecture
 
 ```
 your-project/
 ├── .claude/
-│   └── settings.json    # Claude Code hooks config
+│   └── settings.json      # Claude Code hooks config
 └── .succ/
-    ├── brain/           # Obsidian-compatible vault
-    ├── hooks/           # Hook scripts
-    ├── .tmp/            # Runtime files
-    │   ├── daemon.port  # Daemon HTTP port
-    │   └── daemon.pid   # Daemon process ID
-    ├── config.json      # Project configuration
-    ├── daemon.log       # Daemon logs
-    ├── soul.md          # AI personality
-    └── succ.db          # Vector database
+    ├── brain/             # Obsidian-compatible vault
+    ├── hooks/             # Hook scripts
+    ├── config.json        # Project configuration
+    ├── soul.md            # AI personality
+    └── succ.db            # Vector database
 
 ~/.succ/
-├── global.db            # Global memories
-└── config.json          # Global configuration
-```
-
-### Unified Daemon
-
-The daemon is a single HTTP server per project that handles:
-- **Session tracking** — multiple Claude Code sessions with independent idle detection
-- **Watch service** — file monitoring via @parcel/watcher
-- **Analyze service** — periodic code analysis
-- **Reflection** — triggered per-session when idle
-
-```
-┌─────────────────────────────────────────────────┐
-│ Daemon (HTTP on 127.0.0.1:37846)                │
-│                                                 │
-│  Sessions:                                      │
-│    session-abc → idle 2m, 0 reflections         │
-│    session-def → active, 1 reflection           │
-│                                                 │
-│  Services:                                      │
-│    Watch: running, 42 files                     │
-│    Analyze: running, last run 5m ago            │
-└─────────────────────────────────────────────────┘
-         ▲              ▲              ▲
-         │              │              │
-    session-start   user-prompt      stop
-       hook            hook          hook
+├── global.db              # Global memories
+└── config.json            # Global configuration
 ```
 
 ## Documentation
 
 - [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
-- [Temporal Awareness](docs/temporal.md) — Time decay, validity periods, point-in-time queries
+- [Temporal Awareness](docs/temporal.md) — Time decay, validity periods
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup
 - [llama.cpp GPU](docs/llama-cpp.md) — GPU-accelerated embeddings
 - [MCP Integration](docs/mcp.md) — Claude Code tools and resources
@@ -717,4 +315,4 @@ The daemon is a single HTTP server per project that handles:
 
 ## License
 
-MIT
+[FSL-1.1-Apache-2.0](LICENSE) — Free to use, modify, self-host. Commercial cloud hosting restricted until Apache 2.0 date.

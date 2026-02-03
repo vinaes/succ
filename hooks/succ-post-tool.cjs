@@ -8,10 +8,9 @@
  * 3. Test runs - save test results
  * 4. File creation - note new files
  *
- * Uses execFileSync for security (no shell injection)
+ * Uses daemon API for memory operations
  */
 
-const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,7 +23,7 @@ process.stdin.on('readable', () => {
   }
 });
 
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const hookInput = JSON.parse(input);
     let projectDir = hookInput.cwd || process.cwd();
@@ -32,6 +31,11 @@ process.stdin.on('end', () => {
     // Windows path fix
     if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+    }
+
+    // Skip if succ is not initialized in this project
+    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
+      process.exit(0);
     }
 
     const toolName = hookInput.tool_name || '';
@@ -43,20 +47,31 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // Helper to call succ CLI
-    const succRemember = (content, tags) => {
+    // Read daemon port
+    let daemonPort = null;
+    try {
+      const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
+      if (fs.existsSync(portFile)) {
+        daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+      }
+    } catch {}
+
+    if (!daemonPort) {
+      process.exit(0);
+    }
+
+    // Helper to save memory via daemon API
+    const succRemember = async (content, tagsStr) => {
       try {
-        execFileSync('npx', [
-          'succ', 'remember',
-          content,
-          '--tags', tags,
-          '--source', 'auto-capture',
-        ], {
-          cwd: projectDir,
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          shell: true,
+        await fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: content,
+            tags: tagsStr.split(','),
+            source: 'auto-capture',
+          }),
+          signal: AbortSignal.timeout(3000),
         });
       } catch {}
     };
@@ -68,7 +83,7 @@ process.stdin.on('end', () => {
       if (/git\s+commit/i.test(cmd) && wasSuccess) {
         const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
         if (msgMatch) {
-          succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone');
+          await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone');
         }
       }
 
@@ -76,7 +91,7 @@ process.stdin.on('end', () => {
       if (/(?:npm|yarn|pnpm)\s+(?:install|add)\s+(\S+)/i.test(cmd) && wasSuccess) {
         const pkgMatch = cmd.match(/(?:npm|yarn|pnpm)\s+(?:install|add)\s+(\S+)/i);
         if (pkgMatch && pkgMatch[1] && !pkgMatch[1].startsWith('-')) {
-          succRemember('Added dependency: ' + pkgMatch[1], 'dependency,package');
+          await succRemember('Added dependency: ' + pkgMatch[1], 'dependency,package');
         }
       }
 
@@ -86,7 +101,7 @@ process.stdin.on('end', () => {
         const failed = /fail|error|✗|✘/i.test(toolOutput);
 
         if (passed && !failed) {
-          succRemember('Tests passed after changes', 'test,success');
+          await succRemember('Tests passed after changes', 'test,success');
         }
       }
     }
@@ -104,7 +119,7 @@ process.stdin.on('end', () => {
       ) {
         const content = toolInput.content || '';
         if (content.length < 5000) {
-          succRemember('Created file: ' + relativePath, 'file,created');
+          await succRemember('Created file: ' + relativePath, 'file,created');
         }
       }
     }

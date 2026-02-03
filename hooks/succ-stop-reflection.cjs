@@ -28,6 +28,11 @@ process.stdin.on('end', async () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
+    // Skip if succ is not initialized in this project
+    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
+      process.exit(0);
+    }
+
     const tmpDir = path.join(projectDir, '.succ', '.tmp');
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });

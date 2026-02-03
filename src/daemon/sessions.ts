@@ -37,6 +37,11 @@ export interface SessionManager {
   isEmpty(): boolean;
   getIdleSessions(idleMinutes: number): Array<{ sessionId: string; session: SessionState }>;
   markReflection(sessionId: string): void;
+  // Pending work tracking - prevents shutdown while processing
+  incrementPendingWork(): void;
+  decrementPendingWork(): void;
+  hasPendingWork(): boolean;
+  canShutdown(): boolean;
 }
 
 // ============================================================================
@@ -45,9 +50,26 @@ export interface SessionManager {
 
 export function createSessionManager(): SessionManager {
   const sessions = new Map<string, SessionState>();
+  let pendingWork = 0;
 
   return {
     sessions,
+
+    incrementPendingWork(): void {
+      pendingWork++;
+    },
+
+    decrementPendingWork(): void {
+      pendingWork = Math.max(0, pendingWork - 1);
+    },
+
+    hasPendingWork(): boolean {
+      return pendingWork > 0;
+    },
+
+    canShutdown(): boolean {
+      return sessions.size === 0 && pendingWork === 0;
+    },
 
     register(sessionId: string, transcriptPath: string, isService = false): SessionState {
       const now = Date.now();
