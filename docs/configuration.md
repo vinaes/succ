@@ -41,9 +41,11 @@ No config needed! succ works out of the box with local embeddings.
   "embedding_mode": "custom",
   "embedding_api_url": "http://localhost:11434/v1/embeddings",
   "embedding_model": "nomic-embed-text",
-  "analyze_mode": "local",
-  "analyze_api_url": "http://localhost:11434/v1",
-  "analyze_model": "qwen2.5-coder:14b"
+  "llm": {
+    "backend": "local",
+    "model": "qwen2.5-coder:14b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions"
+  }
 }
 ```
 
@@ -310,12 +312,13 @@ Controls the background daemon service.
     },
     "analyze": {
       "auto_start": false,
-      "interval_minutes": 30,
-      "mode": "local"
+      "interval_minutes": 30
     }
   }
 }
 ```
+
+> **Note**: Daemon analyze uses the unified `llm.*` configuration.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -327,7 +330,6 @@ Controls the background daemon service.
 | `daemon.watch.debounce_ms` | number | 500 | Debounce interval |
 | `daemon.analyze.auto_start` | boolean | false | Auto-start analyzer |
 | `daemon.analyze.interval_minutes` | number | 30 | Analysis interval |
-| `daemon.analyze.mode` | string | `"local"` | Analysis mode |
 
 ---
 
@@ -361,11 +363,12 @@ Triggers reflections after periods of inactivity.
 
 Controls what happens during idle reflection.
 
+> **Note**: Idle reflection uses the unified `llm.*` configuration (or `sleep_agent.*` if enabled).
+
 ```json
 {
   "idle_reflection": {
     "enabled": true,
-    "agent_model": "haiku",
     "operations": {
       "memory_consolidation": true,
       "graph_refinement": true,
