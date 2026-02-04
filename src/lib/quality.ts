@@ -8,6 +8,7 @@
  */
 
 import { getConfig, SuccConfig } from './config.js';
+import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
 
 // Lazy-loaded zero-shot classification pipeline for local scoring
 let classifierPipeline: any = null;
@@ -285,10 +286,7 @@ export async function scoreWithCustom(
       body: JSON.stringify({
         model,
         messages: [
-          {
-            role: 'system',
-            content: 'You are a quality scorer for development memories. Respond only with valid JSON.',
-          },
+          { role: 'system', content: QUALITY_SCORER_SYSTEM },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
@@ -332,10 +330,7 @@ export async function scoreWithOpenRouter(
       body: JSON.stringify({
         model,
         messages: [
-          {
-            role: 'system',
-            content: 'You are a quality scorer for development memories. Respond only with valid JSON.',
-          },
+          { role: 'system', content: QUALITY_SCORER_SYSTEM },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,

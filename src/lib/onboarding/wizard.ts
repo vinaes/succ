@@ -15,7 +15,7 @@ import {
   WIZARD_HANDS_ON_PROMPT,
   WIZARD_CHEATSHEET,
   WIZARD_DONE,
-} from './prompts.js';
+} from '../../prompts/index.js';
 import { markOnboardingCompleted } from '../config.js';
 
 function createReadline(): readline.Interface {

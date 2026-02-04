@@ -23,6 +23,7 @@ import { countTokens } from '../lib/token-counter.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
+import { SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -339,40 +340,6 @@ ${summary}
 // Fact Extraction (from session-summary.ts logic)
 // ============================================================================
 
-const EXTRACTION_PROMPT = `You are analyzing session progress to extract key facts worth remembering.
-
-Session progress (accumulated briefings from idle reflections):
----
-{content}
----
-
-Extract concrete, actionable facts from this session. Focus on:
-1. **Decisions** - choices made about architecture, tools, approaches
-2. **Learnings** - new understanding gained, gotchas discovered
-3. **Observations** - facts about the codebase, patterns noticed
-4. **Errors** - bugs found and how they were fixed
-5. **Patterns** - recurring themes or approaches used
-
-Rules:
-- Extract ONLY facts that would be useful in future sessions
-- Be specific: include file names, function names, commands when mentioned
-- Skip generic conversation, greetings, confirmations
-- Each fact should stand alone (make sense without the full context)
-- Minimum 50 characters per fact
-
-Output as JSON array:
-[
-  {
-    "content": "The authentication middleware in src/auth/middleware.ts uses JWT tokens with 1-hour expiry",
-    "type": "observation",
-    "confidence": 0.9,
-    "tags": ["auth", "jwt", "middleware"]
-  },
-  ...
-]
-
-If no meaningful facts found, return: []`;
-
 /**
  * Extract facts from content using LLM
  * Uses the shared LLM module for backend flexibility.
@@ -382,7 +349,7 @@ async function extractFactsFromContent(
   _model: string = 'haiku', // Ignored - uses global LLM config
   log: (msg: string) => void = console.log
 ): Promise<ExtractedFact[]> {
-  const prompt = EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
+  const prompt = SESSION_PROGRESS_EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
 
   try {
     const result = await runLLM(prompt, 45000);

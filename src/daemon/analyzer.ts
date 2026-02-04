@@ -15,6 +15,7 @@ import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { saveMemory, hybridSearchDocs } from '../lib/db.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM, type LLMBackend } from '../lib/llm.js';
+import { DISCOVERY_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -115,24 +116,7 @@ async function runDiscoveryAgent(
   mode: 'claude' | 'openrouter' | 'local',
   log: (msg: string) => void
 ): Promise<Discovery[]> {
-  const prompt = `You are analyzing a software project to discover patterns, learnings, and insights worth remembering.
-
-Project context:
-${context}
-
-Find 2-5 interesting discoveries. Each should be a concrete, reusable insight.
-
-Output as JSON array:
-[
-  {
-    "type": "learning" | "pattern" | "decision" | "observation",
-    "title": "Short title",
-    "content": "Detailed description (2-3 sentences)",
-    "tags": ["tag1", "tag2"]
-  }
-]
-
-If no interesting discoveries, output: []`;
+  const prompt = DISCOVERY_PROMPT.replace('{context}', context);
 
   try {
     // Use sleep agent for background analysis if enabled

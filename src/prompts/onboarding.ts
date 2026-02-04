@@ -1,5 +1,5 @@
 /**
- * Onboarding System Prompts
+ * Onboarding Prompts
  *
  * System prompt for the AI-powered interactive onboarding experience.
  * Teaches new users about succ concepts before technical setup.

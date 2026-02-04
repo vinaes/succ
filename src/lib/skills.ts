@@ -18,6 +18,10 @@ import { getSuccDir, getConfig } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
 import { callLLM as sharedCallLLM, getLLMConfig, type LLMBackend } from './llm.js';
+import {
+  KEYWORD_EXTRACTION_PROMPT as KEYWORD_PROMPT,
+  SKILL_RANKING_PROMPT as RANKING_PROMPT,
+} from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -124,28 +128,6 @@ async function callLLM(prompt: string, config: LLMConfig, timeout: number = 1500
 }
 
 // ============================================================================
-// Prompts
-// ============================================================================
-
-const KEYWORD_EXTRACTION_PROMPT = `Extract technical keywords from this user message.
-Message: "{prompt}"
-Output JSON only: {"keywords": ["keyword1", "keyword2"]} or {"keywords": []} if none.
-Only technical terms, tools, frameworks, concepts. Max 5 keywords.
-Works for any language - extract the technical concepts in English.`;
-
-const SKILL_RANKING_PROMPT = `Analyze this user request and select relevant skills.
-
-User request: "{user_prompt}"
-
-Available skills:
-{skills_list}
-
-RESPOND WITH JSON ONLY - no explanation, no markdown, just the JSON object:
-{"suggestions":[{"name":"exact-skill-name","reason":"one sentence why","confidence":0.95}],"skip_reason":"if none"}
-
-Rules: confidence>0.7, max 2 skills, use exact skill names from the list above.`;
-
-// ============================================================================
 // Core Functions
 // ============================================================================
 
@@ -156,7 +138,7 @@ export async function extractKeywords(
   prompt: string,
   config: LLMConfig
 ): Promise<string[]> {
-  const llmPrompt = KEYWORD_EXTRACTION_PROMPT.replace('{prompt}', prompt.slice(0, 500));
+  const llmPrompt = KEYWORD_PROMPT.replace('{prompt}', prompt.slice(0, 500));
 
   try {
     console.log(`[skills] Calling LLM for keyword extraction (backend=${config.backend})`);
@@ -236,7 +218,7 @@ export async function rankSkillsWithLLM(
     })
     .join('\n');
 
-  const llmPrompt = SKILL_RANKING_PROMPT.replace('{user_prompt}', userPrompt.slice(0, 500)).replace(
+  const llmPrompt = RANKING_PROMPT.replace('{user_prompt}', userPrompt.slice(0, 500)).replace(
     '{skills_list}',
     skillsList
   );

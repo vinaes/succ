@@ -6,7 +6,7 @@
  */
 
 import * as readline from 'readline';
-import { ONBOARDING_SYSTEM_PROMPT } from './prompts.js';
+import { ONBOARDING_SYSTEM_PROMPT } from '../../prompts/index.js';
 import { callLLMChat, ChatMessage } from '../llm.js';
 import { markOnboardingCompleted } from '../config.js';
 
