@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.93-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.94-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -65,6 +65,7 @@ succ analyze
 - **Sleep Agent** — Offload heavy operations to local LLM
 - **Checkpoints** — Backup and restore full succ state
 - **AI-Readiness Score** — Measure project readiness for AI collaboration
+- **Multiple LLM Backends** — Local (Ollama), OpenRouter, or Claude CLI
 
 </details>
 
@@ -234,6 +235,32 @@ Offload heavy operations to local LLM:
   }
 }
 ```
+
+</details>
+
+<details>
+<summary>LLM Backend Configuration</summary>
+
+succ supports multiple LLM backends for operations like analyze, idle reflection, and skill suggestions:
+
+```json
+{
+  "llm": {
+    "backend": "local",
+    "model": "qwen2.5:7b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions",
+    "openrouter_model": "anthropic/claude-3-haiku"
+  }
+}
+```
+
+| Backend | Description | Requirements |
+|---------|-------------|--------------|
+| `local` | Ollama or OpenAI-compatible server (default) | Local server running |
+| `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` env var |
+| `claude` | Claude Code CLI | Claude Code subscription |
+
+> **Warning**: Using `claude` backend invokes Claude Code CLI programmatically. This may violate [Anthropic's Terms of Service](https://www.anthropic.com/legal/consumer-terms). Use at your own risk. We recommend `local` (Ollama) or `openrouter` backends for automated operations.
 
 </details>
 
