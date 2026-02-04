@@ -10,6 +10,11 @@ import { getCompactBriefingConfig, CompactBriefingConfig } from './config.js';
 import { searchMemories, getRecentMemories } from './db.js';
 import { getEmbedding } from './embeddings.js';
 import { callLLM } from './llm.js';
+import {
+  BRIEFING_STRUCTURED_PROMPT,
+  BRIEFING_PROSE_PROMPT,
+  BRIEFING_MINIMAL_PROMPT,
+} from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -32,86 +37,6 @@ interface TranscriptEntry {
   tool_result?: any;
   timestamp?: string;
 }
-
-// ============================================================================
-// Prompts for Different Formats
-// ============================================================================
-
-const STRUCTURED_PROMPT = `Summarize this coding session for handoff to a fresh context.
-
-Session transcript:
----
-{transcript}
----
-
-{memories_section}
-
-Output in this EXACT XML format (keep the XML tags exactly as shown):
-
-<task>
-[1-2 sentences: what was the main goal/task being worked on]
-</task>
-
-<completed>
-- [bullet point: what was done]
-- [bullet point: what was done]
-</completed>
-
-<in-progress>
-- [bullet point: what's partially done or being tested]
-</in-progress>
-
-<decisions>
-- [bullet point: key technical decision made and why]
-</decisions>
-
-<next-steps priority="high">
-- [bullet point: what to do next]
-- [bullet point: what to do next]
-</next-steps>
-
-Be concise and specific. Include file names, function names, and technical details.
-If a section is empty (e.g., no decisions), output the tag with "None" inside.`;
-
-const PROSE_PROMPT = `Summarize this coding session for handoff to a fresh context.
-
-Session transcript:
----
-{transcript}
----
-
-{memories_section}
-
-Output in this EXACT XML format:
-
-<task>[1 sentence: main goal]</task>
-
-<summary>
-[2-3 paragraphs covering: what was accomplished, current state, key decisions, what's next]
-</summary>
-
-<continue-with hint="start here">
-[1 sentence: the immediate next action to take]
-</continue-with>
-
-Be conversational but concise. Include specific technical details (files, functions, errors).`;
-
-const MINIMAL_PROMPT = `Summarize this coding session in exactly 4 lines.
-
-Session transcript:
----
-{transcript}
----
-
-{memories_section}
-
-Output EXACTLY 4 lines:
-Task: [what was being done]
-Done: [what was completed]
-State: [current status]
-Next: [what to do next]
-
-Be extremely concise. Use technical terms.`;
 
 // ============================================================================
 // Transcript Parsing
@@ -275,14 +200,14 @@ export async function generateCompactBriefing(
     let promptTemplate: string;
     switch (mergedConfig.format) {
       case 'prose':
-        promptTemplate = PROSE_PROMPT;
+        promptTemplate = BRIEFING_PROSE_PROMPT;
         break;
       case 'minimal':
-        promptTemplate = MINIMAL_PROMPT;
+        promptTemplate = BRIEFING_MINIMAL_PROMPT;
         break;
       case 'structured':
       default:
-        promptTemplate = STRUCTURED_PROMPT;
+        promptTemplate = BRIEFING_STRUCTURED_PROMPT;
         break;
     }
 

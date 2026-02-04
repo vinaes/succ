@@ -12,6 +12,7 @@ import { searchMemories, closeDb, getRecentMemories } from './db.js';
 import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
+import { SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -38,37 +39,6 @@ export interface PrecomputeResult {
   memoriesIncluded: number;
   error?: string;
 }
-
-/**
- * Prompt for generating session briefing
- */
-const BRIEFING_PROMPT = `You are preparing a briefing for an AI assistant's next coding session.
-
-Session transcript (recent activity):
----
-{transcript}
----
-
-Relevant memories from past sessions:
----
-{memories}
----
-
-Generate a concise briefing (3-5 bullet points) that will help the assistant quickly understand:
-1. What was being worked on
-2. Current state/progress
-3. Any pending tasks or issues
-4. Key context to remember
-
-Output format:
-## Session Briefing
-
-- [bullet point 1]
-- [bullet point 2]
-...
-
-## Suggested Focus
-[One sentence about what to focus on next]`;
 
 /**
  * Extract key topics from transcript for memory search
@@ -150,7 +120,7 @@ async function generateBriefingWithLLM(
     .map(m => `[${m.tags.join(', ')}] ${m.content}`)
     .join('\n\n');
 
-  const prompt = BRIEFING_PROMPT
+  const prompt = SESSION_BRIEFING_PROMPT
     .replace('{transcript}', transcript.substring(0, 4000))
     .replace('{memories}', memoriesText || 'No relevant memories found.');
 

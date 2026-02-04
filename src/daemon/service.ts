@@ -43,6 +43,7 @@ import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../l
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import { callLLM, isSleepAgentEnabled } from '../lib/llm.js';
+import { REFLECTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -325,20 +326,7 @@ async function writeReflection(
   const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
   const timestamp = `${dateStr} ${timeStr}`;
 
-  const prompt = `You are writing a brief personal reflection for an AI's internal journal.
-
-Session context (recent conversation):
----
-${transcript.substring(0, 3000)}
----
-
-Write a short reflection (3-5 sentences) about this session. Be honest and introspective.
-Consider:
-- What was accomplished or attempted?
-- Any interesting challenges or discoveries?
-- What might be worth remembering for future sessions?
-
-Output ONLY the reflection text, no headers or formatting. Write in first person as if you are the AI reflecting on your own work.`;
+  const prompt = REFLECTION_PROMPT.replace('{transcript}', transcript.substring(0, 3000));
 
   let reflectionText: string | null = null;
 

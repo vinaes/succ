@@ -25,6 +25,7 @@ import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
+import { MEMORY_MERGE_PROMPT } from '../prompts/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -431,23 +432,6 @@ export interface LLMMergeOptions {
 }
 
 /**
- * Prompt for merging two memories
- */
-const MERGE_PROMPT = `You are merging two similar memory entries into one unified memory.
-
-Memory 1: "{memory1}"
-Memory 2: "{memory2}"
-
-Rules:
-1. Preserve ALL unique information from both memories
-2. Remove redundancy and repetition
-3. Keep it concise (1-2 sentences maximum)
-4. Maintain factual accuracy - do not add information not present in the originals
-5. Use clear, professional language
-
-Output ONLY the merged memory text, nothing else.`;
-
-/**
  * Merge two memory contents using LLM
  * Uses the shared LLM module for backend flexibility.
  */
@@ -456,7 +440,7 @@ export async function llmMergeContent(
   content2: string,
   options: LLMMergeOptions
 ): Promise<string | null> {
-  const prompt = MERGE_PROMPT.replace('{memory1}', content1).replace('{memory2}', content2);
+  const prompt = MEMORY_MERGE_PROMPT.replace('{memory1}', content1).replace('{memory2}', content2);
 
   // Map legacy mode to new backend
   const backend: LLMBackend = options.mode;
