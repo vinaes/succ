@@ -6,17 +6,7 @@ dist/
 
 # succ generated files (local to each machine)
 .claude/
-.succ/.tmp/
-.succ/.context-archive/
-.succ/next-session-context.md
-.succ/brain/
-.succ/soul.md
-.succ/config.json
-.succ/daemon.log
+.succ/
 
 # MCP config (local)
 .mcp.json
-
-# Hooks source of truth is hooks/ directory
-# .succ/hooks/ is a generated copy for local dev (created by succ init)
-.succ/hooks/
