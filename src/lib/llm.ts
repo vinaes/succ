@@ -34,6 +34,13 @@ export interface LLMOptions {
   temperature?: number;
   /** Use sleep agent config if available (for background operations) */
   useSleepAgent?: boolean;
+  /** Use chat_llm config (for interactive chats like succ chat, onboarding) */
+  useChatLLM?: boolean;
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
 // ============================================================================
@@ -114,6 +121,45 @@ export function isSleepAgentEnabled(): boolean {
   return config.sleep_agent?.enabled === true;
 }
 
+/**
+ * Default Chat LLM config - Claude CLI with Sonnet
+ * Used for interactive chats (succ chat, onboarding)
+ */
+const DEFAULT_CHAT_LLM_CONFIG: LLMConfig = {
+  backend: 'claude',
+  model: 'sonnet',
+  maxTokens: 4000,
+  temperature: 0.7,
+};
+
+/**
+ * Get Chat LLM config for interactive chats (succ chat, onboarding)
+ * Default: Claude CLI with Sonnet (best quality for interactive use)
+ * Can be overridden via chat_llm config
+ */
+export function getChatLLMConfig(): LLMConfig {
+  const config = getConfig();
+  const chatLlm = config.chat_llm;
+
+  // If no chat_llm config, use Claude CLI with Sonnet as default
+  if (!chatLlm?.backend) {
+    return DEFAULT_CHAT_LLM_CONFIG;
+  }
+
+  const baseLlmConfig = getLLMConfig();
+
+  return {
+    backend: (chatLlm.backend as LLMBackend) || DEFAULT_CHAT_LLM_CONFIG.backend,
+    model: chatLlm.model || DEFAULT_CHAT_LLM_CONFIG.model,
+    localEndpoint: chatLlm.local_endpoint || baseLlmConfig.localEndpoint,
+    openrouterModel: chatLlm.backend === 'openrouter'
+      ? (chatLlm.model || baseLlmConfig.openrouterModel)
+      : baseLlmConfig.openrouterModel,
+    maxTokens: chatLlm.max_tokens || DEFAULT_CHAT_LLM_CONFIG.maxTokens,
+    temperature: chatLlm.temperature ?? DEFAULT_CHAT_LLM_CONFIG.temperature,
+  };
+}
+
 // ============================================================================
 // Main Entry Point
 // ============================================================================
@@ -188,6 +234,54 @@ export async function callLLMWithFallback(
   }
 
   throw lastError || new Error('All LLM backends failed');
+}
+
+/**
+ * Call LLM with multi-turn chat messages
+ * Used for interactive conversations (succ chat, onboarding)
+ *
+ * @param messages - Array of chat messages (system, user, assistant)
+ * @param options - Optional overrides for timeout, maxTokens, temperature
+ * @param configOverride - Optional config override
+ */
+export async function callLLMChat(
+  messages: ChatMessage[],
+  options: LLMOptions = {},
+  configOverride?: Partial<LLMConfig>
+): Promise<string> {
+  // Use chat LLM config by default for chat calls
+  let baseConfig: LLMConfig;
+  if (options.useChatLLM !== false) {
+    baseConfig = getChatLLMConfig();
+  } else if (options.useSleepAgent) {
+    const sleepAgentConfig = getSleepAgentConfig();
+    baseConfig = sleepAgentConfig || getLLMConfig();
+  } else {
+    baseConfig = getLLMConfig();
+  }
+
+  const config = { ...baseConfig, ...configOverride };
+  const timeout = options.timeout || 60000; // Longer timeout for chat
+  const maxTokens = options.maxTokens || config.maxTokens || 4000;
+  const temperature = options.temperature ?? config.temperature ?? 0.7;
+
+  switch (config.backend) {
+    case 'claude':
+      // Claude CLI doesn't support multi-turn, concatenate messages
+      const prompt = messages
+        .map((m) => (m.role === 'system' ? `System: ${m.content}` : m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
+        .join('\n\n');
+      return runClaudeCLI(prompt, config.model, timeout);
+
+    case 'local':
+      return callLocalLLMChat(messages, config.localEndpoint!, config.model, timeout, maxTokens, temperature);
+
+    case 'openrouter':
+      return callOpenRouterChat(messages, config.openrouterModel!, timeout, maxTokens, temperature);
+
+    default:
+      throw new Error(`Unknown LLM backend: ${config.backend}`);
+  }
 }
 
 // ============================================================================
@@ -304,6 +398,92 @@ async function callOpenRouter(
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
+      temperature,
+      max_tokens: maxTokens,
+    }),
+    signal: AbortSignal.timeout(timeout),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error(`[llm] OpenRouter error body: ${errorBody}`);
+    throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+  };
+
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('OpenRouter returned no choices');
+  }
+
+  return data.choices[0].message.content;
+}
+
+/**
+ * Call local LLM with multi-turn messages (Ollama or OpenAI-compatible)
+ */
+async function callLocalLLMChat(
+  messages: ChatMessage[],
+  endpoint: string,
+  model: string,
+  timeout: number,
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    }),
+    signal: AbortSignal.timeout(timeout),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Local LLM error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+  };
+
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('Local LLM returned no choices');
+  }
+
+  return data.choices[0].message.content;
+}
+
+/**
+ * Call OpenRouter API with multi-turn messages
+ */
+async function callOpenRouterChat(
+  messages: ChatMessage[],
+  model: string,
+  timeout: number,
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
+  const apiKey = getOpenRouterApiKey();
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY not set');
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://succ.ai',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
       temperature,
       max_tokens: maxTokens,
     }),

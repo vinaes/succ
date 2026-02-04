@@ -54,6 +54,7 @@ program
   .option('-y, --yes', 'Non-interactive mode (skip prompts)')
   .option('-v, --verbose', 'Show detailed output (created files, etc.)')
   .option('-g, --global', 'Use global hooks (from succ package dir, not local copies)')
+  .option('--ai', 'Use AI-powered interactive onboarding instead of static wizard')
   .action(init);
 
 program
