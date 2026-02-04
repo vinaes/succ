@@ -1,9 +1,11 @@
 /**
  * Token Pricing for Claude Models
  *
- * Calculates cost based on token usage for different Claude models.
- * Prices are per million tokens.
+ * Provides "Claude equivalent" pricing for token savings comparison.
+ * This allows users to understand the value of saved tokens regardless
+ * of which LLM backend they actually use (Ollama, OpenRouter, Claude CLI).
  *
+ * Prices are per million tokens.
  * Source: https://www.anthropic.com/api
  */
 
