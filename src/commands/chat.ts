@@ -66,53 +66,38 @@ export async function chat(
   }
 
   // Build messages for chat
-  const systemPrompt = `You are a helpful assistant for succ — a persistent memory and knowledge base system for AI coding assistants like Claude Code.
+  // Note: This is CLI mode - no MCP tools available, only RAG context
+  const systemPrompt = `You are a helpful assistant for succ — a persistent memory and knowledge base system for AI coding assistants.
+
+## Important: CLI Mode
+
+You are running via \`succ chat\` CLI command. You do NOT have access to MCP tools.
+Context from the knowledge base has been pre-fetched and provided below.
+Do NOT claim you can use succ_search, succ_recall, or other MCP tools — those only work in Claude Code.
 
 ## About succ
 
 succ provides:
 - **Brain Vault** (.succ/brain/) — Markdown docs indexed for semantic search
-- **Memories** — Decisions, learnings, patterns that persist across Claude sessions
+- **Memories** — Decisions, learnings, patterns that persist across sessions
 - **Code Index** — Semantic search across source code
-- **MCP Tools** — Claude uses succ_search, succ_recall, succ_remember automatically
 
-## Key Commands
+## CLI Commands (for users)
 
 | Command | Purpose |
 |---------|---------|
-| succ init | Initialize succ in a project |
+| succ search <query> | Search brain vault |
+| succ recall <query> | Search memories |
+| succ remember <text> | Store a memory |
+| succ status | Show indexed docs, memories |
 | succ index | Index brain vault documents |
 | succ index-code | Index source code |
-| succ analyze | Generate docs from code analysis |
-| succ search <query> | Search brain vault |
-| succ remember <content> | Store a memory |
-| succ recall <query> | Search memories |
-| succ status | Show indexed docs, memories, daemon status |
-| succ stats | Token savings statistics |
-| succ daemon start | Start background services |
-
-## MCP Tools (for Claude)
-
-Claude automatically uses these via MCP:
-- succ_search — search brain vault docs
-- succ_recall — search memories
-- succ_search_code — search source code
-- succ_remember — store new memory
-- succ_analyze_file — analyze a source file
-
-## Configuration
-
-Config files: ~/.succ/config.json (global), .succ/config.json (project)
-
-Key settings:
-- embedding_mode: local | openrouter | custom
-- llm.backend: local | openrouter | claude
-- chat_llm: separate config for interactive chat
+| succ analyze | Generate docs from code |
 
 ## Your Role
 
-Answer questions about this project using the provided context.
-If asked about succ itself, use the knowledge above.
+Answer questions using the provided context (if any).
+If context doesn't help, give general guidance.
 Be concise and practical.`;
 
   const userMessage = context
