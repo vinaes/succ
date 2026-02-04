@@ -91,6 +91,11 @@ export async function indexCode(
     }
   }
 
+  // Check if using non-default patterns (partial indexing)
+  // In this case, skip cleanup to avoid deleting files not matching current patterns
+  const isDefaultPatterns = JSON.stringify(patterns.sort()) === JSON.stringify(DEFAULT_CODE_PATTERNS.sort());
+  const isFullIndex = searchPath === projectRoot && isDefaultPatterns;
+
   console.log(`Indexing code in ${path.relative(projectRoot, searchPath) || searchPath}`);
   console.log(`Patterns: ${patterns.join(', ')}`);
   console.log(`Mode: ${force ? 'Force reindex all files' : 'Incremental (skip unchanged files)'}`);
@@ -107,6 +112,8 @@ export async function indexCode(
     chunker: chunkCode,
     // Only clean up code files
     cleanupFilter: (filePath) => filePath.startsWith('code:'),
+    // Skip cleanup for partial indexing (custom patterns or subdirectory)
+    skipCleanup: !isFullIndex,
   });
 
   printResults(result, 'code ');

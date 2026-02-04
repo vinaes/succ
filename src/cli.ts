@@ -213,6 +213,7 @@ program
 program
   .command('index-code [path]')
   .description('Index source code for semantic search')
+  .option('--file <file>', 'Index a single file directly')
   .option(
     '--patterns <patterns>',
     'File patterns (comma-separated)',
@@ -221,7 +222,24 @@ program
   .option('--ignore <patterns>', 'Ignore patterns (comma-separated)')
   .option('-f, --force', 'Force reindex all files')
   .option('--max-size <kb>', 'Max file size in KB', '500')
-  .action((targetPath, options) => {
+  .action(async (targetPath, options) => {
+    // Single file mode
+    if (options.file) {
+      const { indexCodeFile } = await import('./commands/index-code.js');
+      const result = await indexCodeFile(options.file, { force: options.force });
+      if (result.success) {
+        if (result.skipped) {
+          console.log(`Skipped: ${result.reason}`);
+        } else {
+          console.log(`Indexed ${result.chunks} chunks from ${options.file}`);
+        }
+      } else {
+        console.error(`Error: ${result.error}`);
+        process.exit(1);
+      }
+      return;
+    }
+    // Directory/pattern mode
     indexCode(targetPath, {
       patterns: options.patterns?.split(','),
       ignore: options.ignore?.split(','),
@@ -420,16 +438,12 @@ program
   .option('-v, --verbose', 'Show detailed output')
   .option('--local', 'Use local LLM (Ollama/llama.cpp)')
   .option('--openrouter', 'Use OpenRouter API')
-  .option('--api-url <url>', 'API URL for local LLM')
-  .option('--model <model>', 'Model to use')
   .action((transcript, options) => {
     precomputeContext(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
       local: options.local,
       openrouter: options.openrouter,
-      apiUrl: options.apiUrl,
-      model: options.model,
     });
   });
 

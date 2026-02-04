@@ -31,6 +31,7 @@ export interface IndexerOptions {
   chunker: (content: string, filePath: string) => Chunk[];
   contentProcessor?: (content: string) => { content: string; skip: boolean };
   cleanupFilter?: (filePath: string) => boolean; // Filter for cleanup phase
+  skipCleanup?: boolean; // Skip cleanup phase entirely (for partial/single-file indexing)
 }
 
 export interface IndexerResult {
@@ -65,6 +66,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     chunker,
     contentProcessor,
     cleanupFilter,
+    skipCleanup = false,
   } = options;
 
   // Find files matching patterns
@@ -266,16 +268,18 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
   // Clear progress line
   process.stdout.write('\r' + ' '.repeat(60) + '\r');
 
-  // Clean up deleted files
+  // Clean up deleted files (skip if partial indexing)
   let deletedFiles = 0;
-  for (const [filePath] of existingHashes) {
-    // Apply cleanup filter if provided
-    if (cleanupFilter && !cleanupFilter(filePath)) continue;
+  if (!skipCleanup) {
+    for (const [filePath] of existingHashes) {
+      // Apply cleanup filter if provided
+      if (cleanupFilter && !cleanupFilter(filePath)) continue;
 
-    if (!currentFiles.has(filePath)) {
-      deleteDocumentsByPath(filePath);
-      deleteFileHash(filePath);
-      deletedFiles++;
+      if (!currentFiles.has(filePath)) {
+        deleteDocumentsByPath(filePath);
+        deleteFileHash(filePath);
+        deletedFiles++;
+      }
     }
   }
 

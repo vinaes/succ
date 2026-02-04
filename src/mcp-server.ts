@@ -24,6 +24,7 @@ import {
   saveMemory,
   searchMemories,
   getRecentMemories,
+  getRecentDocuments,
   getMemoryStats,
   deleteMemory,
   deleteMemoriesOlderThan,
@@ -642,6 +643,34 @@ server.tool(
     }
 
     try {
+      // Special case: "*" means "show recent documents" (no semantic search)
+      const isWildcard = query === '*' || query === '**' || query.trim() === '';
+
+      if (isWildcard) {
+        const recentDocs = getRecentDocuments(limit);
+        if (recentDocs.length === 0) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: 'No documents indexed. Run `succ index` to index documentation.',
+            }],
+          };
+        }
+
+        const formatted = recentDocs
+          .map((r, i) => {
+            return `### ${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line}\n\n${r.content}`;
+          })
+          .join('\n\n---\n\n');
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Found ${recentDocs.length} recent documents:\n\n${formatted}`,
+          }],
+        };
+      }
+
       const queryEmbedding = await getEmbedding(query);
       // Use hybrid search for docs
       const results = hybridSearchDocs(query, queryEmbedding, limit, threshold);
@@ -928,6 +957,9 @@ server.tool(
     const globalOnlyMode = isGlobalOnlyMode();
 
     try {
+      // Special case: "*" means "show recent memories" (no semantic search)
+      const isWildcard = query === '*' || query === '**' || query.trim() === '';
+
       // Parse relative date strings
       let sinceDate: Date | undefined;
       if (since) {
@@ -947,6 +979,74 @@ server.tool(
             sinceDate = undefined;
           }
         }
+      }
+
+      // For wildcard queries, just get recent memories without semantic search
+      if (isWildcard) {
+        const recentLocal = globalOnlyMode ? [] : getRecentMemories(limit);
+        const recentGlobal = getRecentGlobalMemories(limit);
+
+        // Apply tag filter if specified
+        let filteredLocal = recentLocal;
+        let filteredGlobal = recentGlobal;
+        if (tags && tags.length > 0) {
+          filteredLocal = recentLocal.filter((m) => {
+            const memTags = Array.isArray(m.tags) ? m.tags : [];
+            return tags.some((t) => memTags.includes(t));
+          });
+          filteredGlobal = recentGlobal.filter((m) => {
+            const memTags = Array.isArray(m.tags) ? m.tags : [];
+            return tags.some((t) => memTags.includes(t));
+          });
+        }
+
+        // Apply date filter if specified
+        if (sinceDate) {
+          filteredLocal = filteredLocal.filter((m) => new Date(m.created_at) >= sinceDate!);
+          filteredGlobal = filteredGlobal.filter((m) => new Date(m.created_at) >= sinceDate!);
+        }
+
+        const parseTags = (t: string | string[] | null): string[] => {
+          if (!t) return [];
+          if (Array.isArray(t)) return t;
+          return t.split(',').map((s) => s.trim()).filter(Boolean);
+        };
+
+        const allRecent = [
+          ...filteredLocal.map((m) => ({ ...m, tags: parseTags(m.tags), isGlobal: false })),
+          ...filteredGlobal.map((m) => ({ ...m, isGlobal: true })),
+        ].slice(0, limit);
+
+        if (allRecent.length === 0) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: globalOnlyMode
+                ? 'No global memories found.'
+                : 'No memories found. Use succ_remember to save memories.',
+            }],
+          };
+        }
+
+        const localCount = filteredLocal.length;
+        const globalCount = filteredGlobal.length;
+        const formatted = allRecent
+          .map((m, i) => {
+            const tagStr = m.tags.length > 0 ? ` [[${m.tags.map((t: string) => `"${t}"`).join(', ')}]]` : '';
+            const date = new Date(m.created_at).toLocaleDateString();
+            const scope = m.isGlobal ? '[GLOBAL] ' : '';
+            const source = (m as any).source ? ` (from: ${(m as any).source})` : '';
+            const matchPct = (m as any).similarity ? ` (${Math.round((m as any).similarity * 100)}% match)` : '';
+            return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
+          })
+          .join('\n---\n\n');
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Found ${allRecent.length} recent memories (${localCount} local, ${globalCount} global):\n\n${formatted}`,
+          }],
+        };
       }
 
       const queryEmbedding = await getEmbedding(query);

@@ -191,6 +191,26 @@ function initDb(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_token_stats_type ON token_stats(event_type);
     CREATE INDEX IF NOT EXISTS idx_token_stats_created ON token_stats(created_at);
+
+    CREATE TABLE IF NOT EXISTS skills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT NOT NULL,
+      source TEXT NOT NULL,
+      path TEXT,
+      content TEXT,
+      embedding BLOB,
+      skyll_id TEXT,
+      usage_count INTEGER DEFAULT 0,
+      last_used TEXT,
+      cached_at TEXT,
+      cache_expires TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
+    CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
   `);
 
   // Migration: add type column if missing (for existing databases)
@@ -1990,6 +2010,34 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     valid_until: row.valid_until,
     created_at: row.created_at,
   }));
+}
+
+/**
+ * Get recent documents (for wildcard search)
+ */
+export function getRecentDocuments(limit: number = 10): Array<{
+  file_path: string;
+  content: string;
+  start_line: number;
+  end_line: number;
+}> {
+  const database = getDb();
+  const rows = database
+    .prepare(`
+      SELECT file_path, content, start_line, end_line
+      FROM documents
+      WHERE file_path NOT LIKE 'code:%'
+      ORDER BY rowid DESC
+      LIMIT ?
+    `)
+    .all(limit) as Array<{
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+    }>;
+
+  return rows;
 }
 
 /**
