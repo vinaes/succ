@@ -40,10 +40,15 @@ export function formatTokens(tokens: number): string {
 }
 
 /**
- * Calculate compression percentage.
+ * Calculate compression ratio (how much was saved).
+ * Returns "99.98% saved" style string.
  */
 export function compressionPercent(original: number, compressed: number): string {
-  if (original === 0) return '0%';
+  if (original === 0) return '0% saved';
   const saved = ((original - compressed) / original) * 100;
-  return `${saved.toFixed(1)}%`;
+  // Avoid showing 100.0% - use more precision for high compression
+  if (saved >= 99.9 && saved < 100) {
+    return `${saved.toFixed(2)}% saved`;
+  }
+  return `${saved.toFixed(1)}% saved`;
 }
