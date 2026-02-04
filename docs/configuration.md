@@ -553,6 +553,77 @@ Controls the briefing generated after `/compact`.
 
 ---
 
+## Skills Settings
+
+LLM-powered skill discovery and suggestions.
+
+```json
+{
+  "skills": {
+    "enabled": true,
+    "local_paths": [".claude/commands"],
+    "track_usage": true,
+    "auto_suggest": {
+      "enabled": true,
+      "on_user_prompt": true,
+      "min_confidence": 0.7,
+      "max_suggestions": 2,
+      "cooldown_prompts": 3,
+      "min_prompt_length": 20
+    },
+    "skyll": {
+      "enabled": true,
+      "endpoint": "https://api.skyll.app",
+      "cache_ttl": 604800,
+      "only_when_no_local": true,
+      "rate_limit": 30
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `skills.enabled` | boolean | true | Enable skills system |
+| `skills.local_paths` | string[] | `[".claude/commands"]` | Paths to scan for local skills |
+| `skills.track_usage` | boolean | true | Track skill usage statistics |
+
+### Auto-Suggest Settings
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `skills.auto_suggest.enabled` | boolean | true | Enable auto-suggestions |
+| `skills.auto_suggest.on_user_prompt` | boolean | true | Suggest on each prompt |
+| `skills.auto_suggest.min_confidence` | number | 0.7 | Minimum confidence (0-1) |
+| `skills.auto_suggest.max_suggestions` | number | 2 | Max suggestions per prompt |
+| `skills.auto_suggest.cooldown_prompts` | number | 3 | Prompts between suggestions |
+| `skills.auto_suggest.min_prompt_length` | number | 20 | Min prompt length to trigger |
+
+### Skyll Integration
+
+[Skyll](https://skyll.app) is a community registry for Claude Code skills. succ can search Skyll when local skills don't match.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `skills.skyll.enabled` | boolean | true | Enable Skyll integration |
+| `skills.skyll.endpoint` | string | `"https://api.skyll.app"` | Skyll API URL |
+| `skills.skyll.api_key` | string | - | Optional API key for higher limits |
+| `skills.skyll.cache_ttl` | number | 604800 | Cache TTL in seconds (7 days) |
+| `skills.skyll.only_when_no_local` | boolean | true | Only search Skyll if no local match |
+| `skills.skyll.rate_limit` | number | 30 | Max requests per hour |
+
+**How it works:**
+
+1. User types a prompt
+2. LLM extracts technical keywords
+3. BM25 searches local skills (`.claude/commands/`)
+4. If no match and `only_when_no_local: true`, searches Skyll
+5. LLM ranks candidates and suggests best matches
+
+**Environment variable:** `SKYLL_API_KEY` (alternative to config)
+
+---
+
 ## Full Example Configuration
 
 ```json
@@ -618,6 +689,18 @@ Controls the briefing generated after `/compact`.
     "format": "structured",
     "include_memories": true,
     "max_memories": 3
+  },
+
+  "skills": {
+    "enabled": true,
+    "auto_suggest": {
+      "enabled": true,
+      "min_confidence": 0.7
+    },
+    "skyll": {
+      "enabled": true,
+      "only_when_no_local": true
+    }
   },
 
   "retention": {
