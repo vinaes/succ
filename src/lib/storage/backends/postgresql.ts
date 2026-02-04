@@ -75,13 +75,25 @@ export interface PostgresBackendConfig {
 
 export class PostgresBackend {
   private pool: Pool | null = null;
-  private globalPool: Pool | null = null;
   private config: PostgresBackendConfig;
   private initialized = false;
-  private globalInitialized = false;
+  private projectId: string | null = null;
 
-  constructor(config: PostgresBackendConfig) {
+  constructor(config: PostgresBackendConfig, projectId?: string) {
     this.config = config;
+    this.projectId = projectId ?? null;
+  }
+
+  /**
+   * Set the current project ID for scoping memories.
+   * NULL = global memories (shared across all projects)
+   */
+  setProjectId(projectId: string | null): void {
+    this.projectId = projectId;
+  }
+
+  getProjectId(): string | null {
+    return this.projectId;
   }
 
   /**
@@ -166,9 +178,12 @@ export class PostgresBackend {
     `);
 
     // Memories table
+    // project_id: NULL = global memory (shared across all projects)
+    //             non-NULL = project-specific memory
     await pool.query(`
       CREATE TABLE IF NOT EXISTS memories (
         id SERIAL PRIMARY KEY,
+        project_id TEXT,
         content TEXT NOT NULL,
         tags JSONB,
         source TEXT,
@@ -184,9 +199,23 @@ export class PostgresBackend {
       )
     `);
 
+    // Add project_id column if it doesn't exist (migration for existing databases)
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'project_id'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN project_id TEXT;
+        END IF;
+      END $$;
+    `);
+
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
 
     // Memory links table
@@ -270,11 +299,6 @@ export class PostgresBackend {
       await this.pool.end();
       this.pool = null;
       this.initialized = false;
-    }
-    if (this.globalPool) {
-      await this.globalPool.end();
-      this.globalPool = null;
-      this.globalInitialized = false;
     }
   }
 
@@ -494,15 +518,18 @@ export class PostgresBackend {
     qualityScore?: number,
     qualityFactors?: Record<string, number>,
     validFrom?: string,
-    validUntil?: string
+    validUntil?: string,
+    isGlobal: boolean = false
   ): Promise<number> {
     const pool = await this.getPool();
+    const projectId = isGlobal ? null : this.projectId;
 
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
+        projectId,
         content,
         tags.length > 0 ? JSON.stringify(tags) : null,
         source ?? null,
@@ -524,14 +551,15 @@ export class PostgresBackend {
     threshold: number = 0.3,
     tags?: string[],
     since?: Date,
-    options?: { includeExpired?: boolean; asOfDate?: Date }
+    options?: { includeExpired?: boolean; asOfDate?: Date; includeGlobal?: boolean }
   ): Promise<Array<Memory & { similarity: number }>> {
     const pool = await this.getPool();
     const now = options?.asOfDate ?? new Date();
     const includeExpired = options?.includeExpired ?? false;
+    const includeGlobal = options?.includeGlobal ?? true;
 
     let query = `
-      SELECT id, content, tags, source, type, quality_score, quality_factors,
+      SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until, created_at,
              1 - (embedding <=> $1) as similarity
       FROM memories
@@ -539,6 +567,20 @@ export class PostgresBackend {
     `;
     const params: any[] = [toPgVector(queryEmbedding), threshold];
     let paramIndex = 3;
+
+    // Filter by project_id: include current project AND optionally global (NULL)
+    if (this.projectId) {
+      if (includeGlobal) {
+        query += ` AND (project_id = $${paramIndex} OR project_id IS NULL)`;
+      } else {
+        query += ` AND project_id = $${paramIndex}`;
+      }
+      params.push(this.projectId);
+      paramIndex++;
+    } else {
+      // No project set = only return global memories
+      query += ` AND project_id IS NULL`;
+    }
 
     if (since) {
       query += ` AND created_at >= $${paramIndex}`;
@@ -620,16 +662,34 @@ export class PostgresBackend {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getRecentMemories(limit: number = 10): Promise<Memory[]> {
+  async getRecentMemories(limit: number = 10, includeGlobal: boolean = true): Promise<Memory[]> {
     const pool = await this.getPool();
-    const result = await pool.query(
-      `SELECT id, content, tags, source, type, quality_score, quality_factors,
-              access_count, last_accessed, valid_from, valid_until, created_at
-       FROM memories
-       ORDER BY created_at DESC
-       LIMIT $1`,
-      [limit]
-    );
+
+    let query = `
+      SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
+             access_count, last_accessed, valid_from, valid_until, created_at
+      FROM memories
+    `;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    // Filter by project_id
+    if (this.projectId) {
+      if (includeGlobal) {
+        query += ` WHERE (project_id = $${paramIndex} OR project_id IS NULL)`;
+      } else {
+        query += ` WHERE project_id = $${paramIndex}`;
+      }
+      params.push(this.projectId);
+      paramIndex++;
+    } else {
+      query += ` WHERE project_id IS NULL`;
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const result = await pool.query(query, params);
 
     return result.rows.map(row => ({
       id: row.id,
@@ -836,6 +896,180 @@ export class PostgresBackend {
        ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value`,
       [key, value]
     );
+  }
+
+  // ============================================================================
+  // Global Memory Operations (project_id = NULL)
+  // ============================================================================
+
+  /**
+   * Save a global memory (shared across all projects).
+   */
+  async saveGlobalMemory(
+    content: string,
+    embedding: number[],
+    tags: string[] = [],
+    source?: string,
+    type: MemoryType = 'observation',
+    qualityScore?: number,
+    qualityFactors?: Record<string, number>
+  ): Promise<number> {
+    return this.saveMemory(
+      content,
+      embedding,
+      tags,
+      source,
+      type,
+      qualityScore,
+      qualityFactors,
+      undefined, // validFrom
+      undefined, // validUntil
+      true // isGlobal
+    );
+  }
+
+  /**
+   * Search global memories only.
+   */
+  async searchGlobalMemories(
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.3,
+    tags?: string[]
+  ): Promise<Array<Memory & { similarity: number }>> {
+    const pool = await this.getPool();
+
+    let query = `
+      SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
+             access_count, last_accessed, valid_from, valid_until, created_at,
+             1 - (embedding <=> $1) as similarity
+      FROM memories
+      WHERE 1 - (embedding <=> $1) >= $2
+        AND project_id IS NULL
+      ORDER BY embedding <=> $1
+      LIMIT $3
+    `;
+    const params: any[] = [toPgVector(queryEmbedding), threshold, limit];
+
+    const result = await pool.query(query, params);
+
+    let memories = result.rows.map(row => ({
+      id: row.id,
+      content: row.content,
+      tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+      source: row.source,
+      type: row.type as MemoryType,
+      quality_score: row.quality_score,
+      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      access_count: row.access_count ?? 0,
+      last_accessed: row.last_accessed,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+      created_at: row.created_at,
+      similarity: parseFloat(row.similarity),
+    }));
+
+    // Filter by tags if specified
+    if (tags && tags.length > 0) {
+      memories = memories.filter(m =>
+        tags.some(t => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
+      );
+    }
+
+    return memories;
+  }
+
+  /**
+   * Get recent global memories.
+   */
+  async getRecentGlobalMemories(limit: number = 10): Promise<Memory[]> {
+    const pool = await this.getPool();
+
+    const result = await pool.query(
+      `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
+              access_count, last_accessed, valid_from, valid_until, created_at
+       FROM memories
+       WHERE project_id IS NULL
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map(row => ({
+      id: row.id,
+      content: row.content,
+      tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+      source: row.source,
+      type: row.type as MemoryType,
+      quality_score: row.quality_score,
+      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      access_count: row.access_count ?? 0,
+      last_accessed: row.last_accessed,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+      created_at: row.created_at,
+    }));
+  }
+
+  /**
+   * Delete a global memory.
+   */
+  async deleteGlobalMemory(id: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      'DELETE FROM memories WHERE id = $1 AND project_id IS NULL',
+      [id]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Get global memory statistics.
+   */
+  async getGlobalMemoryStats(): Promise<{
+    total: number;
+    by_type: Record<string, number>;
+    by_quality: { high: number; medium: number; low: number; unscored: number };
+  }> {
+    const pool = await this.getPool();
+
+    const total = await pool.query<{ count: string }>(
+      'SELECT COUNT(*) as count FROM memories WHERE project_id IS NULL'
+    );
+
+    const byType = await pool.query<{ type: string; count: string }>(
+      'SELECT type, COUNT(*) as count FROM memories WHERE project_id IS NULL GROUP BY type'
+    );
+
+    const byQuality = await pool.query<{ bucket: string; count: string }>(`
+      SELECT
+        CASE
+          WHEN quality_score >= 0.7 THEN 'high'
+          WHEN quality_score >= 0.4 THEN 'medium'
+          WHEN quality_score IS NOT NULL THEN 'low'
+          ELSE 'unscored'
+        END as bucket,
+        COUNT(*) as count
+      FROM memories
+      WHERE project_id IS NULL
+      GROUP BY bucket
+    `);
+
+    const typeMap: Record<string, number> = {};
+    for (const row of byType.rows) {
+      typeMap[row.type || 'observation'] = parseInt(row.count);
+    }
+
+    const qualityMap = { high: 0, medium: 0, low: 0, unscored: 0 };
+    for (const row of byQuality.rows) {
+      qualityMap[row.bucket as keyof typeof qualityMap] = parseInt(row.count);
+    }
+
+    return {
+      total: parseInt(total.rows[0].count),
+      by_type: typeMap,
+      by_quality: qualityMap,
+    };
   }
 }
 

@@ -38,6 +38,8 @@ export interface QdrantConfig {
   searchEf?: number;
   /** Enable scalar quantization for faster search. Default: true */
   useQuantization?: boolean;
+  /** Project ID for scoping memories. NULL = global. */
+  projectId?: string;
 }
 
 export class QdrantVectorStore implements VectorStore {
@@ -47,6 +49,7 @@ export class QdrantVectorStore implements VectorStore {
   private prefix: string;
   private searchEf: number;
   private useQuantization: boolean;
+  private projectId: string | null = null;
   private initialized: { documents: boolean; memories: boolean; globalMemories: boolean } = {
     documents: false,
     memories: false,
@@ -58,6 +61,19 @@ export class QdrantVectorStore implements VectorStore {
     this.prefix = config.collectionPrefix ?? 'succ_';
     this.searchEf = config.searchEf ?? 128;
     this.useQuantization = config.useQuantization ?? true;
+    this.projectId = config.projectId ?? null;
+  }
+
+  /**
+   * Set the current project ID for scoping memories.
+   * NULL = global memories (stored in global_memories collection)
+   */
+  setProjectId(projectId: string | null): void {
+    this.projectId = projectId;
+  }
+
+  getProjectId(): string | null {
+    return this.projectId;
   }
 
   private async getClient(): Promise<any> {
@@ -209,13 +225,17 @@ export class QdrantVectorStore implements VectorStore {
   // Memory Vectors
   // ============================================================================
 
-  async upsertMemoryVector(id: number, embedding: number[]): Promise<void> {
+  async upsertMemoryVector(id: number, embedding: number[], projectId?: string): Promise<void> {
     const client = await this.getClient();
+    const pid = projectId ?? this.projectId;
     await client.upsert(this.collectionName('memories'), {
       points: [{
         id,
         vector: embedding,
-        payload: { type: 'memory' },
+        payload: {
+          type: 'memory',
+          project_id: pid, // NULL for global, string for project-specific
+        },
       }],
     });
   }
@@ -227,13 +247,45 @@ export class QdrantVectorStore implements VectorStore {
     });
   }
 
-  async searchMemories(query: number[], limit: number, threshold: number): Promise<VectorSearchResult[]> {
+  async searchMemories(
+    query: number[],
+    limit: number,
+    threshold: number,
+    options?: { projectId?: string | null; includeGlobal?: boolean }
+  ): Promise<VectorSearchResult[]> {
     const client = await this.getClient();
+    const projectId = options?.projectId ?? this.projectId;
+    const includeGlobal = options?.includeGlobal ?? true;
+
+    // Build filter for project-scoped search
+    let filter: any = undefined;
+    if (projectId) {
+      if (includeGlobal) {
+        // Include both project-specific and global (project_id = NULL)
+        filter = {
+          should: [
+            { key: 'project_id', match: { value: projectId } },
+            { is_null: { key: 'project_id' } },
+          ],
+        };
+      } else {
+        // Only project-specific
+        filter = {
+          must: [{ key: 'project_id', match: { value: projectId } }],
+        };
+      }
+    } else {
+      // No project set = only global (project_id = NULL)
+      filter = {
+        must: [{ is_null: { key: 'project_id' } }],
+      };
+    }
 
     const results = await client.search(this.collectionName('memories'), {
       vector: query,
       limit,
       score_threshold: threshold,
+      filter,
       params: {
         hnsw_ef: this.searchEf,
         exact: false,
