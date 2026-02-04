@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.99-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.0.100-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -47,10 +47,13 @@ succ analyze
 | **Cross-Project** | Global memories shared between all projects |
 | **Knowledge Graph** | Link memories, auto-detect relationships |
 | **MCP Native** | Claude uses succ tools directly |
+| **Skill Suggestions** | LLM-powered command discovery with Skyll integration |
 
 <details>
 <summary>All features</summary>
 
+- **Skill Discovery** — Auto-suggest relevant skills based on user prompt
+- **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app)
 - **Soul Document** — Define AI personality and values
 - **Auto-Hooks** — Context injection at session start/end
 - **Idle Reflections** — AI generates insights during idle time
