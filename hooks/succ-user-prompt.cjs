@@ -116,43 +116,102 @@ process.stdin.on('end', async () => {
       } catch {}
     }
 
-    // --- Auto-recall disabled ---
-    // Claude can use succ_recall MCP tool when it needs memory context.
-    // Pattern-based auto-injection was removed because:
-    // 1. Claude is smarter at knowing when it needs memory
-    // 2. Avoids duplicate context if Claude also calls recall
-    // 3. Reduces latency on every prompt
-    //
-    // To re-enable, uncomment the code below:
-    /*
-    const prompt = hookInput.prompt || hookInput.message || '';
-    const promptLower = prompt.toLowerCase();
+    // --- Skill Suggestions ---
+    // LLM-powered skill suggestions based on user prompt.
+    // Uses extractKeywords → BM25 search → LLM ranking.
+    // Respects cooldown to avoid suggesting on every prompt.
+    if (daemonPort && !isServiceSession) {
+      const prompt = hookInput.prompt || hookInput.message || '';
 
-    const explicitMemoryCommands = [
-      /\bcheck\s+(the\s+)?memor(y|ies)\b/i,
-      /\bsearch\s+(the\s+)?memor(y|ies)\b/i,
-      /\bwhat\s+do\s+you\s+remember\b/i,
-      /\brecall\s+(everything|all)\b/i,
-    ];
+      // Load config to check if auto_suggest is enabled
+      let skillsConfig = null;
+      const configPaths = [
+        path.join(succDir, 'config.json'),
+        path.join(require('os').homedir(), '.succ', 'config.json'),
+      ];
+      for (const configPath of configPaths) {
+        if (fs.existsSync(configPath)) {
+          try {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            if (config.skills) {
+              skillsConfig = config.skills;
+              break;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
 
-    const memorySeekingPatterns = [
-      /\bwhy\s+did\s+(we|i|you)\b/i,
-      /\bwhat\s+was\s+the\s+reason\b/i,
-      /\bwhat\s+decision\b/i,
-      /\blast\s+(time|session)\b/i,
-      /\bpreviously\b/i,
-      /\b(we|i)\s+(discussed|talked|decided|agreed)\b/i,
-      /\bbring\s+me\s+up\s+to\s+speed\b/i,
-      /\bcatch\s+me\s+up\b/i,
-    ];
+      // Defaults
+      const autoSuggest = skillsConfig?.auto_suggest || {};
+      const enabled = autoSuggest.enabled !== false; // default: true
+      const onUserPrompt = autoSuggest.on_user_prompt !== false; // default: true
+      const minPromptLength = autoSuggest.min_prompt_length || 20;
+      const cooldownPrompts = autoSuggest.cooldown_prompts || 3;
 
-    const isExplicitMemoryCommand = explicitMemoryCommands.some((p) => p.test(promptLower));
-    const isMemorySeeking = memorySeekingPatterns.some((p) => p.test(promptLower));
+      if (enabled && onUserPrompt && prompt.length >= minPromptLength) {
+        // Check cooldown (track prompts since last suggestion per session)
+        const cooldownFile = path.join(tmpDir, `skill-cooldown-${sessionId}`);
+        let promptsSinceLastSuggestion = 0;
 
-    if (isExplicitMemoryCommand || isMemorySeeking) {
-      // Extract search query and call daemon API...
+        try {
+          if (fs.existsSync(cooldownFile)) {
+            promptsSinceLastSuggestion = parseInt(fs.readFileSync(cooldownFile, 'utf8').trim(), 10) || 0;
+          }
+        } catch {}
+
+        // Only suggest if cooldown has passed
+        if (promptsSinceLastSuggestion >= cooldownPrompts || promptsSinceLastSuggestion === 0) {
+          try {
+            const response = await fetch(`http://127.0.0.1:${daemonPort}/api/skills/suggest`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt }),
+              signal: AbortSignal.timeout(15000), // 15s timeout for 2 LLM calls (extraction + ranking)
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const suggestions = data.suggestions || [];
+
+              if (suggestions.length > 0) {
+                // Reset cooldown counter
+                fs.writeFileSync(cooldownFile, '0', 'utf8');
+
+                // Format suggestions
+                const lines = suggestions.map((s) => {
+                  return `- **${s.name}**: ${s.reason} (confidence: ${(s.confidence * 100).toFixed(0)}%)`;
+                });
+
+                const suggestionContext = `<skill-suggestions hint="Use /${suggestions[0].name} to invoke">\n${lines.join('\n')}\n</skill-suggestions>`;
+
+                log(succDir, `Suggesting ${suggestions.length} skill(s): ${suggestions.map(s => s.name).join(', ')}`);
+
+                // Output as additionalContext
+                const output = {
+                  hookSpecificOutput: {
+                    hookEventName: 'UserPromptSubmit',
+                    additionalContext: suggestionContext
+                  }
+                };
+                console.log(JSON.stringify(output));
+              } else {
+                // No suggestions, increment cooldown
+                fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');
+              }
+            }
+          } catch (err) {
+            log(succDir, `Skill suggestion error: ${err.message || err}`);
+          }
+        } else {
+          // Cooldown not passed, increment counter
+          try {
+            fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');
+          } catch {}
+        }
+      }
     }
-    */
 
     process.exit(0);
   } catch (err) {

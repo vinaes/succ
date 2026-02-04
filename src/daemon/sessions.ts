@@ -206,7 +206,7 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
   const checkIntervalSeconds = options.checkIntervalSeconds ?? watcherConfig.check_interval;
   const idleMinutes = options.idleMinutes ?? watcherConfig.idle_minutes;
   const cooldownMinutes = options.reflectionCooldownMinutes ?? watcherConfig.reflection_cooldown_minutes;
-  const preGenerateIdleSeconds = options.preGenerateIdleSeconds ?? 30;  // Default 30s
+  const preGenerateIdleSeconds = options.preGenerateIdleSeconds ?? 120;  // Default 2 min
 
   let intervalId: NodeJS.Timeout | null = null;
 
