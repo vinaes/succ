@@ -478,6 +478,118 @@ export class StorageDispatcher {
   }
 
   // ===========================================================================
+  // Global Memory Operations
+  // ===========================================================================
+
+  async saveGlobalMemory(
+    content: string,
+    embedding: number[],
+    tags: string[] = [],
+    source?: string,
+    options?: {
+      type?: MemoryType;
+      deduplicate?: boolean;
+      qualityScore?: number;
+      qualityFactors?: Record<string, number>;
+    }
+  ): Promise<{ id: number; created: boolean; duplicate?: { id: number; content: string; similarity: number } }> {
+    const type = options?.type ?? 'observation';
+    const deduplicate = options?.deduplicate ?? true;
+    const qualityScore = options?.qualityScore;
+    const qualityFactors = options?.qualityFactors;
+
+    if (this.backend === 'postgresql' && this.postgres) {
+      // Check for duplicates if requested
+      if (deduplicate) {
+        const results = await this.postgres.searchGlobalMemories(embedding, 1, 0.95);
+        if (results.length > 0) {
+          return {
+            id: results[0].id,
+            created: false,
+            duplicate: {
+              id: results[0].id,
+              content: results[0].content,
+              similarity: results[0].similarity,
+            },
+          };
+        }
+      }
+
+      const id = await this.postgres.saveGlobalMemory(
+        content,
+        embedding,
+        tags,
+        source,
+        type,
+        qualityScore,
+        qualityFactors
+      );
+
+      // Also save to Qdrant if configured
+      if (this.vectorBackend === 'qdrant' && this.qdrant) {
+        await this.qdrant.upsertGlobalMemoryVector(id, embedding);
+      }
+
+      return { id, created: true };
+    }
+
+    // Use SQLite global database
+    const sqlite = await this.getSqliteFns();
+    const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, {
+      type,
+      deduplicate,
+    });
+    return {
+      id: result.id,
+      created: !result.isDuplicate,
+      duplicate: result.isDuplicate && result.similarity != null ? {
+        id: result.id,
+        content: '',
+        similarity: result.similarity,
+      } : undefined,
+    };
+  }
+
+  async searchGlobalMemories(
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.3,
+    tags?: string[]
+  ): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
+    }
+
+    const sqlite = await this.getSqliteFns();
+    return sqlite.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
+  }
+
+  async getRecentGlobalMemories(limit: number = 10): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getRecentGlobalMemories(limit);
+    }
+
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getRecentGlobalMemories(limit);
+  }
+
+  async deleteGlobalMemory(id: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const deleted = await this.postgres.deleteGlobalMemory(id);
+
+      // Also delete from Qdrant if configured
+      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
+        await this.qdrant.deleteGlobalMemoryVector(id);
+      }
+
+      return deleted;
+    }
+
+    const sqlite = await this.getSqliteFns();
+    return sqlite.deleteGlobalMemory(id);
+  }
+
+  // ===========================================================================
   // Backend Info
   // ===========================================================================
 
