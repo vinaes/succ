@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.7-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.8-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -48,6 +48,7 @@ succ analyze
 | **Knowledge Graph** | Link memories, auto-detect relationships |
 | **MCP Native** | Claude uses succ tools directly |
 | **Skill Suggestions** | LLM-powered command discovery with Skyll integration |
+| **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
 
 <details>
 <summary>All features</summary>
@@ -69,6 +70,8 @@ succ analyze
 - **Checkpoints** — Backup and restore full succ state
 - **AI-Readiness Score** — Measure project readiness for AI collaboration
 - **Multiple LLM Backends** — Local (Ollama), OpenRouter, or Claude CLI
+- **Storage Backends** — SQLite (default), PostgreSQL + pgvector, Qdrant
+- **Data Migration** — Export/import JSON, migrate between backends
 
 </details>
 
@@ -105,6 +108,7 @@ succ analyze
 | `succ score` | Show AI-readiness score |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
+| `succ migrate` | Migrate data between storage backends |
 
 </details>
 
@@ -242,6 +246,46 @@ Offload heavy operations to local LLM:
 </details>
 
 <details>
+<summary>Storage backends</summary>
+
+succ supports multiple storage backends for different deployment scenarios:
+
+| Setup | Use Case | Requirements |
+|-------|----------|--------------|
+| SQLite + sqlite-vec | Local development (default) | None |
+| PostgreSQL + pgvector | Production/cloud | PostgreSQL 15+ with pgvector |
+| SQLite + Qdrant | Local + powerful vector search | Qdrant server |
+| PostgreSQL + Qdrant | Full production scale | PostgreSQL + Qdrant |
+
+**Example: PostgreSQL + pgvector**
+```json
+{
+  "storage": {
+    "backend": "postgresql",
+    "postgresql": {
+      "connection_string": "postgresql://user:pass@localhost:5432/succ"
+    }
+  }
+}
+```
+
+**Example: PostgreSQL + Qdrant**
+```json
+{
+  "storage": {
+    "backend": "postgresql",
+    "vector": "qdrant",
+    "postgresql": { "connection_string": "postgresql://..." },
+    "qdrant": { "url": "http://localhost:6333" }
+  }
+}
+```
+
+See [Storage Configuration](docs/configuration.md#storage-settings) for all options.
+
+</details>
+
+<details>
 <summary>LLM Backend Configuration</summary>
 
 succ supports multiple LLM backends for operations like analyze, idle reflection, and skill suggestions:
@@ -336,6 +380,7 @@ your-project/
 ## Documentation
 
 - [Configuration Reference](docs/configuration.md) — All config options with examples
+- [Storage Backends](docs/storage.md) — SQLite, PostgreSQL, Qdrant setup and benchmarks
 - [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
 - [Temporal Awareness](docs/temporal.md) — Time decay, validity periods
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup

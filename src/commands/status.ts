@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getDbPath, getClaudeDir, getProjectRoot, getConfig, LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
 import { getStats, closeDb } from '../lib/db.js';
+import { getStorageInfo } from '../lib/storage/index.js';
 
 export async function status(): Promise<void> {
   const projectRoot = getProjectRoot();
@@ -73,6 +74,20 @@ export async function status(): Promise<void> {
     console.log(`Total files indexed:  ${stats.total_files}`);
     console.log(`Total chunks:         ${stats.total_documents}`);
     console.log(`Last indexed:         ${stats.last_indexed || 'Never'}`);
+
+    // Show storage backend config
+    console.log();
+    const storageInfo = getStorageInfo();
+    console.log(`Storage backend:      ${storageInfo.backend}`);
+    console.log(`Vector backend:       ${storageInfo.vector}`);
+    if (storageInfo.backend === 'sqlite') {
+      console.log(`Database path:        ${storageInfo.path}`);
+      if (storageInfo.globalPath) {
+        console.log(`Global DB path:       ${storageInfo.globalPath}`);
+      }
+    } else if (storageInfo.backend === 'postgresql') {
+      console.log(`Connection:           ${storageInfo.path}`);
+    }
 
     // Show embedding config
     console.log();
