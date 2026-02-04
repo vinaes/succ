@@ -2,6 +2,11 @@
  * Stats Command
  *
  * Show statistics about succ usage, including token savings and estimated costs.
+ *
+ * Cost estimates are shown as "Claude Opus equivalent" to provide a consistent
+ * reference point regardless of which LLM backend is actually being used.
+ * This helps users understand the value of token savings even when using
+ * free local models (Ollama) or different API providers (OpenRouter).
  */
 
 import {
@@ -65,11 +70,13 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   const aggregated = getTokenStatsAggregated();
   const summary = getTokenStatsSummary();
 
-  // If model is specified, recalculate costs; otherwise use stored costs
-  const useStoredCosts = !overrideModel;
-  const pricingModel = overrideModel || 'sonnet';
+  // Always use Opus as reference model for "Claude equivalent" pricing
+  // This provides consistent comparison regardless of actual backend used
+  const pricingModel = overrideModel || 'opus';
+  const isDefaultModel = !overrideModel;
 
   console.log('## Token Savings\n');
+  console.log('> Cost shown as Claude Opus equivalent for comparison\n');
 
   // Session Summaries
   const sessionStats = aggregated.find((s) => s.event_type === 'session_summary');
@@ -77,9 +84,7 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   if (!summaryEnabled) {
     console.log('  Status: disabled (not tracking)');
   } else if (sessionStats) {
-    const sessionSavings = useStoredCosts
-      ? sessionStats.total_estimated_cost
-      : estimateSavings(sessionStats.total_savings_tokens, pricingModel);
+    const sessionSavings = estimateSavings(sessionStats.total_savings_tokens, pricingModel);
     console.log(`  Sessions: ${sessionStats.query_count}`);
     console.log(`  Transcript: ${formatTokens(sessionStats.total_full_source_tokens)} tokens`);
     console.log(`  Summary: ${formatTokens(sessionStats.total_returned_tokens)} tokens`);
@@ -106,9 +111,7 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
     const stat = aggregated.find((s) => s.event_type === type);
     if (stat) {
       const label = type === 'search_code' ? 'search_code' : type;
-      const typeSavings = useStoredCosts
-        ? stat.total_estimated_cost
-        : estimateSavings(stat.total_savings_tokens, pricingModel);
+      const typeSavings = estimateSavings(stat.total_savings_tokens, pricingModel);
       console.log(
         `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved (~${formatCost(typeSavings)})`
       );
@@ -131,21 +134,19 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   // Total
   console.log('\n### Total');
   if (summary.total_queries > 0) {
-    const totalSavings = useStoredCosts
-      ? summary.total_estimated_cost
-      : estimateSavings(summary.total_savings_tokens, pricingModel);
+    const totalSavings = estimateSavings(summary.total_savings_tokens, pricingModel);
     console.log(`  Queries: ${summary.total_queries}`);
     console.log(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
     console.log(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
-    if (useStoredCosts) {
-      console.log(`  Estimated savings: ${formatCost(totalSavings)}`);
+    if (isDefaultModel) {
+      console.log(`  Claude equivalent: ~${formatCost(totalSavings)} (at Opus rates)`);
     } else {
-      console.log(`  Estimated savings: ${formatCost(totalSavings)} (recalculated at ${pricingModel} rates)`);
+      console.log(`  Claude equivalent: ~${formatCost(totalSavings)} (at ${pricingModel} rates)`);
     }
   } else {
     console.log('  No stats recorded yet.');
   }
 
   console.log('\nRun `succ stats --tokens --clear` to reset statistics.');
-  console.log('Use `--model opus|sonnet|haiku` to recalculate with different pricing.');
+  console.log('Use `--model opus|sonnet|haiku` to compare with different Claude models.');
 }
