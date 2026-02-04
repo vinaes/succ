@@ -99,6 +99,8 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   // RAG Queries
   console.log('\n### RAG Queries');
 
+  // recall doesn't have "savings" - it returns memories, not chunks from indexed files
+  // search and search_code return chunks vs full files
   const ragTypes: TokenEventType[] = ['recall', 'search', 'search_code'];
   let ragTotal = {
     queries: 0,
@@ -111,40 +113,66 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
     const stat = aggregated.find((s) => s.event_type === type);
     if (stat) {
       const label = type === 'search_code' ? 'search_code' : type;
-      const typeSavings = estimateSavings(stat.total_savings_tokens, pricingModel);
-      console.log(
-        `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved (~${formatCost(typeSavings)})`
-      );
-      ragTotal.queries += stat.query_count;
-      ragTotal.returned += stat.total_returned_tokens;
-      ragTotal.saved += stat.total_savings_tokens;
-      ragTotal.cost += typeSavings;
+
+      // recall doesn't have meaningful "savings" - just show queries and returned
+      if (type === 'recall') {
+        console.log(
+          `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
+        );
+        ragTotal.queries += stat.query_count;
+        ragTotal.returned += stat.total_returned_tokens;
+      } else {
+        const typeSavings = estimateSavings(stat.total_savings_tokens, pricingModel);
+        console.log(
+          `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved (~${formatCost(typeSavings)})`
+        );
+        ragTotal.queries += stat.query_count;
+        ragTotal.returned += stat.total_returned_tokens;
+        ragTotal.saved += stat.total_savings_tokens;
+        ragTotal.cost += typeSavings;
+      }
     }
   }
 
   if (ragTotal.queries === 0) {
     console.log('  No RAG queries recorded yet.');
     console.log('  Use succ_recall, succ_search, or succ_search_code to start tracking.');
-  } else {
+  } else if (ragTotal.saved > 0) {
     console.log(
       `  ${'Subtotal'.padEnd(12)}: ${ragTotal.queries} queries, ${formatTokens(ragTotal.returned)} returned, ${formatTokens(ragTotal.saved)} saved (~${formatCost(ragTotal.cost)})`
     );
+  } else {
+    console.log(
+      `  ${'Subtotal'.padEnd(12)}: ${ragTotal.queries} queries, ${formatTokens(ragTotal.returned)} returned`
+    );
   }
 
-  // Total
-  console.log('\n### Total');
-  if (summary.total_queries > 0) {
-    const totalSavings = estimateSavings(summary.total_savings_tokens, pricingModel);
-    console.log(`  Queries: ${summary.total_queries}`);
-    console.log(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
-    console.log(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
+  // Grand Total with breakdown
+  console.log('\n### Grand Total');
+
+  const sessionSaved = sessionStats?.total_savings_tokens || 0;
+  const totalSaved = sessionSaved + ragTotal.saved;
+
+  if (totalSaved > 0) {
+    const totalSavings = estimateSavings(totalSaved, pricingModel);
+
+    // Show breakdown
+    if (sessionSaved > 0 && ragTotal.saved > 0) {
+      const sessionCost = estimateSavings(sessionSaved, pricingModel);
+      const ragCost = ragTotal.cost;
+      console.log(`  Session compression: ${formatTokens(sessionSaved)} tokens (~${formatCost(sessionCost)})`);
+      console.log(`  RAG optimization:    ${formatTokens(ragTotal.saved)} tokens (~${formatCost(ragCost)})`);
+      console.log('  ─────────────────────────────────────');
+    }
+
+    console.log(`  Total saved: ${formatTokens(totalSaved)} tokens`);
     if (isDefaultModel) {
       console.log(`  Claude equivalent: ~${formatCost(totalSavings)} (at Opus rates)`);
     } else {
       console.log(`  Claude equivalent: ~${formatCost(totalSavings)} (at ${pricingModel} rates)`);
     }
   } else {
-    console.log('  No stats recorded yet.');
+    console.log('  No savings recorded yet.');
   }
 
   console.log('\nRun `succ stats --tokens --clear` to reset statistics.');
