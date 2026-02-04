@@ -62,8 +62,24 @@ export interface SuccConfig {
   skills?: SkillsConfig;
   // Unified LLM settings (used by all LLM-powered features)
   llm?: LLMConfig;
+  // Chat LLM settings (for interactive chats: succ chat, onboarding)
+  chat_llm?: ChatLLMConfig;
   // Sleep agent - secondary LLM for background operations
   sleep_agent?: SleepAgentConfig;
+}
+
+/**
+ * Chat LLM Config - separate config for interactive chats
+ *
+ * Used by succ chat and interactive onboarding.
+ * Default: Claude CLI with Sonnet (best quality for interactive use)
+ */
+export interface ChatLLMConfig {
+  backend?: 'claude' | 'local' | 'openrouter';  // Default: 'claude' with sonnet
+  model?: string;  // Model name (e.g., 'sonnet' for claude, 'qwen2.5:7b' for local)
+  local_endpoint?: string;  // Local LLM endpoint (default: from llm.local_endpoint)
+  max_tokens?: number;  // Max tokens (default: 4000)
+  temperature?: number;  // Temperature (default: 0.7)
 }
 
 export interface LLMConfig {
@@ -973,6 +989,81 @@ export interface DaemonStatus {
   pid?: number;
   pidFile?: string;
   logFile?: string;
+}
+
+// ============================================================================
+// Global Config Helpers (for onboarding state)
+// ============================================================================
+
+export interface GlobalConfig {
+  onboarding_completed?: boolean;
+  onboarding_completed_at?: string;
+  onboarding_mode?: 'wizard' | 'ai-chat' | 'skipped';
+  chat_llm?: {
+    backend?: 'local' | 'openrouter';
+    model?: string;
+    local_endpoint?: string;
+    max_tokens?: number;
+    temperature?: number;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * Get path to global config file
+ */
+export function getGlobalConfigPath(): string {
+  return path.join(os.homedir(), '.succ', 'config.json');
+}
+
+/**
+ * Load global config from ~/.succ/config.json
+ */
+export function loadGlobalConfig(): GlobalConfig {
+  const configPath = getGlobalConfigPath();
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save updates to global config (merges with existing)
+ */
+export function saveGlobalConfig(updates: Partial<GlobalConfig>): void {
+  const configPath = getGlobalConfigPath();
+  const configDir = path.dirname(configPath);
+
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  const existing = loadGlobalConfig();
+  const merged = { ...existing, ...updates };
+  fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf-8');
+}
+
+/**
+ * Check if onboarding has been completed globally
+ */
+export function isOnboardingCompleted(): boolean {
+  const config = loadGlobalConfig();
+  return config.onboarding_completed === true;
+}
+
+/**
+ * Mark onboarding as completed with mode and timestamp
+ */
+export function markOnboardingCompleted(mode: 'wizard' | 'ai-chat' | 'skipped'): void {
+  saveGlobalConfig({
+    onboarding_completed: true,
+    onboarding_completed_at: new Date().toISOString(),
+    onboarding_mode: mode,
+  });
 }
 
 /**

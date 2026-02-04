@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
-import { getProjectRoot, getSuccDir, LOCAL_MODEL } from '../lib/config.js';
+import { getProjectRoot, getSuccDir, LOCAL_MODEL, isOnboardingCompleted, markOnboardingCompleted } from '../lib/config.js';
+import { runStaticWizard, runAiOnboarding } from '../lib/onboarding/index.js';
 
 // Get the directory where succ is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -17,6 +18,7 @@ interface InitOptions {
   yes?: boolean; // Non-interactive mode
   verbose?: boolean; // Show detailed output
   global?: boolean; // Force global mode (use hooks from package dir)
+  ai?: boolean; // Use AI-powered onboarding instead of static wizard
 }
 
 interface ConfigData {
@@ -446,6 +448,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
 
   // Interactive configuration
   if (isInteractive) {
+    // Run onboarding for first-time users (before setup wizard)
+    await runOnboarding(options.ai || false);
     await runInteractiveSetup(projectRoot, verbose);
   } else {
     // Non-interactive: show next steps
@@ -456,6 +460,77 @@ export async function init(options: InitOptions = {}): Promise<void> {
     if (mcpAdded) {
       console.log('  4. Restart Claude Code to enable succ tools');
     }
+  }
+}
+
+/**
+ * Run onboarding for first-time users
+ * Checks if onboarding was already completed globally
+ */
+async function runOnboarding(useAi: boolean): Promise<void> {
+  // Skip if already completed
+  if (isOnboardingCompleted()) {
+    return;
+  }
+
+  console.log('');
+  console.log('  Welcome to succ!');
+  console.log('');
+
+  // Ask if user wants a tour
+  const wantsTour = await select({
+    message: 'Would you like a quick tour of succ?',
+    choices: [
+      {
+        name: 'Yes, show me around (recommended)',
+        value: 'yes',
+        description: 'Learn what succ can do',
+      },
+      {
+        name: 'Skip, just set up',
+        value: 'skip',
+        description: 'Go straight to configuration',
+      },
+    ],
+    default: 'yes',
+  });
+
+  if (wantsTour === 'skip') {
+    markOnboardingCompleted('skipped');
+    console.log('\n  Skipped onboarding. You can learn more at https://succ.ai\n');
+    return;
+  }
+
+  // Ask for onboarding style (unless --ai flag was used)
+  let onboardingStyle: 'quick' | 'interactive' = 'quick';
+
+  if (useAi) {
+    onboardingStyle = 'interactive';
+  } else {
+    const styleChoice = await select({
+      message: 'How would you like to learn?',
+      choices: [
+        {
+          name: 'Quick walkthrough (~2 min)',
+          value: 'quick',
+          description: 'Static screens with key concepts',
+        },
+        {
+          name: 'Interactive chat with AI (~3-5 min)',
+          value: 'interactive',
+          description: 'Personalized conversation about your project',
+        },
+      ],
+      default: 'quick',
+    });
+    onboardingStyle = styleChoice as 'quick' | 'interactive';
+  }
+
+  // Run chosen onboarding
+  if (onboardingStyle === 'interactive') {
+    await runAiOnboarding();
+  } else {
+    await runStaticWizard();
   }
 }
 
