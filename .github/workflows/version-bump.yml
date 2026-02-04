@@ -1,0 +1,47 @@
+name: Version Bump
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master]
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bump patch version
+        run: npm version patch --no-git-tag-version
+
+      - name: Get new version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Update cli.ts version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          # Find and replace version in cli.ts
+          sed -i "s/\.version('[0-9]*\.[0-9]*\.[0-9]*')/.version('$CURRENT')/" src/cli.ts
+
+      - name: Update README badge
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          sed -i "s/badge\/v[0-9]*\.[0-9]*\.[0-9]*-/badge\/v$VERSION-/g" README.md
+          sed -i "s/badge\/npm-[0-9]*\.[0-9]*\.[0-9]*-/badge\/npm-$VERSION-/g" README.md
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json src/cli.ts README.md
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+          git push
