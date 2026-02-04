@@ -184,6 +184,43 @@ export async function init(options: InitOptions = {}): Promise<void> {
   if (!fs.existsSync(claudeDir)) {
     fs.mkdirSync(claudeDir, { recursive: true });
   }
+
+  // Copy succ agents to .claude/agents/ for Claude Code subagent support
+  const agentsDir = path.join(claudeDir, 'agents');
+  if (!fs.existsSync(agentsDir)) {
+    fs.mkdirSync(agentsDir, { recursive: true });
+  }
+
+  // Agent files to install
+  const agentFiles = [
+    // Original agents
+    'succ-memory-curator.md',
+    'succ-knowledge-indexer.md',
+    'succ-deep-search.md',
+    'succ-checkpoint-manager.md',
+    'succ-session-reviewer.md',
+    // New agents
+    'succ-session-handoff-orchestrator.md',
+    'succ-memory-health-monitor.md',
+    'succ-pattern-detective.md',
+    'succ-readiness-improver.md',
+    'succ-knowledge-mapper.md',
+    'succ-quality-improvement-coach.md',
+    'succ-decision-auditor.md',
+    'succ-context-optimizer.md',
+  ];
+
+  for (const agentFile of agentFiles) {
+    const destPath = path.join(agentsDir, agentFile);
+    const srcPath = path.join(SUCC_PACKAGE_DIR, 'agents', agentFile);
+
+    if (!fs.existsSync(destPath) || options.force) {
+      if (fs.existsSync(srcPath)) {
+        fs.copyFileSync(srcPath, destPath);
+        log(options.force && fs.existsSync(destPath) ? `Updated agents/${agentFile}` : `Created agents/${agentFile}`);
+      }
+    }
+  }
   const settingsPath = path.join(claudeDir, 'settings.json');
   const settingsExisted = fs.existsSync(settingsPath);
 
@@ -718,46 +755,45 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
 
 /**
  * Add succ MCP server to Claude Code config
+ *
+ * Claude Code stores MCP servers in ~/.claude.json under the root "mcpServers" key
+ * for global scope (works everywhere including remote sessions via Happy).
+ *
+ * The old ~/.claude/mcp_servers.json format is deprecated.
  */
 function addMcpServer(projectRoot: string): boolean {
-  // Claude Code MCP config location
-  const mcpConfigPath = path.join(os.homedir(), '.claude', 'mcp_servers.json');
+  // Claude Code main config location
+  const claudeConfigPath = path.join(os.homedir(), '.claude.json');
 
   try {
     // Read existing config or create new
-    let mcpConfig: Record<string, any> = {};
-    if (fs.existsSync(mcpConfigPath)) {
-      const content = fs.readFileSync(mcpConfigPath, 'utf-8');
-      mcpConfig = JSON.parse(content);
+    let claudeConfig: Record<string, any> = {};
+    if (fs.existsSync(claudeConfigPath)) {
+      const content = fs.readFileSync(claudeConfigPath, 'utf-8');
+      claudeConfig = JSON.parse(content);
     }
 
-    // Initialize mcpServers if not exists
-    if (!mcpConfig.mcpServers) {
-      mcpConfig.mcpServers = {};
+    // Initialize mcpServers at root level if not exists
+    if (!claudeConfig.mcpServers) {
+      claudeConfig.mcpServers = {};
     }
 
     // Check if already configured
-    if (mcpConfig.mcpServers.succ) {
+    if (claudeConfig.mcpServers.succ) {
       return false; // Already exists
     }
 
-    // Add succ MCP server
+    // Add succ MCP server to global scope
     // No cwd specified - MCP server will use Claude Code's current working directory
     // This allows it to work with whichever project Claude is currently in
     // Using npx --yes for faster startup (auto-confirm without prompt)
-    mcpConfig.mcpServers.succ = {
+    claudeConfig.mcpServers.succ = {
       command: 'npx',
       args: ['--yes', 'succ-mcp'],
     };
 
-    // Ensure ~/.claude directory exists
-    const claudeConfigDir = path.dirname(mcpConfigPath);
-    if (!fs.existsSync(claudeConfigDir)) {
-      fs.mkdirSync(claudeConfigDir, { recursive: true });
-    }
-
     // Write config
-    fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
+    fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));
     return true;
   } catch (error) {
     // Failed to add MCP config, continue silently
