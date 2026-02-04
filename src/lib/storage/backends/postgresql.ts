@@ -142,9 +142,11 @@ export class PostgresBackend {
     await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
 
     // Documents table
+    // project_id: scopes documents to a specific project
     await pool.query(`
       CREATE TABLE IF NOT EXISTS documents (
         id SERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
         file_path TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         content TEXT NOT NULL,
@@ -153,10 +155,27 @@ export class PostgresBackend {
         embedding vector(384),
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(file_path, chunk_index)
+        UNIQUE(project_id, file_path, chunk_index)
       )
     `);
 
+    // Migration: add project_id column if missing
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'documents' AND column_name = 'project_id'
+        ) THEN
+          ALTER TABLE documents ADD COLUMN project_id TEXT;
+          -- Drop old unique constraint and add new one
+          ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_file_path_chunk_index_key;
+          ALTER TABLE documents ADD CONSTRAINT documents_project_file_chunk_key UNIQUE(project_id, file_path, chunk_index);
+        END IF;
+      END $$;
+    `);
+
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
 
@@ -169,12 +188,31 @@ export class PostgresBackend {
     `);
 
     // File hashes table
+    // project_id: scopes file hashes to a specific project
     await pool.query(`
       CREATE TABLE IF NOT EXISTS file_hashes (
-        file_path TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
         content_hash TEXT NOT NULL,
-        indexed_at TIMESTAMPTZ DEFAULT NOW()
+        indexed_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (project_id, file_path)
       )
+    `);
+
+    // Migration: add project_id column if missing
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'file_hashes' AND column_name = 'project_id'
+        ) THEN
+          -- Need to recreate table with new primary key
+          ALTER TABLE file_hashes ADD COLUMN project_id TEXT;
+          ALTER TABLE file_hashes DROP CONSTRAINT IF EXISTS file_hashes_pkey;
+          ALTER TABLE file_hashes ADD PRIMARY KEY (project_id, file_path);
+        END IF;
+      END $$;
     `);
 
     // Memories table
@@ -248,9 +286,11 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_token_freq ON token_frequencies(frequency DESC)');
 
     // Token stats table
+    // project_id: scopes stats to a specific project
     await pool.query(`
       CREATE TABLE IF NOT EXISTS token_stats (
         id SERIAL PRIMARY KEY,
+        project_id TEXT,
         event_type TEXT NOT NULL,
         query TEXT,
         returned_tokens INTEGER NOT NULL DEFAULT 0,
@@ -264,6 +304,20 @@ export class PostgresBackend {
       )
     `);
 
+    // Migration: add project_id column if missing
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'token_stats' AND column_name = 'project_id'
+        ) THEN
+          ALTER TABLE token_stats ADD COLUMN project_id TEXT;
+        END IF;
+      END $$;
+    `);
+
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_project_id ON token_stats(project_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_type ON token_stats(event_type)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_created ON token_stats(created_at)');
 
@@ -314,24 +368,30 @@ export class PostgresBackend {
     endLine: number,
     embedding: number[]
   ): Promise<number> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before upserting documents');
+    }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+      `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
          content = EXCLUDED.content,
          start_line = EXCLUDED.start_line,
          end_line = EXCLUDED.end_line,
          embedding = EXCLUDED.embedding,
          updated_at = NOW()
        RETURNING id`,
-      [filePath, chunkIndex, content, startLine, endLine, toPgVector(embedding)]
+      [this.projectId, filePath, chunkIndex, content, startLine, endLine, toPgVector(embedding)]
     );
     return result.rows[0].id;
   }
 
   async upsertDocumentsBatch(documents: DocumentBatch[]): Promise<void> {
     if (documents.length === 0) return;
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before upserting documents');
+    }
 
     const pool = await this.getPool();
     const client = await pool.connect();
@@ -341,15 +401,15 @@ export class PostgresBackend {
 
       for (const doc of documents) {
         await client.query(
-          `INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())
-           ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
              content = EXCLUDED.content,
              start_line = EXCLUDED.start_line,
              end_line = EXCLUDED.end_line,
              embedding = EXCLUDED.embedding,
              updated_at = NOW()`,
-          [doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
+          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
         );
       }
 
@@ -364,6 +424,9 @@ export class PostgresBackend {
 
   async upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[]): Promise<void> {
     if (documents.length === 0) return;
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before upserting documents');
+    }
 
     const pool = await this.getPool();
     const client = await pool.connect();
@@ -375,25 +438,25 @@ export class PostgresBackend {
 
       for (const doc of documents) {
         await client.query(
-          `INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())
-           ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
              content = EXCLUDED.content,
              start_line = EXCLUDED.start_line,
              end_line = EXCLUDED.end_line,
              embedding = EXCLUDED.embedding,
              updated_at = NOW()`,
-          [doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
+          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
         );
 
         if (!processedFiles.has(doc.filePath)) {
           await client.query(
-            `INSERT INTO file_hashes (file_path, content_hash, indexed_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT(file_path) DO UPDATE SET
+            `INSERT INTO file_hashes (project_id, file_path, content_hash, indexed_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT(project_id, file_path) DO UPDATE SET
                content_hash = EXCLUDED.content_hash,
                indexed_at = NOW()`,
-            [doc.filePath, doc.hash]
+            [this.projectId, doc.filePath, doc.hash]
           );
           processedFiles.add(doc.filePath);
         }
@@ -409,10 +472,13 @@ export class PostgresBackend {
   }
 
   async deleteDocumentsByPath(filePath: string): Promise<number[]> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before deleting documents');
+    }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
-      'DELETE FROM documents WHERE file_path = $1 RETURNING id',
-      [filePath]
+      'DELETE FROM documents WHERE project_id = $1 AND file_path = $2 RETURNING id',
+      [this.projectId, filePath]
     );
     return result.rows.map(r => r.id);
   }
@@ -422,6 +488,9 @@ export class PostgresBackend {
     limit: number = 5,
     threshold: number = 0.5
   ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before searching documents');
+    }
     const pool = await this.getPool();
 
     // pgvector cosine distance: <=> returns distance (0 = identical, 2 = opposite)
@@ -437,10 +506,10 @@ export class PostgresBackend {
       `SELECT file_path, content, start_line, end_line,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE 1 - (embedding <=> $1) >= $2
+       WHERE project_id = $2 AND 1 - (embedding <=> $1) >= $3
        ORDER BY embedding <=> $1
-       LIMIT $3`,
-      [toPgVector(queryEmbedding), threshold, limit]
+       LIMIT $4`,
+      [toPgVector(queryEmbedding), this.projectId, threshold, limit]
     );
 
     return result.rows;
@@ -449,6 +518,29 @@ export class PostgresBackend {
   async getDocumentStats(): Promise<{ total_documents: number; total_files: number; last_indexed: string | null }> {
     const pool = await this.getPool();
 
+    // If project_id is set, get stats for that project; otherwise get global stats
+    if (this.projectId) {
+      const totalDocs = await pool.query<{ count: string }>(
+        'SELECT COUNT(*) as count FROM documents WHERE project_id = $1',
+        [this.projectId]
+      );
+      const totalFiles = await pool.query<{ count: string }>(
+        'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE project_id = $1',
+        [this.projectId]
+      );
+      const lastIndexed = await pool.query<{ last: string | null }>(
+        'SELECT MAX(updated_at) as last FROM documents WHERE project_id = $1',
+        [this.projectId]
+      );
+
+      return {
+        total_documents: parseInt(totalDocs.rows[0].count),
+        total_files: parseInt(totalFiles.rows[0].count),
+        last_indexed: lastIndexed.rows[0].last,
+      };
+    }
+
+    // No project set = aggregate stats across all projects
     const totalDocs = await pool.query<{ count: string }>('SELECT COUNT(*) as count FROM documents');
     const totalFiles = await pool.query<{ count: string }>('SELECT COUNT(DISTINCT file_path) as count FROM documents');
     const lastIndexed = await pool.query<{ last: string | null }>('SELECT MAX(updated_at) as last FROM documents');
@@ -462,8 +554,16 @@ export class PostgresBackend {
 
   async clearDocuments(): Promise<void> {
     const pool = await this.getPool();
-    await pool.query('DELETE FROM documents');
-    await pool.query('DELETE FROM file_hashes');
+
+    if (this.projectId) {
+      // Clear only current project's documents
+      await pool.query('DELETE FROM documents WHERE project_id = $1', [this.projectId]);
+      await pool.query('DELETE FROM file_hashes WHERE project_id = $1', [this.projectId]);
+    } else {
+      // No project set = clear ALL documents (dangerous!)
+      await pool.query('DELETE FROM documents');
+      await pool.query('DELETE FROM file_hashes');
+    }
     await pool.query("DELETE FROM metadata WHERE key = 'embedding_model'");
   }
 
@@ -472,35 +572,48 @@ export class PostgresBackend {
   // ============================================================================
 
   async getFileHash(filePath: string): Promise<string | null> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before getting file hash');
+    }
     const pool = await this.getPool();
     const result = await pool.query<{ content_hash: string }>(
-      'SELECT content_hash FROM file_hashes WHERE file_path = $1',
-      [filePath]
+      'SELECT content_hash FROM file_hashes WHERE project_id = $1 AND file_path = $2',
+      [this.projectId, filePath]
     );
     return result.rows[0]?.content_hash ?? null;
   }
 
   async setFileHash(filePath: string, hash: string): Promise<void> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before setting file hash');
+    }
     const pool = await this.getPool();
     await pool.query(
-      `INSERT INTO file_hashes (file_path, content_hash, indexed_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT(file_path) DO UPDATE SET
+      `INSERT INTO file_hashes (project_id, file_path, content_hash, indexed_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT(project_id, file_path) DO UPDATE SET
          content_hash = EXCLUDED.content_hash,
          indexed_at = NOW()`,
-      [filePath, hash]
+      [this.projectId, filePath, hash]
     );
   }
 
   async deleteFileHash(filePath: string): Promise<void> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before deleting file hash');
+    }
     const pool = await this.getPool();
-    await pool.query('DELETE FROM file_hashes WHERE file_path = $1', [filePath]);
+    await pool.query('DELETE FROM file_hashes WHERE project_id = $1 AND file_path = $2', [this.projectId, filePath]);
   }
 
   async getAllFileHashes(): Promise<Map<string, string>> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before getting all file hashes');
+    }
     const pool = await this.getPool();
     const result = await pool.query<{ file_path: string; content_hash: string }>(
-      'SELECT file_path, content_hash FROM file_hashes'
+      'SELECT file_path, content_hash FROM file_hashes WHERE project_id = $1',
+      [this.projectId]
     );
     return new Map(result.rows.map(r => [r.file_path, r.content_hash]));
   }
@@ -826,9 +939,10 @@ export class PostgresBackend {
   async recordTokenStat(record: TokenStatRecord): Promise<void> {
     const pool = await this.getPool();
     await pool.query(
-      `INSERT INTO token_stats (event_type, query, returned_tokens, full_source_tokens, savings_tokens, files_count, chunks_count, model, estimated_cost)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO token_stats (project_id, event_type, query, returned_tokens, full_source_tokens, savings_tokens, files_count, chunks_count, model, estimated_cost)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
+        this.projectId, // Can be NULL for global stats
         record.event_type,
         record.query ?? null,
         record.returned_tokens,
@@ -850,6 +964,13 @@ export class PostgresBackend {
     total_estimated_cost: number;
   }> {
     const pool = await this.getPool();
+
+    // If project_id is set, get stats for that project; otherwise get all stats
+    const whereClause = this.projectId
+      ? 'WHERE project_id = $1'
+      : '';
+    const params = this.projectId ? [this.projectId] : [];
+
     const result = await pool.query<{
       total_queries: string;
       total_returned_tokens: string;
@@ -864,7 +985,8 @@ export class PostgresBackend {
         COALESCE(SUM(savings_tokens), 0) as total_savings_tokens,
         COALESCE(SUM(estimated_cost), 0) as total_estimated_cost
       FROM token_stats
-    `);
+      ${whereClause}
+    `, params);
 
     const row = result.rows[0];
     return {

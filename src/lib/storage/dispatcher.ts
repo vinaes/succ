@@ -14,7 +14,7 @@
  *   await storage.saveMemory(...);
  */
 
-import { getConfig } from '../config.js';
+import { getConfig, getProjectRoot } from '../config.js';
 import type { PostgresBackend } from './backends/postgresql.js';
 import type { QdrantVectorStore } from './vector/qdrant.js';
 import type {
@@ -55,10 +55,14 @@ export async function initStorageDispatcher(): Promise<void> {
   _backend = config.backend ?? 'sqlite';
   _vectorBackend = config.vector ?? 'builtin';
 
+  // Get the current project ID (normalized path for consistency)
+  const projectId = getProjectRoot().replace(/\\/g, '/');
+
   // Initialize PostgreSQL backend if configured
   if (_backend === 'postgresql') {
     const { createPostgresBackend } = await import('./backends/postgresql.js');
     _postgresBackend = createPostgresBackend(config);
+    _postgresBackend.setProjectId(projectId);
     // Initialize schema
     await _postgresBackend.getDocumentStats(); // This triggers schema init
   }
@@ -67,6 +71,7 @@ export async function initStorageDispatcher(): Promise<void> {
   if (_vectorBackend === 'qdrant') {
     const { createQdrantVectorStore } = await import('./vector/qdrant.js');
     _qdrantStore = createQdrantVectorStore(config);
+    _qdrantStore.setProjectId(projectId);
     await _qdrantStore.init(384); // Standard embedding dimension
   }
 
