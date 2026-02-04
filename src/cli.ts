@@ -27,6 +27,7 @@ import { retention } from './commands/retention.js';
 import { checkpoint } from './commands/checkpoint.js';
 import { score } from './commands/score.js';
 import { daemon } from './commands/daemon.js';
+import { migrate } from './commands/migrate.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -539,6 +540,24 @@ program
       force: options.force,
       lines: parseInt(options.lines, 10),
       all: options.all,
+    });
+  });
+
+program
+  .command('migrate')
+  .description('Migrate data between storage backends (SQLite, PostgreSQL)')
+  .option('--to <backend>', 'Target backend (sqlite or postgresql)')
+  .option('--export <file>', 'Export data to JSON file')
+  .option('--import <file>', 'Import data from JSON file')
+  .option('--dry-run', 'Preview without making changes')
+  .option('--force', 'Confirm destructive operations')
+  .action((options) => {
+    migrate({
+      to: options.to as 'sqlite' | 'postgresql' | undefined,
+      export: options.export,
+      import: options.import,
+      dryRun: options.dryRun,
+      force: options.force,
     });
   });
 

@@ -66,6 +66,60 @@ export interface SuccConfig {
   chat_llm?: ChatLLMConfig;
   // Sleep agent - secondary LLM for background operations
   sleep_agent?: SleepAgentConfig;
+  // Storage backend settings (SQLite, PostgreSQL, Qdrant)
+  storage?: StorageConfig;
+}
+
+/**
+ * Storage Config - multi-backend database support
+ *
+ * Supports SQLite (default), PostgreSQL, and optional Qdrant for vectors.
+ * Default: SQLite with sqlite-vec (current behavior, no config needed)
+ */
+export interface StorageConfig {
+  /** SQL backend: 'sqlite' (default) or 'postgresql' */
+  backend?: 'sqlite' | 'postgresql';
+  /** Vector backend: 'builtin' (sqlite-vec/pgvector) or 'qdrant' */
+  vector?: 'builtin' | 'qdrant';
+  /** SQLite-specific settings */
+  sqlite?: {
+    /** Override default path for local database */
+    path?: string;
+    /** Override default path for global database */
+    global_path?: string;
+    /** Enable WAL mode (default: true for global, false for local) */
+    wal_mode?: boolean;
+    /** Busy timeout in ms (default: 5000) */
+    busy_timeout?: number;
+  };
+  /** PostgreSQL-specific settings */
+  postgresql?: {
+    /** Full connection string (overrides individual params) */
+    connection_string?: string;
+    /** Host (default: localhost) */
+    host?: string;
+    /** Port (default: 5432) */
+    port?: number;
+    /** Database name */
+    database?: string;
+    /** Username */
+    user?: string;
+    /** Password */
+    password?: string;
+    /** Enable SSL */
+    ssl?: boolean;
+    /** Connection pool size (default: 10) */
+    pool_size?: number;
+  };
+  /** Qdrant-specific settings (when vector: 'qdrant') */
+  qdrant?: {
+    /** Qdrant server URL (default: http://localhost:6333) */
+    url?: string;
+    /** API key for authentication */
+    api_key?: string;
+    /** Collection name prefix (default: succ_) */
+    collection_prefix?: string;
+  };
 }
 
 /**

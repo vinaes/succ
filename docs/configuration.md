@@ -129,6 +129,121 @@ Controls how text is converted to vectors for semantic search.
 
 ---
 
+## Storage Settings
+
+Controls which backend stores your data. succ supports multiple storage configurations:
+
+- **SQLite + sqlite-vec** (default) — Zero setup, local development
+- **PostgreSQL + pgvector** — Production deployments, cloud
+- **SQLite + Qdrant** — Local with powerful vector search
+- **PostgreSQL + Qdrant** — Enterprise scale
+
+```json
+{
+  "storage": {
+    "backend": "postgresql",
+    "vector": "qdrant",
+    "postgresql": {
+      "connection_string": "postgresql://user:pass@localhost:5432/succ"
+    },
+    "qdrant": {
+      "url": "http://localhost:6333"
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `storage.backend` | `"sqlite"` \| `"postgresql"` | `"sqlite"` | SQL backend |
+| `storage.vector` | `"builtin"` \| `"qdrant"` | `"builtin"` | Vector backend |
+
+### SQLite Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `storage.sqlite.path` | string | `.succ/succ.db` | Database path |
+| `storage.sqlite.global_path` | string | `~/.succ/global.db` | Global db path |
+| `storage.sqlite.wal_mode` | boolean | true | Enable WAL mode |
+| `storage.sqlite.busy_timeout` | number | 5000 | Busy timeout (ms) |
+
+### PostgreSQL Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `storage.postgresql.connection_string` | string | - | Full connection string |
+| `storage.postgresql.host` | string | `localhost` | Database host |
+| `storage.postgresql.port` | number | 5432 | Database port |
+| `storage.postgresql.database` | string | `succ` | Database name |
+| `storage.postgresql.user` | string | - | Username |
+| `storage.postgresql.password` | string | - | Password |
+| `storage.postgresql.ssl` | boolean | false | Enable SSL |
+| `storage.postgresql.pool_size` | number | 10 | Connection pool size |
+
+### Qdrant Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `storage.qdrant.url` | string | `http://localhost:6333` | Qdrant server URL |
+| `storage.qdrant.api_key` | string | - | API key (for Qdrant Cloud) |
+| `storage.qdrant.collection_prefix` | string | `succ_` | Collection name prefix |
+
+### Examples
+
+**Default (SQLite + sqlite-vec):**
+```json
+{}
+```
+
+**PostgreSQL + pgvector:**
+```json
+{
+  "storage": {
+    "backend": "postgresql",
+    "postgresql": {
+      "connection_string": "postgresql://user:pass@localhost:5432/succ"
+    }
+  }
+}
+```
+
+**SQLite + Qdrant (powerful local vector search):**
+```json
+{
+  "storage": {
+    "backend": "sqlite",
+    "vector": "qdrant",
+    "qdrant": {
+      "url": "http://localhost:6333"
+    }
+  }
+}
+```
+
+**Full Production (PostgreSQL + Qdrant):**
+```json
+{
+  "storage": {
+    "backend": "postgresql",
+    "vector": "qdrant",
+    "postgresql": {
+      "connection_string": "postgresql://user:pass@prod-db:5432/succ",
+      "pool_size": 20,
+      "ssl": true
+    },
+    "qdrant": {
+      "url": "https://qdrant.example.com:6333",
+      "api_key": "your-api-key",
+      "collection_prefix": "prod_succ_"
+    }
+  }
+}
+```
+
+See [Storage Backends](./storage.md) for detailed setup instructions and benchmarks.
+
+---
+
 ## Chunking Settings
 
 Controls how documents are split for indexing.
