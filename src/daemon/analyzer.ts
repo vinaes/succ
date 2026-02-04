@@ -7,7 +7,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import spawn from 'cross-spawn';
 import { execFileSync } from 'child_process';
 import { glob } from 'glob';
 import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
@@ -15,6 +14,7 @@ import { withLock } from '../lib/lock.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { saveMemory, hybridSearchDocs } from '../lib/db.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
+import { callLLM, type LLMBackend } from '../lib/llm.js';
 
 // ============================================================================
 // Types
@@ -135,102 +135,12 @@ Output as JSON array:
 If no interesting discoveries, output: []`;
 
   try {
-    if (mode === 'openrouter') {
-      const config = getConfig();
-      if (!config.openrouter_api_key) {
-        log('[analyze] OpenRouter API key not configured');
-        return [];
-      }
+    // Use sleep agent for background analysis if enabled
+    // Mode parameter can still override backend if explicitly passed from CLI
+    const configOverride: Parameters<typeof callLLM>[2] = mode ? { backend: mode } : undefined;
 
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.openrouter_api_key}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/cpz/succ',
-          'X-Title': 'succ',
-        },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3.5-haiku',
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 2048,
-        }),
-      });
-
-      if (!response.ok) {
-        log(`[analyze] OpenRouter error: ${response.status}`);
-        return [];
-      }
-
-      const data = (await response.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      const content = data.choices[0]?.message?.content || '';
-      return parseDiscoveries(content);
-    }
-
-    if (mode === 'local') {
-      const config = getConfig();
-      if (!config.analyze_api_url || !config.analyze_model) {
-        log('[analyze] Local LLM not configured');
-        return [];
-      }
-
-      const response = await fetch(`${config.analyze_api_url}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: config.analyze_model,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 2048,
-          temperature: config.analyze_temperature ?? 0.3,
-        }),
-      });
-
-      if (!response.ok) {
-        log(`[analyze] Local LLM error: ${response.status}`);
-        return [];
-      }
-
-      const data = (await response.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      const content = data.choices[0]?.message?.content || '';
-      return parseDiscoveries(content);
-    }
-
-    // Default: Claude CLI
-    return new Promise((resolve) => {
-      const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-        windowsHide: true, // Hide CMD window on Windows (works without detached)
-      });
-
-      proc.stdin?.write(prompt);
-      proc.stdin?.end();
-
-      let stdout = '';
-      proc.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      proc.on('close', (code: number | null) => {
-        if (code === 0 && stdout.trim()) {
-          resolve(parseDiscoveries(stdout));
-        } else {
-          resolve([]);
-        }
-      });
-
-      proc.on('error', () => resolve([]));
-
-      // Timeout after 60 seconds
-      setTimeout(() => {
-        proc.kill();
-        resolve([]);
-      }, 60000);
-    });
+    const result = await callLLM(prompt, { timeout: 60000, maxTokens: 2048, useSleepAgent: true }, configOverride);
+    return parseDiscoveries(result);
   } catch (err) {
     log(`[analyze] Error running discovery: ${err}`);
     return [];

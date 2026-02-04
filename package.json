@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.0.94",
+  "version": "1.0.95",
   "description": "Local memory system for Claude Code - RAG with local or API embeddings",
   "type": "module",
   "bin": {
@@ -14,7 +14,8 @@
     "test:integration": "node tests/integration-llm.mjs",
     "test:integration:backends": "node tests/integration-llm-backends.mjs",
     "test:integration:skills": "node tests/integration-skills.mjs",
-    "test:integration:all": "npm run test:integration && npm run test:integration:backends && npm run test:integration:skills",
+    "test:integration:sleep-agent": "node tests/integration-sleep-agent.mjs",
+    "test:integration:all": "npm run test:integration && npm run test:integration:backends && npm run test:integration:skills && npm run test:integration:sleep-agent",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",

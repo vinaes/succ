@@ -16,13 +16,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import spawn from 'cross-spawn';
 import { saveMemory, searchMemories } from '../lib/db.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
 import { countTokens } from '../lib/token-counter.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
+import { callLLM } from '../lib/llm.js';
 
 // ============================================================================
 // Types
@@ -194,54 +194,15 @@ function chunkEntries(entries: TranscriptEntry[], targetTokens: number = 25000):
 }
 
 // ============================================================================
-// Claude CLI Integration
+// LLM Integration (uses shared llm.ts module)
 // ============================================================================
 
 /**
- * Run Claude CLI with a prompt and return the response
+ * Run LLM with a prompt and return the response
+ * Uses sleep agent for background processing if enabled.
  */
-async function runClaudeCLI(prompt: string, model: string = 'haiku', timeoutMs: number = 60000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      windowsHide: true,
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Claude CLI exited with code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-
-    // Write prompt and close stdin
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    // Timeout
-    setTimeout(() => {
-      proc.kill();
-      reject(new Error('Claude CLI timeout'));
-    }, timeoutMs);
-  });
+async function runLLM(prompt: string, timeoutMs: number = 60000): Promise<string> {
+  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000, useSleepAgent: true });
 }
 
 // ============================================================================
@@ -275,7 +236,7 @@ ${formatted}
 Output a bullet-point summary (5-15 bullets).`;
 
   try {
-    return await runClaudeCLI(prompt, 'haiku', 45000);
+    return await runLLM(prompt, 45000);
   } catch (err) {
     console.error(`[session-processor] Failed to summarize chunk ${chunkIndex + 1}: ${err}`);
     return '';
@@ -319,7 +280,7 @@ Summary Parts:
 ${validSummaries.map((s, i) => `### Part ${i + 1}\n${s}`).join('\n\n')}`;
 
   try {
-    return await runClaudeCLI(prompt, 'haiku', 60000);
+    return await runLLM(prompt, 60000);
   } catch (err) {
     console.error(`[session-processor] Failed to combine summaries: ${err}`);
     // Fallback: just concatenate
@@ -353,7 +314,7 @@ ${summary}
 ---`;
 
   try {
-    const result = await runClaudeCLI(prompt, 'haiku', 30000);
+    const result = await runLLM(prompt, 30000);
 
     if (result.toUpperCase().includes('NONE')) {
       return [];
@@ -413,56 +374,23 @@ Output as JSON array:
 If no meaningful facts found, return: []`;
 
 /**
- * Extract facts from content using Claude CLI
+ * Extract facts from content using LLM
+ * Uses the shared LLM module for backend flexibility.
  */
 async function extractFactsFromContent(
   content: string,
-  model: string = 'haiku',
+  _model: string = 'haiku', // Ignored - uses global LLM config
   log: (msg: string) => void = console.log
 ): Promise<ExtractedFact[]> {
   const prompt = EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
 
-  return new Promise((resolve) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true,
-    });
-
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.on('close', (code: number) => {
-      if (code === 0 && stdout.trim()) {
-        try {
-          const facts = parseFactsResponse(stdout);
-          resolve(facts);
-        } catch (err) {
-          log(`[session-processor] Failed to parse facts: ${err}`);
-          resolve([]);
-        }
-      } else {
-        resolve([]);
-      }
-    });
-
-    proc.on('error', (err) => {
-      log(`[session-processor] Claude CLI error: ${err}`);
-      resolve([]);
-    });
-
-    // Timeout after 45 seconds
-    setTimeout(() => {
-      proc.kill();
-      log(`[session-processor] Extraction timeout`);
-      resolve([]);
-    }, 45000);
-  });
+  try {
+    const result = await runLLM(prompt, 45000);
+    return parseFactsResponse(result);
+  } catch (err) {
+    log(`[session-processor] LLM extraction failed: ${err}`);
+    return [];
+  }
 }
 
 /**

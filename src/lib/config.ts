@@ -58,6 +58,67 @@ export interface SuccConfig {
   compact_briefing?: CompactBriefingConfig;
   // Commit format settings
   includeCoAuthoredBy?: boolean;  // Include commit guidelines in session-start hook (default: true)
+  // Skills discovery and suggestion settings
+  skills?: SkillsConfig;
+  // Unified LLM settings (used by all LLM-powered features)
+  llm?: LLMConfig;
+  // Sleep agent - secondary LLM for background operations
+  sleep_agent?: SleepAgentConfig;
+}
+
+export interface LLMConfig {
+  backend?: 'claude' | 'local' | 'openrouter';  // Default: 'local' (to avoid Claude CLI ToS issues)
+  model?: string;  // Model name: 'haiku' for claude, 'qwen2.5:7b' for local, etc.
+  local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
+  openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')
+  max_tokens?: number;  // Max tokens per response (default: 2000)
+  temperature?: number;  // Temperature for generation (default: 0.3)
+}
+
+/**
+ * Sleep Agent Config - secondary LLM for background/idle operations
+ *
+ * When enabled, background operations (idle reflection, memory consolidation,
+ * precompute context) use this LLM instead of the primary llm.* config.
+ *
+ * Use cases:
+ * - Primary: Claude CLI (quality) + Sleep: Ollama (free, background)
+ * - Primary: OpenRouter (fast) + Sleep: Local (free, no rate limits)
+ */
+export interface SleepAgentConfig {
+  enabled?: boolean;  // Enable sleep agent (default: false)
+  backend?: 'local' | 'openrouter';  // Backend for sleep agent (claude not recommended - ToS)
+  model?: string;  // Model name (e.g., 'qwen2.5:7b' for local, 'anthropic/claude-3-haiku' for openrouter)
+  local_endpoint?: string;  // Local LLM endpoint (default: from llm.local_endpoint)
+  max_tokens?: number;  // Max tokens (default: from llm.max_tokens)
+  temperature?: number;  // Temperature (default: from llm.temperature)
+}
+
+export interface SkillsConfig {
+  enabled?: boolean;  // Enable skills discovery (default: true)
+  local_paths?: string[];  // Paths to scan for local skills (default: ['.claude/commands'])
+  skyll?: {
+    enabled?: boolean;  // Enable Skyll API (default: true)
+    endpoint?: string;  // Skyll API endpoint (default: 'https://api.skyll.app')
+    api_key?: string;  // Skyll API key (optional, or use SKYLL_API_KEY env var)
+    cache_ttl?: number;  // Cache TTL in seconds (default: 604800 = 7 days)
+    only_when_no_local?: boolean;  // Only use Skyll when no local matches (default: true)
+    rate_limit?: number;  // Max requests per hour (default: 30)
+  };
+  auto_suggest?: {
+    enabled?: boolean;  // Enable auto-suggest (default: true)
+    on_user_prompt?: boolean;  // Suggest on user prompt (default: true)
+    llm_backend?: 'claude' | 'local' | 'openrouter';  // LLM backend (default: 'claude')
+    llm_model?: string;  // Model for Claude backend (default: 'haiku')
+    local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
+    local_model?: string;  // Model for local backend (default: 'qwen2.5:7b')
+    openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')
+    min_confidence?: number;  // Min confidence for suggestions (default: 0.7)
+    max_suggestions?: number;  // Max suggestions to show (default: 2)
+    cooldown_prompts?: number;  // Cooldown between suggestions (default: 3)
+    min_prompt_length?: number;  // Min prompt length to trigger (default: 20)
+  };
+  track_usage?: boolean;  // Track skill usage (default: true)
 }
 
 export interface CompactBriefingConfig {

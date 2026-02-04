@@ -14,6 +14,7 @@ import { scoreMemory, passesQualityThreshold } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
+import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
 
 /**
  * Extracted fact from session
@@ -78,6 +79,9 @@ If no meaningful facts found, return: []`;
 /**
  * Call LLM to extract facts from text content
  * Exported for use by remember command with --extract option
+ *
+ * Uses the shared LLM module for backend flexibility.
+ * Legacy options.mode is mapped to the new backend system.
  */
 export async function extractFactsWithLLM(
   transcript: string,
@@ -90,145 +94,33 @@ export async function extractFactsWithLLM(
 ): Promise<ExtractedFact[]> {
   const prompt = EXTRACTION_PROMPT.replace('{transcript}', transcript);
 
-  if (options.mode === 'claude') {
-    // Use Claude CLI (spawn process)
-    return extractWithClaudeCLI(prompt, options.model || 'haiku');
-  } else if (options.mode === 'local') {
-    // Use local LLM API (Ollama, LM Studio)
-    return extractWithLocalAPI(prompt, options.apiUrl!, options.model!);
-  } else if (options.mode === 'openrouter') {
-    // Use OpenRouter API
-    return extractWithOpenRouter(prompt, options.apiKey!, options.model!);
+  // Map legacy mode to new backend
+  const backend: LLMBackend = options.mode;
+  const llmConfig = getLLMConfig();
+
+  // Build config override
+  const configOverride: Parameters<typeof callLLM>[2] = { backend };
+
+  if (options.model) {
+    if (backend === 'claude') {
+      configOverride.model = options.model;
+    } else if (backend === 'openrouter') {
+      configOverride.openrouterModel = options.model;
+    } else if (backend === 'local') {
+      configOverride.model = options.model;
+    }
   }
 
-  return [];
-}
-
-/**
- * Extract facts using Claude CLI
- */
-async function extractWithClaudeCLI(prompt: string, model: string): Promise<ExtractedFact[]> {
-  const spawn = (await import('cross-spawn')).default;
-
-  return new Promise((resolve) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true, // Hide CMD window on Windows (works without detached)
-    });
-
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.on('close', (code: number) => {
-      if (code === 0 && stdout.trim()) {
-        try {
-          const facts = parseFactsResponse(stdout);
-          resolve(facts);
-        } catch {
-          resolve([]);
-        }
-      } else {
-        resolve([]);
-      }
-    });
-
-    proc.on('error', () => {
-      resolve([]);
-    });
-
-    // Timeout
-    setTimeout(() => {
-      proc.kill();
-      resolve([]);
-    }, 30000);
-  });
-}
-
-/**
- * Extract facts using local LLM API (Ollama, LM Studio)
- */
-async function extractWithLocalAPI(
-  prompt: string,
-  apiUrl: string,
-  model: string
-): Promise<ExtractedFact[]> {
-  try {
-    const response = await fetch(`${apiUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You extract facts from coding sessions. Respond only with valid JSON arrays.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    return parseFactsResponse(content);
-  } catch (error) {
-    console.warn('Local LLM extraction failed:', error);
-    return [];
+  if (options.apiUrl) {
+    configOverride.localEndpoint = options.apiUrl;
   }
-}
 
-/**
- * Extract facts using OpenRouter API
- */
-async function extractWithOpenRouter(
-  prompt: string,
-  apiKey: string,
-  model: string
-): Promise<ExtractedFact[]> {
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://github.com/anthropics/succ',
-        'X-Title': 'succ - Session Summary',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You extract facts from coding sessions. Respond only with valid JSON arrays.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    return parseFactsResponse(content);
+    // Use sleep agent for background extraction if enabled
+    const result = await callLLM(prompt, { timeout: 30000, maxTokens: 2000, useSleepAgent: true }, configOverride);
+    return parseFactsResponse(result);
   } catch (error) {
-    console.warn('OpenRouter extraction failed:', error);
+    console.warn(`[session-summary] LLM extraction failed (${backend}):`, error);
     return [];
   }
 }
