@@ -4,11 +4,12 @@
  * Measures how "ready" a project is for AI collaboration.
  *
  * Metrics (Total: 100%):
- * - Brain Vault: 25% - CLAUDE.md exists, folder structure
+ * - Brain Vault: 20% - CLAUDE.md exists, folder structure
  * - Memory Coverage: 20% - Memories vs project size
  * - Code Index: 20% - % of source files indexed
  * - Soul Document: 10% - soul.md exists and complete
- * - Hooks Active: 10% - session-start/end configured
+ * - Hooks Active: 10% - session-start/end/user-prompt/post-tool/stop configured
+ * - Agents Configured: 5% - Custom Claude Code agents in .claude/agents/
  * - Doc Index: 10% - Markdown docs indexed
  * - Quality Average: 5% - Average memory quality score
  */
@@ -20,11 +21,12 @@ import { getDb, getMemoryStats, getStats, getGraphStats } from './db.js';
 
 // Metric weights (must sum to 100)
 export const METRIC_WEIGHTS = {
-  brain_vault: 25,
+  brain_vault: 20,
   memory_coverage: 20,
   code_index: 20,
   soul_document: 10,
   hooks_active: 10,
+  agents_configured: 5,
   doc_index: 10,
   quality_average: 5,
 } as const;
@@ -49,10 +51,10 @@ export interface AIReadinessScore {
 }
 
 /**
- * Calculate brain vault score (25 points max)
+ * Calculate brain vault score (20 points max)
  * - CLAUDE.md exists: 10 points
  * - brain/ folder structure: 5 points
- * - Number of docs (1+ = 5 points, 5+ = 10 points)
+ * - Number of docs (5+ = 5 points)
  */
 export function calculateBrainVaultScore(): MetricResult {
   const succDir = getSuccDir();
@@ -81,13 +83,12 @@ export function calculateBrainVaultScore(): MetricResult {
     score += 5;
     details.push('brain/ folder exists');
 
-    // Count markdown files in brain
+    // Count markdown files in brain (5+ docs = 5 points)
     const mdFiles = countMarkdownFiles(brainDir);
     if (mdFiles >= 5) {
-      score += 10;
+      score += 5;
       details.push(`${mdFiles} docs in brain/`);
     } else if (mdFiles >= 1) {
-      score += 5;
       details.push(`${mdFiles} docs in brain/`);
       suggestions.push('Add more documentation to .succ/brain/');
     } else {
@@ -275,8 +276,12 @@ export function calculateSoulDocumentScore(): MetricResult {
 
 /**
  * Calculate hooks active score (10 points max)
- * - session-start hook configured: 5 points
- * - session-end hook configured: 5 points
+ * Checks for all succ hooks:
+ * - session-start: 2 points (context injection)
+ * - session-end: 2 points (session handoff)
+ * - user-prompt: 2 points (prompt enhancement)
+ * - post-tool: 2 points (tool result processing)
+ * - stop-reflection: 2 points (end-of-session reflection)
  */
 export function calculateHooksActiveScore(): MetricResult {
   const succDir = getSuccDir();
@@ -287,33 +292,48 @@ export function calculateHooksActiveScore(): MetricResult {
   const details: string[] = [];
   const suggestions: string[] = [];
 
-  // Check session-start hook
-  const sessionStartPaths = [
-    path.join(hooksDir, 'succ-session-start.cjs'),
-    path.join(hooksDir, 'session-start.cjs'),
-    path.join(hooksDir, 'session-start.js'),
+  // Define all hooks with their variants
+  const hookChecks = [
+    {
+      name: 'session-start',
+      paths: ['succ-session-start.cjs', 'session-start.cjs', 'session-start.js'],
+      points: 2,
+      suggestion: 'Add session-start hook for context injection',
+    },
+    {
+      name: 'session-end',
+      paths: ['succ-session-end.cjs', 'succ-idle-watcher.cjs', 'session-end.cjs', 'session-end.js'],
+      points: 2,
+      suggestion: 'Add session-end hook for session handoff',
+    },
+    {
+      name: 'user-prompt',
+      paths: ['succ-user-prompt.cjs', 'user-prompt.cjs', 'user-prompt.js'],
+      points: 2,
+      suggestion: 'Add user-prompt hook for prompt enhancement',
+    },
+    {
+      name: 'post-tool',
+      paths: ['succ-post-tool.cjs', 'post-tool.cjs', 'post-tool.js'],
+      points: 2,
+      suggestion: 'Add post-tool hook for tool result processing',
+    },
+    {
+      name: 'stop-reflection',
+      paths: ['succ-stop-reflection.cjs', 'stop-reflection.cjs', 'stop-reflection.js'],
+      points: 2,
+      suggestion: 'Add stop-reflection hook for end-of-session reflection',
+    },
   ];
-  const hasSessionStart = sessionStartPaths.some(p => fs.existsSync(p));
-  if (hasSessionStart) {
-    score += 5;
-    details.push('session-start');
-  } else {
-    suggestions.push('Configure session-start hook for context injection');
-  }
 
-  // Check session-end hook (or idle watcher)
-  const sessionEndPaths = [
-    path.join(hooksDir, 'succ-session-end.cjs'),
-    path.join(hooksDir, 'succ-idle-watcher.cjs'),
-    path.join(hooksDir, 'session-end.cjs'),
-    path.join(hooksDir, 'session-end.js'),
-  ];
-  const hasSessionEnd = sessionEndPaths.some(p => fs.existsSync(p));
-  if (hasSessionEnd) {
-    score += 5;
-    details.push('session-end/idle');
-  } else {
-    suggestions.push('Configure idle watcher for automatic reflection');
+  for (const hook of hookChecks) {
+    const exists = hook.paths.some(p => fs.existsSync(path.join(hooksDir, p)));
+    if (exists) {
+      score += hook.points;
+      details.push(hook.name);
+    } else {
+      suggestions.push(hook.suggestion);
+    }
   }
 
   return {
@@ -322,6 +342,59 @@ export function calculateHooksActiveScore(): MetricResult {
     score,
     maxScore,
     details: details.length > 0 ? details.join(', ') : 'None configured',
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+  };
+}
+
+/**
+ * Calculate agents configured score (5 points max)
+ * Checks for custom Claude Code agents in .claude/agents/
+ * - 0 agents: 0 points
+ * - 1-2 agents: 2 points
+ * - 3-5 agents: 3 points
+ * - 6+ agents: 5 points
+ */
+export function calculateAgentsConfiguredScore(): MetricResult {
+  const projectRoot = getProjectRoot();
+  const agentsDir = path.join(projectRoot, '.claude', 'agents');
+  const maxScore = METRIC_WEIGHTS.agents_configured;
+
+  if (!fs.existsSync(agentsDir)) {
+    return {
+      name: 'agents_configured',
+      label: 'Agents',
+      score: 0,
+      maxScore,
+      details: 'No agents directory',
+      suggestions: ['Create .claude/agents/ with custom subagents'],
+    };
+  }
+
+  // Count .md files in agents directory
+  let agentCount = 0;
+  try {
+    const files = fs.readdirSync(agentsDir);
+    agentCount = files.filter(f => f.endsWith('.md')).length;
+  } catch {
+    // Ignore errors
+  }
+
+  let score = 0;
+  if (agentCount >= 6) score = 5;
+  else if (agentCount >= 3) score = 3;
+  else if (agentCount >= 1) score = 2;
+
+  const suggestions: string[] = [];
+  if (agentCount < 3) {
+    suggestions.push('Add more custom agents to .claude/agents/');
+  }
+
+  return {
+    name: 'agents_configured',
+    label: 'Agents',
+    score,
+    maxScore,
+    details: agentCount > 0 ? `${agentCount} agents` : 'No agents',
     suggestions: suggestions.length > 0 ? suggestions : undefined,
   };
 }
@@ -476,6 +549,7 @@ export function calculateAIReadinessScore(): AIReadinessScore {
     calculateCodeIndexScore(),
     calculateSoulDocumentScore(),
     calculateHooksActiveScore(),
+    calculateAgentsConfiguredScore(),
     calculateDocIndexScore(),
     calculateQualityAverageScore(),
   ];
