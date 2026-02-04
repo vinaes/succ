@@ -10,7 +10,8 @@
 
 import { searchMemories, closeDb, getRecentMemories } from './db.js';
 import { getEmbedding } from './embeddings.js';
-import { getIdleReflectionConfig, getConfig, getProjectRoot } from './config.js';
+import { getProjectRoot } from './config.js';
+import { callLLM, type LLMBackend } from './llm.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -138,16 +139,12 @@ async function findRelevantMemories(
 
 /**
  * Generate briefing using LLM
+ * Uses the unified llm.* config from config.json
  */
 async function generateBriefingWithLLM(
   transcript: string,
   memories: Array<{ content: string; tags: string[]; relevance: number }>,
-  options: {
-    mode: 'claude' | 'local' | 'openrouter';
-    model?: string;
-    apiUrl?: string;
-    apiKey?: string;
-  }
+  backendOverride?: LLMBackend
 ): Promise<string | null> {
   const memoriesText = memories
     .map(m => `[${m.tags.join(', ')}] ${m.content}`)
@@ -157,132 +154,13 @@ async function generateBriefingWithLLM(
     .replace('{transcript}', transcript.substring(0, 4000))
     .replace('{memories}', memoriesText || 'No relevant memories found.');
 
-  if (options.mode === 'claude') {
-    return generateWithClaudeCLI(prompt, options.model || 'haiku');
-  } else if (options.mode === 'local') {
-    return generateWithLocalAPI(prompt, options.apiUrl!, options.model!);
-  } else if (options.mode === 'openrouter') {
-    return generateWithOpenRouter(prompt, options.apiKey!, options.model!);
-  }
-
-  return null;
-}
-
-/**
- * Generate briefing using Claude CLI
- */
-async function generateWithClaudeCLI(prompt: string, model: string): Promise<string | null> {
-  const spawn = (await import('cross-spawn')).default;
-
-  return new Promise((resolve) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true, // Hide CMD window on Windows (works without detached)
-    });
-
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.on('close', (code: number) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim());
-      } else {
-        resolve(null);
-      }
-    });
-
-    proc.on('error', () => {
-      resolve(null);
-    });
-
-    setTimeout(() => {
-      proc.kill();
-      resolve(null);
-    }, 45000);
-  });
-}
-
-/**
- * Generate briefing using local LLM API
- */
-async function generateWithLocalAPI(
-  prompt: string,
-  apiUrl: string,
-  model: string
-): Promise<string | null> {
   try {
-    const response = await fetch(`${apiUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You prepare briefings for coding sessions. Be concise and actionable.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Generate briefing using OpenRouter API
- */
-async function generateWithOpenRouter(
-  prompt: string,
-  apiKey: string,
-  model: string
-): Promise<string | null> {
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://github.com/anthropics/succ',
-        'X-Title': 'succ - Precompute Context',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You prepare briefings for coding sessions. Be concise and actionable.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch {
+    // Use sleep agent for background precomputation if enabled
+    const configOverride = backendOverride ? { backend: backendOverride } : undefined;
+    const result = await callLLM(prompt, { timeout: 45000, maxTokens: 1000, useSleepAgent: true }, configOverride);
+    return result?.trim() || null;
+  } catch (error) {
+    console.warn(`[precompute-context] LLM briefing failed:`, error);
     return null;
   }
 }
@@ -295,16 +173,12 @@ export async function precomputeContext(
   options: {
     verbose?: boolean;
     dryRun?: boolean;
-    // CLI overrides for LLM selection
+    // CLI overrides for LLM backend selection
     local?: boolean;
     openrouter?: boolean;
-    apiUrl?: string;
-    model?: string;
   } = {}
 ): Promise<PrecomputeResult> {
   const { verbose = false, dryRun = false } = options;
-  const config = getIdleReflectionConfig();
-  const globalConfig = getConfig();
 
   const result: PrecomputeResult = {
     success: false,
@@ -324,51 +198,17 @@ export async function precomputeContext(
       console.log(`Found ${memories.length} relevant memories`);
     }
 
-    // Determine which agent to use
-    // CLI flags take priority over config
-    let llmOptions: {
-      mode: 'claude' | 'local' | 'openrouter';
-      model?: string;
-      apiUrl?: string;
-      apiKey?: string;
-    };
-
+    // Determine backend override from CLI flags (if any)
+    // Otherwise uses unified llm.* config
+    let backendOverride: LLMBackend | undefined;
     if (options.local) {
-      // CLI: --local flag
-      llmOptions = {
-        mode: 'local',
-        model: options.model || config.sleep_agent?.model || 'qwen2.5-coder:14b',
-        apiUrl: options.apiUrl || config.sleep_agent?.api_url || 'http://localhost:11434/v1',
-      };
+      backendOverride = 'local';
     } else if (options.openrouter) {
-      // CLI: --openrouter flag
-      llmOptions = {
-        mode: 'openrouter',
-        model: options.model || config.sleep_agent?.model || 'anthropic/claude-3-haiku',
-        apiKey: config.sleep_agent?.api_key || globalConfig.openrouter_api_key,
-      };
-    } else {
-      // Use config-based selection
-      const sleepAgent = config.sleep_agent;
-      const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.precompute_context;
-
-      if (useSleepAgent) {
-        llmOptions = {
-          mode: sleepAgent.mode as 'local' | 'openrouter',
-          model: sleepAgent.model,
-          apiUrl: sleepAgent.api_url,
-          apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
-        };
-      } else {
-        llmOptions = {
-          mode: 'claude',
-          model: config.agent_model,
-        };
-      }
+      backendOverride = 'openrouter';
     }
 
     if (verbose) {
-      console.log(`Using ${llmOptions.mode} mode for briefing generation`);
+      console.log(`Using ${backendOverride || 'configured'} backend for briefing generation`);
     }
 
     // Generate briefing
@@ -376,7 +216,7 @@ export async function precomputeContext(
       console.log('Generating session briefing...');
     }
 
-    const briefing = await generateBriefingWithLLM(transcript, memories, llmOptions);
+    const briefing = await generateBriefingWithLLM(transcript, memories, backendOverride);
 
     if (!briefing) {
       result.error = 'Failed to generate briefing';
@@ -448,8 +288,6 @@ export async function precomputeContextCLI(
     verbose?: boolean;
     local?: boolean;
     openrouter?: boolean;
-    apiUrl?: string;
-    model?: string;
   } = {}
 ): Promise<void> {
   if (!fs.existsSync(transcriptPath)) {
@@ -504,8 +342,6 @@ export async function precomputeContextCLI(
     verbose: options.verbose ?? true,
     local: options.local,
     openrouter: options.openrouter,
-    apiUrl: options.apiUrl,
-    model: options.model,
   });
 
   console.log('\nPrecompute Results:');

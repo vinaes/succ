@@ -6,17 +6,10 @@
  * context for continuation.
  */
 
-import spawn from 'cross-spawn';
-import { getCompactBriefingConfig, getConfig, CompactBriefingConfig } from './config.js';
+import { getCompactBriefingConfig, CompactBriefingConfig } from './config.js';
 import { searchMemories, getRecentMemories } from './db.js';
 import { getEmbedding } from './embeddings.js';
-
-// Default model mappings
-const DEFAULT_MODELS = {
-  local: 'haiku',
-  openrouter: 'anthropic/claude-3-haiku',
-  custom: 'llama3.2',  // Common default for Ollama
-} as const;
+import { callLLM } from './llm.js';
 
 // ============================================================================
 // Types
@@ -222,193 +215,20 @@ function extractTopics(transcript: string): string[] {
 }
 
 // ============================================================================
-// LLM Providers
+// LLM Integration (uses shared llm.ts module)
 // ============================================================================
 
 /**
- * Run Claude CLI with a prompt (local mode - spawns process, slow but works offline)
- */
-async function runClaudeCLI(
-  prompt: string,
-  model: string = 'haiku',
-  timeoutMs: number = 45000
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      windowsHide: true,
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Claude CLI exited with code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-
-    // Write prompt and close stdin
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    // Timeout
-    setTimeout(() => {
-      proc.kill();
-      reject(new Error('Claude CLI timeout'));
-    }, timeoutMs);
-  });
-}
-
-/**
- * Generate briefing using OpenRouter API (fast, requires API key)
- */
-async function generateWithOpenRouter(
-  prompt: string,
-  apiKey: string,
-  model: string = 'anthropic/claude-3-haiku',
-  timeoutMs: number = 15000
-): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.3,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
-    }
-
-    const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content?.trim() || '';
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * Generate briefing using custom OpenAI-compatible API (Ollama, LM Studio, llama.cpp)
- */
-async function generateWithCustomAPI(
-  prompt: string,
-  apiUrl: string,
-  model: string,
-  apiKey?: string,
-  timeoutMs: number = 15000
-): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  // Ensure URL ends with /chat/completions
-  let endpoint = apiUrl;
-  if (!endpoint.endsWith('/chat/completions')) {
-    endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.3,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Custom API error: ${response.status} - ${error}`);
-    }
-
-    const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content?.trim() || '';
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * Generate briefing using configured provider
+ * Generate briefing using unified llm.* config
  */
 async function generateBriefingText(
   prompt: string,
   config: CompactBriefingConfig
 ): Promise<string> {
-  const globalConfig = getConfig();
-  const mode = config.mode || 'local';
-  const timeoutMs = config.timeout_ms || 15000;
+  const timeoutMs = config.timeout_ms || 30000;
 
-  switch (mode) {
-    case 'openrouter': {
-      const apiKey = config.api_key || globalConfig.openrouter_api_key;
-      if (!apiKey) {
-        throw new Error('OpenRouter API key not configured. Set openrouter_api_key in config or compact_briefing.api_key');
-      }
-      const model = config.model || DEFAULT_MODELS.openrouter;
-      return generateWithOpenRouter(prompt, apiKey, model, timeoutMs);
-    }
-
-    case 'custom': {
-      const apiUrl = config.api_url || globalConfig.analyze_api_url;
-      if (!apiUrl) {
-        throw new Error('Custom API URL not configured. Set compact_briefing.api_url or analyze_api_url');
-      }
-      const model = config.model || globalConfig.analyze_model || DEFAULT_MODELS.custom;
-      const apiKey = config.api_key || globalConfig.analyze_api_key;
-      return generateWithCustomAPI(prompt, apiUrl, model, apiKey, timeoutMs);
-    }
-
-    case 'local':
-    default: {
-      // Local mode uses Claude CLI (slow but works without additional config)
-      const model = config.model || DEFAULT_MODELS.local;
-      return runClaudeCLI(prompt, model, timeoutMs);
-    }
-  }
+  // Use unified llm.* config only
+  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000 });
 }
 
 // ============================================================================

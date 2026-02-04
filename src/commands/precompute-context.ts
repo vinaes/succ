@@ -11,8 +11,6 @@ interface PrecomputeContextOptions {
   verbose?: boolean;
   local?: boolean;
   openrouter?: boolean;
-  apiUrl?: string;
-  model?: string;
 }
 
 export async function precomputeContext(
@@ -24,7 +22,5 @@ export async function precomputeContext(
     verbose: options.verbose,
     local: options.local,
     openrouter: options.openrouter,
-    apiUrl: options.apiUrl,
-    model: options.model,
   });
 }

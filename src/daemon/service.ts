@@ -42,7 +42,7 @@ import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
-import spawn from 'cross-spawn';
+import { callLLM, isSleepAgentEnabled } from '../lib/llm.js';
 
 // ============================================================================
 // Types
@@ -169,7 +169,7 @@ function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 
 
 const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000;  // 5 minutes
 const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000;  // Re-generate after 5KB growth
-const BRIEFING_PREGENERATE_IDLE_MS = 30 * 1000;  // Pre-generate after 30s idle
+const BRIEFING_PREGENERATE_IDLE_MS = 120 * 1000;  // Pre-generate after 2 min idle
 
 /**
  * Pre-generate briefing for a session in background
@@ -342,17 +342,15 @@ Output ONLY the reflection text, no headers or formatting. Write in first person
 
   let reflectionText: string | null = null;
 
-  // Use sleep_agent if enabled (write_reflection is a good candidate for local LLM)
-  const sleepAgent = idleConfig.sleep_agent;
-  const useSleepAgent = sleepAgent?.enabled && sleepAgent?.model;
-
-  if (useSleepAgent) {
-    // Use local LLM via sleep_agent
-    reflectionText = await callSleepAgent(prompt, sleepAgent);
-  } else {
-    // Use Claude CLI
-    const claudeModel = idleConfig.agent_model || 'haiku';
-    reflectionText = await callClaudeCLI(prompt, claudeModel);
+  // Use sleep agent for background reflection if enabled
+  try {
+    reflectionText = await callLLM(prompt, {
+      timeout: 60000,
+      useSleepAgent: true,  // Use sleep_agent config if available
+    });
+  } catch (err) {
+    log(`[reflection] LLM call failed: ${err}`);
+    reflectionText = null;
   }
 
   if (!reflectionText || reflectionText.trim().length < 50) {
@@ -384,89 +382,7 @@ ${reflectionText.trim()}
   });
 }
 
-/**
- * Call Claude CLI to generate text
- */
-function callClaudeCLI(prompt: string, model: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true, // Hide CMD window on Windows (works without detached)
-    });
-
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.on('close', (code: number | null) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim());
-      } else {
-        resolve(null);
-      }
-    });
-
-    proc.on('error', () => resolve(null));
-
-    // Timeout after 60 seconds
-    setTimeout(() => {
-      proc.kill();
-      resolve(null);
-    }, 60000);
-  });
-}
-
-/**
- * Call sleep agent (local LLM) via OpenAI-compatible API
- */
-async function callSleepAgent(
-  prompt: string,
-  sleepAgent: NonNullable<ReturnType<typeof getIdleReflectionConfig>['sleep_agent']>
-): Promise<string | null> {
-  const { mode, model, api_url, api_key } = sleepAgent;
-
-  let baseUrl = api_url;
-  if (!baseUrl) {
-    if (mode === 'local') baseUrl = 'http://localhost:11434/v1';
-    else if (mode === 'openrouter') baseUrl = 'https://openrouter.ai/api/v1';
-  }
-  if (!baseUrl) return null;
-
-  const endpoint = baseUrl.endsWith('/')
-    ? `${baseUrl}chat/completions`
-    : `${baseUrl}/chat/completions`;
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (api_key) headers['Authorization'] = `Bearer ${api_key}`;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: model || 'qwen2.5-coder:14b',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!response.ok) return null;
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content || null;
-  } catch {
-    return null;
-  }
-}
+// LLM functions moved to shared module: src/lib/llm.ts
 
 // ============================================================================
 // Reflection Handler
@@ -974,6 +890,51 @@ async function routeRequest(method: string, pathname: string, searchParams: URLS
     return { success: true };
   }
 
+  // Skills endpoints
+  if (pathname === '/api/skills/suggest' && method === 'POST') {
+    const { prompt, limit = 2 } = body;
+    if (!prompt) {
+      throw new Error('prompt required');
+    }
+
+    const { suggestSkills, getSkillsConfig } = await import('../lib/skills.js');
+    const config = getSkillsConfig();
+
+    if (!config.enabled || !config.auto_suggest?.enabled) {
+      return { success: true, skills: [], disabled: true };
+    }
+
+    const suggestions = await suggestSkills(prompt, config);
+    return {
+      success: true,
+      skills: suggestions.slice(0, limit),
+    };
+  }
+
+  if (pathname === '/api/skills/index' && method === 'POST') {
+    const { indexLocalSkills } = await import('../lib/skills.js');
+    const cwd = state?.cwd || process.cwd();
+    const count = indexLocalSkills(cwd);
+    return { success: true, indexed: count };
+  }
+
+  if (pathname === '/api/skills/track' && method === 'POST') {
+    const { skill_name } = body;
+    if (!skill_name) {
+      throw new Error('skill_name required');
+    }
+
+    const { trackSkillUsage } = await import('../lib/skills.js');
+    trackSkillUsage(skill_name);
+    return { success: true };
+  }
+
+  // Skyll status endpoint
+  if (pathname === '/api/skills/skyll' && method === 'GET') {
+    const { getSkyllStatus } = await import('../lib/skyll-client.js');
+    return getSkyllStatus();
+  }
+
   // Services endpoint (list all services status)
   if (pathname === '/api/services' && method === 'GET') {
     return {
@@ -1097,7 +1058,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     checkIntervalSeconds: watcherConfig.check_interval,
     idleMinutes: watcherConfig.idle_minutes,
     reflectionCooldownMinutes: watcherConfig.reflection_cooldown_minutes,
-    preGenerateIdleSeconds: 30,  // Pre-generate briefing after 30s idle
+    preGenerateIdleSeconds: 120,  // Pre-generate briefing after 2 min idle
     log,
   });
   idleWatcher.start();

@@ -147,42 +147,65 @@ Controls how documents are split for indexing.
 
 ---
 
-## Analyze Settings
+## LLM Backend Settings
 
-Controls `succ analyze` command for code documentation.
+Unified LLM configuration for all succ operations (analyze, idle reflection, skill suggestions, etc.).
+
+> **Warning**: Using `claude` backend invokes Claude Code CLI programmatically. This may violate [Anthropic's Terms of Service](https://www.anthropic.com/legal/consumer-terms). Use at your own risk. We recommend `local` (Ollama) or `openrouter` backends for automated operations.
+
+```json
+{
+  "llm": {
+    "backend": "local",
+    "model": "qwen2.5:7b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions",
+    "openrouter_model": "anthropic/claude-3-haiku",
+    "max_tokens": 2000,
+    "temperature": 0.3
+  }
+}
+```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `analyze_mode` | `"claude"` \| `"openrouter"` \| `"local"` | `"claude"` | LLM provider |
-| `analyze_api_url` | string | - | API URL for local mode |
-| `analyze_api_key` | string | - | API key for local mode |
-| `analyze_model` | string | - | Model name |
-| `analyze_temperature` | number | 0.3 | Generation temperature |
-| `analyze_max_tokens` | number | 4096 | Max tokens per response |
+| `llm.backend` | `"local"` \| `"openrouter"` \| `"claude"` | `"local"` | LLM provider |
+| `llm.model` | string | `"qwen2.5:7b"` | Model for local backend |
+| `llm.local_endpoint` | string | `"http://localhost:11434/v1/chat/completions"` | Ollama/local API URL |
+| `llm.openrouter_model` | string | `"anthropic/claude-3-haiku"` | Model for OpenRouter |
+| `llm.max_tokens` | number | 2000 | Max tokens per response |
+| `llm.temperature` | number | 0.3 | Generation temperature |
 
-### Examples
+### Backend Comparison
 
-**Claude (default):**
+| Backend | Pros | Cons |
+|---------|------|------|
+| `local` | Free, private, no rate limits | Requires local GPU/CPU |
+| `openrouter` | Many models, no local setup | Requires API key, costs |
+| `claude` | High quality | May violate ToS, requires subscription |
+
+### Fallback Chain
+
+succ automatically tries backends in order if one fails:
+1. Preferred backend (from config)
+2. `local` (if available)
+3. `openrouter` (if API key set)
+4. `claude` (last resort)
+
+---
+
+## Analyze Settings
+
+> **Note**: `succ analyze` now uses the unified `llm.*` configuration. Legacy `analyze_*` settings are deprecated.
+
+The `succ analyze` command uses the unified LLM backend configured in `llm.*`. To customize analysis behavior, configure your LLM settings:
+
 ```json
 {
-  "analyze_mode": "claude"
-}
-```
-
-**Ollama:**
-```json
-{
-  "analyze_mode": "local",
-  "analyze_api_url": "http://localhost:11434/v1",
-  "analyze_model": "qwen2.5-coder:14b"
-}
-```
-
-**OpenRouter:**
-```json
-{
-  "analyze_mode": "openrouter",
-  "analyze_model": "deepseek/deepseek-coder"
+  "llm": {
+    "backend": "local",
+    "model": "qwen2.5:7b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions"
+  }
 }
 ```
 
@@ -288,7 +311,7 @@ Controls the background daemon service.
     "analyze": {
       "auto_start": false,
       "interval_minutes": 30,
-      "mode": "claude"
+      "mode": "local"
     }
   }
 }
@@ -304,7 +327,7 @@ Controls the background daemon service.
 | `daemon.watch.debounce_ms` | number | 500 | Debounce interval |
 | `daemon.analyze.auto_start` | boolean | false | Auto-start analyzer |
 | `daemon.analyze.interval_minutes` | number | 30 | Analysis interval |
-| `daemon.analyze.mode` | string | `"claude"` | Analysis mode |
+| `daemon.analyze.mode` | string | `"local"` | Analysis mode |
 
 ---
 
@@ -375,25 +398,35 @@ Controls what happens during idle reflection.
 
 ### Sleep Agent (Secondary LLM)
 
-Offload heavy operations to a local/cloud LLM:
+Use a separate LLM for background operations (idle reflection, memory consolidation, precompute context). This allows using a premium model for interactive work while offloading background tasks to a free/local model.
 
 ```json
 {
-  "idle_reflection": {
-    "sleep_agent": {
-      "enabled": true,
-      "mode": "local",
-      "model": "qwen2.5:7b",
-      "api_url": "http://localhost:11434/v1",
-      "handle_operations": {
-        "memory_consolidation": true,
-        "session_summary": true,
-        "precompute_context": true
-      }
-    }
+  "llm": {
+    "backend": "claude",
+    "model": "sonnet"
+  },
+  "sleep_agent": {
+    "enabled": true,
+    "backend": "local",
+    "model": "qwen2.5:7b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions"
   }
 }
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sleep_agent.enabled` | boolean | false | Enable sleep agent |
+| `sleep_agent.backend` | `"local"` \| `"openrouter"` | `"local"` | Backend for background ops |
+| `sleep_agent.model` | string | from `llm.*` | Model name |
+| `sleep_agent.local_endpoint` | string | from `llm.*` | Local LLM endpoint |
+| `sleep_agent.max_tokens` | number | from `llm.*` | Max tokens |
+| `sleep_agent.temperature` | number | from `llm.*` | Temperature |
+
+**Use cases:**
+- Primary: Claude CLI + Sleep: Ollama (free background processing)
+- Primary: OpenRouter (fast) + Sleep: Local Ollama (no rate limits)
 
 ---
 
@@ -491,15 +524,17 @@ Optional enhancement for better text segmentation.
 
 Controls the briefing generated after `/compact`.
 
+> **Note**: Compact briefing now uses the unified `llm.*` configuration. Legacy `compact_briefing.mode` and `compact_briefing.model` settings are deprecated.
+
 ```json
 {
   "compact_briefing": {
     "enabled": true,
     "format": "structured",
-    "model": "haiku",
     "include_learnings": true,
     "include_memories": true,
-    "max_memories": 3
+    "max_memories": 3,
+    "timeout_ms": 30000
   }
 }
 ```
@@ -508,10 +543,10 @@ Controls the briefing generated after `/compact`.
 |--------|------|---------|-------------|
 | `compact_briefing.enabled` | boolean | true | Enable briefing |
 | `compact_briefing.format` | `"structured"` \| `"prose"` \| `"minimal"` | `"structured"` | Output format |
-| `compact_briefing.model` | `"haiku"` \| `"sonnet"` \| `"opus"` | `"haiku"` | Claude model |
 | `compact_briefing.include_learnings` | boolean | true | Include learnings |
 | `compact_briefing.include_memories` | boolean | true | Include memories |
 | `compact_briefing.max_memories` | number | 3 | Max memories |
+| `compact_briefing.timeout_ms` | number | 30000 | LLM timeout |
 
 ---
 
@@ -522,12 +557,22 @@ Controls the briefing generated after `/compact`.
   "openrouter_api_key": "sk-or-...",
 
   "embedding_mode": "local",
+  "embedding_model": "Xenova/all-MiniLM-L6-v2",
   "chunk_size": 500,
   "chunk_overlap": 50,
 
   "gpu_enabled": true,
 
-  "analyze_mode": "claude",
+  "llm": {
+    "backend": "local",
+    "model": "qwen2.5:7b",
+    "local_endpoint": "http://localhost:11434/v1/chat/completions",
+    "openrouter_model": "anthropic/claude-3-haiku"
+  },
+
+  "sleep_agent": {
+    "enabled": false
+  },
 
   "quality_scoring_enabled": true,
   "quality_scoring_mode": "local",
@@ -559,11 +604,17 @@ Controls the briefing generated after `/compact`.
 
   "idle_reflection": {
     "enabled": true,
-    "agent_model": "haiku",
     "operations": {
       "memory_consolidation": true,
       "session_summary": true
     }
+  },
+
+  "compact_briefing": {
+    "enabled": true,
+    "format": "structured",
+    "include_memories": true,
+    "max_memories": 3
   },
 
   "retention": {

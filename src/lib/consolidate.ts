@@ -24,7 +24,7 @@ import {
 import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
-import spawn from 'cross-spawn';
+import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -448,132 +448,8 @@ Rules:
 Output ONLY the merged memory text, nothing else.`;
 
 /**
- * Call Claude CLI for memory merge
- */
-async function mergeWithClaudeCLI(
-  prompt: string,
-  model: string = 'haiku',
-  timeoutMs: number = 30000
-): Promise<string | null> {
-  return new Promise((resolve) => {
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', model], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      windowsHide: true,
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-    });
-
-    let stdout = '';
-
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.on('close', (code: number) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim());
-      } else {
-        resolve(null);
-      }
-    });
-
-    proc.on('error', () => {
-      resolve(null);
-    });
-
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-
-    setTimeout(() => {
-      proc.kill();
-      resolve(null);
-    }, timeoutMs);
-  });
-}
-
-/**
- * Call local LLM API (Ollama, LM Studio) for memory merge
- */
-async function mergeWithLocalAPI(
-  prompt: string,
-  apiUrl: string,
-  model: string
-): Promise<string | null> {
-  try {
-    const response = await fetch(`${apiUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You merge similar memory entries into one concise unified memory. Output only the merged text.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 500,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    return content?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Call OpenRouter API for memory merge
- */
-async function mergeWithOpenRouter(
-  prompt: string,
-  apiKey: string,
-  model: string
-): Promise<string | null> {
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://github.com/anthropics/succ',
-        'X-Title': 'succ - Memory Consolidation',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You merge similar memory entries into one concise unified memory. Output only the merged text.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 500,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    return content?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Merge two memory contents using LLM
+ * Uses the shared LLM module for backend flexibility.
  */
 export async function llmMergeContent(
   content1: string,
@@ -582,21 +458,38 @@ export async function llmMergeContent(
 ): Promise<string | null> {
   const prompt = MERGE_PROMPT.replace('{memory1}', content1).replace('{memory2}', content2);
 
-  if (options.mode === 'claude') {
-    return mergeWithClaudeCLI(prompt, options.model || 'haiku', options.timeoutMs || 30000);
-  } else if (options.mode === 'local') {
-    if (!options.apiUrl || !options.model) {
-      return null;
+  // Map legacy mode to new backend
+  const backend: LLMBackend = options.mode;
+
+  // Build config override
+  const configOverride: Parameters<typeof callLLM>[2] = { backend };
+
+  if (options.model) {
+    if (backend === 'claude') {
+      configOverride.model = options.model;
+    } else if (backend === 'openrouter') {
+      configOverride.openrouterModel = options.model;
+    } else if (backend === 'local') {
+      configOverride.model = options.model;
     }
-    return mergeWithLocalAPI(prompt, options.apiUrl, options.model);
-  } else if (options.mode === 'openrouter') {
-    if (!options.apiKey || !options.model) {
-      return null;
-    }
-    return mergeWithOpenRouter(prompt, options.apiKey, options.model);
   }
 
-  return null;
+  if (options.apiUrl) {
+    configOverride.localEndpoint = options.apiUrl;
+  }
+
+  try {
+    // Use sleep agent for background consolidation if enabled
+    const result = await callLLM(
+      prompt,
+      { timeout: options.timeoutMs || 30000, maxTokens: 500, useSleepAgent: true },
+      configOverride
+    );
+    return result?.trim() || null;
+  } catch (error) {
+    console.warn(`[consolidate] LLM merge failed (${backend}):`, error);
+    return null;
+  }
 }
 
 /**
