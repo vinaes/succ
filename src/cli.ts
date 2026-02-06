@@ -28,6 +28,7 @@ import { checkpoint } from './commands/checkpoint.js';
 import { score } from './commands/score.js';
 import { daemon } from './commands/daemon.js';
 import { migrate } from './commands/migrate.js';
+import { setup } from './commands/setup.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -92,12 +93,16 @@ program
   .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
   .option('--local', 'Use local LLM API (Ollama, LM Studio, llama.cpp)')
   .option('--background', 'Run analysis in background (detached process)')
+  .option('--fast', 'Fast analysis (fewer agents, smaller context)')
+  .option('--force', 'Force full re-analysis (skip incremental cache)')
   .action(async (options) => {
     analyze({
       parallel: !options.sequential,
       openrouter: options.openrouter,
       local: options.local,
       background: options.background,
+      fast: options.fast,
+      force: options.force,
     });
   });
 
@@ -558,6 +563,17 @@ program
       import: options.import,
       dryRun: options.dryRun,
       force: options.force,
+    });
+  });
+
+program
+  .command('setup [editor]')
+  .description('Configure succ MCP server for an editor (claude, cursor, windsurf, continue)')
+  .option('--detect', 'Auto-detect installed editors and configure all')
+  .action((editor, options) => {
+    setup({
+      editor,
+      detect: options.detect,
     });
   });
 

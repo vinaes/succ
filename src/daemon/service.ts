@@ -27,6 +27,7 @@ import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConf
 import {
   hybridSearchDocs,
   hybridSearchCode,
+  hybridSearchMemories,
   saveMemory,
   closeDb,
   getStats,
@@ -665,13 +666,14 @@ export async function routeRequest(method: string, pathname: string, searchParam
       return { results: memories };
     }
 
-    // Use hybridSearchDocs for memories (they're indexed there)
-    const results = hybridSearchDocs(query, limit, 0.3);
+    // Generate embedding for semantic search
+    const queryEmbedding = await getEmbedding(query);
+    const results = hybridSearchMemories(query, queryEmbedding, limit, 0.3);
 
     // Track access for returned memories
     const accesses = results
-      .filter((r: any) => r.memory_id)
-      .map((r: any) => ({ memoryId: r.memory_id, weight: 1.0 }));
+      .filter((r: any) => r.id)
+      .map((r: any) => ({ memoryId: r.id, weight: 1.0 }));
     if (accesses.length > 0) {
       incrementMemoryAccessBatch(accesses);
     }

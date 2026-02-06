@@ -99,6 +99,12 @@ process.stdin.on('end', async () => {
 ❌ NEVER use Glob/Grep to search .succ/brain/ — use succ_search instead
 ❌ NEVER use Grep to find memories — use succ_recall instead
 ❌ NEVER use Read to browse brain vault — use succ_search first
+
+📦 MEMORY STORAGE — where to put what:
+- **succ_remember** → learnings, decisions, patterns, errors, changelogs (long-term, searchable)
+- **MEMORY.md** → ONLY hot cache: project structure, current phase, critical gotchas (loaded every session)
+- After fixing a bug or learning something → succ_remember, NOT a .md file
+- succ_recall to retrieve past learnings before solving similar problems
 </critical>
 
 <decision-guide>
