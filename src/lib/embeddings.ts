@@ -108,9 +108,16 @@ async function fetchWithTimeout(
   }
 }
 
-// Simple LRU cache for embeddings
-const CACHE_MAX_SIZE = 500;
+// Simple LRU cache for embeddings (size configurable via embedding_cache_size)
+let cacheMaxSize: number | null = null;
 const embeddingCache = new Map<string, number[]>();
+
+function getCacheMaxSize(): number {
+  if (cacheMaxSize === null) {
+    cacheMaxSize = getConfig().embedding_cache_size ?? 500;
+  }
+  return cacheMaxSize;
+}
 
 /**
  * Generate a cache key using full SHA-256 hash to prevent collisions
@@ -132,7 +139,7 @@ function cacheGet(key: string): number[] | undefined {
 
 function cacheSet(key: string, value: number[]): void {
   // Evict oldest if at capacity
-  if (embeddingCache.size >= CACHE_MAX_SIZE) {
+  if (embeddingCache.size >= getCacheMaxSize()) {
     const firstKey = embeddingCache.keys().next().value;
     if (firstKey) embeddingCache.delete(firstKey);
   }

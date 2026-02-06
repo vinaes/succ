@@ -48,7 +48,10 @@ export class EmbeddingPool {
 
   constructor(config: EmbeddingPoolConfig) {
     this.model = config.model;
-    this.poolSize = config.poolSize ?? Math.min(os.cpus().length - 1, 4);
+    // Auto-tune: respect config, then limit by CPUs and available RAM (~100MB per worker)
+    const maxByCpu = Math.min(os.cpus().length - 1, 4);
+    const maxByMem = Math.max(1, Math.floor(os.freemem() / (100 * 1024 * 1024)));
+    this.poolSize = config.poolSize ?? Math.min(maxByCpu, maxByMem);
     if (this.poolSize < 1) this.poolSize = 1;
 
     // Resolve worker path — works for both src (ts) and dist (js)
