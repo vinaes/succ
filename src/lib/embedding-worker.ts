@@ -30,11 +30,24 @@ async function initPipeline(model: string): Promise<void> {
 
 async function embedTexts(texts: string[]): Promise<number[][]> {
   if (!localPipeline) throw new Error('Pipeline not initialized');
+  if (texts.length === 0) return [];
 
+  // Batch inference: pass array to pipeline for GPU/CPU-optimized processing
+  const output = await localPipeline(texts, { pooling: 'mean', normalize: true });
+
+  // Extract individual embeddings from batched output
   const results: number[][] = [];
-  for (const text of texts) {
-    const output = await localPipeline(text, { pooling: 'mean', normalize: true });
+  if (texts.length === 1) {
+    // Single text: output.data is the embedding directly
     results.push(Array.from(output.data as Float32Array));
+  } else {
+    // Batch: output is a Tensor with shape [batchSize, embedDim]
+    const data = output.data as Float32Array;
+    const embedDim = output.dims[output.dims.length - 1];
+    for (let i = 0; i < texts.length; i++) {
+      const start = i * embedDim;
+      results.push(Array.from(data.slice(start, start + embedDim)));
+    }
   }
   return results;
 }

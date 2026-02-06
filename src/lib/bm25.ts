@@ -511,6 +511,10 @@ export function isFlatcase(word: string): boolean {
  * @param minTokenLength - Minimum token length (default: 2)
  * @returns Array of tokens (e.g., ["get", "user", "name"])
  */
+// LRU cache for segmentation results (DP is expensive per token)
+const segmentationCache = new Map<string, string[]>();
+const SEGMENTATION_CACHE_MAX = 2000;
+
 export function segmentFlatcase(
   word: string,
   getFrequency: (token: string) => number,
@@ -519,6 +523,11 @@ export function segmentFlatcase(
 ): string[] {
   const n = word.length;
   if (n <= minTokenLength) return [word];
+
+  // Check cache (keyed on word + totalTokens to detect corpus changes)
+  const cacheKey = `${word}:${totalTokens}`;
+  const cached = segmentationCache.get(cacheKey);
+  if (cached) return cached;
 
   // DP arrays
   // bestScore[i] = best score for segmenting word[0:i]
@@ -585,6 +594,13 @@ export function segmentFlatcase(
     tokens.unshift(word.slice(splitPos, pos));
     pos = splitPos;
   }
+
+  // Cache result (LRU eviction)
+  if (segmentationCache.size >= SEGMENTATION_CACHE_MAX) {
+    const firstKey = segmentationCache.keys().next().value;
+    if (firstKey) segmentationCache.delete(firstKey);
+  }
+  segmentationCache.set(cacheKey, tokens);
 
   return tokens;
 }
