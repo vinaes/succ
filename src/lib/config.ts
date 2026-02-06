@@ -279,9 +279,15 @@ export interface IdleReflectionConfig {
   };
   // Thresholds for operations
   thresholds?: {
-    similarity_for_merge?: number;  // Cosine similarity to consider memories duplicates (default: 0.85)
+    similarity_for_merge?: number;  // Cosine similarity to consider memories duplicates (default: 0.92)
     auto_link_threshold?: number;  // Similarity threshold for graph auto-linking (default: 0.75)
     min_quality_for_summary?: number;  // Min quality score for facts extracted from session (default: 0.5)
+  };
+  // Safety guards for consolidation
+  consolidation_guards?: {
+    min_memory_age_days?: number;  // Don't consolidate memories younger than N days (default: 7)
+    min_corpus_size?: number;  // Don't consolidate if total memories < N (default: 20)
+    require_llm_merge?: boolean;  // Always use LLM for merge action, never destructive delete (default: true)
   };
   // Primary agent (always Claude via CLI)
   agent_model?: 'haiku' | 'sonnet' | 'opus';  // Claude model for reflection (default: 'haiku')
@@ -361,7 +367,7 @@ export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = 
 export const DEFAULT_IDLE_REFLECTION_CONFIG = {
   enabled: true,
   operations: {
-    memory_consolidation: true,
+    memory_consolidation: false,
     graph_refinement: true,
     session_summary: true,
     precompute_context: true,
@@ -369,9 +375,14 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG = {
     retention_cleanup: true,  // Enabled by default (only runs if retention.enabled=true in config)
   },
   thresholds: {
-    similarity_for_merge: 0.85,
+    similarity_for_merge: 0.92,
     auto_link_threshold: 0.75,
     min_quality_for_summary: 0.5,
+  },
+  consolidation_guards: {
+    min_memory_age_days: 7,
+    min_corpus_size: 20,
+    require_llm_merge: true,
   },
   // Primary agent (Claude Haiku via CLI)
   agent_model: 'haiku' as const,
@@ -622,6 +633,11 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
         precompute_context: userSleepAgent.handle_operations?.precompute_context ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.precompute_context,
       },
     },
+    consolidation_guards: {
+      min_memory_age_days: userConfig.consolidation_guards?.min_memory_age_days ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_memory_age_days,
+      min_corpus_size: userConfig.consolidation_guards?.min_corpus_size ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_corpus_size,
+      require_llm_merge: userConfig.consolidation_guards?.require_llm_merge ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.require_llm_merge,
+    },
     max_memories_to_process: userConfig.max_memories_to_process ?? DEFAULT_IDLE_REFLECTION_CONFIG.max_memories_to_process,
     timeout_seconds: userConfig.timeout_seconds ?? DEFAULT_IDLE_REFLECTION_CONFIG.timeout_seconds,
   };
@@ -792,6 +808,14 @@ export interface ConfigDisplay {
       write_reflection: boolean;
       retention_cleanup: boolean;
     };
+    thresholds: {
+      similarity_for_merge: number;
+    };
+    consolidation_guards: {
+      min_memory_age_days: number;
+      min_corpus_size: number;
+      require_llm_merge: boolean;
+    };
     sleep_agent: {
       enabled: boolean;
       mode: 'local' | 'openrouter';
@@ -884,12 +908,20 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       enabled: idleReflection.enabled,
       agent_model: idleReflection.agent_model,
       operations: {
-        memory_consolidation: idleReflection.operations.memory_consolidation ?? true,
+        memory_consolidation: idleReflection.operations.memory_consolidation ?? false,
         graph_refinement: idleReflection.operations.graph_refinement ?? true,
         session_summary: idleReflection.operations.session_summary ?? true,
         precompute_context: idleReflection.operations.precompute_context ?? false,
         write_reflection: idleReflection.operations.write_reflection ?? true,
         retention_cleanup: idleReflection.operations.retention_cleanup ?? true,
+      },
+      thresholds: {
+        similarity_for_merge: idleReflection.thresholds.similarity_for_merge ?? 0.92,
+      },
+      consolidation_guards: {
+        min_memory_age_days: idleReflection.consolidation_guards.min_memory_age_days ?? 7,
+        min_corpus_size: idleReflection.consolidation_guards.min_corpus_size ?? 20,
+        require_llm_merge: idleReflection.consolidation_guards.require_llm_merge ?? true,
       },
       sleep_agent: {
         enabled: idleReflection.sleep_agent.enabled ?? false,
@@ -1017,6 +1049,12 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   if (display.idle_reflection.sleep_agent.enabled) {
     lines.push(`  Sleep agent: ${display.idle_reflection.sleep_agent.mode} (${display.idle_reflection.sleep_agent.model || 'not configured'})`);
   }
+  lines.push('  Consolidation guards:');
+  const guards = display.idle_reflection.consolidation_guards;
+  lines.push(`    - Min memory age: ${guards.min_memory_age_days} days`);
+  lines.push(`    - Min corpus size: ${guards.min_corpus_size}`);
+  lines.push(`    - Require LLM merge: ${guards.require_llm_merge}`);
+  lines.push(`    - Similarity threshold: ${display.idle_reflection.thresholds.similarity_for_merge}`);
   lines.push('');
 
   // Idle Watcher

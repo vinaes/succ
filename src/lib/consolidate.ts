@@ -161,13 +161,34 @@ async function runSimilarityWorkers(
  */
 export async function findConsolidationCandidates(
   threshold?: number,
-  maxCandidates?: number
+  maxCandidates?: number,
+  options?: { skipGuards?: boolean }
 ): Promise<ConsolidationCandidate[]> {
   const config = getIdleReflectionConfig();
-  const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.85;
+  const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.92;
   const limit = maxCandidates ?? config.max_memories_to_process ?? 50;
+  const guards = config.consolidation_guards;
 
-  const memories = getAllMemoriesWithEmbeddings();
+  const allMemories = getAllMemoriesWithEmbeddings();
+
+  // Fix 4: Minimum corpus size guard
+  if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
+    return []; // Not enough memories to safely consolidate
+  }
+
+  // Fix 3: Filter out recent memories (protect young memories from consolidation)
+  const minAgeDays = guards?.min_memory_age_days ?? 7;
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - minAgeDays);
+  const cutoffMs = cutoffDate.getTime();
+
+  const memories = options?.skipGuards
+    ? allMemories
+    : allMemories.filter(m => new Date(m.created_at).getTime() < cutoffMs);
+
+  if (memories.length < 2) {
+    return []; // Need at least 2 eligible memories
+  }
 
   // Generate all pairs
   const pairs: Array<[number, number]> = [];
@@ -221,13 +242,32 @@ export async function findConsolidationCandidates(
  */
 export function findConsolidationCandidatesSync(
   threshold?: number,
-  maxCandidates?: number
+  maxCandidates?: number,
+  options?: { skipGuards?: boolean }
 ): ConsolidationCandidate[] {
   const config = getIdleReflectionConfig();
-  const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.85;
+  const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.92;
   const limit = maxCandidates ?? config.max_memories_to_process ?? 50;
+  const guards = config.consolidation_guards;
 
-  const memories = getAllMemoriesWithEmbeddings();
+  const allMemories = getAllMemoriesWithEmbeddings();
+
+  // Same guards as async version
+  if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
+    return [];
+  }
+
+  const minAgeDays = guards?.min_memory_age_days ?? 7;
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - minAgeDays);
+  const cutoffMs = cutoffDate.getTime();
+
+  const memories = options?.skipGuards
+    ? allMemories
+    : allMemories.filter(m => new Date(m.created_at).getTime() < cutoffMs);
+
+  if (memories.length < 2) return [];
+
   const candidates: ConsolidationCandidate[] = [];
 
   for (let i = 0; i < memories.length && candidates.length < limit; i++) {
@@ -361,8 +401,12 @@ export async function executeConsolidation(
         result.deleted++;
       } else if (candidate.action === 'merge') {
         if (!dryRun) {
-          // Use LLM merge if enabled, otherwise simple merge
-          await mergeMemories(candidate.memory1, candidate.memory2, mergeWithLLM, llmOptions);
+          const mergeResult = await mergeMemories(candidate.memory1, candidate.memory2, mergeWithLLM, llmOptions);
+          if (mergeResult === null) {
+            // Merge was skipped (no LLM or LLM failed) — kept both with link
+            result.kept++;
+            continue;
+          }
         }
         result.merged++;
       } else {
@@ -532,19 +576,19 @@ async function mergeMemories(
   m2: Memory & { embedding: number[] },
   useLLM: boolean = false,
   llmOptions?: LLMMergeOptions
-): Promise<number> {
+): Promise<number | null> {
   const q1 = m1.quality_score ?? 0.5;
   const q2 = m2.quality_score ?? 0.5;
 
   if (!useLLM) {
-    // Simple strategy: keep the one with higher quality, delete the other
-    const keep = q1 >= q2 ? m1 : m2;
-    const merge = q1 >= q2 ? m2 : m1;
-
-    transferLinks(merge.id, keep.id);
-    deleteMemory(merge.id);
-
-    return keep.id;
+    // Without LLM, we can't safely merge — just link them and keep both
+    // This prevents silent information loss
+    try {
+      createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
+    } catch {
+      // Link may already exist
+    }
+    return null; // Signal: no merge happened, kept both
   }
 
   // LLM-based merge
@@ -552,14 +596,13 @@ async function mergeMemories(
   const mergedContent = await llmMergeContent(m1.content, m2.content, options);
 
   if (!mergedContent) {
-    // Fallback to simple merge if LLM fails
-    const keep = q1 >= q2 ? m1 : m2;
-    const merge = q1 >= q2 ? m2 : m1;
-
-    transferLinks(merge.id, keep.id);
-    deleteMemory(merge.id);
-
-    return keep.id;
+    // LLM failed — don't delete anything, just link them
+    try {
+      createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
+    } catch {
+      // Link may already exist
+    }
+    return null; // Signal: no merge happened
   }
 
   // Check for sensitive info in merged content
@@ -573,14 +616,13 @@ async function mergeMemories(
         finalContent = scanResult.redactedText;
       } else {
         // Skip LLM merge if it contains sensitive info and auto-redact is off
-        // Fall back to simple merge
-        const keep = q1 >= q2 ? m1 : m2;
-        const merge = q1 >= q2 ? m2 : m1;
-
-        transferLinks(merge.id, keep.id);
-        deleteMemory(merge.id);
-
-        return keep.id;
+        // Don't delete — just link them
+        try {
+          createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
+        } catch {
+          // Link may already exist
+        }
+        return null;
       }
     }
   }
@@ -622,14 +664,20 @@ export async function consolidateMemories(options: {
   verbose?: boolean;
   useLLM?: boolean;
   llmOptions?: LLMMergeOptions;
+  skipGuards?: boolean;
 }): Promise<ConsolidationResult> {
-  const { dryRun = false, threshold, maxCandidates, verbose = false, useLLM = false, llmOptions } = options;
+  const { dryRun = false, threshold, maxCandidates, verbose = false, useLLM = false, llmOptions, skipGuards = false } = options;
 
   if (verbose) {
     console.log('Finding consolidation candidates...');
+    if (!skipGuards) {
+      const config = getIdleReflectionConfig();
+      const guards = config.consolidation_guards;
+      console.log(`Safety guards: min age ${guards?.min_memory_age_days ?? 7}d, min corpus ${guards?.min_corpus_size ?? 20}, require LLM: ${guards?.require_llm_merge ?? true}`);
+    }
   }
 
-  const candidates = await findConsolidationCandidates(threshold, maxCandidates);
+  const candidates = await findConsolidationCandidates(threshold, maxCandidates, { skipGuards });
 
   if (verbose) {
     console.log(`Found ${candidates.length} candidate pairs`);
