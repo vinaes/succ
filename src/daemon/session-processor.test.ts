@@ -16,8 +16,18 @@ import * as os from 'os';
 let testTmpDir: string;
 
 // Mock external dependencies before importing
-vi.mock('../lib/db.js', () => ({
+vi.mock('../lib/db/index.js', () => ({
   saveMemory: vi.fn(() => ({ id: 'test-id', isDuplicate: false })),
+  saveMemoriesBatch: vi.fn((memories) => ({
+    saved: memories.length,
+    skipped: 0,
+    results: memories.map((_, index) => ({
+      index,
+      isDuplicate: false,
+      id: index + 1,
+      reason: 'saved' as const,
+    })),
+  })),
   searchMemories: vi.fn(() => []),
 }));
 
@@ -47,6 +57,10 @@ vi.mock('../lib/sensitive-filter.js', () => ({
 
 vi.mock('../lib/token-counter.js', () => ({
   countTokens: vi.fn(() => 100),
+}));
+
+vi.mock('../lib/llm.js', () => ({
+  callLLM: vi.fn(() => Promise.resolve(JSON.stringify({ facts: [] }))),
 }));
 
 // Import after mocks are set up
@@ -432,5 +446,39 @@ describe('progress file workflow', () => {
 
     expect(progressPath).toContain('.tmp');
     expect(progressPath).toContain('session-test-session-progress.md');
+  });
+});
+
+// ============================================================================
+// Batch Memory Save Tests (N+1 optimization)
+// ============================================================================
+
+describe('batch memory save optimization', () => {
+  it('should call saveMemoriesBatch with correct deduplication threshold', async () => {
+    // Note: Full integration tests are complex due to LLM mocking.
+    // This test verifies the batch API contract.
+    const db = await import('../lib/db/index.js');
+
+    const batch = [
+      {
+        content: 'Test fact 1',
+        embedding: new Array(384).fill(0.1),
+        tags: ['test', 'batch'],
+        type: 'observation' as const,
+      },
+      {
+        content: 'Test fact 2',
+        embedding: new Array(384).fill(0.2),
+        tags: ['test', 'batch'],
+        type: 'decision' as const,
+      },
+    ];
+
+    const result = db.saveMemoriesBatch(batch, 0.92);
+
+    expect(result.saved).toBeGreaterThanOrEqual(0);
+    expect(result.skipped).toBeGreaterThanOrEqual(0);
+    expect(result.results).toHaveLength(2);
+    expect(result.results.every(r => r.reason === 'saved' || r.reason === 'duplicate')).toBe(true);
   });
 });

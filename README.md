@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.13-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.14-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
