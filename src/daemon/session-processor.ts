@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { saveMemory, searchMemories } from '../lib/db/index.js';
+import { saveMemory, searchMemories, saveMemoriesBatch, type MemoryBatchInput } from '../lib/db/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
 import { countTokens } from '../lib/token-counter.js';
@@ -406,10 +406,12 @@ async function saveFactsAsMemories(
   minQuality: number,
   log: (msg: string) => void = console.log
 ): Promise<{ saved: number; skipped: number }> {
-  let saved = 0;
-  let skipped = 0;
   const config = getConfig();
+  const batch: MemoryBatchInput[] = [];
+  let skippedSensitive = 0;
+  let skippedQuality = 0;
 
+  // Prepare batch: filter sensitive content, get embeddings, score quality
   for (const fact of facts) {
     try {
       // Check for sensitive info and redact if configured
@@ -420,49 +422,51 @@ async function saveFactsAsMemories(
           if (config.sensitive_auto_redact) {
             content = scanResult.redactedText;
           } else {
-            skipped++;
-            continue;
+            skippedSensitive++;
+            continue; // Skip this fact entirely
           }
         }
       }
 
-      // Get embedding
+      // Get embedding (async - unavoidable)
       const embedding = await getEmbedding(content);
 
-      // Check for duplicates
-      const existing = searchMemories(embedding, 1, 0.9);
-      if (existing.length > 0) {
-        skipped++;
-        continue;
-      }
-
-      // Score quality
+      // Score quality (async - unavoidable)
       const qualityScore = await scoreMemory(content);
       if (qualityScore.score < minQuality) {
-        skipped++;
-        continue;
+        skippedQuality++;
+        continue; // Skip low-quality facts
       }
 
-      // Add session-summary tag
+      // Add to batch
       const tags = [...fact.tags, 'session-summary', fact.type];
-
-      // Save memory
-      const result = saveMemory(content, embedding, tags, fact.type, {
+      batch.push({
+        content,
+        embedding,
+        tags,
+        type: fact.type,
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
       });
-
-      if (result.isDuplicate) {
-        skipped++;
-      } else {
-        saved++;
-      }
     } catch (err) {
-      log(`[session-processor] Failed to save fact: ${err}`);
-      skipped++;
+      log(`[session-processor] Failed to prepare fact for batch: ${err}`);
+      skippedQuality++; // Count as skipped
     }
   }
 
-  return { saved, skipped };
+  // Batch save all prepared memories (single transaction + duplicate check)
+  if (batch.length === 0) {
+    return { saved: 0, skipped: skippedSensitive + skippedQuality };
+  }
+
+  log(`[session-processor] Batch saving ${batch.length} memories (skipped ${skippedSensitive} sensitive, ${skippedQuality} low-quality)`);
+  const result = saveMemoriesBatch(batch, 0.92); // 0.92 = duplicate threshold
+
+  log(`[session-processor] Batch save complete: ${result.saved} saved, ${result.skipped} duplicates`);
+
+  return {
+    saved: result.saved,
+    skipped: result.skipped + skippedSensitive + skippedQuality,
+  };
 }
 
 // ============================================================================

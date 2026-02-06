@@ -69,11 +69,14 @@ export type {
   Memory,
   MemorySearchResult,
   SaveMemoryResult,
-  QualityScoreData
+  QualityScoreData,
+  MemoryBatchInput,
+  MemoryBatchResult
 } from './memories.js';
 export {
   findSimilarMemory,
   saveMemory,
+  saveMemoriesBatch,
   searchMemories,
   getRecentMemories,
   deleteMemory,
