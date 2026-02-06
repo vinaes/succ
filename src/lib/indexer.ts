@@ -197,9 +197,8 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     }
 
     try {
-      // 3. Single batch embedding for all chunks in batch
-      const allTexts = allChunksWithMeta.map(c => c.content);
-      const allEmbeddings = await getEmbeddings(allTexts);
+      // 3. Single batch embedding for all chunks in batch (reuse content refs, no extra copy)
+      const allEmbeddings = await getEmbeddings(allChunksWithMeta.map(c => c.content));
 
       // 4. Group by file and save
       const documentsByFile = new Map<number, Array<{
