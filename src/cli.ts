@@ -42,11 +42,12 @@ const program = new Command();
 program
   .name('succ')
   .version(VERSION)
+  .configureHelp({ sortSubcommands: true })
   .addHelpText('beforeAll', `
   \x1b[32m●\x1b[0m succ
 
-  Semantic Understanding for Claude Code
-  Memory system for AI assistants
+  Semantic Understanding for Code Contexts
+  Claude Code · Cursor · Windsurf · Continue.dev
 
   ─────────────────────────────────────────────────────────
 `);
@@ -82,7 +83,7 @@ program
   .action(status);
 
 program
-  .command('add <file>')
+  .command('add <file>', { hidden: true })
   .description('Add a single file to the index')
   .action(async (file: string) => {
     await index(file, { recursive: false, pattern: '*' });
@@ -324,7 +325,7 @@ program
   });
 
 program
-  .command('benchmark-quality')
+  .command('benchmark-quality', { hidden: true })
   .description('Run quality scoring benchmark (heuristic vs ONNX vs Ollama vs OpenRouter)')
   .option('--ollama', 'Include Ollama models in benchmark')
   .option('--openrouter', 'Include OpenRouter API models in benchmark')
@@ -340,7 +341,7 @@ program
   });
 
 program
-  .command('benchmark-vec')
+  .command('benchmark-vec', { hidden: true })
   .description('Compare brute-force vs sqlite-vec indexed vector search')
   .option('--sizes <sizes>', 'Vector counts to test (comma-separated)', '100,500,1000,5000')
   .option('-q, --queries <number>', 'Number of queries per size', '50')
@@ -425,7 +426,7 @@ program
   });
 
 program
-  .command('session-summary <transcript>')
+  .command('session-summary <transcript>', { hidden: true })
   .description('Extract facts from session transcript and save as memories')
   .option('--dry-run', 'Preview facts without saving')
   .option('-v, --verbose', 'Show detailed output')
@@ -445,7 +446,7 @@ program
   });
 
 program
-  .command('precompute-context <transcript>')
+  .command('precompute-context <transcript>', { hidden: true })
   .description('Generate context briefing for next session')
   .option('--dry-run', 'Preview output without saving')
   .option('-v, --verbose', 'Show detailed output')
@@ -461,7 +462,7 @@ program
   });
 
 program
-  .command('train-bpe')
+  .command('train-bpe', { hidden: true })
   .description('Train BPE vocabulary from indexed code')
   .option('--vocab-size <number>', 'Target vocabulary size', '5000')
   .option('--min-frequency <number>', 'Minimum pair frequency to merge', '2')
