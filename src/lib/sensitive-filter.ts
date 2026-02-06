@@ -51,7 +51,8 @@ const CUSTOM_PATTERNS: { type: string; pattern: RegExp; redactPrefix: string }[]
   { type: 'phone_intl', pattern: /\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g, redactPrefix: '[PHONE]' },
 
   // Generic long digit sequences (9-15 digits) - potential phone/account numbers
-  { type: 'long_number', pattern: /\b\d{9,15}\b/g, redactPrefix: '[NUMBER]' },
+  // Exclude Unix timestamps (1600000000-1900000000 range)
+  { type: 'long_number', pattern: /\b(?!1[6-8]\d{8}\b)\d{9,15}\b/g, redactPrefix: '[NUMBER]' },
 
   // IP addresses (internal)
   { type: 'ipv4_private', pattern: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/g, redactPrefix: '[PRIVATE_IP]' },
@@ -62,8 +63,8 @@ const CUSTOM_PATTERNS: { type: string; pattern: RegExp; redactPrefix: string }[]
   // Private keys
   { type: 'private_key', pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g, redactPrefix: '[PRIVATE_KEY]' },
 
-  // UUID (often used as API keys)
-  { type: 'uuid', pattern: /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, redactPrefix: '[UUID]' },
+  // UUID (often used as API keys) - require version bits to avoid false positives
+  { type: 'uuid', pattern: /[a-f0-9]{8}-[a-f0-9]{4}-[14][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}/gi, redactPrefix: '[UUID]' },
 ];
 
 /**
@@ -185,8 +186,8 @@ export function scanSensitive(text: string): FilterResult {
         }
       }
     }
-  } catch {
-    // redactpii failed, continue with other methods
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii failed');
   }
 
   // 3. Find high-entropy strings
@@ -235,8 +236,8 @@ export function scanSensitive(text: string): FilterResult {
   if (uniqueMatches.some(m => m.type.startsWith('redactpii_'))) {
     try {
       redactedText = redactPiiRedactor.redact(redactedText);
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii redaction failed');
     }
   }
 
@@ -324,8 +325,8 @@ export function hasSensitiveInfo(text: string): boolean {
     if (result !== text) {
       return true;
     }
-  } catch {
-    // Ignore errors
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii check failed');
   }
 
   return false;

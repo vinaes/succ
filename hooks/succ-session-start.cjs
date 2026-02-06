@@ -86,28 +86,7 @@ process.stdin.on('end', async () => {
     const contextParts = [];
     const projectName = path.basename(projectDir);
 
-    // Git Context
-    try {
-      const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-        cwd: projectDir,
-        encoding: 'utf8',
-        timeout: 3000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-
-      const statusOutput = execFileSync('git', ['status', '--porcelain'], {
-        cwd: projectDir,
-        encoding: 'utf8',
-        timeout: 3000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-
-      const changes = statusOutput ? statusOutput.split('\n').filter((l) => l.trim()).length : 0;
-
-      contextParts.push(`<git branch="${branch}" uncommitted="${changes}" />`);
-    } catch {
-      // Not a git repo
-    }
+    // Git Context removed - Claude Code provides native git integration
 
     // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
     contextParts.push(`<succ-tools>

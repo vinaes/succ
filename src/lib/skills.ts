@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getDb } from './db.js';
-import { getSuccDir, getConfig } from './config.js';
+import { getSuccDir, getConfig, getProjectRoot } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
 import { callLLM as sharedCallLLM, getLLMConfig, type LLMBackend } from './llm.js';
@@ -62,7 +62,7 @@ interface LLMConfig {
 
 // Auto-suggest settings (LLM config comes from unified llm.* config)
 const DEFAULT_AUTO_SUGGEST = {
-  enabled: true,
+  enabled: false, // Disabled by default - enable in config if needed
   on_user_prompt: true,
   min_confidence: 0.7,
   max_suggestions: 2,
@@ -71,17 +71,67 @@ const DEFAULT_AUTO_SUGGEST = {
 };
 
 const DEFAULT_SKILLS_CONFIG = {
-  enabled: true,
+  enabled: false, // Disabled by default - enable in config if needed
   local_paths: ['.claude/commands'],
   auto_suggest: DEFAULT_AUTO_SUGGEST,
   track_usage: true,
 };
 
 // ============================================================================
+// Suggestion Cache (TTL 5 minutes)
+// ============================================================================
+
+interface CachedSuggestion {
+  suggestions: SkillSuggestion[];
+  timestamp: number;
+}
+
+const suggestionCache = new Map<string, CachedSuggestion>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function hashPrompt(prompt: string): string {
+  // Simple hash for cache key (first 100 chars lowercase)
+  return prompt.toLowerCase().trim().slice(0, 100);
+}
+
+function getCachedSuggestions(prompt: string): SkillSuggestion[] | null {
+  const key = hashPrompt(prompt);
+  const cached = suggestionCache.get(key);
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.suggestions;
+  }
+
+  // Cleanup expired entries
+  if (cached) {
+    suggestionCache.delete(key);
+  }
+
+  return null;
+}
+
+function cacheSuggestions(prompt: string, suggestions: SkillSuggestion[]): void {
+  const key = hashPrompt(prompt);
+  suggestionCache.set(key, {
+    suggestions,
+    timestamp: Date.now(),
+  });
+
+  // Limit cache size to 50 entries (LRU-like cleanup)
+  if (suggestionCache.size > 50) {
+    const oldestKey = suggestionCache.keys().next().value;
+    if (oldestKey) {
+      suggestionCache.delete(oldestKey);
+    }
+  }
+}
+
+// ============================================================================
 // BM25 Index
 // ============================================================================
 
 let skillsBm25Index: bm25.BM25Index | null = null;
+const BM25_FAST_PATH_THRESHOLD = 0.8; // Skip LLM ranking if top BM25 score > 0.8
 
 function getSkillsBm25Index(): bm25.BM25Index {
   if (skillsBm25Index) {
@@ -89,7 +139,12 @@ function getSkillsBm25Index(): bm25.BM25Index {
   }
 
   const db = getDb();
-  const rows = db.prepare('SELECT id, name, description, content FROM skills').all() as Array<{
+  const projectId = getProjectRoot().replace(/\\/g, '/');
+  // Include both project-specific local skills AND global Skyll cached skills (project_id IS NULL)
+  const rows = db.prepare(
+    `SELECT id, name, description, content FROM skills
+     WHERE project_id = ? OR project_id IS NULL`
+  ).all(projectId) as Array<{
     id: number;
     name: string;
     description: string;
@@ -163,10 +218,14 @@ export async function extractKeywords(
 
 /**
  * Search for skill candidates using BM25
+ * Returns skills and top BM25 score for fast-path optimization
  */
-export function searchSkillCandidates(keywords: string[], limit: number = 15): Skill[] {
+export function searchSkillCandidates(
+  keywords: string[],
+  limit: number = 15
+): { skills: Skill[]; topScore: number } {
   if (keywords.length === 0) {
-    return [];
+    return { skills: [], topScore: 0 };
   }
 
   const db = getDb();
@@ -177,7 +236,7 @@ export function searchSkillCandidates(keywords: string[], limit: number = 15): S
   const results = bm25.search(query, index, 'docs', limit);
 
   if (results.length === 0) {
-    return [];
+    return { skills: [], topScore: 0 };
   }
 
   const ids = results.map((r) => r.docId);
@@ -192,7 +251,12 @@ export function searchSkillCandidates(keywords: string[], limit: number = 15): S
 
   // Sort by BM25 score order
   const idToScore = new Map(results.map((r) => [r.docId, r.score]));
-  return rows.sort((a, b) => (idToScore.get(b.id!) || 0) - (idToScore.get(a.id!) || 0));
+  const sortedSkills = rows.sort((a, b) => (idToScore.get(b.id!) || 0) - (idToScore.get(a.id!) || 0));
+
+  return {
+    skills: sortedSkills,
+    topScore: results[0]?.score || 0,
+  };
 }
 
 /**
@@ -223,9 +287,19 @@ export async function rankSkillsWithLLM(
     skillsList
   );
 
+  // Use lightweight models for ranking (simple task)
+  const rankingConfig = { ...config };
+  if (config.backend === 'local') {
+    // Prefer smaller, faster model for ranking
+    rankingConfig.model = config.model?.includes('qwen') ? 'qwen2.5:0.5b' : config.model;
+  } else if (config.backend === 'openrouter') {
+    // Prefer Haiku for ranking (5x cheaper than Sonnet)
+    rankingConfig.openrouterModel = 'anthropic/claude-3-haiku';
+  }
+
   try {
-    console.log(`[skills] Ranking ${candidates.length} candidates with LLM`);
-    const result = await callLLM(llmPrompt, config, 30000);
+    console.log(`[skills] Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model || rankingConfig.openrouterModel})`);
+    const result = await callLLM(llmPrompt, rankingConfig, 30000);
     console.log(`[skills] Ranking result: ${result.slice(0, 300)}`);
 
     // Parse JSON response
@@ -279,6 +353,13 @@ export async function suggestSkills(
 ): Promise<SkillSuggestion[]> {
   const autoSuggest = { ...DEFAULT_AUTO_SUGGEST, ...config?.auto_suggest };
 
+  // Check cache first
+  const cached = getCachedSuggestions(userPrompt);
+  if (cached) {
+    console.log('[skills] Returning cached suggestions');
+    return cached;
+  }
+
   // Get unified LLM config
   const llmConfig = getLLMConfig();
 
@@ -309,13 +390,15 @@ export async function suggestSkills(
 
       // Step 2: Search candidates (local first, then Skyll if enabled)
       console.log(`[skills] Searching candidates for keywords: ${JSON.stringify(keywords)}`);
-      let candidates = searchSkillCandidates(keywords, 15);
-      console.log(`[skills] Found ${candidates.length} local candidates`);
+      const { skills: candidateSkills, topScore } = searchSkillCandidates(keywords, 15);
+      console.log(`[skills] Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`);
 
       // Skyll fallback: if no local candidates or onlyWhenNoLocal is false
       const skyllConfig = config?.skyll || {};
       const skyllEnabled = skyllConfig.enabled !== false;
       const onlyWhenNoLocal = skyllConfig.only_when_no_local !== false;
+
+      let candidates = candidateSkills;
 
       if (skyllEnabled && (candidates.length === 0 || !onlyWhenNoLocal)) {
         try {
@@ -337,11 +420,31 @@ export async function suggestSkills(
         return [];
       }
 
+      // Fast path: if top BM25 score is very high, skip LLM ranking
+      if (topScore >= BM25_FAST_PATH_THRESHOLD) {
+        console.log(`[skills] Fast path: topScore ${topScore.toFixed(2)} >= ${BM25_FAST_PATH_THRESHOLD}, skipping LLM ranking`);
+        const fastPathResults: SkillSuggestion[] = candidates
+          .slice(0, autoSuggest.max_suggestions)
+          .map((skill) => ({
+            ...skill,
+            reason: `High relevance match (score: ${topScore.toFixed(2)})`,
+            confidence: Math.min(topScore, 0.95), // Cap at 0.95 since no LLM validation
+          }));
+
+        // Cache before returning
+        cacheSuggestions(userPrompt, fastPathResults);
+        return fastPathResults;
+      }
+
       // Step 3: Rank with LLM
-      return await rankSkillsWithLLM(userPrompt, candidates, backendConfig, {
+      const ranked = await rankSkillsWithLLM(userPrompt, candidates, backendConfig, {
         limit: autoSuggest.max_suggestions,
         minConfidence: autoSuggest.min_confidence,
       });
+
+      // Cache before returning
+      cacheSuggestions(userPrompt, ranked);
+      return ranked;
     } catch (err) {
       console.error(`[skills] ${backend} failed:`, err);
       // Try next backend
@@ -435,18 +538,21 @@ export function scanLocalSkills(projectDir: string): Skill[] {
 export function indexLocalSkills(projectDir: string): number {
   const skills = scanLocalSkills(projectDir);
   const db = getDb();
+  const projectId = getProjectRoot().replace(/\\/g, '/');
 
   let indexed = 0;
 
   for (const skill of skills) {
     try {
+      // Local skills are project-scoped
+      // Use INSERT OR REPLACE for SQLite compatibility (works with UNIQUE(name) constraint)
       db.prepare(
-        `INSERT OR REPLACE INTO skills (name, description, source, path, content, updated_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))`
-      ).run(skill.name, skill.description, skill.source, skill.path, skill.content);
+        `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
+      ).run(projectId, skill.name, skill.description, skill.source, skill.path, skill.content);
       indexed++;
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to index skill');
     }
   }
 
@@ -461,13 +567,15 @@ export function indexLocalSkills(projectDir: string): number {
  */
 export function trackSkillUsage(skillName: string): void {
   const db = getDb();
+  const projectId = getProjectRoot().replace(/\\/g, '/');
   try {
+    // Update both project-specific and global (Skyll) skills matching the name
     db.prepare(
       `UPDATE skills SET usage_count = usage_count + 1, last_used = datetime('now')
-       WHERE name = ?`
-    ).run(skillName);
-  } catch {
-    // Ignore errors
+       WHERE name = ? AND (project_id = ? OR project_id IS NULL)`
+    ).run(skillName, projectId);
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to track skill usage');
   }
 }
 

@@ -672,14 +672,16 @@ Controls the briefing generated after `/compact`.
 
 LLM-powered skill discovery and suggestions.
 
+> **Note**: Skills are **disabled by default** to minimize LLM calls. Enable explicitly if needed.
+
 ```json
 {
   "skills": {
-    "enabled": true,
+    "enabled": false, // Set to true to enable
     "local_paths": [".claude/commands"],
     "track_usage": true,
     "auto_suggest": {
-      "enabled": true,
+      "enabled": false, // Set to true to enable
       "on_user_prompt": true,
       "min_confidence": 0.7,
       "max_suggestions": 2,
@@ -699,7 +701,7 @@ LLM-powered skill discovery and suggestions.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `skills.enabled` | boolean | true | Enable skills system |
+| `skills.enabled` | boolean | **false** | Enable skills system |
 | `skills.local_paths` | string[] | `[".claude/commands"]` | Paths to scan for local skills |
 | `skills.track_usage` | boolean | true | Track skill usage statistics |
 
@@ -707,7 +709,7 @@ LLM-powered skill discovery and suggestions.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `skills.auto_suggest.enabled` | boolean | true | Enable auto-suggestions |
+| `skills.auto_suggest.enabled` | boolean | **false** | Enable auto-suggestions |
 | `skills.auto_suggest.on_user_prompt` | boolean | true | Suggest on each prompt |
 | `skills.auto_suggest.min_confidence` | number | 0.7 | Minimum confidence (0-1) |
 | `skills.auto_suggest.max_suggestions` | number | 2 | Max suggestions per prompt |

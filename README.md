@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.10-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.11-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -47,14 +47,14 @@ succ analyze
 | **Cross-Project** | Global memories shared between all projects |
 | **Knowledge Graph** | Link memories, auto-detect relationships |
 | **MCP Native** | Claude uses succ tools directly |
-| **Skill Suggestions** | LLM-powered command discovery with Skyll integration |
+| **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
 
 <details>
 <summary>All features</summary>
 
-- **Skill Discovery** — Auto-suggest relevant skills based on user prompt
-- **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app)
+- **Skill Discovery** — Auto-suggest relevant skills based on user prompt (opt-in, disabled by default)
+- **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app) (requires skills.enabled = true)
 - **Soul Document** — Define AI personality and values
 - **Auto-Hooks** — Context injection at session start/end
 - **Idle Reflections** — AI generates insights during idle time
@@ -305,9 +305,13 @@ succ supports multiple LLM backends for operations like analyze, idle reflection
 |---------|-------------|--------------|
 | `local` | Ollama or OpenAI-compatible server (default) | Local server running |
 | `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` env var |
-| `claude` | Claude Code CLI | Claude Code subscription |
+| `claude` | Claude Code CLI | Active Claude Code session |
 
-> **Warning**: Using `claude` backend invokes Claude Code CLI programmatically. This may violate [Anthropic's Terms of Service](https://www.anthropic.com/legal/consumer-terms). Use at your own risk. We recommend `local` (Ollama) or `openrouter` backends for automated operations.
+> Claude backend usage
+
+The claude backend integrates with an existing, locally running Claude Code session and is intended only for in-session developer assistance by the same user, including tasks such as file analysis, documentation, indexing, and session summarization.
+
+It is not supported for unattended background processing, cloud deployments, or multi-user scenarios. For automated, long-running, or cloud workloads, use the local or openrouter backends instead.
 
 </details>
 

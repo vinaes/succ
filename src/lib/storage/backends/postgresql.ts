@@ -322,10 +322,12 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_created ON token_stats(created_at)');
 
     // Skills table
+    // project_id: scopes skills to a specific project (NULL for Skyll cached skills which are global)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS skills (
         id SERIAL PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
+        project_id TEXT,
+        name TEXT NOT NULL,
         description TEXT NOT NULL,
         source TEXT NOT NULL,
         path TEXT,
@@ -337,10 +339,32 @@ export class PostgresBackend {
         cached_at TIMESTAMPTZ,
         cache_expires TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(project_id, name)
       )
     `);
 
+    // Migration: add project_id column if missing (for existing databases)
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'skills' AND column_name = 'project_id'
+        ) THEN
+          -- Add project_id column
+          ALTER TABLE skills ADD COLUMN project_id TEXT;
+
+          -- Drop old unique constraint on name only
+          ALTER TABLE skills DROP CONSTRAINT IF EXISTS skills_name_key;
+
+          -- Add new unique constraint on (project_id, name)
+          ALTER TABLE skills ADD CONSTRAINT skills_project_name_unique UNIQUE(project_id, name);
+        END IF;
+      END $$;
+    `);
+
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source)');
   }
@@ -771,7 +795,11 @@ export class PostgresBackend {
 
   async deleteMemory(id: number): Promise<boolean> {
     const pool = await this.getPool();
-    const result = await pool.query('DELETE FROM memories WHERE id = $1', [id]);
+    // Only delete memories belonging to current project or global memories
+    const result = await pool.query(
+      'DELETE FROM memories WHERE id = $1 AND (project_id = $2 OR project_id IS NULL)',
+      [id, this.projectId]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -845,6 +873,17 @@ export class PostgresBackend {
   ): Promise<{ id: number; created: boolean }> {
     const pool = await this.getPool();
 
+    // Validate that both memories belong to current project
+    const validation = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM memories
+       WHERE id IN ($1, $2) AND (project_id = $3 OR project_id IS NULL)`,
+      [sourceId, targetId, this.projectId]
+    );
+
+    if (parseInt(validation.rows[0].count) !== 2) {
+      throw new Error('Cannot link memories from different projects');
+    }
+
     try {
       const result = await pool.query<{ id: number }>(
         `INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
@@ -868,16 +907,27 @@ export class PostgresBackend {
   async deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): Promise<boolean> {
     const pool = await this.getPool();
 
+    // Only delete links where both memories belong to current project
     if (relation) {
       const result = await pool.query(
-        'DELETE FROM memory_links WHERE source_id = $1 AND target_id = $2 AND relation = $3',
-        [sourceId, targetId, relation]
+        `DELETE FROM memory_links ml
+         USING memories m1, memories m2
+         WHERE ml.source_id = m1.id AND ml.target_id = m2.id
+           AND ml.source_id = $1 AND ml.target_id = $2 AND ml.relation = $3
+           AND (m1.project_id = $4 OR m1.project_id IS NULL)
+           AND (m2.project_id = $4 OR m2.project_id IS NULL)`,
+        [sourceId, targetId, relation, this.projectId]
       );
       return (result.rowCount ?? 0) > 0;
     } else {
       const result = await pool.query(
-        'DELETE FROM memory_links WHERE source_id = $1 AND target_id = $2',
-        [sourceId, targetId]
+        `DELETE FROM memory_links ml
+         USING memories m1, memories m2
+         WHERE ml.source_id = m1.id AND ml.target_id = m2.id
+           AND ml.source_id = $1 AND ml.target_id = $2
+           AND (m1.project_id = $3 OR m1.project_id IS NULL)
+           AND (m2.project_id = $3 OR m2.project_id IS NULL)`,
+        [sourceId, targetId, this.projectId]
       );
       return (result.rowCount ?? 0) > 0;
     }
@@ -886,14 +936,19 @@ export class PostgresBackend {
   async getMemoryLinks(memoryId: number): Promise<{ outgoing: MemoryLink[]; incoming: MemoryLink[] }> {
     const pool = await this.getPool();
 
+    // Only return links where both source and target memories belong to current project
     const outgoing = await pool.query<MemoryLink>(
-      'SELECT * FROM memory_links WHERE source_id = $1',
-      [memoryId]
+      `SELECT ml.* FROM memory_links ml
+       JOIN memories m ON ml.target_id = m.id
+       WHERE ml.source_id = $1 AND (m.project_id = $2 OR m.project_id IS NULL)`,
+      [memoryId, this.projectId]
     );
 
     const incoming = await pool.query<MemoryLink>(
-      'SELECT * FROM memory_links WHERE target_id = $1',
-      [memoryId]
+      `SELECT ml.* FROM memory_links ml
+       JOIN memories m ON ml.source_id = m.id
+       WHERE ml.target_id = $1 AND (m.project_id = $2 OR m.project_id IS NULL)`,
+      [memoryId, this.projectId]
     );
 
     return {
@@ -905,14 +960,42 @@ export class PostgresBackend {
   async getGraphStats(): Promise<GraphStats> {
     const pool = await this.getPool();
 
-    const totalMemories = await pool.query<{ count: string }>('SELECT COUNT(*) as count FROM memories');
-    const totalLinks = await pool.query<{ count: string }>('SELECT COUNT(*) as count FROM memory_links');
-    const isolated = await pool.query<{ count: string }>(`
-      SELECT COUNT(*) as count FROM memories m
-      WHERE NOT EXISTS (SELECT 1 FROM memory_links WHERE source_id = m.id OR target_id = m.id)
-    `);
+    // Only count memories and links for current project
+    const totalMemories = await pool.query<{ count: string }>(
+      'SELECT COUNT(*) as count FROM memories WHERE project_id = $1 OR project_id IS NULL',
+      [this.projectId]
+    );
+
+    // Count links only between memories of current project
+    const totalLinks = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM memory_links ml
+       JOIN memories m1 ON ml.source_id = m1.id
+       JOIN memories m2 ON ml.target_id = m2.id
+       WHERE (m1.project_id = $1 OR m1.project_id IS NULL)
+         AND (m2.project_id = $1 OR m2.project_id IS NULL)`,
+      [this.projectId]
+    );
+
+    const isolated = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM memories m
+       WHERE (m.project_id = $1 OR m.project_id IS NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM memory_links ml
+           JOIN memories m2 ON (ml.source_id = m2.id OR ml.target_id = m2.id)
+           WHERE (ml.source_id = m.id OR ml.target_id = m.id)
+             AND (m2.project_id = $1 OR m2.project_id IS NULL)
+         )`,
+      [this.projectId]
+    );
+
     const relations = await pool.query<{ relation: string; count: string }>(
-      'SELECT relation, COUNT(*) as count FROM memory_links GROUP BY relation'
+      `SELECT ml.relation, COUNT(*) as count FROM memory_links ml
+       JOIN memories m1 ON ml.source_id = m1.id
+       JOIN memories m2 ON ml.target_id = m2.id
+       WHERE (m1.project_id = $1 OR m1.project_id IS NULL)
+         AND (m2.project_id = $1 OR m2.project_id IS NULL)
+       GROUP BY ml.relation`,
+      [this.projectId]
     );
 
     const relationsMap: Record<string, number> = {};
@@ -1192,6 +1275,233 @@ export class PostgresBackend {
       by_type: typeMap,
       by_quality: qualityMap,
     };
+  }
+
+  // ============================================================================
+  // Skills Operations
+  // ============================================================================
+
+  /**
+   * Upsert a skill (local or Skyll-cached).
+   * Local skills use project_id, Skyll skills use project_id = NULL (global cache).
+   */
+  async upsertSkill(skill: {
+    name: string;
+    description: string;
+    source: 'local' | 'skyll';
+    path?: string;
+    content?: string;
+    embedding?: number[];
+    skyllId?: string;
+    cacheExpires?: Date;
+  }): Promise<number> {
+    const pool = await this.getPool();
+    // Local skills are project-scoped, Skyll skills are global (project_id = NULL)
+    const projectId = skill.source === 'local' ? this.projectId : null;
+
+    const result = await pool.query<{ id: number }>(
+      `INSERT INTO skills (project_id, name, description, source, path, content, embedding, skyll_id, cached_at, cache_expires, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, NOW(), NOW())
+       ON CONFLICT(project_id, name) DO UPDATE SET
+         description = EXCLUDED.description,
+         path = EXCLUDED.path,
+         content = EXCLUDED.content,
+         embedding = EXCLUDED.embedding,
+         skyll_id = EXCLUDED.skyll_id,
+         cached_at = CASE WHEN EXCLUDED.source = 'skyll' THEN NOW() ELSE skills.cached_at END,
+         cache_expires = EXCLUDED.cache_expires,
+         updated_at = NOW()
+       RETURNING id`,
+      [
+        projectId,
+        skill.name,
+        skill.description,
+        skill.source,
+        skill.path ?? null,
+        skill.content ?? null,
+        skill.embedding ? toPgVector(skill.embedding) : null,
+        skill.skyllId ?? null,
+        skill.cacheExpires ?? null,
+      ]
+    );
+    return result.rows[0].id;
+  }
+
+  /**
+   * Get all skills for the current project (includes local + global Skyll cache).
+   */
+  async getAllSkills(): Promise<Array<{
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    content?: string;
+    skyllId?: string;
+    usageCount: number;
+    lastUsed?: Date;
+  }>> {
+    const pool = await this.getPool();
+    // Include both project-specific local skills AND global Skyll cached skills
+    const result = await pool.query(
+      `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
+       FROM skills
+       WHERE project_id = $1 OR project_id IS NULL
+       ORDER BY usage_count DESC, updated_at DESC`,
+      [this.projectId]
+    );
+    return result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      source: row.source,
+      path: row.path,
+      content: row.content,
+      skyllId: row.skyll_id,
+      usageCount: row.usage_count ?? 0,
+      lastUsed: row.last_used,
+    }));
+  }
+
+  /**
+   * Search skills by name or description.
+   */
+  async searchSkills(query: string, limit: number = 10): Promise<Array<{
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    usageCount: number;
+  }>> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `SELECT id, name, description, source, path, usage_count
+       FROM skills
+       WHERE (project_id = $1 OR project_id IS NULL)
+         AND (name ILIKE $2 OR description ILIKE $2)
+       ORDER BY usage_count DESC, updated_at DESC
+       LIMIT $3`,
+      [this.projectId, `%${query}%`, limit]
+    );
+    return result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      source: row.source,
+      path: row.path,
+      usageCount: row.usage_count ?? 0,
+    }));
+  }
+
+  /**
+   * Get a skill by name.
+   */
+  async getSkillByName(name: string): Promise<{
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    content?: string;
+    skyllId?: string;
+  } | null> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `SELECT id, name, description, source, path, content, skyll_id
+       FROM skills
+       WHERE name = $1 AND (project_id = $2 OR project_id IS NULL)
+       LIMIT 1`,
+      [name, this.projectId]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      source: row.source,
+      path: row.path,
+      content: row.content,
+      skyllId: row.skyll_id,
+    };
+  }
+
+  /**
+   * Track skill usage (increment usage count).
+   */
+  async trackSkillUsage(name: string): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(
+      `UPDATE skills SET usage_count = usage_count + 1, last_used = NOW()
+       WHERE name = $1 AND (project_id = $2 OR project_id IS NULL)`,
+      [name, this.projectId]
+    );
+  }
+
+  /**
+   * Delete a skill by name.
+   */
+  async deleteSkill(name: string): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      'DELETE FROM skills WHERE name = $1 AND project_id = $2',
+      [name, this.projectId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Clear expired Skyll cache entries.
+   */
+  async clearExpiredSkyllCache(): Promise<number> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `DELETE FROM skills WHERE source = 'skyll' AND cache_expires < NOW()`
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /**
+   * Get cached Skyll skill by ID.
+   */
+  async getCachedSkyllSkill(skyllId: string): Promise<{
+    id: number;
+    name: string;
+    description: string;
+    content?: string;
+  } | null> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `SELECT id, name, description, content
+       FROM skills
+       WHERE skyll_id = $1 AND cache_expires > NOW()`,
+      [skyllId]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      content: row.content,
+    };
+  }
+
+  /**
+   * Get Skyll cache status.
+   *
+   * Note: Skyll cached skills are INTENTIONALLY global (not project-scoped).
+   * This is because Skyll marketplace skills are shared across all projects.
+   * Only local skills use project_id scoping.
+   */
+  async getSkyllCacheStats(): Promise<{ cachedSkills: number }> {
+    const pool = await this.getPool();
+    // Global count - Skyll skills are shared across projects (project_id IS NULL)
+    const result = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`
+    );
+    return { cachedSkills: parseInt(result.rows[0].count) };
   }
 }
 
