@@ -18,6 +18,8 @@ vi.mock('./config.js', () => {
     }),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
+    getDbPath: () => ':memory:',
+    getGlobalDbPath: () => ':memory:',
   };
 });
 
@@ -25,7 +27,7 @@ vi.mock('./config.js', () => {
 const mockMemories: any[] = [];
 const mockLinks: any[] = [];
 
-vi.mock('./db.js', () => ({
+vi.mock('./db/index.js', () => ({
   getDb: () => ({
     prepare: (query: string) => ({
       all: () => {

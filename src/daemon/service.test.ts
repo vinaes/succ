@@ -15,6 +15,9 @@ vi.mock('../lib/db/index.js', () => ({
   hybridSearchCode: vi.fn(() => [
     { content: 'function test() {}', score: 0.7, file_path: 'test.ts' },
   ]),
+  hybridSearchMemories: vi.fn(() => [
+    { id: 1, content: 'recalled memory', score: 0.9, tags: '["test"]', type: 'observation' },
+  ]),
   saveMemory: vi.fn(() => ({ id: 1, isDuplicate: false })),
   saveGlobalMemory: vi.fn(() => ({ id: 2, isDuplicate: false })),
   closeDb: vi.fn(),
@@ -118,7 +121,7 @@ import {
   _resetTestState,
 } from './service.js';
 
-import { hybridSearchDocs, hybridSearchCode, saveMemory, saveGlobalMemory, getRecentMemories, incrementMemoryAccessBatch } from '../lib/db/index.js';
+import { hybridSearchDocs, hybridSearchCode, hybridSearchMemories, saveMemory, saveGlobalMemory, getRecentMemories, incrementMemoryAccessBatch } from '../lib/db/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
@@ -372,13 +375,13 @@ describe('Daemon Service', () => {
       expect(result.results).toHaveLength(1);
     });
 
-    it('POST /api/recall with query should use hybridSearchDocs', async () => {
+    it('POST /api/recall with query should use hybridSearchMemories', async () => {
       const result = await routeRequest('POST', '/api/recall', new URLSearchParams(), {
         query: 'auth flow',
         limit: 5,
       });
 
-      expect(hybridSearchDocs).toHaveBeenCalledWith('auth flow', 5, 0.3);
+      expect(hybridSearchMemories).toHaveBeenCalledWith('auth flow', expect.anything(), 5, 0.3);
       expect(result.results).toBeDefined();
     });
 
