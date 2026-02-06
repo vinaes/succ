@@ -234,6 +234,164 @@ describe('Database Module', () => {
     });
   });
 
+  describe('Batch memory operations', () => {
+    it('should save multiple memories in batch', async () => {
+      const db = await import('./db/index.js');
+
+      // Use unique embeddings to avoid duplicate detection
+      const batch = [
+        {
+          content: 'Batch test 1 unique content alpha',
+          embedding: new Array(384).fill(0).map((_, i) => i % 2 === 0 ? 0.1 : 0.9),
+          tags: ['batch', 'test1'],
+          type: 'observation' as const,
+        },
+        {
+          content: 'Batch test 2 unique content beta',
+          embedding: new Array(384).fill(0).map((_, i) => i % 3 === 0 ? 0.2 : 0.8),
+          tags: ['batch', 'test2'],
+          type: 'decision' as const,
+        },
+        {
+          content: 'Batch test 3 unique content gamma',
+          embedding: new Array(384).fill(0).map((_, i) => i % 5 === 0 ? 0.3 : 0.7),
+          tags: ['batch', 'test3'],
+          type: 'learning' as const,
+        },
+      ];
+
+      const result = db.saveMemoriesBatch(batch);
+
+      // Check that all were processed (some might be duplicates if DB has similar embeddings)
+      expect(result.results).toHaveLength(3);
+      expect(result.saved + result.skipped).toBe(3);
+
+      // At least verify the results structure
+      result.results.forEach(r => {
+        expect(r.reason === 'saved' || r.reason === 'duplicate').toBe(true);
+        if (!r.isDuplicate) {
+          expect(r.id).toBeDefined();
+        }
+      });
+    });
+
+    it('should detect duplicates in batch save', async () => {
+      const db = await import('./db/index.js');
+
+      // Create distinct embedding for original
+      const embedding1 = new Array(384).fill(0).map(() => Math.random());
+      const embedding2 = embedding1.slice(); // Exact copy - guaranteed duplicate
+
+      // Save one memory first
+      db.saveMemory('Original memory for dup test', embedding1, [], undefined, { deduplicate: false, autoLink: false });
+
+      // Try to batch save with duplicate
+      const batch = [
+        {
+          content: 'Duplicate memory test',
+          embedding: embedding2, // Identical embedding
+          tags: ['duplicate'],
+          type: 'observation' as const,
+        },
+        {
+          content: 'New memory test',
+          embedding: new Array(384).fill(0).map(() => Math.random()), // Completely different
+          tags: ['new'],
+          type: 'observation' as const,
+        },
+      ];
+
+      const result = db.saveMemoriesBatch(batch, 0.99); // Very high threshold
+
+      expect(result.saved).toBe(1); // Only new memory saved
+      expect(result.skipped).toBe(1); // Duplicate skipped
+      expect(result.results[0].isDuplicate).toBe(true);
+      expect(result.results[0].reason).toBe('duplicate');
+      expect(result.results[1].isDuplicate).toBe(false);
+      expect(result.results[1].reason).toBe('saved');
+    });
+
+    it('should handle empty batch gracefully', async () => {
+      const db = await import('./db/index.js');
+
+      const result = db.saveMemoriesBatch([]);
+
+      expect(result.saved).toBe(0);
+      expect(result.skipped).toBe(0);
+      expect(result.results).toHaveLength(0);
+    });
+
+    it('should preserve quality scores in batch save', async () => {
+      const db = await import('./db/index.js');
+
+      const batch = [
+        {
+          content: 'High quality memory with unique content for quality test',
+          embedding: new Array(384).fill(0).map(() => Math.random()),
+          tags: ['quality'],
+          type: 'learning' as const,
+          qualityScore: {
+            score: 0.95,
+            factors: { clarity: 0.9, specificity: 1.0 },
+          },
+        },
+      ];
+
+      const result = db.saveMemoriesBatch(batch);
+
+      expect(result.saved).toBe(1);
+      expect(result.results[0].id).toBeDefined();
+
+      // Verify quality score was saved
+      const memory = db.getMemoryById(result.results[0].id!);
+      expect(memory?.quality_score).toBe(0.95);
+      expect(memory?.quality_factors).toBeDefined();
+    });
+
+    it('should maintain correct index order in results', async () => {
+      const db = await import('./db/index.js');
+
+      const batch = [
+        { content: 'Memory 0 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
+        { content: 'Memory 1 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
+        { content: 'Memory 2 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
+      ];
+
+      const result = db.saveMemoriesBatch(batch);
+
+      // Results should be sorted by original index
+      expect(result.results[0].index).toBe(0);
+      expect(result.results[1].index).toBe(1);
+      expect(result.results[2].index).toBe(2);
+    });
+
+    it('should handle temporal validity fields in batch save', async () => {
+      const db = await import('./db/index.js');
+
+      const validFrom = new Date('2026-01-01');
+      const validUntil = new Date('2026-12-31');
+
+      const batch = [
+        {
+          content: 'Temporal memory unique content for temporal test',
+          embedding: new Array(384).fill(0).map(() => Math.random()),
+          tags: ['temporal'],
+          type: 'observation' as const,
+          validFrom,
+          validUntil,
+        },
+      ];
+
+      const result = db.saveMemoriesBatch(batch);
+
+      expect(result.saved).toBe(1);
+
+      const memory = db.getMemoryById(result.results[0].id!);
+      expect(memory?.valid_from).toBe(validFrom.toISOString());
+      expect(memory?.valid_until).toBe(validUntil.toISOString());
+    });
+  });
+
   describe('Memory links (Knowledge Graph)', () => {
     it('should create memory link', async () => {
       const db = await import('./db/index.js');
