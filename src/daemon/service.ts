@@ -121,7 +121,7 @@ function getProgressFilePath(sessionId: string): string {
  * Append a briefing to the session progress file
  * Creates file with header if it doesn't exist
  */
-function appendToProgressFile(sessionId: string, briefing: string): void {
+export function appendToProgressFile(sessionId: string, briefing: string): void {
   const progressPath = getProgressFilePath(sessionId);
   const timestamp = new Date().toISOString();
   const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
@@ -142,7 +142,7 @@ function appendToProgressFile(sessionId: string, briefing: string): void {
  * Read tail of transcript file (for fallback when no progress file)
  * Returns the last maxBytes of the file, starting from a complete line
  */
-function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 * 1024): string {
+export function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 * 1024): string {
   if (!fs.existsSync(transcriptPath)) {
     return '';
   }
@@ -519,7 +519,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 }
 
-async function parseBody(req: http.IncomingMessage): Promise<any> {
+export async function parseBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => (data += chunk));
@@ -534,7 +534,8 @@ async function parseBody(req: http.IncomingMessage): Promise<any> {
   });
 }
 
-async function routeRequest(method: string, pathname: string, searchParams: URLSearchParams, body: any): Promise<any> {
+/** @internal Exported for testing */
+export async function routeRequest(method: string, pathname: string, searchParams: URLSearchParams, body: any): Promise<any> {
   // Health check
   if (pathname === '/health') {
     return {
@@ -1149,6 +1150,25 @@ export function shutdownDaemon(): void {
 
   log('[daemon] Shutdown complete');
   process.exit(0);
+}
+
+// ============================================================================
+// Test Helpers (exported for unit testing)
+// ============================================================================
+
+/** @internal Initialize module state for testing without starting HTTP server */
+export function _initTestState(cwd: string = process.cwd()): void {
+  sessionManager = createSessionManager();
+  state = { cwd, startedAt: Date.now(), port: 0, server: null };
+}
+
+/** @internal Reset module state after testing */
+export function _resetTestState(): void {
+  sessionManager = null;
+  idleWatcher = null;
+  state = null;
+  briefingCache.clear();
+  briefingGenerationInProgress.clear();
 }
 
 // ============================================================================
