@@ -295,4 +295,227 @@ describe('PostgreSQL Backend Integration', async () => {
       expect(summary.total_returned_tokens).toBeGreaterThanOrEqual(100);
     });
   });
+
+  // ==========================================================================
+  // NEW: Global Memory Operations
+  // ==========================================================================
+
+  describe('Global Memory Operations', () => {
+    it('should save and search global memories', async () => {
+      const embedding = new Array(384).fill(0.3);
+
+      const id = await backend.saveGlobalMemory(
+        'Global knowledge about TypeScript patterns',
+        embedding,
+        ['typescript', 'patterns'],
+        'learning'
+      );
+
+      expect(id).toBeGreaterThan(0);
+
+      const results = await backend.searchGlobalMemories(embedding, 5, 0.0);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some(r => r.content.includes('TypeScript patterns'))).toBe(true);
+
+      // Cleanup
+      await backend.deleteGlobalMemory(id);
+    });
+
+    it('should get recent global memories', async () => {
+      const embedding = new Array(384).fill(0.4);
+
+      const id1 = await backend.saveGlobalMemory('Global mem 1', embedding, ['test']);
+      const id2 = await backend.saveGlobalMemory('Global mem 2', embedding, ['test']);
+
+      const recent = await backend.getRecentGlobalMemories(10);
+      expect(recent.length).toBeGreaterThanOrEqual(2);
+
+      // Cleanup
+      await backend.deleteGlobalMemory(id1);
+      await backend.deleteGlobalMemory(id2);
+    });
+
+    it('should delete global memory', async () => {
+      const embedding = new Array(384).fill(0.5);
+
+      const id = await backend.saveGlobalMemory('To delete globally', embedding);
+      const deleted = await backend.deleteGlobalMemory(id);
+      expect(deleted).toBe(true);
+
+      // Verify it's gone from recent
+      const recent = await backend.getRecentGlobalMemories(100);
+      expect(recent.some(r => r.id === id)).toBe(false);
+    });
+
+    it('should get global memory stats', async () => {
+      const embedding = new Array(384).fill(0.5);
+
+      const id = await backend.saveGlobalMemory('Stats test', embedding, ['stats']);
+
+      const stats = await backend.getGlobalMemoryStats();
+      expect(stats.total).toBeGreaterThanOrEqual(1);
+      expect(typeof stats.by_type).toBe('object');
+
+      // Cleanup
+      await backend.deleteGlobalMemory(id);
+    });
+  });
+
+  // ==========================================================================
+  // NEW: Skills Operations
+  // ==========================================================================
+
+  describe('Skills Operations', () => {
+    const testSkillName = `test-skill-${Date.now()}`;
+
+    afterAll(async () => {
+      // Clean up test skill
+      try { await backend.deleteSkill(testSkillName); } catch {}
+    });
+
+    it('should upsert and get all skills', async () => {
+      await backend.upsertSkill({
+        name: testSkillName,
+        description: 'A test skill for integration testing',
+        source: 'local',
+      });
+
+      const skills = await backend.getAllSkills();
+      const found = skills.find(s => s.name === testSkillName);
+      expect(found).toBeDefined();
+      expect(found!.description).toContain('test skill');
+    });
+
+    it('should search skills', async () => {
+      // Ensure test skill exists
+      await backend.upsertSkill({
+        name: testSkillName,
+        description: 'A test skill for searching',
+        source: 'local',
+      });
+
+      const results = await backend.searchSkills('test skill', 10);
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('should get skill by name', async () => {
+      const skill = await backend.getSkillByName(testSkillName);
+      expect(skill).not.toBeNull();
+      expect(skill!.name).toBe(testSkillName);
+    });
+
+    it('should track skill usage', async () => {
+      // Get usage from getAllSkills (which returns usageCount)
+      const beforeSkills = await backend.getAllSkills();
+      const before = beforeSkills.find(s => s.name === testSkillName);
+      const beforeCount = before?.usageCount || 0;
+
+      await backend.trackSkillUsage(testSkillName);
+
+      const afterSkills = await backend.getAllSkills();
+      const after = afterSkills.find(s => s.name === testSkillName);
+      expect(after!.usageCount).toBe(beforeCount + 1);
+    });
+
+    it('should delete skill', async () => {
+      const tempName = `temp-skill-${Date.now()}`;
+      await backend.upsertSkill({
+        name: tempName,
+        description: 'Temporary skill to delete',
+        source: 'local',
+      });
+
+      const deleted = await backend.deleteSkill(tempName);
+      expect(deleted).toBe(true);
+
+      const skill = await backend.getSkillByName(tempName);
+      expect(skill).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // NEW: Metadata Operations
+  // ==========================================================================
+
+  describe('Metadata Operations', () => {
+    it('should set and get metadata', async () => {
+      await backend.setMetadata('test_key', 'test_value_123');
+
+      const value = await backend.getMetadata('test_key');
+      expect(value).toBe('test_value_123');
+
+      // Cleanup by overwriting
+      await backend.setMetadata('test_key', '');
+    });
+
+    it('should return null for non-existent metadata key', async () => {
+      const value = await backend.getMetadata('nonexistent_key_xyz');
+      expect(value).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // NEW: Graph Stats
+  // ==========================================================================
+
+  describe('Graph Stats', () => {
+    it('should return graph statistics', async () => {
+      const stats = await backend.getGraphStats();
+
+      expect(typeof stats.total_memories).toBe('number');
+      expect(typeof stats.total_links).toBe('number');
+      expect(typeof stats.avg_links_per_memory).toBe('number');
+    });
+  });
+
+  // ==========================================================================
+  // NEW: Additional Document & Memory Operations
+  // ==========================================================================
+
+  describe('Additional Operations', () => {
+    it('should clear all documents', async () => {
+      const embedding = new Array(384).fill(0.1);
+
+      await backend.upsertDocumentsBatch([{
+        filePath: '/test/clear.ts',
+        chunkIndex: 0,
+        content: 'to be cleared',
+        startLine: 1,
+        endLine: 1,
+        embedding,
+      }]);
+
+      await backend.clearDocuments();
+
+      const stats = await backend.getDocumentStats();
+      expect(stats.total_documents).toBe(0);
+    });
+
+    it('should return document stats', async () => {
+      const stats = await backend.getDocumentStats();
+
+      expect(typeof stats.total_documents).toBe('number');
+      expect(typeof stats.total_files).toBe('number');
+    });
+
+    it('should increment memory access count', async () => {
+      const embedding = new Array(384).fill(0.5);
+
+      const id = await backend.saveMemory('Access count test', embedding);
+
+      await backend.incrementMemoryAccess(id, 1.0);
+      await backend.incrementMemoryAccess(id, 0.5);
+
+      const memory = await backend.getMemoryById(id);
+      expect(memory!.access_count).toBeGreaterThanOrEqual(2);
+
+      // Cleanup
+      await backend.deleteMemory(id);
+    });
+
+    it('should return null for non-existent memory ID', async () => {
+      const memory = await backend.getMemoryById(999999);
+      expect(memory).toBeNull();
+    });
+  });
 });
