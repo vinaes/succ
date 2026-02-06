@@ -420,16 +420,19 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
     // NOTE: session_summary and precompute_context moved to processSessionEnd()
     // They now run at session end using the progress file instead of parsing full transcript
 
-    // memory_consolidation - independent
-    if (idleConfig.operations?.memory_consolidation !== false) {
+    // memory_consolidation - independent (disabled by default, opt-in only)
+    if (idleConfig.operations?.memory_consolidation === true) {
       parallelOps.push((async () => {
-        log(`[reflection] Running memory consolidation`);
-        const { consolidate } = await import('../commands/consolidate.js');
-        const threshold = idleConfig.thresholds?.similarity_for_merge ?? 0.85;
+        const threshold = idleConfig.thresholds?.similarity_for_merge ?? 0.92;
         const limit = idleConfig.max_memories_to_process ?? 50;
+
+        // Always dry-run first and log what would happen
+        log(`[reflection] Running memory consolidation (threshold=${threshold}, limit=${limit})`);
+        const { consolidate } = await import('../commands/consolidate.js');
         await consolidate({
           threshold: String(threshold),
           limit: String(limit),
+          llm: true,  // Always use LLM merge to prevent data loss
           verbose: false,
         });
         log(`[reflection] Memory consolidation complete`);
