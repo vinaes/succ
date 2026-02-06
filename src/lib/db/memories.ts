@@ -819,7 +819,8 @@ export interface MemoryBatchResult {
  */
 export function saveMemoriesBatch(
   memories: MemoryBatchInput[],
-  deduplicateThreshold: number = 0.92
+  deduplicateThreshold: number = 0.92,
+  options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
 ): MemoryBatchResult {
   const database = getDb();
   const results: MemoryBatchResult['results'] = [];
@@ -844,40 +845,48 @@ export function saveMemoriesBatch(
     embedding: bufferToFloatArray(row.embedding),
   }));
 
-  // Check each input memory against existing ones
+  // Check each input memory against existing ones (unless dedup disabled)
+  const shouldDedup = options?.deduplicate !== false;
   const toInsert: Array<{ input: MemoryBatchInput; index: number }> = [];
 
-  for (let i = 0; i < memories.length; i++) {
-    const memory = memories[i];
-    let isDuplicate = false;
-    let duplicateId: number | undefined;
-    let maxSimilarity = 0;
+  if (shouldDedup) {
+    for (let i = 0; i < memories.length; i++) {
+      const memory = memories[i];
+      let isDuplicate = false;
+      let duplicateId: number | undefined;
+      let maxSimilarity = 0;
 
-    // Check against all existing memories
-    for (const existing of existingEmbeddings) {
-      const similarity = cosineSimilarity(memory.embedding, existing.embedding);
-      if (similarity > maxSimilarity) {
-        maxSimilarity = similarity;
+      // Check against all existing memories
+      for (const existing of existingEmbeddings) {
+        const similarity = cosineSimilarity(memory.embedding, existing.embedding);
+        if (similarity > maxSimilarity) {
+          maxSimilarity = similarity;
+        }
+
+        if (similarity >= deduplicateThreshold) {
+          isDuplicate = true;
+          duplicateId = existing.id;
+          break;
+        }
       }
 
-      if (similarity >= deduplicateThreshold) {
-        isDuplicate = true;
-        duplicateId = existing.id;
-        break;
+      if (isDuplicate) {
+        results.push({
+          index: i,
+          isDuplicate: true,
+          id: duplicateId,
+          reason: 'duplicate',
+          similarity: maxSimilarity,
+        });
+        skipped++;
+      } else {
+        toInsert.push({ input: memory, index: i });
       }
     }
-
-    if (isDuplicate) {
-      results.push({
-        index: i,
-        isDuplicate: true,
-        id: duplicateId,
-        reason: 'duplicate',
-        similarity: maxSimilarity,
-      });
-      skipped++;
-    } else {
-      toInsert.push({ input: memory, index: i });
+  } else {
+    // Skip dedup — insert all
+    for (let i = 0; i < memories.length; i++) {
+      toInsert.push({ input: memories[i], index: i });
     }
   }
 
@@ -947,6 +956,17 @@ export function saveMemoriesBatch(
     });
 
     batchInsert();
+
+    // Auto-link newly saved memories to existing ones
+    if (options?.autoLink !== false) {
+      const linkThreshold = options?.linkThreshold ?? 0.7;
+      for (const { input, index } of toInsert) {
+        const savedResult = results.find(r => r.index === index && !r.isDuplicate);
+        if (savedResult?.id) {
+          autoLinkNewMemory(savedResult.id, input.embedding, linkThreshold);
+        }
+      }
+    }
 
     // Trigger graph auto-export once for all memories
     triggerAutoExport();
