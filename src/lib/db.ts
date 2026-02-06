@@ -3,24 +3,10 @@ import * as sqliteVec from 'sqlite-vec';
 import { getDbPath, getGlobalDbPath, getConfig } from './config.js';
 import { cosineSimilarity, getModelDimension } from './embeddings.js';
 import * as bm25 from './bm25.js';
+import { triggerAutoExport } from './graph-scheduler.js';
 
 // Flag to track if sqlite-vec is available
 let sqliteVecAvailable = true;
-
-// Lazy import to avoid circular dependency
-let scheduleAutoExport: (() => void) | null = null;
-async function triggerAutoExport(): Promise<void> {
-  if (!scheduleAutoExport) {
-    try {
-      const module = await import('./graph-export.js');
-      scheduleAutoExport = module.scheduleAutoExport;
-    } catch {
-      // Graph export not available, ignore
-      return;
-    }
-  }
-  scheduleAutoExport?.();
-}
 
 /**
  * Safely convert Buffer to Float32Array, handling byte offset and alignment correctly.
@@ -290,6 +276,21 @@ function initDb(database: Database.Database): void {
     database.prepare(`ALTER TABLE token_stats ADD COLUMN estimated_cost REAL DEFAULT 0`).run();
   } catch {
     // Column already exists, ignore
+  }
+
+  // Migration: add project_id column to skills table for project scoping
+  try {
+    database.prepare(`ALTER TABLE skills ADD COLUMN project_id TEXT`).run();
+    // Note: SQLite doesn't support dropping and recreating unique constraints easily.
+    // For existing databases, the old UNIQUE(name) constraint remains.
+    // The code handles this by using ON CONFLICT with name only for SQLite.
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`).run();
+  } catch {
+    // Index already exists, ignore
   }
 
   // Check if embedding model changed - warn user if reindex needed

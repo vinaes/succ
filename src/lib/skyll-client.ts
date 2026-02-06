@@ -104,18 +104,21 @@ function getCachedSkills(query: string): Skill[] | null {
   const now = new Date().toISOString();
 
   try {
+    // Skyll cached skills are global (project_id IS NULL)
     const rows = db
       .prepare(
         `SELECT id, name, description, source, skyll_id, content, usage_count, last_used
          FROM skills
          WHERE source = 'skyll'
+           AND project_id IS NULL
            AND cache_expires > ?
            AND (name LIKE ? OR description LIKE ?)`
       )
       .all(now, `%${query}%`, `%${query}%`) as Skill[];
 
     return rows.length > 0 ? rows : null;
-  } catch {
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skills');
     return null;
   }
 }
@@ -127,16 +130,11 @@ function cacheSkills(skills: SkyllSkill[], ttlSeconds: number): void {
 
   for (const skill of skills) {
     try {
+      // Skyll cached skills are global (project_id = NULL)
+      // Use INSERT OR REPLACE for SQLite compatibility (works with UNIQUE(name) constraint)
       db.prepare(
-        `INSERT INTO skills (name, description, source, skyll_id, content, cached_at, cache_expires, created_at, updated_at)
-         VALUES (?, ?, 'skyll', ?, ?, ?, ?, datetime('now'), datetime('now'))
-         ON CONFLICT(name) DO UPDATE SET
-           description = excluded.description,
-           skyll_id = excluded.skyll_id,
-           content = excluded.content,
-           cached_at = excluded.cached_at,
-           cache_expires = excluded.cache_expires,
-           updated_at = datetime('now')`
+        `INSERT OR REPLACE INTO skills (project_id, name, description, source, skyll_id, content, cached_at, cache_expires, created_at, updated_at)
+         VALUES (NULL, ?, ?, 'skyll', ?, ?, ?, ?, datetime('now'), datetime('now'))`
       ).run(
         skill.title || skill.id, // Skyll uses 'title' not 'name'
         skill.description,
@@ -145,8 +143,8 @@ function cacheSkills(skills: SkyllSkill[], ttlSeconds: number): void {
         now.toISOString(),
         expires
       );
-    } catch {
-      // Ignore cache errors
+    } catch (err) {
+      console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to cache skill');
     }
   }
 }
@@ -260,21 +258,21 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
     return null;
   }
 
-  // Check cache first
+  // Check cache first (Skyll cached skills are global with project_id IS NULL)
   const db = getDb();
   try {
     const cached = db
       .prepare(
         `SELECT id, name, description, source, skyll_id, content, usage_count, last_used
-         FROM skills WHERE skyll_id = ? AND cache_expires > datetime('now')`
+         FROM skills WHERE skyll_id = ? AND project_id IS NULL AND cache_expires > datetime('now')`
       )
       .get(skillId) as Skill | undefined;
 
     if (cached) {
       return cached;
     }
-  } catch {
-    // Ignore cache errors
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skill');
   }
 
   // Check rate limit
@@ -327,11 +325,13 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
 export function clearExpiredCache(): number {
   const db = getDb();
   try {
+    // Skyll cached skills have project_id IS NULL
     const result = db
-      .prepare(`DELETE FROM skills WHERE source = 'skyll' AND cache_expires < datetime('now')`)
+      .prepare(`DELETE FROM skills WHERE source = 'skyll' AND project_id IS NULL AND cache_expires < datetime('now')`)
       .run();
     return result.changes;
-  } catch {
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to clear expired cache');
     return 0;
   }
 }
@@ -351,12 +351,13 @@ export function getSkyllStatus(): {
 
   let cachedSkills = 0;
   try {
-    const row = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE source = 'skyll'`).get() as {
+    // Count only global Skyll cached skills
+    const row = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`).get() as {
       count: number;
     };
     cachedSkills = row.count;
-  } catch {
-    // Ignore
+  } catch (err) {
+    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to count cached skills');
   }
 
   return {
