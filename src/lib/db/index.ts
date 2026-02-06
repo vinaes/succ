@@ -3,7 +3,8 @@
 // ============================================================================
 
 // Re-export types and constants from schema
-export { MEMORY_TYPES, MemoryType } from './schema.js';
+export { MEMORY_TYPES } from './schema.js';
+export type { MemoryType } from './schema.js';
 
 // Re-export basic types from types module
 export type { Document, SearchResult, GraphStats } from './types.js';

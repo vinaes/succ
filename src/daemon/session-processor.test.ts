@@ -18,10 +18,10 @@ let testTmpDir: string;
 // Mock external dependencies before importing
 vi.mock('../lib/db/index.js', () => ({
   saveMemory: vi.fn(() => ({ id: 'test-id', isDuplicate: false })),
-  saveMemoriesBatch: vi.fn((memories) => ({
+  saveMemoriesBatch: vi.fn((memories: any[]) => ({
     saved: memories.length,
     skipped: 0,
-    results: memories.map((_, index) => ({
+    results: memories.map((_: any, index: number) => ({
       index,
       isDuplicate: false,
       id: index + 1,
