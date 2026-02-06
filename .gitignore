@@ -10,3 +10,6 @@ dist/
 
 # MCP config (local)
 .mcp.json
+
+# Docker volumes (local data)
+docker/
