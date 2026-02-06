@@ -1,5 +1,6 @@
 import { getConfig, getConfigWithOverride } from './config.js';
 import { createHash } from 'crypto';
+import os from 'os';
 
 // Track which GPU backend is being used
 let gpuBackend: string | null = null;
@@ -30,11 +31,17 @@ const MODEL_DIMENSIONS: Record<string, number> = {
 // Default timeout for API requests (30 seconds)
 const API_TIMEOUT_MS = 30000;
 
+import { EmbeddingPool } from './embedding-pool.js';
+
 // Lazy-loaded local embedding pipeline
 let localPipeline: any = null;
 
+// Worker pool for parallel local embeddings (lazy init)
+let embeddingPool: EmbeddingPool | null = null;
+let poolInitFailed = false; // Don't retry if pool init failed
+
 /**
- * Cleanup embedding pipeline to free memory
+ * Cleanup embedding pipeline and worker pool to free memory
  */
 export function cleanupEmbeddings(): void {
   if (localPipeline) {
@@ -44,6 +51,10 @@ export function cleanupEmbeddings(): void {
     if (global.gc) {
       global.gc();
     }
+  }
+  if (embeddingPool) {
+    embeddingPool.shutdown().catch(() => {});
+    embeddingPool = null;
   }
 }
 
@@ -237,12 +248,55 @@ export function getGpuBackend(): string | null {
 }
 
 /**
+ * Try to use worker pool for large embedding batches.
+ * Returns null if pool is unavailable or disabled.
+ */
+async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[][] | null> {
+  if (poolInitFailed) return null;
+  if (config.embedding_worker_pool_enabled === false) return null;
+  // Only use pool for batches large enough to benefit from parallelism
+  if (texts.length < 32) return null;
+
+  try {
+    if (!embeddingPool) {
+      const poolSize = config.embedding_worker_pool_size ?? Math.min(os.cpus().length - 1, 4);
+      embeddingPool = new EmbeddingPool({ poolSize, model: config.embedding_model });
+      console.log(`Initializing embedding worker pool (${embeddingPool.size} workers)...`);
+      await embeddingPool.init();
+      console.log('Worker pool ready.');
+    }
+
+    return await embeddingPool.getEmbeddings(texts);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`Worker pool failed, falling back to single-thread: ${msg}`);
+    poolInitFailed = true;
+    if (embeddingPool) {
+      embeddingPool.shutdown().catch(() => {});
+      embeddingPool = null;
+    }
+    return null;
+  }
+}
+
+/**
  * Get embeddings using local model (batch optimized)
- * Processes texts in batches for 3-5x speedup over sequential processing
+ * For large batches (32+), uses worker thread pool for true CPU parallelism.
+ * Falls back to single-thread processing for small batches or if pool unavailable.
  */
 async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
-  const pipe = await getLocalPipeline();
   const config = getConfigWithOverride();
+
+  // Try worker pool for large batches
+  const poolResult = await tryPoolEmbeddings(texts, config);
+  if (poolResult) {
+    for (const embedding of poolResult) {
+      validateEmbedding(embedding, config.embedding_model);
+    }
+    return poolResult;
+  }
+
+  const pipe = await getLocalPipeline();
 
   // For single text, process directly
   if (texts.length === 1) {
@@ -255,8 +309,8 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
   // Batch processing - transformers.js supports arrays natively
   // Process in smaller batches to avoid memory issues
   // Use concurrent batch processing for better performance
-  const BATCH_SIZE = 16;
-  const CONCURRENT_BATCHES = 2; // Process 2 batches in parallel
+  const BATCH_SIZE = config.embedding_local_batch_size ?? 16;
+  const CONCURRENT_BATCHES = config.embedding_local_concurrency ?? 4;
 
   // Split texts into batches
   const batches: string[][] = [];
