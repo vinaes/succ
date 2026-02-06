@@ -11,13 +11,15 @@ import {
   getStats,
   getRecentGlobalMemories,
   getMemoryStats,
+  getAllMemoriesForRetention,
   getTokenStatsAggregated,
   getTokenStatsSummary,
   closeDb,
   type TokenEventType,
 } from '../../lib/db/index.js';
-import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
+import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig } from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
+import { analyzeRetention } from '../../lib/retention.js';
 
 export function registerStatusTools(server: McpServer) {
   // Tool: succ_status - Get index status
@@ -72,18 +74,46 @@ export function registerStatusTools(server: McpServer) {
           memStats.oldest_memory ? `  Oldest: ${new Date(memStats.oldest_memory).toLocaleDateString()}` : '',
           memStats.newest_memory ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}` : '',
           memStats.stale_count > 0 ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget` : '',
+        ];
+
+        // Retention health (lightweight analysis)
+        try {
+          const retentionMemories = getAllMemoriesForRetention();
+          if (retentionMemories.length > 0) {
+            const retConfig = getRetentionConfig();
+            const analysis = analyzeRetention(retentionMemories, {
+              use_temporal_decay: retConfig.use_temporal_decay,
+              keep_threshold: retConfig.keep_threshold,
+              delete_threshold: retConfig.delete_threshold,
+            });
+            const retStats = analysis.stats;
+            status.push(
+              '',
+              '## Retention Health',
+              `  Keep: ${retStats.keepCount} | Warn: ${retStats.warnCount} | Cleanup: ${retStats.deleteCount}`,
+              `  Avg effective score: ${retStats.avgEffectiveScore}`,
+            );
+            if (retStats.deleteCount > 0) {
+              status.push(`  ⚠ ${retStats.deleteCount} memories below threshold - run \`succ retention --auto-cleanup --dry-run\``);
+            }
+          }
+        } catch {
+          // Skip retention health if it fails
+        }
+
+        status.push(
           '',
           '## Daemons',
           daemonLines,
-        ]
-          .filter(Boolean)
-          .join('\n');
+        );
+
+        const statusText = status.filter(Boolean).join('\n');
 
         return {
           content: [
             {
               type: 'text' as const,
-              text: status,
+              text: statusText,
             },
           ],
         };

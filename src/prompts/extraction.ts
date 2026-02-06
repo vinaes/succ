@@ -18,6 +18,7 @@ Extract concrete, actionable facts from this session. Focus on:
 3. **Observations** - facts about the codebase, patterns noticed
 4. **Errors** - bugs found and how they were fixed
 5. **Patterns** - recurring themes or approaches used
+6. **Dead Ends** - approaches that were tried and explicitly failed, with reasons why they didn't work
 
 Rules:
 - Extract ONLY facts that would be useful in future sessions
@@ -25,6 +26,7 @@ Rules:
 - Skip generic conversation, greetings, confirmations
 - Each fact should stand alone (make sense without the full transcript)
 - Minimum 50 characters per fact
+- For dead_end type: clearly state what was tried and WHY it failed
 
 Output as JSON array:
 [
@@ -33,6 +35,12 @@ Output as JSON array:
     "type": "observation",
     "confidence": 0.9,
     "tags": ["auth", "jwt", "middleware"]
+  },
+  {
+    "content": "DEAD END: Tried using Redis for session storage — memory usage too high for VPS tier, switched to SQLite",
+    "type": "dead_end",
+    "confidence": 0.95,
+    "tags": ["redis", "session", "dead-end"]
   },
   ...
 ]
@@ -56,6 +64,7 @@ Extract concrete, actionable facts from this session. Focus on:
 3. **Observations** - facts about the codebase, patterns noticed
 4. **Errors** - bugs found and how they were fixed
 5. **Patterns** - recurring themes or approaches used
+6. **Dead Ends** - approaches that were tried and explicitly failed, with reasons why they didn't work
 
 Rules:
 - Extract ONLY facts that would be useful in future sessions
@@ -63,6 +72,7 @@ Rules:
 - Skip generic conversation, greetings, confirmations
 - Each fact should stand alone (make sense without the full context)
 - Minimum 50 characters per fact
+- For dead_end type: clearly state what was tried and WHY it failed
 
 Output as JSON array:
 [
@@ -71,6 +81,12 @@ Output as JSON array:
     "type": "observation",
     "confidence": 0.9,
     "tags": ["auth", "jwt", "middleware"]
+  },
+  {
+    "content": "DEAD END: Tried using Redis for session storage — memory usage too high for VPS tier, switched to SQLite",
+    "type": "dead_end",
+    "confidence": 0.95,
+    "tags": ["redis", "session", "dead-end"]
   },
   ...
 ]

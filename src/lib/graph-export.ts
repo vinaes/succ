@@ -96,6 +96,14 @@ export function scheduleAutoExport(): void {
     } catch {
       // Silently ignore export errors in auto-export
     }
+
+    // Also auto-generate AGENTS.md if enabled
+    const agentsMdConfig = (config as any).agents_md;
+    if (agentsMdConfig?.enabled) {
+      import('./agents-md-generator.js')
+        .then(mod => mod.writeAgentsMd())
+        .catch(() => { /* Silently ignore AGENTS.md errors */ });
+    }
   }, EXPORT_DEBOUNCE_MS);
 }
 

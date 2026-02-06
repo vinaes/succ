@@ -19,6 +19,7 @@
  */
 
 import { MemoryForRetention } from './db/index.js';
+import { exponentialDecay, calculateAccessBoost as temporalAccessBoost, getTemporalConfig } from './temporal.js';
 
 // Default configuration
 export const DEFAULT_RETENTION_CONFIG = {
@@ -49,6 +50,8 @@ export interface RetentionConfig {
   keep_threshold?: number;
   delete_threshold?: number;
   default_quality_score?: number;
+  // When true, use exponential decay from temporal.ts instead of hyperbolic
+  use_temporal_decay?: boolean;
 }
 
 export interface EffectiveScoreResult {
@@ -100,9 +103,31 @@ export function calculateEffectiveScore(
   // Get quality score (use default if not set)
   const qualityScore = memory.quality_score ?? cfg.default_quality_score;
 
-  // Calculate factors
-  const recencyFactor = calculateRecencyFactor(ageDays, cfg.decay_rate);
-  const accessBoost = calculateAccessBoost(memory.access_count, cfg.access_weight, cfg.max_access_boost);
+  // Calculate factors — use temporal decay when enabled
+  let recencyFactor: number;
+  let accessBoost: number;
+
+  if (cfg.use_temporal_decay) {
+    // Use exponential decay from temporal.ts (aligned with search ranking)
+    const temporalConfig = getTemporalConfig();
+    const hoursSinceAccess = memory.last_accessed
+      ? (now.getTime() - new Date(memory.last_accessed).getTime()) / (1000 * 60 * 60)
+      : ageDays * 24; // Fall back to creation date
+    recencyFactor = exponentialDecay(
+      hoursSinceAccess,
+      temporalConfig.decay_half_life_hours,
+      temporalConfig.decay_floor
+    );
+    accessBoost = 1 + temporalAccessBoost(
+      memory.access_count,
+      temporalConfig.access_boost_factor,
+      temporalConfig.max_access_boost
+    );
+  } else {
+    // Legacy: hyperbolic decay
+    recencyFactor = calculateRecencyFactor(ageDays, cfg.decay_rate);
+    accessBoost = calculateAccessBoost(memory.access_count, cfg.access_weight, cfg.max_access_boost);
+  }
 
   // Calculate effective score
   const effectiveScore = qualityScore * recencyFactor * accessBoost;

@@ -22,7 +22,7 @@ export function loadSqliteVec(database: Database.Database): boolean {
 }
 
 // Valid memory types
-export const MEMORY_TYPES = ['observation', 'decision', 'learning', 'error', 'pattern'] as const;
+export const MEMORY_TYPES = ['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 /**
@@ -235,6 +235,24 @@ export function initDb(database: Database.Database): void {
   } catch {
     // Index already exists, ignore
   }
+
+  // Migration: create learning_deltas table for session progress tracking
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS learning_deltas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      source TEXT NOT NULL,
+      memories_before INTEGER NOT NULL DEFAULT 0,
+      memories_after INTEGER NOT NULL DEFAULT 0,
+      new_memories INTEGER NOT NULL DEFAULT 0,
+      types_added TEXT,
+      avg_quality REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source);
+  `);
 
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
