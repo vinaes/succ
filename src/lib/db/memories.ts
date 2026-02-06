@@ -6,6 +6,7 @@ import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
 import { getSuccDir } from '../config.js';
+import { invalidateMemoriesBm25Index } from './bm25-indexes.js';
 
 /**
  * Log memory deletion events to .succ/memory-audit.log for debugging.
@@ -172,6 +173,8 @@ export function saveMemory(
   if (linksCreated > 0) {
     triggerAutoExport().catch(() => {});
   }
+
+  invalidateMemoriesBm25Index();
 
   return { id: newId, isDuplicate: false, linksCreated };
 }
@@ -474,6 +477,7 @@ export function deleteMemory(id: number): boolean {
   const result = database.prepare('DELETE FROM memories WHERE id = ?').run(id);
   if (result.changes > 0) {
     logDeletion('deleteMemory', 1, [id]);
+    invalidateMemoriesBm25Index();
   }
   return result.changes > 0;
 }
@@ -642,6 +646,7 @@ export function deleteMemoriesOlderThan(date: Date): number {
     .run(date.toISOString());
   if (result.changes > 0) {
     logDeletion('deleteMemoriesOlderThan', result.changes, [], `older_than=${date.toISOString()}`);
+    invalidateMemoriesBm25Index();
   }
   return result.changes;
 }
@@ -696,6 +701,7 @@ export function deleteMemoriesByTag(tag: string): number {
   const result = database.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...toDelete);
   if (result.changes > 0) {
     logDeletion('deleteMemoriesByTag', result.changes, toDelete, `tag="${tag}"`);
+    invalidateMemoriesBm25Index();
   }
 
   return result.changes;
@@ -773,14 +779,7 @@ export function deleteMemoriesByIds(ids: number[]): number {
 
   if (result.changes > 0) {
     logDeletion('deleteMemoriesByIds', result.changes, ids, 'batch/retention');
-  }
-
-  // Invalidate BM25 index since memories changed (will be handled in bm25-indexes module)
-  try {
-    const { invalidateMemoriesBm25Index } = require('./bm25-indexes.js');
     invalidateMemoriesBm25Index();
-  } catch {
-    // Module not loaded yet
   }
 
   return result.changes;
@@ -1053,6 +1052,10 @@ export function saveMemoriesBatch(
 
   // Sort results by original index
   results.sort((a, b) => a.index - b.index);
+
+  if (saved > 0) {
+    invalidateMemoriesBm25Index();
+  }
 
   return { saved, skipped, results };
 }

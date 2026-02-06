@@ -12,6 +12,10 @@ import {
   getGlobalMemoriesBm25Index,
 } from './bm25-indexes.js';
 
+// Safety limit for brute-force vector search when sqlite-vec is unavailable.
+// Beyond this, fall back to BM25-only to prevent OOM.
+const BRUTE_FORCE_MAX_ROWS = 10000;
+
 // ============================================================================
 // Hybrid Search Types
 // ============================================================================
@@ -145,9 +149,31 @@ export function hybridSearchCode(
     }
   }
 
-  // Brute-force fallback for vector search
+  // Brute-force fallback for vector search (sqlite-vec unavailable or returned 0)
   if (vectorResults.length === 0) {
-    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+    const { count } = database.prepare("SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'").get() as { count: number };
+
+    if (count > BRUTE_FORCE_MAX_ROWS) {
+      // Too many docs for brute-force — return BM25-only results
+      const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+      const docIds = bm25Results.slice(0, limit).map(r => r.docId);
+      if (docIds.length === 0) return [];
+      const placeholders = docIds.map(() => '?').join(',');
+      const fallbackRows = database.prepare(`
+        SELECT id, file_path, content, start_line, end_line
+        FROM documents WHERE id IN (${placeholders})
+      `).all(...docIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
+      return fallbackRows.map(row => ({
+        file_path: row.file_path,
+        content: row.content,
+        start_line: row.start_line,
+        end_line: row.end_line,
+        similarity: bm25Map.get(row.id) ?? 0,
+        bm25Score: bm25Map.get(row.id),
+      }));
+    }
+
+    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
       content: string;
@@ -228,39 +254,95 @@ export function hybridSearchDocs(
 ): HybridSearchResult[] {
   const database = getDb();
 
-  // Get all docs (exclude code: prefix)
-  const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%'").all() as Array<{
-    id: number;
-    file_path: string;
-    content: string;
-    start_line: number;
-    end_line: number;
-    embedding: Buffer;
-  }>;
-
-  if (rows.length === 0) return [];
-
   // 1. BM25 search with docs tokenizer (stemming)
   const bm25Index = getDocsBm25Index();
   const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
 
-  // 2. Vector search
-  const vectorResults: { docId: number; score: number }[] = [];
-  for (const row of rows) {
-    const embedding = bufferToFloatArray(row.embedding);
-    const similarity = cosineSimilarity(queryEmbedding, embedding);
-    if (similarity >= threshold) {
-      vectorResults.push({ docId: row.id, score: similarity });
+  // 2. Vector search — try sqlite-vec first, fall back to brute-force
+  let vectorResults: { docId: number; score: number }[] = [];
+  let rowMap: Map<number, { id: number; file_path: string; content: string; start_line: number; end_line: number }> = new Map();
+
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = limit * 5;
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_documents v
+        JOIN vec_documents_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        const docIds = vecResults.map(r => r.doc_id);
+        const placeholders = docIds.map(() => '?').join(',');
+        const rows = database.prepare(`
+          SELECT id, file_path, content, start_line, end_line
+          FROM documents
+          WHERE id IN (${placeholders}) AND file_path NOT LIKE 'code:%'
+        `).all(...docIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
+
+        rowMap = new Map(rows.map(r => [r.id, r]));
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+          if (similarity >= threshold) {
+            vectorResults.push({ docId: row.id, score: similarity });
+          }
+        }
+        vectorResults.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      vectorResults = [];
     }
   }
-  vectorResults.sort((a, b) => b.score - a.score);
+
+  // Brute-force fallback with safety limit
+  if (vectorResults.length === 0) {
+    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
+      id: number;
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: Buffer;
+    }>;
+
+    if (rows.length === 0) return [];
+    rowMap = new Map(rows.map(r => [r.id, r]));
+
+    for (const row of rows) {
+      const embedding = bufferToFloatArray(row.embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= threshold) {
+        vectorResults.push({ docId: row.id, score: similarity });
+      }
+    }
+    vectorResults.sort((a, b) => b.score - a.score);
+  }
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
   const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
 
-  // 4. Map back to full results
-  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  // 4. Ensure we have all needed rows (BM25 results may not be in vec results)
+  if (combined.length > 0) {
+    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map(() => '?').join(',');
+      const missingRows = database.prepare(`
+        SELECT id, file_path, content, start_line, end_line
+        FROM documents WHERE id IN (${placeholders})
+      `).all(...missingIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
+      for (const row of missingRows) {
+        rowMap.set(row.id, row);
+      }
+    }
+  }
+
   const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 
@@ -293,47 +375,98 @@ export function hybridSearchMemories(
 ): HybridMemoryResult[] {
   const database = getDb();
 
-  const rows = database.prepare(`
-    SELECT id, content, tags, source, type, created_at, embedding,
-           last_accessed, access_count, valid_from, valid_until
-    FROM memories WHERE embedding IS NOT NULL
-  `).all() as Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    type: string | null;
-    created_at: string;
-    embedding: Buffer;
-    last_accessed: string | null;
-    access_count: number;
-    valid_from: string | null;
-    valid_until: string | null;
-  }>;
-
-  if (rows.length === 0) return [];
-
   // 1. BM25 search
   const bm25Index = getMemoriesBm25Index();
   const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
 
-  // 2. Vector search
-  const vectorResults: { docId: number; score: number }[] = [];
-  for (const row of rows) {
-    const embedding = bufferToFloatArray(row.embedding);
-    const similarity = cosineSimilarity(queryEmbedding, embedding);
-    if (similarity >= threshold) {
-      vectorResults.push({ docId: row.id, score: similarity });
+  // 2. Vector search — try sqlite-vec first
+  let vectorResults: { docId: number; score: number }[] = [];
+  type MemoryRow = {
+    id: number; content: string; tags: string | null; source: string | null;
+    type: string | null; created_at: string; last_accessed: string | null;
+    access_count: number; valid_from: string | null; valid_until: string | null;
+  };
+  let rowMap: Map<number, MemoryRow> = new Map();
+
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = limit * 5;
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        const docIds = vecResults.map(r => r.doc_id);
+        const placeholders = docIds.map(() => '?').join(',');
+        const rows = database.prepare(`
+          SELECT id, content, tags, source, type, created_at,
+                 last_accessed, access_count, valid_from, valid_until
+          FROM memories WHERE id IN (${placeholders})
+        `).all(...docIds) as MemoryRow[];
+
+        rowMap = new Map(rows.map(r => [r.id, r]));
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+          if (similarity >= threshold) {
+            vectorResults.push({ docId: row.id, score: similarity });
+          }
+        }
+        vectorResults.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      vectorResults = [];
     }
   }
-  vectorResults.sort((a, b) => b.score - a.score);
+
+  // Brute-force fallback with safety limit
+  if (vectorResults.length === 0) {
+    const rows = database.prepare(`
+      SELECT id, content, tags, source, type, created_at, embedding,
+             last_accessed, access_count, valid_from, valid_until
+      FROM memories WHERE embedding IS NOT NULL LIMIT ?
+    `).all(BRUTE_FORCE_MAX_ROWS) as Array<MemoryRow & { embedding: Buffer }>;
+
+    if (rows.length === 0) return [];
+    rowMap = new Map(rows.map(r => [r.id, r]));
+
+    for (const row of rows) {
+      const embedding = bufferToFloatArray(row.embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= threshold) {
+        vectorResults.push({ docId: row.id, score: similarity });
+      }
+    }
+    vectorResults.sort((a, b) => b.score - a.score);
+  }
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
   const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
 
-  // 4. Map back to full results
-  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  // 4. Ensure we have all needed rows
+  if (combined.length > 0) {
+    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map(() => '?').join(',');
+      const missingRows = database.prepare(`
+        SELECT id, content, tags, source, type, created_at,
+               last_accessed, access_count, valid_from, valid_until
+        FROM memories WHERE id IN (${placeholders})
+      `).all(...missingIds) as MemoryRow[];
+      for (const row of missingRows) {
+        rowMap.set(row.id, row);
+      }
+    }
+  }
+
   const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 
@@ -374,47 +507,107 @@ export function hybridSearchGlobalMemories(
 ): HybridGlobalMemoryResult[] {
   const database = getGlobalDb();
 
-  let sqlQuery = 'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
-  const params: any[] = [];
-
-  if (since) {
-    sqlQuery += ' AND created_at >= ?';
-    params.push(since.toISOString());
-  }
-
-  const rows = database.prepare(sqlQuery).all(...params) as Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    project: string | null;
-    embedding: Buffer;
-    created_at: string;
-  }>;
-
-  if (rows.length === 0) return [];
-
   // 1. BM25 search
   const bm25Index = getGlobalMemoriesBm25Index();
   const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
 
-  // 2. Vector search
-  const vectorResults: { docId: number; score: number }[] = [];
-  for (const row of rows) {
-    const embedding = bufferToFloatArray(row.embedding);
-    const similarity = cosineSimilarity(queryEmbedding, embedding);
-    if (similarity >= threshold) {
-      vectorResults.push({ docId: row.id, score: similarity });
+  // 2. Vector search — try sqlite-vec first
+  type GlobalMemRow = {
+    id: number; content: string; tags: string | null; source: string | null;
+    project: string | null; created_at: string;
+  };
+  let vectorResults: { docId: number; score: number }[] = [];
+  let rowMap: Map<number, GlobalMemRow> = new Map();
+
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = limit * 5;
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        const docIds = vecResults.map(r => r.doc_id);
+        const placeholders = docIds.map(() => '?').join(',');
+
+        let whereClause = `id IN (${placeholders})`;
+        const params: any[] = [...docIds];
+        if (since) {
+          whereClause += ' AND created_at >= ?';
+          params.push(since.toISOString());
+        }
+
+        const rows = database.prepare(`
+          SELECT id, content, tags, source, project, created_at
+          FROM memories WHERE ${whereClause}
+        `).all(...params) as GlobalMemRow[];
+
+        rowMap = new Map(rows.map(r => [r.id, r]));
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+          if (similarity >= threshold) {
+            vectorResults.push({ docId: row.id, score: similarity });
+          }
+        }
+        vectorResults.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      vectorResults = [];
     }
   }
-  vectorResults.sort((a, b) => b.score - a.score);
+
+  // Brute-force fallback with safety limit
+  if (vectorResults.length === 0) {
+    let sqlQuery = 'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+    const params: any[] = [];
+    if (since) {
+      sqlQuery += ' AND created_at >= ?';
+      params.push(since.toISOString());
+    }
+    sqlQuery += ` LIMIT ${BRUTE_FORCE_MAX_ROWS}`;
+
+    const rows = database.prepare(sqlQuery).all(...params) as Array<GlobalMemRow & { embedding: Buffer }>;
+
+    if (rows.length === 0) return [];
+    rowMap = new Map(rows.map(r => [r.id, r]));
+
+    for (const row of rows) {
+      const embedding = bufferToFloatArray(row.embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= threshold) {
+        vectorResults.push({ docId: row.id, score: similarity });
+      }
+    }
+    vectorResults.sort((a, b) => b.score - a.score);
+  }
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
   const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
 
-  // 4. Map back to full results
-  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  // 4. Ensure we have all needed rows
+  if (combined.length > 0) {
+    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map(() => '?').join(',');
+      const missingRows = database.prepare(`
+        SELECT id, content, tags, source, project, created_at
+        FROM memories WHERE id IN (${placeholders})
+      `).all(...missingIds) as GlobalMemRow[];
+      for (const row of missingRows) {
+        rowMap.set(row.id, row);
+      }
+    }
+  }
+
   const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 

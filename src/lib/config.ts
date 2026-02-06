@@ -14,6 +14,7 @@ export interface SuccConfig {
   embedding_local_concurrency?: number;  // Concurrent batches for local embeddings (default: 4)
   embedding_worker_pool_enabled?: boolean;  // Use worker thread pool for local embeddings (default: true)
   embedding_worker_pool_size?: number;  // Worker pool size (default: auto based on CPU cores)
+  embedding_cache_size?: number;  // Embedding LRU cache size (default: 500)
   chunk_size: number;
   chunk_overlap: number;
   // GPU acceleration settings
@@ -399,12 +400,50 @@ const DEFAULT_CONFIG: Omit<SuccConfig, 'openrouter_api_key'> = {
   chunk_overlap: 50,
 };
 
+// Config cache: avoids re-reading files on every getConfig() call
+let configCache: { config: SuccConfig; globalMtime: number; projectMtime: number; projectPath: string } | null = null;
+
+/** Invalidate config cache (for tests or after config changes) */
+export function invalidateConfigCache(): void {
+  configCache = null;
+}
+
+function getFileMtime(filePath: string): number {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export function getConfig(): SuccConfig {
+  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
+
+  // Find active project config path
+  const projectConfigPaths = [
+    path.join(process.cwd(), '.succ', 'config.json'),
+    path.join(process.cwd(), '.claude', 'succ.json'),  // legacy
+  ];
+  let activeProjectPath = '';
+  for (const p of projectConfigPaths) {
+    if (fs.existsSync(p)) { activeProjectPath = p; break; }
+  }
+
+  // Check if cache is still valid (stat is cheaper than read+parse)
+  if (configCache) {
+    const globalMtime = getFileMtime(globalConfigPath);
+    const projectMtime = activeProjectPath ? getFileMtime(activeProjectPath) : 0;
+    if (globalMtime === configCache.globalMtime &&
+        projectMtime === configCache.projectMtime &&
+        activeProjectPath === configCache.projectPath) {
+      return configCache.config;
+    }
+  }
+
   // Try environment variable first
   const apiKey = process.env.OPENROUTER_API_KEY;
 
-  // Try global config file
-  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
+  // Read global config file
   let fileConfig: Partial<SuccConfig> = {};
 
   if (fs.existsSync(globalConfigPath)) {
@@ -415,20 +454,13 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Try project config (check .succ first, then legacy .claude)
-  const projectConfigPaths = [
-    path.join(process.cwd(), '.succ', 'config.json'),
-    path.join(process.cwd(), '.claude', 'succ.json'),  // legacy
-  ];
-  for (const projectConfigPath of projectConfigPaths) {
-    if (fs.existsSync(projectConfigPath)) {
-      try {
-        const projectConfig = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
-        fileConfig = { ...fileConfig, ...projectConfig };
-        break;
-      } catch {
-        // Ignore parse errors
-      }
+  // Read project config
+  if (activeProjectPath) {
+    try {
+      const projectConfig = JSON.parse(fs.readFileSync(activeProjectPath, 'utf-8'));
+      fileConfig = { ...fileConfig, ...projectConfig };
+    } catch {
+      // Ignore parse errors
     }
   }
 
@@ -464,13 +496,23 @@ export function getConfig(): SuccConfig {
     );
   }
 
-  return {
+  const result: SuccConfig = {
     ...DEFAULT_CONFIG,
     ...fileConfig,
     embedding_model: embeddingModel,
     openrouter_api_key: finalApiKey,
     embedding_mode: embeddingMode,
   };
+
+  // Update cache
+  configCache = {
+    config: result,
+    globalMtime: getFileMtime(globalConfigPath),
+    projectMtime: activeProjectPath ? getFileMtime(activeProjectPath) : 0,
+    projectPath: activeProjectPath,
+  };
+
+  return result;
 }
 
 export function getProjectRoot(): string {

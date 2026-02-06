@@ -3,6 +3,16 @@ import { sqliteVecAvailable } from './schema.js';
 import { floatArrayToBuffer, bufferToFloatArray } from './helpers.js';
 import { SearchResult } from './types.js';
 import { cosineSimilarity } from '../embeddings.js';
+import { invalidateCodeBm25Index, invalidateDocsBm25Index } from './bm25-indexes.js';
+
+/** Invalidate the BM25 index appropriate for a file path */
+function invalidateBm25ForPath(filePath: string): void {
+  if (filePath.startsWith('code:')) {
+    invalidateCodeBm25Index();
+  } else {
+    invalidateDocsBm25Index();
+  }
+}
 
 export interface DocumentBatch {
   filePath: string;
@@ -72,6 +82,8 @@ export function upsertDocument(
       // Ignore vec table errors
     }
   }
+
+  invalidateBm25ForPath(filePath);
 }
 
 /**
@@ -105,6 +117,12 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): void {
 
   // Rebuild vec_documents for affected files
   rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
+
+  // Auto-invalidate affected BM25 indexes
+  const hasCode = documents.some(d => d.filePath.startsWith('code:'));
+  const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
+  if (hasCode) invalidateCodeBm25Index();
+  if (hasDocs) invalidateDocsBm25Index();
 }
 
 /**
@@ -191,6 +209,12 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
 
   // Rebuild vec_documents for affected files
   rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
+
+  // Auto-invalidate affected BM25 indexes
+  const hasCode = documents.some(d => d.filePath.startsWith('code:'));
+  const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
+  if (hasCode) invalidateCodeBm25Index();
+  if (hasDocs) invalidateDocsBm25Index();
 }
 
 export function deleteDocumentsByPath(filePath: string): void {
@@ -215,6 +239,7 @@ export function deleteDocumentsByPath(filePath: string): void {
   }
 
   database.prepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
+  invalidateBm25ForPath(filePath);
 }
 
 export function searchDocuments(
@@ -370,6 +395,8 @@ export function clearDocuments(): void {
   database.prepare('DELETE FROM documents').run();
   database.prepare('DELETE FROM file_hashes').run();
   database.prepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
+  invalidateCodeBm25Index();
+  invalidateDocsBm25Index();
 }
 
 /**
@@ -380,6 +407,7 @@ export function clearCodeDocuments(): void {
   const database = getDb();
   database.prepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
   database.prepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
+  invalidateCodeBm25Index();
 }
 
 /**

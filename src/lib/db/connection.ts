@@ -6,13 +6,26 @@ let db: Database.Database | null = null;
 let globalDb: Database.Database | null = null;
 
 /**
+ * Apply SQLite performance tuning PRAGMAs.
+ * Safe with WAL mode; optimizes for read-heavy workloads.
+ */
+function applySqliteTuning(database: Database.Database): void {
+  database.pragma('busy_timeout = 5000');
+  database.pragma('cache_size = -64000');    // 64MB cache (default ~2MB)
+  database.pragma('mmap_size = 268435456');  // 256MB memory-mapped I/O
+  database.pragma('synchronous = NORMAL');   // Safe with WAL, skip fsync wait
+  database.pragma('temp_store = MEMORY');    // Temp tables in RAM
+}
+
+/**
  * Get the local database instance (synchronous, lazy initialization).
  * Safe for Node.js single-threaded model - no async race conditions possible.
  */
 export function getDb(): Database.Database {
   if (!db) {
     db = new Database(getDbPath());
-    db.pragma('busy_timeout = 5000'); // 5 second timeout for locked database
+    db.pragma('journal_mode = WAL');
+    applySqliteTuning(db);
     loadSqliteVec(db);
     initDb(db);
   }
@@ -25,9 +38,8 @@ export function getDb(): Database.Database {
 export function getGlobalDb(): Database.Database {
   if (!globalDb) {
     globalDb = new Database(getGlobalDbPath());
-    // WAL mode for better concurrent access from multiple MCP processes
     globalDb.pragma('journal_mode = WAL');
-    globalDb.pragma('busy_timeout = 5000'); // 5 second timeout for locked database
+    applySqliteTuning(globalDb);
     loadSqliteVec(globalDb);
     initGlobalDb(globalDb);
   }
