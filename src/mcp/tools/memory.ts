@@ -15,6 +15,7 @@ import { z } from 'zod';
 import path from 'path';
 import {
   saveMemory,
+  saveMemoriesBatch,
   searchMemories,
   getRecentMemories,
   getMemoryById,
@@ -28,6 +29,7 @@ import {
   closeDb,
   closeGlobalDb,
 } from '../../lib/db/index.js';
+import type { MemoryBatchInput } from '../../lib/db/index.js';
 import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
@@ -95,6 +97,15 @@ async function rememberWithLLMExtraction(params: {
     let skipped = 0;
     const results: string[] = [];
 
+    // Phase 1: Pre-process all facts (sensitive filter, embedding, quality scoring)
+    const prepared: Array<{
+      fact: typeof facts[0];
+      content: string;
+      embedding: number[];
+      tags: string[];
+      qualityScore: { score: number; factors: Record<string, any> } | null;
+    }> = [];
+
     for (const fact of facts) {
       let factContent = fact.content;
 
@@ -114,8 +125,6 @@ async function rememberWithLLMExtraction(params: {
 
       try {
         const embedding = await getEmbedding(factContent);
-
-        // Merge fact tags with base tags
         const factTags = [...tags, ...fact.tags, fact.type, 'extracted'];
 
         // Score quality
@@ -129,34 +138,52 @@ async function rememberWithLLMExtraction(params: {
           }
         }
 
-        if (useGlobal) {
-          const projectName = path.basename(getProjectRoot());
-          const result = saveGlobalMemory(factContent, embedding, factTags, source || 'extraction', projectName, { type: fact.type });
-          if (result.isDuplicate) {
-            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
-            skipped++;
-          } else {
-            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
-            saved++;
-          }
-        } else {
-          const result = saveMemory(factContent, embedding, factTags, source || 'extraction', {
-            type: fact.type,
-            qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
-            validFrom: validFromDate,
-            validUntil: validUntilDate,
-          });
-          if (result.isDuplicate) {
-            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
-            skipped++;
-          } else {
-            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
-            saved++;
-          }
-        }
+        prepared.push({ fact, content: factContent, embedding, tags: factTags, qualityScore });
       } catch (error: any) {
         results.push(`✗ [${fact.type}] Error: ${error.message}`);
         skipped++;
+      }
+    }
+
+    // Phase 2: Batch save
+    if (useGlobal) {
+      // Global memories don't have batch API — save individually
+      for (const item of prepared) {
+        const projectName = path.basename(getProjectRoot());
+        const result = saveGlobalMemory(item.content, item.embedding, item.tags, source || 'extraction', projectName, { type: item.fact.type });
+        if (result.isDuplicate) {
+          results.push(`⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`);
+          skipped++;
+        } else {
+          results.push(`✓ [${item.fact.type}] id:${result.id} "${item.fact.content.substring(0, 50)}..."`);
+          saved++;
+        }
+      }
+    } else if (prepared.length > 0) {
+      // Local memories — use batch save (single dedup check + transaction)
+      const batchInputs: MemoryBatchInput[] = prepared.map(item => ({
+        content: item.content,
+        embedding: item.embedding,
+        tags: item.tags,
+        type: item.fact.type,
+        source: source || 'extraction',
+        qualityScore: item.qualityScore ? { score: item.qualityScore.score, factors: item.qualityScore.factors } : undefined,
+        validFrom: validFromDate,
+        validUntil: validUntilDate,
+      }));
+
+      const batchResult = saveMemoriesBatch(batchInputs);
+
+      for (let i = 0; i < batchResult.results.length; i++) {
+        const r = batchResult.results[i];
+        const item = prepared[r.index];
+        if (r.isDuplicate) {
+          results.push(`⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`);
+          skipped++;
+        } else {
+          results.push(`✓ [${item.fact.type}] id:${r.id} "${item.fact.content.substring(0, 50)}..."`);
+          saved++;
+        }
       }
     }
 
