@@ -1,0 +1,207 @@
+/**
+ * AGENTS.md Generator
+ *
+ * Auto-generates a .claude/AGENTS.md file from high-value memories
+ * (decisions, patterns, dead-ends, learnings).
+ *
+ * Inspired by Ralph's AGENTS.md auto-update pattern.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { getDb, closeDb } from './db/index.js';
+import { getProjectRoot, getConfig } from './config.js';
+import type { MemoryType } from './db/schema.js';
+
+export interface AgentsMdConfig {
+  enabled: boolean;
+  output_path?: string;  // Default: .claude/AGENTS.md (relative to project root)
+  max_entries: number;    // Default: 50
+  min_quality: number;    // Default: 0.4
+  include_types: MemoryType[];
+}
+
+export const DEFAULT_AGENTS_MD_CONFIG: AgentsMdConfig = {
+  enabled: false,
+  max_entries: 50,
+  min_quality: 0.4,
+  include_types: ['dead_end', 'decision', 'pattern', 'learning'],
+};
+
+interface MemoryRow {
+  id: number;
+  content: string;
+  type: string | null;
+  tags: string | null;
+  source: string | null;
+  quality_score: number | null;
+  created_at: string;
+}
+
+/**
+ * Get the AGENTS.md config from project config
+ */
+export function getAgentsMdConfig(): AgentsMdConfig {
+  const config = getConfig();
+  const userConfig = (config as any).agents_md || {};
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_AGENTS_MD_CONFIG.enabled,
+    output_path: userConfig.output_path,
+    max_entries: userConfig.max_entries ?? DEFAULT_AGENTS_MD_CONFIG.max_entries,
+    min_quality: userConfig.min_quality ?? DEFAULT_AGENTS_MD_CONFIG.min_quality,
+    include_types: userConfig.include_types ?? DEFAULT_AGENTS_MD_CONFIG.include_types,
+  };
+}
+
+/**
+ * Query memories suitable for AGENTS.md export
+ */
+function queryMemoriesForExport(config: AgentsMdConfig): MemoryRow[] {
+  const database = getDb();
+
+  // Build type filter
+  const typePlaceholders = config.include_types.map(() => '?').join(', ');
+
+  const rows = database.prepare(`
+    SELECT id, content, type, tags, source, quality_score, created_at
+    FROM memories
+    WHERE invalidated_by IS NULL
+      AND type IN (${typePlaceholders})
+      AND (quality_score IS NULL OR quality_score >= ?)
+    ORDER BY
+      CASE type
+        WHEN 'dead_end' THEN 0
+        WHEN 'decision' THEN 1
+        WHEN 'pattern' THEN 2
+        WHEN 'learning' THEN 3
+        ELSE 4
+      END,
+      quality_score DESC,
+      created_at DESC
+    LIMIT ?
+  `).all(...config.include_types, config.min_quality, config.max_entries) as MemoryRow[];
+
+  return rows;
+}
+
+/**
+ * Group memories by type for sections
+ */
+function groupByType(memories: MemoryRow[]): Map<string, MemoryRow[]> {
+  const groups = new Map<string, MemoryRow[]>();
+  for (const m of memories) {
+    const type = m.type || 'observation';
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type)!.push(m);
+  }
+  return groups;
+}
+
+/**
+ * Format a single memory entry for AGENTS.md
+ */
+function formatEntry(m: MemoryRow, isDeadEnd: boolean): string {
+  const truncated = m.content.length > 200 ? m.content.substring(0, 200) + '...' : m.content;
+  const date = new Date(m.created_at).toLocaleDateString();
+
+  if (isDeadEnd) {
+    // Extract approach and failure reason from dead-end format
+    const match = truncated.match(/DEAD END: Tried "([^"]+)" — Failed because: (.+)/s);
+    if (match) {
+      return `- **${match[1]}**: ${match[2]} _(id: ${m.id}, ${date})_`;
+    }
+  }
+
+  return `- ${truncated.replace(/\n/g, ' ')} _(id: ${m.id}, ${date})_`;
+}
+
+/**
+ * Generate AGENTS.md content from memories
+ */
+export function generateAgentsMd(configOverrides?: Partial<AgentsMdConfig>): string {
+  const config = { ...getAgentsMdConfig(), ...configOverrides };
+  const memories = queryMemoriesForExport(config);
+  const grouped = groupByType(memories);
+
+  const lines: string[] = [
+    '# AGENTS.md',
+    `> Auto-generated from succ memories. Do not edit manually.`,
+    `> Last updated: ${new Date().toISOString()}`,
+    '',
+  ];
+
+  // Dead Ends section
+  const deadEnds = grouped.get('dead_end') || [];
+  if (deadEnds.length > 0) {
+    lines.push('## Dead Ends (Do NOT retry these)', '');
+    for (const m of deadEnds) {
+      lines.push(formatEntry(m, true));
+    }
+    lines.push('');
+  }
+
+  // Decisions section
+  const decisions = grouped.get('decision') || [];
+  if (decisions.length > 0) {
+    lines.push('## Key Decisions', '');
+    for (const m of decisions) {
+      lines.push(formatEntry(m, false));
+    }
+    lines.push('');
+  }
+
+  // Patterns section
+  const patterns = grouped.get('pattern') || [];
+  if (patterns.length > 0) {
+    lines.push('## Patterns & Conventions', '');
+    for (const m of patterns) {
+      lines.push(formatEntry(m, false));
+    }
+    lines.push('');
+  }
+
+  // Learnings section
+  const learnings = grouped.get('learning') || [];
+  if (learnings.length > 0) {
+    lines.push('## Important Learnings', '');
+    for (const m of learnings) {
+      lines.push(formatEntry(m, false));
+    }
+    lines.push('');
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push(`*Generated by succ. Entries: ${memories.length}. Source: project memories with quality >= ${config.min_quality}*`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Write AGENTS.md to disk
+ */
+export function writeAgentsMd(configOverrides?: Partial<AgentsMdConfig>): { path: string; entries: number } {
+  const config = { ...getAgentsMdConfig(), ...configOverrides };
+  const content = generateAgentsMd(config);
+
+  // Determine output path
+  const projectRoot = getProjectRoot();
+  const outputPath = config.output_path
+    ? path.resolve(projectRoot, config.output_path)
+    : path.join(projectRoot, '.claude', 'AGENTS.md');
+
+  // Ensure directory exists
+  const dir = path.dirname(outputPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(outputPath, content, 'utf-8');
+
+  // Count entries
+  const entryCount = (content.match(/^- /gm) || []).length;
+
+  return { path: outputPath, entries: entryCount };
+}

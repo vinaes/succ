@@ -29,6 +29,8 @@ import { score } from './commands/score.js';
 import { daemon } from './commands/daemon.js';
 import { migrate } from './commands/migrate.js';
 import { setup } from './commands/setup.js';
+import { agentsMd } from './commands/agents-md.js';
+import { progress } from './commands/progress.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -491,12 +493,38 @@ program
   .description('Manage memory retention with decay-based cleanup')
   .option('--dry-run', 'Preview what would be deleted')
   .option('--apply', 'Actually delete low-score memories')
+  .option('--auto-cleanup', 'Soft-invalidate (not delete) low-score memories')
   .option('-v, --verbose', 'Show detailed analysis')
   .action((options) => {
     retention({
       dryRun: options.dryRun,
       apply: options.apply,
+      autoCleanup: options.autoCleanup,
       verbose: options.verbose,
+    });
+  });
+
+program
+  .command('agents-md')
+  .description('Generate .claude/AGENTS.md from project memories (decisions, patterns, dead-ends)')
+  .option('--preview', 'Preview without writing to disk')
+  .option('--path <path>', 'Custom output path')
+  .action((options) => {
+    agentsMd({
+      preview: options.preview,
+      path: options.path,
+    });
+  });
+
+program
+  .command('progress')
+  .description('View session progress log (knowledge growth over time)')
+  .option('-n, --limit <number>', 'Number of entries to show', '20')
+  .option('--since <duration>', 'Show entries since (e.g., 7d, 1w, 1m)')
+  .action((options) => {
+    progress({
+      limit: parseInt(options.limit, 10),
+      since: options.since,
     });
   });
 

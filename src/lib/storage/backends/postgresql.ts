@@ -367,6 +367,39 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source)');
+
+    // Migration: add invalidated_by column for soft-delete during consolidation
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'invalidated_by'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN invalidated_by INTEGER;
+        END IF;
+      END $$;
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)');
+
+    // Learning deltas table for session progress tracking
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS learning_deltas (
+        id SERIAL PRIMARY KEY,
+        project_id TEXT,
+        timestamp TIMESTAMPTZ NOT NULL,
+        source TEXT NOT NULL,
+        memories_before INTEGER NOT NULL DEFAULT 0,
+        memories_after INTEGER NOT NULL DEFAULT 0,
+        new_memories INTEGER NOT NULL DEFAULT 0,
+        types_added JSONB,
+        avg_quality REAL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_project_id ON learning_deltas(project_id)');
   }
 
   /**
@@ -701,6 +734,7 @@ export class PostgresBackend {
              1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
+        AND invalidated_by IS NULL
     `;
     const params: any[] = [toPgVector(queryEmbedding), threshold];
     let paramIndex = 3;
@@ -803,6 +837,34 @@ export class PostgresBackend {
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Soft-invalidate a memory (mark as superseded by another memory).
+   */
+  async invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories
+       SET valid_until = NOW(), invalidated_by = $1
+       WHERE id = $2 AND invalidated_by IS NULL`,
+      [supersededById, memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Restore a soft-invalidated memory.
+   */
+  async restoreInvalidatedMemory(memoryId: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories
+       SET valid_until = NULL, invalidated_by = NULL
+       WHERE id = $1 AND invalidated_by IS NOT NULL`,
+      [memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async getRecentMemories(limit: number = 10, includeGlobal: boolean = true): Promise<Memory[]> {
     const pool = await this.getPool();
 
@@ -814,17 +876,17 @@ export class PostgresBackend {
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Filter by project_id
+    // Filter by project_id and exclude soft-deleted
     if (this.projectId) {
       if (includeGlobal) {
-        query += ` WHERE (project_id = $${paramIndex} OR project_id IS NULL)`;
+        query += ` WHERE (project_id = $${paramIndex} OR project_id IS NULL) AND invalidated_by IS NULL`;
       } else {
-        query += ` WHERE project_id = $${paramIndex}`;
+        query += ` WHERE project_id = $${paramIndex} AND invalidated_by IS NULL`;
       }
       params.push(this.projectId);
       paramIndex++;
     } else {
-      query += ` WHERE project_id IS NULL`;
+      query += ` WHERE project_id IS NULL AND invalidated_by IS NULL`;
     }
 
     query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
@@ -1151,6 +1213,7 @@ export class PostgresBackend {
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
         AND project_id IS NULL
+        AND invalidated_by IS NULL
       ORDER BY embedding <=> $1
       LIMIT $3
     `;
@@ -1195,6 +1258,7 @@ export class PostgresBackend {
               access_count, last_accessed, valid_from, valid_until, created_at
        FROM memories
        WHERE project_id IS NULL
+         AND invalidated_by IS NULL
        ORDER BY created_at DESC
        LIMIT $1`,
       [limit]

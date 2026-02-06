@@ -392,6 +392,15 @@ export async function sessionSummary(
 
   console.log('Extracting session summary...\n');
 
+  // Snapshot before extraction for learning delta
+  let snapshotBefore: import('./learning-delta.js').MemorySnapshot | null = null;
+  try {
+    const { takeMemorySnapshot } = await import('./learning-delta.js');
+    snapshotBefore = takeMemorySnapshot();
+  } catch {
+    // Learning delta is optional
+  }
+
   const result = await extractSessionSummary(transcript, {
     dryRun: options.dryRun,
     verbose: options.verbose ?? true,
@@ -405,6 +414,22 @@ export async function sessionSummary(
   console.log(`  Facts extracted: ${result.factsExtracted}`);
   console.log(`  Facts saved: ${result.factsSaved}`);
   console.log(`  Facts skipped: ${result.factsSkipped}`);
+
+  // Compute and log learning delta
+  if (snapshotBefore && result.factsSaved > 0) {
+    try {
+      const { takeMemorySnapshot, calculateLearningDelta } = await import('./learning-delta.js');
+      const { appendProgressEntry } = await import('./progress-log.js');
+      const snapshotAfter = takeMemorySnapshot();
+      const delta = calculateLearningDelta(snapshotBefore, snapshotAfter, 'session-summary');
+      appendProgressEntry(delta);
+      if (options.verbose) {
+        console.log(`  Progress logged: +${delta.newMemories} facts`);
+      }
+    } catch {
+      // Progress logging is optional
+    }
+  }
 
   if (result.errors.length > 0) {
     console.log(`  Errors: ${result.errors.length}`);

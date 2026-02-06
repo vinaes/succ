@@ -12,6 +12,7 @@
  * - succ_link / succ_explore: Knowledge graph
  * - succ_status / succ_stats / succ_score: Status and metrics
  * - succ_config / succ_config_set / succ_checkpoint: Configuration
+ * - succ_dead_end: Record failed approaches to prevent retrying
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -27,6 +28,7 @@ import { registerGraphTools } from './tools/graph.js';
 import { registerIndexingTools } from './tools/indexing.js';
 import { registerStatusTools } from './tools/status.js';
 import { registerConfigTools } from './tools/config.js';
+import { registerDeadEndTools } from './tools/dead-end.js';
 
 // Create MCP server
 const server = new McpServer({
@@ -42,6 +44,7 @@ registerGraphTools(server);
 registerIndexingTools(server);
 registerStatusTools(server);
 registerConfigTools(server);
+registerDeadEndTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {

@@ -45,7 +45,7 @@ async function rememberWithLLMExtraction(params: {
   content: string;
   tags: string[];
   source?: string;
-  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern' | 'dead_end';
   useGlobal: boolean;
   valid_from?: string;
   valid_until?: string;
@@ -91,6 +91,15 @@ async function rememberWithLLMExtraction(params: {
     }
     if (valid_until) {
       validUntilDate = parseDuration(valid_until);
+    }
+
+    // Snapshot before for learning delta
+    let snapshotBefore: import('../../lib/learning-delta.js').MemorySnapshot | null = null;
+    try {
+      const { takeMemorySnapshot } = await import('../../lib/learning-delta.js');
+      snapshotBefore = takeMemorySnapshot();
+    } catch {
+      // Learning delta is optional
     }
 
     let saved = 0;
@@ -187,6 +196,19 @@ async function rememberWithLLMExtraction(params: {
       }
     }
 
+    // Log learning delta if any memories were saved
+    if (saved > 0 && snapshotBefore) {
+      try {
+        const { takeMemorySnapshot, calculateLearningDelta } = await import('../../lib/learning-delta.js');
+        const { appendProgressEntry } = await import('../../lib/progress-log.js');
+        const snapshotAfter = takeMemorySnapshot();
+        const delta = calculateLearningDelta(snapshotBefore, snapshotAfter, 'mcp-remember');
+        appendProgressEntry(delta);
+      } catch {
+        // Progress logging is optional
+      }
+    }
+
     return {
       content: [{
         type: 'text' as const,
@@ -219,7 +241,7 @@ async function saveSingleMemory(params: {
   content: string;
   tags: string[];
   source?: string;
-  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern' | 'dead_end';
   useGlobal: boolean;
   valid_from?: string;
   valid_until?: string;
@@ -335,10 +357,10 @@ export function registerMemoryTools(server: McpServer) {
         .optional()
         .describe('Source context (e.g., "user request", "bug fix", file path)'),
       type: z
-        .enum(['observation', 'decision', 'learning', 'error', 'pattern'])
+        .enum(['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'])
         .optional()
         .default('observation')
-        .describe('Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes)'),
+        .describe('Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes), dead_end (failed approaches)'),
       global: z
         .boolean()
         .optional()
@@ -507,6 +529,15 @@ export function registerMemoryTools(server: McpServer) {
             ],
           };
         }
+
+        // Log to progress file (fire-and-forget)
+        try {
+          const { appendRawEntry } = await import('../../lib/progress-log.js');
+          appendRawEntry(`manual | +1 fact (${type}) | topics: ${tags.join(', ') || 'untagged'}`);
+        } catch {
+          // Progress logging is optional
+        }
+
         return {
           content: [
             {
@@ -734,6 +765,22 @@ export function registerMemoryTools(server: McpServer) {
           allResults = scoredResults;
         }
 
+        // Apply dead-end boost: surface dead-end memories higher in results
+        const config = getConfig();
+        const deadEndBoost = config.dead_end_boost ?? 0.15;
+        if (deadEndBoost > 0) {
+          allResults = allResults.map(r => {
+            const memType = (r as any).type;
+            const memTags = Array.isArray(r.tags) ? r.tags : [];
+            const isDeadEnd = memType === 'dead_end' || memTags.includes('dead-end');
+            if (isDeadEnd) {
+              return { ...r, similarity: Math.min(1.0, r.similarity + deadEndBoost), _isDeadEnd: true };
+            }
+            return r;
+          });
+          allResults.sort((a, b) => b.similarity - a.similarity);
+        }
+
         if (allResults.length === 0) {
           // Try to show recent memories as fallback
           const recentLocal = getRecentMemories(2);
@@ -808,7 +855,10 @@ export function registerMemoryTools(server: McpServer) {
               validityStr = ` [valid: ${fromStr} → ${untilStr}]`;
             }
 
-            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${m.content}`;
+            // Dead-end warning prefix
+            const deadEndPrefix = (m as any)._isDeadEnd ? '**WARNING: Dead End** ' : '';
+
+            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}`;
           })
           .join('\n\n---\n\n');
 

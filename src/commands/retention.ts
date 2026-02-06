@@ -13,6 +13,7 @@
 import {
   getAllMemoriesForRetention,
   deleteMemoriesByIds,
+  invalidateMemory,
   invalidateMemoriesBm25Index,
 } from '../lib/db/index.js';
 import { getRetentionConfig } from '../lib/config.js';
@@ -25,6 +26,7 @@ import {
 export interface RetentionOptions {
   dryRun?: boolean;
   apply?: boolean;
+  autoCleanup?: boolean;
   verbose?: boolean;
 }
 
@@ -39,6 +41,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
     keep_threshold: configFromFile.keep_threshold,
     delete_threshold: configFromFile.delete_threshold,
     default_quality_score: configFromFile.default_quality_score,
+    use_temporal_decay: configFromFile.use_temporal_decay ?? true,
   };
 
   // Get all memories
@@ -83,6 +86,51 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
       }
     }
 
+    return;
+  }
+
+  // Auto-cleanup: soft-invalidate instead of hard-delete
+  if (options.autoCleanup) {
+    if (analysis.delete.length === 0) {
+      console.log('No memories to clean up. All memories are above the threshold.');
+      return;
+    }
+
+    if (options.dryRun) {
+      console.log('DRY RUN — Auto-cleanup preview (soft-invalidation):\n');
+      console.log(formatRetentionAnalysis(analysis, options.verbose));
+      console.log(`\nWould soft-invalidate ${analysis.delete.length} memories.`);
+      console.log(`Run without --dry-run to apply.`);
+      return;
+    }
+
+    let invalidated = 0;
+    for (const m of analysis.delete) {
+      try {
+        invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
+        invalidated++;
+      } catch {
+        // Skip if already invalidated
+      }
+    }
+
+    console.log(`Soft-invalidated ${invalidated} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`);
+    console.log('Originals preserved — can be restored with consolidation --undo.\n');
+
+    if (options.verbose) {
+      for (const m of analysis.delete) {
+        const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
+        console.log(`  [${m.memoryId}] score=${m.effectiveScore} "${preview}..."`);
+      }
+    } else {
+      for (const m of analysis.delete.slice(0, 5)) {
+        const preview = m.content.slice(0, 50).replace(/\n/g, ' ');
+        console.log(`  [${m.memoryId}] score=${m.effectiveScore} "${preview}..."`);
+      }
+      if (analysis.delete.length > 5) {
+        console.log(`  ... and ${analysis.delete.length - 5} more`);
+      }
+    }
     return;
   }
 
