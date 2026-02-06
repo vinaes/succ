@@ -460,6 +460,103 @@ describe('Database Module', () => {
     });
   });
 
+  describe('Memory soft-delete (consolidation v2)', () => {
+    it('should invalidate a memory', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const original = db.saveMemory('memory to invalidate', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      const keeper = db.saveMemory('keeper memory', embedding.map(v => v * 0.5), ['test'], undefined, { deduplicate: false, autoLink: false });
+
+      const success = db.invalidateMemory(original.id, keeper.id);
+      expect(success).toBe(true);
+
+      // Memory still exists but has invalidated_by set
+      const mem = db.getMemoryById(original.id);
+      expect(mem).not.toBeNull();
+      expect(mem?.valid_until).not.toBeNull();
+    });
+
+    it('should exclude invalidated memories from getRecentMemories', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const m = db.saveMemory('recent-but-invalidated', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      db.invalidateMemory(m.id, 1);
+
+      const recent = db.getRecentMemories(100);
+      const found = recent.find(r => r.id === m.id);
+      expect(found).toBeUndefined();
+    });
+
+    it('should restore an invalidated memory', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const m = db.saveMemory('to restore', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      db.invalidateMemory(m.id, 999);
+
+      const restored = db.restoreInvalidatedMemory(m.id);
+      expect(restored).toBe(true);
+
+      const recent = db.getRecentMemories(100);
+      const found = recent.find(r => r.id === m.id);
+      expect(found).toBeDefined();
+    });
+
+    it('should not invalidate already-invalidated memory', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const m = db.saveMemory('double invalidate', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      db.invalidateMemory(m.id, 100);
+
+      // Second invalidation should fail (already invalidated)
+      const again = db.invalidateMemory(m.id, 200);
+      expect(again).toBe(false);
+    });
+
+    it('should not restore a non-invalidated memory', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const m = db.saveMemory('never invalidated', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+
+      const restored = db.restoreInvalidatedMemory(m.id);
+      expect(restored).toBe(false);
+    });
+
+    it('should report invalidated count in getMemoryStats', async () => {
+      const db = await import('./db/index.js');
+
+      const stats = db.getMemoryStats();
+      expect(stats.active_memories).toBeDefined();
+      expect(stats.invalidated_memories).toBeDefined();
+      expect(stats.total_memories).toBe(stats.active_memories + stats.invalidated_memories);
+    });
+
+    it('should return consolidation history via supersedes links', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const original1 = db.saveMemory('original-hist-1', embedding, [], undefined, { deduplicate: false, autoLink: false });
+      const original2 = db.saveMemory('original-hist-2', embedding.map(v => v * 0.9), [], undefined, { deduplicate: false, autoLink: false });
+      const merged = db.saveMemory('merged-hist', embedding.map(v => v * 0.7), [], 'consolidation-llm', { deduplicate: false, autoLink: false });
+
+      // Create supersedes links
+      db.createMemoryLink(merged.id, original1.id, 'supersedes', 1.0);
+      db.createMemoryLink(merged.id, original2.id, 'supersedes', 1.0);
+      db.invalidateMemory(original1.id, merged.id);
+      db.invalidateMemory(original2.id, merged.id);
+
+      const history = db.getConsolidationHistory(10);
+      const entry = history.find(h => h.mergedMemoryId === merged.id);
+      expect(entry).toBeDefined();
+      expect(entry?.originalIds).toContain(original1.id);
+      expect(entry?.originalIds).toContain(original2.id);
+    });
+  });
+
   describe('Constants', () => {
     it('should export MEMORY_TYPES', async () => {
       const db = await import('./db/index.js');
