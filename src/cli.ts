@@ -398,7 +398,7 @@ program
 
 program
   .command('consolidate')
-  .description('Consolidate memories: merge duplicates, delete redundant')
+  .description('Consolidate memories: merge duplicates, soft-invalidate redundant')
   .option('--dry-run', 'Preview changes without applying them')
   .option('-t, --threshold <number>', 'Similarity threshold for consolidation (0-1)', '0.85')
   .option('-n, --limit <number>', 'Maximum pairs to process', '50')
@@ -406,6 +406,8 @@ program
   .option('-v, --verbose', 'Show detailed output')
   .option('--llm', 'Force LLM merge (default: enabled)')
   .option('--no-llm', 'Disable LLM merge (use simple quality-based merge)')
+  .option('--undo <id>', 'Undo a consolidation by restoring original memories')
+  .option('--history', 'Show recent consolidation operations')
   .action((options) => {
     consolidate({
       dryRun: options.dryRun,
@@ -415,6 +417,8 @@ program
       verbose: options.verbose,
       llm: options.llm === true ? true : undefined,
       noLlm: options.llm === false,
+      undo: options.undo,
+      history: options.history,
     });
   });
 

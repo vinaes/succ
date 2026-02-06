@@ -419,6 +419,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     .prepare(`
       SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at
       FROM memories
+      WHERE invalidated_by IS NULL
       ORDER BY created_at DESC
       LIMIT ?
     `)
@@ -478,10 +479,83 @@ export function deleteMemory(id: number): boolean {
 }
 
 /**
+ * Soft-invalidate a memory during consolidation.
+ * Sets valid_until = now and records which memory superseded it.
+ * The memory remains in the database for historical queries and rollback.
+ */
+export function invalidateMemory(memoryId: number, supersededById: number): boolean {
+  const database = getDb();
+  const now = new Date().toISOString();
+
+  const result = database.prepare(`
+    UPDATE memories
+    SET valid_until = ?, invalidated_by = ?
+    WHERE id = ? AND invalidated_by IS NULL
+  `).run(now, supersededById, memoryId);
+
+  return result.changes > 0;
+}
+
+/**
+ * Restore a soft-invalidated memory by clearing valid_until and invalidated_by.
+ * Used by the consolidation rollback (undo) feature.
+ */
+export function restoreInvalidatedMemory(memoryId: number): boolean {
+  const database = getDb();
+
+  const result = database.prepare(`
+    UPDATE memories
+    SET valid_until = NULL, invalidated_by = NULL
+    WHERE id = ? AND invalidated_by IS NOT NULL
+  `).run(memoryId);
+
+  return result.changes > 0;
+}
+
+/**
+ * Get consolidation history: merged memories and what they superseded.
+ * Returns merge operations with their source originals.
+ */
+export function getConsolidationHistory(limit: number = 20): Array<{
+  mergedMemoryId: number;
+  mergedContent: string;
+  originalIds: number[];
+  mergedAt: string;
+}> {
+  const database = getDb();
+
+  // Find memories that have supersedes links (these are merge results)
+  const rows = database.prepare(`
+    SELECT DISTINCT ml.source_id as merged_id, ml.created_at as merged_at
+    FROM memory_links ml
+    WHERE ml.relation = 'supersedes'
+    ORDER BY ml.created_at DESC
+    LIMIT ?
+  `).all(limit) as Array<{ merged_id: number; merged_at: string }>;
+
+  return rows.map(row => {
+    const mergedMemory = getMemoryById(row.merged_id);
+    const originals = database.prepare(`
+      SELECT target_id FROM memory_links
+      WHERE source_id = ? AND relation = 'supersedes'
+    `).all(row.merged_id) as Array<{ target_id: number }>;
+
+    return {
+      mergedMemoryId: row.merged_id,
+      mergedContent: mergedMemory?.content ?? '(deleted)',
+      originalIds: originals.map(o => o.target_id),
+      mergedAt: row.merged_at,
+    };
+  });
+}
+
+/**
  * Get memory stats including type breakdown
  */
 export function getMemoryStats(): {
   total_memories: number;
+  active_memories: number;
+  invalidated_memories: number;
   oldest_memory: string | null;
   newest_memory: string | null;
   by_type: Record<string, number>;
@@ -492,30 +566,35 @@ export function getMemoryStats(): {
   const total = database.prepare('SELECT COUNT(*) as count FROM memories').get() as {
     count: number;
   };
+  const active = database.prepare('SELECT COUNT(*) as count FROM memories WHERE invalidated_by IS NULL').get() as {
+    count: number;
+  };
   const oldest = database
-    .prepare('SELECT MIN(created_at) as oldest FROM memories')
+    .prepare('SELECT MIN(created_at) as oldest FROM memories WHERE invalidated_by IS NULL')
     .get() as { oldest: string | null };
   const newest = database
-    .prepare('SELECT MAX(created_at) as newest FROM memories')
+    .prepare('SELECT MAX(created_at) as newest FROM memories WHERE invalidated_by IS NULL')
     .get() as { newest: string | null };
 
-  // Count by type
+  // Count by type (active only)
   const typeCounts = database
-    .prepare('SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories GROUP BY type')
+    .prepare('SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories WHERE invalidated_by IS NULL GROUP BY type')
     .all('observation') as Array<{ type: string; count: number }>;
   const by_type: Record<string, number> = {};
   for (const row of typeCounts) {
     by_type[row.type] = row.count;
   }
 
-  // Count stale memories (older than 30 days)
+  // Count stale memories (older than 30 days, active only)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const stale = database
-    .prepare('SELECT COUNT(*) as count FROM memories WHERE created_at < ?')
+    .prepare('SELECT COUNT(*) as count FROM memories WHERE created_at < ? AND invalidated_by IS NULL')
     .get(thirtyDaysAgo) as { count: number };
 
   return {
     total_memories: total.count,
+    active_memories: active.count,
+    invalidated_memories: total.count - active.count,
     oldest_memory: oldest.oldest,
     newest_memory: newest.newest,
     by_type,

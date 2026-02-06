@@ -14,6 +14,8 @@ import {
   getDb,
   Memory,
   deleteMemory,
+  invalidateMemory,
+  restoreInvalidatedMemory,
   getMemoryById,
   saveMemory,
   getMemoryLinks,
@@ -65,7 +67,8 @@ export function getAllMemoriesWithEmbeddings(): Array<Memory & { embedding: numb
   const rows = database
     .prepare(
       `SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at, embedding
-       FROM memories`
+       FROM memories
+       WHERE invalidated_by IS NULL`
     )
     .all() as Array<{
     id: number;
@@ -384,19 +387,26 @@ export async function executeConsolidation(
 
       if (candidate.action === 'delete_duplicate') {
         if (!dryRun) {
-          // Determine which to delete
+          // Determine which to invalidate
           const keepId = candidate.reason?.includes(`#${candidate.memory1.id}`)
             ? candidate.memory1.id
             : candidate.memory2.id;
-          const deleteId = keepId === candidate.memory1.id
+          const invalidateId = keepId === candidate.memory1.id
             ? candidate.memory2.id
             : candidate.memory1.id;
 
-          // Transfer links before deletion
-          transferLinks(deleteId, keepId);
+          // Transfer links before invalidation
+          transferLinks(invalidateId, keepId);
 
-          // Delete the duplicate
-          deleteMemory(deleteId);
+          // Create supersedes link for revision tracking
+          try {
+            createMemoryLink(keepId, invalidateId, 'supersedes', 1.0);
+          } catch {
+            // Link may already exist
+          }
+
+          // Soft-invalidate instead of hard delete
+          invalidateMemory(invalidateId, keepId);
         }
         result.deleted++;
       } else if (candidate.action === 'merge') {
@@ -458,6 +468,63 @@ function transferLinks(fromId: number, toId: number): void {
       }
     }
   }
+}
+
+/**
+ * Undo a consolidation operation by restoring original memories
+ * and removing the merged result.
+ */
+export function undoConsolidation(mergedMemoryId: number): {
+  restored: number[];
+  deletedMerge: boolean;
+  errors: string[];
+} {
+  const database = getDb();
+  const errors: string[] = [];
+  const restored: number[] = [];
+
+  // Find all memories this one supersedes
+  const supersededLinks = database.prepare(`
+    SELECT target_id FROM memory_links
+    WHERE source_id = ? AND relation = 'supersedes'
+  `).all(mergedMemoryId) as Array<{ target_id: number }>;
+
+  if (supersededLinks.length === 0) {
+    return { restored: [], deletedMerge: false, errors: ['No supersedes links found — not a consolidation result'] };
+  }
+
+  let deletedMerge = false;
+
+  const undoTx = database.transaction(() => {
+    // 1. Restore each original memory
+    for (const { target_id } of supersededLinks) {
+      const success = restoreInvalidatedMemory(target_id);
+      if (success) {
+        restored.push(target_id);
+      } else {
+        errors.push(`Failed to restore memory #${target_id} (may not be invalidated)`);
+      }
+    }
+
+    // 2. Remove supersedes links
+    database.prepare(`
+      DELETE FROM memory_links
+      WHERE source_id = ? AND relation = 'supersedes'
+    `).run(mergedMemoryId);
+
+    // 3. If the merged memory was synthetic (created by consolidation), hard-delete it
+    const merged = getMemoryById(mergedMemoryId);
+    if (merged?.source === 'consolidation-llm') {
+      deleteMemory(mergedMemoryId);
+      deletedMerge = true;
+    }
+    // If source != 'consolidation-llm', this was a keep-one-invalidate-other (delete_duplicate),
+    // so we keep the "winner" memory alive
+  });
+
+  undoTx();
+
+  return { restored, deletedMerge, errors };
 }
 
 // ============================================================================
@@ -633,25 +700,38 @@ async function mergeMemories(
   // Merge tags from both memories
   const combinedTags = [...new Set([...m1.tags, ...m2.tags])];
 
-  // Save new memory with merged content
-  const result = saveMemory(finalContent, newEmbedding, combinedTags, 'consolidation-llm', {
-    deduplicate: false, // We're consolidating, not deduping
-    autoLink: true,
-    qualityScore: {
-      score: Math.max(q1, q2), // Keep best quality score
-      factors: { merged_from: 2 },
-    },
+  // Save new memory and soft-invalidate originals — all in one transaction
+  const database = getDb();
+  let mergedId: number | null = null;
+
+  const mergeTx = database.transaction(() => {
+    // Save new memory with merged content
+    const saved = saveMemory(finalContent, newEmbedding, combinedTags, 'consolidation-llm', {
+      deduplicate: false, // We're consolidating, not deduping
+      autoLink: true,
+      qualityScore: {
+        score: (q1 + q2) / 2, // Average, not max — prevent score inflation
+        factors: { merged_from: 2, original_score_1: q1, original_score_2: q2 },
+      },
+    });
+
+    // Transfer links from both memories to the new one
+    transferLinks(m1.id, saved.id);
+    transferLinks(m2.id, saved.id);
+
+    // Create supersedes links for revision tracking
+    try { createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch { /* exists */ }
+    try { createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch { /* exists */ }
+
+    // Soft-invalidate originals instead of hard delete
+    invalidateMemory(m1.id, saved.id);
+    invalidateMemory(m2.id, saved.id);
+
+    mergedId = saved.id;
   });
 
-  // Transfer links from both memories to the new one
-  transferLinks(m1.id, result.id);
-  transferLinks(m2.id, result.id);
-
-  // Delete both original memories
-  deleteMemory(m1.id);
-  deleteMemory(m2.id);
-
-  return result.id;
+  mergeTx();
+  return mergedId;
 }
 
 /**
