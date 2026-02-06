@@ -2,14 +2,21 @@ import spawn from 'cross-spawn';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
+import ora from 'ora';
 import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
 import { withLock } from '../lib/lock.js';
+import {
+  loadAnalyzeState, saveAnalyzeState, getGitHead, getChangedFiles,
+  hashFile, shouldRerunAgent, type AnalyzeState
+} from '../lib/analyze-state.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
   openrouter?: boolean;
   local?: boolean;  // Use local LLM API
   background?: boolean;
+  fast?: boolean;   // Fast mode: fewer agents, smaller context
+  force?: boolean;  // Force full re-analysis (skip incremental)
 }
 
 interface Agent {
@@ -22,7 +29,7 @@ interface Agent {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, local = false, background = false } = options;
+  const { parallel = true, openrouter = false, local = false, background = false, fast = false } = options;
 
   // Determine mode from options or config
   const config = getConfig();
@@ -44,6 +51,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     const args = ['analyze'];
     if (!parallel) args.push('--sequential');
     if (openrouter) args.push('--openrouter');
+    if (fast) args.push('--fast');
 
     // Spawn detached process
     const child = spawn(process.execPath, [process.argv[1], ...args], {
@@ -83,8 +91,10 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   console.log('🧠 Analyzing project with Claude agents...\n');
   console.log(`Project: ${projectRoot}`);
-  console.log(`Mode: ${parallel ? 'parallel' : 'sequential'}`);
-  console.log(`Backend: ${backendName}\n`);
+  console.log(`Mode: ${parallel ? 'parallel' : 'sequential'}${fast ? ' (fast)' : ''}`);
+  console.log(`Backend: ${backendName}`);
+  if (fast) console.log(`Fast mode: 5 agents, reduced context`);
+  console.log('');
 
   writeProgress('starting', 0, 4);
 
@@ -93,16 +103,61 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   // Define agents
   const projectName = path.basename(projectRoot);
-  const agents = getAgents(brainDir, projectName);
+  let agents = getAgents(brainDir, projectName, fast);
+
+  // Incremental analyze: skip agents whose outputs are still fresh
+  const currentHead = getGitHead(projectRoot);
+  const prevState = options.force ? null : loadAnalyzeState(succDir);
+
+  if (prevState && prevState.gitCommit && currentHead) {
+    const changedFiles = getChangedFiles(projectRoot, prevState.gitCommit);
+    const skippable = agents.filter(a => !shouldRerunAgent(a.name, prevState, changedFiles));
+    const rerun = agents.filter(a => shouldRerunAgent(a.name, prevState, changedFiles));
+
+    if (skippable.length > 0 && rerun.length < agents.length) {
+      console.log(`Incremental: skipping ${skippable.length} unchanged agent(s): ${skippable.map(a => a.name).join(', ')}`);
+      console.log(`Re-running ${rerun.length} agent(s): ${rerun.map(a => a.name).join(', ')}\n`);
+      agents = rerun;
+    }
+
+    if (agents.length === 0) {
+      console.log('All agents are up to date. Use --force to re-run all.');
+      writeProgress('completed', 0, 0);
+      return;
+    }
+  }
 
   // Gather project context (used by all modes now)
   writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
-  const context = await gatherProjectContext(projectRoot);
+  const context = await gatherProjectContext(projectRoot, fast);
+
+  // Helper to save incremental state after successful run
+  const saveState = () => {
+    const newState: AnalyzeState = {
+      lastRun: new Date().toISOString(),
+      gitCommit: currentHead,
+      fileCount: 0,
+      agents: {},
+    };
+    // Merge with previous state for agents we skipped
+    if (prevState) {
+      Object.assign(newState.agents, prevState.agents);
+    }
+    // Update state for agents we just ran
+    for (const agent of agents) {
+      newState.agents[agent.name] = {
+        lastRun: new Date().toISOString(),
+        outputHash: hashFile(agent.outputPath),
+      };
+    }
+    saveAnalyzeState(succDir, newState);
+  };
 
   // Run agents based on mode
   if (mode === 'openrouter') {
-    await runAgentsOpenRouter(agents, context, writeProgress);
+    await runAgentsOpenRouter(agents, context, writeProgress, fast);
     await generateIndexFiles(brainDir, projectName);
+    saveState();
     writeProgress('completed', agents.length, agents.length);
     console.log('\n✅ Brain vault generated!');
     console.log(`\nNext steps:`);
@@ -113,8 +168,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   }
 
   if (mode === 'local') {
-    await runAgentsLocal(agents, context, writeProgress);
+    await runAgentsLocal(agents, context, writeProgress, fast);
     await generateIndexFiles(brainDir, projectName);
+    saveState();
     writeProgress('completed', agents.length, agents.length);
     console.log('\n✅ Brain vault generated!');
     console.log(`\nNext steps:`);
@@ -133,6 +189,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   // Generate index files
   await generateIndexFiles(brainDir, projectName);
+  saveState();
 
   console.log('\n✅ Brain vault generated!');
   console.log(`\nNext steps:`);
@@ -141,14 +198,14 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   console.log(`  3. Open in Obsidian for graph view`);
 }
 
-function getAgents(brainDir: string, projectName: string): Agent[] {
+function getAgents(brainDir: string, projectName: string, fast = false): Agent[] {
   const projectDir = path.join(brainDir, '01_Projects', projectName);
 
   // Helper for frontmatter
   const frontmatter = (desc: string, type: string = 'technical', rel: string = 'high') =>
     `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: ${type}\nrelevance: ${rel}\n---\n\n`;
 
-  return [
+  const agents: Agent[] = [
     // Technical documentation
     {
       name: 'architecture',
@@ -372,28 +429,40 @@ IMPORTANT:
 - Output ONLY markdown, no explanations`,
     },
   ];
+
+  // Fast mode: skip the slowest multi-file agents
+  if (fast) {
+    const skipAgents = ['systems-overview', 'features'];
+    return agents.filter(a => !skipAgents.includes(a.name));
+  }
+
+  return agents;
 }
 
 async function runAgentsParallel(agents: Agent[], context: string): Promise<void> {
   console.log(`Starting ${agents.length} agents in parallel...\n`);
 
-  const promises = agents.map((agent) => runClaudeAgent(agent, context));
+  const totalStart = Date.now();
+  const agentStarts = agents.map(() => Date.now());
+  const promises = agents.map((agent, i) => {
+    agentStarts[i] = Date.now();
+    return runClaudeAgent(agent, context);
+  });
   const results = await Promise.allSettled(promises);
 
-  let succeeded = 0;
-  let failed = 0;
-
+  const timings: AgentTiming[] = [];
   results.forEach((result, index) => {
+    const elapsed = Date.now() - agentStarts[index];
     if (result.status === 'fulfilled') {
-      succeeded++;
-      console.log(`✓ ${agents[index].name}`);
+      console.log(`✓ ${agents[index].name} (${formatDuration(elapsed)})`);
+      timings.push({ name: agents[index].name, durationMs: elapsed, success: true });
     } else {
-      failed++;
       console.log(`✗ ${agents[index].name}: ${result.reason}`);
+      timings.push({ name: agents[index].name, durationMs: elapsed, success: false });
     }
   });
 
-  console.log(`\nCompleted: ${succeeded}/${agents.length} agents`);
+  printTimingSummary(timings, Date.now() - totalStart);
 }
 
 /**
@@ -492,14 +561,24 @@ async function writeAgentOutput(agent: Agent, content: string): Promise<void> {
 async function runAgentsSequential(agents: Agent[], context: string): Promise<void> {
   console.log(`Running ${agents.length} agents sequentially...\n`);
 
+  const totalStart = Date.now();
+  const timings: AgentTiming[] = [];
   for (const agent of agents) {
+    const spinner = ora(`${agent.name}`).start();
+    const agentStart = Date.now();
     try {
       await runClaudeAgent(agent, context);
-      console.log(`✓ ${agent.name}`);
+      const elapsed = Date.now() - agentStart;
+      spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
+      timings.push({ name: agent.name, durationMs: elapsed, success: true });
     } catch (error) {
-      console.log(`✗ ${agent.name}: ${error}`);
+      const elapsed = Date.now() - agentStart;
+      spinner.fail(`${agent.name}: ${error}`);
+      timings.push({ name: agent.name, durationMs: elapsed, success: false });
     }
   }
+
+  printTimingSummary(timings, Date.now() - totalStart);
 }
 
 function runClaudeAgent(agent: Agent, context: string): Promise<void> {
@@ -581,13 +660,38 @@ ${agent.prompt}`;
 
 type ProgressFn = (status: string, completed: number, total: number, current?: string) => void;
 
+interface AgentTiming {
+  name: string;
+  durationMs: number;
+  success: boolean;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}m ${secs}s`;
+}
+
+function printTimingSummary(timings: AgentTiming[], totalMs: number): void {
+  console.log('\n--- Timing Summary ---');
+  for (const t of timings) {
+    const icon = t.success ? '✓' : '✗';
+    console.log(`  ${icon} ${t.name}: ${formatDuration(t.durationMs)}`);
+  }
+  console.log(`  Total: ${formatDuration(totalMs)}`);
+}
+
 /**
  * Run agents using OpenRouter API directly (faster, no tool calls)
  */
 async function runAgentsOpenRouter(
   agents: Agent[],
   context: string,
-  writeProgress: ProgressFn
+  writeProgress: ProgressFn,
+  fast = false
 ): Promise<void> {
   console.log(`Running ${agents.length} agents via OpenRouter API...\n`);
 
@@ -600,10 +704,13 @@ async function runAgentsOpenRouter(
     process.exit(1);
   }
 
+  const totalStart = Date.now();
+  const timings: AgentTiming[] = [];
   let completed = 0;
   for (const agent of agents) {
     writeProgress('running', completed, agents.length, agent.name);
-    console.log(`  ${agent.name}...`);
+    const spinner = ora(`${agent.name}`).start();
+    const agentStart = Date.now();
 
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -615,14 +722,14 @@ async function runAgentsOpenRouter(
           'X-Title': 'succ',
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3.5-haiku',
+          model: fast ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3.5-haiku',
           messages: [
             {
               role: 'user',
               content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
             },
           ],
-          max_tokens: 4096,
+          max_tokens: fast ? 2048 : 4096,
         }),
       });
 
@@ -640,14 +747,22 @@ async function runAgentsOpenRouter(
         // Write output (handles both single and multi-file)
         await writeAgentOutput(agent, content);
         completed++;
-        console.log(`  ✓ ${agent.name}`);
+        const elapsed = Date.now() - agentStart;
+        spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
+        timings.push({ name: agent.name, durationMs: elapsed, success: true });
       } else {
-        console.log(`  ✗ ${agent.name}: No content returned`);
+        const elapsed = Date.now() - agentStart;
+        spinner.fail(`${agent.name}: No content returned`);
+        timings.push({ name: agent.name, durationMs: elapsed, success: false });
       }
     } catch (error) {
-      console.log(`  ✗ ${agent.name}: ${error}`);
+      const elapsed = Date.now() - agentStart;
+      spinner.fail(`${agent.name}: ${error}`);
+      timings.push({ name: agent.name, durationMs: elapsed, success: false });
     }
   }
+
+  printTimingSummary(timings, Date.now() - totalStart);
 }
 
 /**
@@ -656,14 +771,16 @@ async function runAgentsOpenRouter(
 async function runAgentsLocal(
   agents: Agent[],
   context: string,
-  writeProgress: ProgressFn
+  writeProgress: ProgressFn,
+  fast = false
 ): Promise<void> {
   const config = getConfig();
 
   const apiUrl = config.analyze_api_url;
   const model = config.analyze_model;
   const temperature = config.analyze_temperature ?? 0.3;
-  const maxTokens = config.analyze_max_tokens ?? 4096;
+  const defaultMaxTokens = fast ? 2048 : 4096;
+  const maxTokens = config.analyze_max_tokens ?? defaultMaxTokens;
 
   if (!apiUrl) {
     console.error('Error: analyze_api_url not configured');
@@ -685,10 +802,13 @@ async function runAgentsLocal(
   console.log(`  API: ${apiUrl}`);
   console.log(`  Model: ${model}\n`);
 
+  const totalStart = Date.now();
+  const timings: AgentTiming[] = [];
   let completed = 0;
   for (const agent of agents) {
     writeProgress('running', completed, agents.length, agent.name);
-    console.log(`  ${agent.name}...`);
+    const spinner = ora(`${agent.name}`).start();
+    const agentStart = Date.now();
 
     try {
       const headers: Record<string, string> = {
@@ -742,20 +862,28 @@ async function runAgentsLocal(
         // Write output (handles both single and multi-file)
         await writeAgentOutput(agent, content);
         completed++;
-        console.log(`  ✓ ${agent.name}`);
+        const elapsed = Date.now() - agentStart;
+        spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
+        timings.push({ name: agent.name, durationMs: elapsed, success: true });
       } else {
-        console.log(`  ✗ ${agent.name}: No content returned`);
+        const elapsed = Date.now() - agentStart;
+        spinner.fail(`${agent.name}: No content returned`);
+        timings.push({ name: agent.name, durationMs: elapsed, success: false });
       }
     } catch (error) {
-      console.log(`  ✗ ${agent.name}: ${error}`);
+      const elapsed = Date.now() - agentStart;
+      spinner.fail(`${agent.name}: ${error}`);
+      timings.push({ name: agent.name, durationMs: elapsed, success: false });
     }
   }
+
+  printTimingSummary(timings, Date.now() - totalStart);
 }
 
 /**
  * Gather project context for OpenRouter analysis
  */
-async function gatherProjectContext(projectRoot: string): Promise<string> {
+async function gatherProjectContext(projectRoot: string, fast = false): Promise<string> {
   const parts: string[] = [];
 
   // Get file tree
@@ -765,9 +893,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
     nodir: true,
   });
 
+  const fileLimit = fast ? 20 : 50;
   parts.push('## File Structure\n```');
-  parts.push(files.slice(0, 50).join('\n'));
-  if (files.length > 50) parts.push(`... and ${files.length - 50} more files`);
+  parts.push(files.slice(0, fileLimit).join('\n'));
+  if (files.length > fileLimit) parts.push(`... and ${files.length - fileLimit} more files`);
   parts.push('```\n');
 
   // Read key files
@@ -781,10 +910,12 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
   }
 
   // Read a few source files
-  const sourceFiles = files.filter(f => f.endsWith('.ts') || f.endsWith('.go') || f.endsWith('.py')).slice(0, 5);
+  const sourceFileLimit = fast ? 3 : 5;
+  const truncateLimit = fast ? 1000 : 1500;
+  const sourceFiles = files.filter(f => f.endsWith('.ts') || f.endsWith('.go') || f.endsWith('.py')).slice(0, sourceFileLimit);
   for (const sourceFile of sourceFiles) {
     const filePath = path.join(projectRoot, sourceFile);
-    const content = fs.readFileSync(filePath, 'utf-8').slice(0, 1500);
+    const content = fs.readFileSync(filePath, 'utf-8').slice(0, truncateLimit);
     parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
   }
 

@@ -10,6 +10,10 @@ export interface SuccConfig {
   embedding_api_key?: string;  // Optional API key for custom endpoint
   embedding_batch_size?: number;  // Batch size for custom API (default 32, llama.cpp works well with larger batches)
   embedding_dimensions?: number;  // Override embedding dimensions for custom models
+  embedding_local_batch_size?: number;  // Batch size for local embeddings (default: 16)
+  embedding_local_concurrency?: number;  // Concurrent batches for local embeddings (default: 4)
+  embedding_worker_pool_enabled?: boolean;  // Use worker thread pool for local embeddings (default: true)
+  embedding_worker_pool_size?: number;  // Worker pool size (default: auto based on CPU cores)
   chunk_size: number;
   chunk_overlap: number;
   // GPU acceleration settings
