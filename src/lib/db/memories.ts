@@ -1,8 +1,29 @@
+import fs from 'fs';
+import path from 'path';
 import { getDb } from './connection.js';
 import { sqliteVecAvailable, MemoryType } from './schema.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
+import { getSuccDir } from '../config.js';
+
+/**
+ * Log memory deletion events to .succ/memory-audit.log for debugging.
+ * Format: [ISO timestamp] [DELETE] caller | count=N | ids=[...] | reason
+ */
+function logDeletion(caller: string, count: number, ids: number[], reason?: string): void {
+  try {
+    const succDir = getSuccDir();
+    const logFile = path.join(succDir, 'memory-audit.log');
+    const timestamp = new Date().toISOString();
+    const idStr = ids.length <= 20 ? ids.join(',') : `${ids.slice(0, 20).join(',')}... (${ids.length} total)`;
+    const reasonStr = reason ? ` | ${reason}` : '';
+    const line = `[${timestamp}] [DELETE] ${caller} | count=${count} | ids=[${idStr}]${reasonStr}\n`;
+    fs.appendFileSync(logFile, line);
+  } catch {
+    // Never let audit logging break actual operations
+  }
+}
 
 export interface Memory {
   id: number;
@@ -450,6 +471,9 @@ export function deleteMemory(id: number): boolean {
   }
 
   const result = database.prepare('DELETE FROM memories WHERE id = ?').run(id);
+  if (result.changes > 0) {
+    logDeletion('deleteMemory', 1, [id]);
+  }
   return result.changes > 0;
 }
 
@@ -504,9 +528,42 @@ export function getMemoryStats(): {
  */
 export function deleteMemoriesOlderThan(date: Date): number {
   const database = getDb();
+
+  // Clean up vec_memories and vec_memories_map for affected memories
+  if (sqliteVecAvailable) {
+    try {
+      const affectedIds = database
+        .prepare('SELECT id FROM memories WHERE created_at < ?')
+        .all(date.toISOString()) as Array<{ id: number }>;
+
+      if (affectedIds.length > 0) {
+        const placeholders = affectedIds.map(() => '?').join(',');
+        const ids = affectedIds.map(r => r.id);
+
+        // Get vec rowids to delete
+        const vecMappings = database
+          .prepare(`SELECT vec_rowid FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+          .all(...ids) as Array<{ vec_rowid: number }>;
+
+        if (vecMappings.length > 0) {
+          const vecPlaceholders = vecMappings.map(() => '?').join(',');
+          const vecRowids = vecMappings.map(r => r.vec_rowid);
+          database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+        }
+
+        database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...ids);
+      }
+    } catch {
+      // Ignore vec table errors
+    }
+  }
+
   const result = database
     .prepare('DELETE FROM memories WHERE created_at < ?')
     .run(date.toISOString());
+  if (result.changes > 0) {
+    logDeletion('deleteMemoriesOlderThan', result.changes, [], `older_than=${date.toISOString()}`);
+  }
   return result.changes;
 }
 
@@ -537,7 +594,30 @@ export function deleteMemoriesByTag(tag: string): number {
   if (toDelete.length === 0) return 0;
 
   const placeholders = toDelete.map(() => '?').join(',');
+
+  // Clean up vec_memories and vec_memories_map for affected memories
+  if (sqliteVecAvailable) {
+    try {
+      const vecMappings = database
+        .prepare(`SELECT vec_rowid FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+        .all(...toDelete) as Array<{ vec_rowid: number }>;
+
+      if (vecMappings.length > 0) {
+        const vecPlaceholders = vecMappings.map(() => '?').join(',');
+        const vecRowids = vecMappings.map(r => r.vec_rowid);
+        database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+      }
+
+      database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...toDelete);
+    } catch {
+      // Ignore vec table errors
+    }
+  }
+
   const result = database.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...toDelete);
+  if (result.changes > 0) {
+    logDeletion('deleteMemoriesByTag', result.changes, toDelete, `tag="${tag}"`);
+  }
 
   return result.changes;
 }
@@ -588,9 +668,33 @@ export function deleteMemoriesByIds(ids: number[]): number {
 
   const database = getDb();
   const placeholders = ids.map(() => '?').join(',');
+
+  // Clean up vec_memories and vec_memories_map for affected memories
+  if (sqliteVecAvailable) {
+    try {
+      const vecMappings = database
+        .prepare(`SELECT vec_rowid FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+        .all(...ids) as Array<{ vec_rowid: number }>;
+
+      if (vecMappings.length > 0) {
+        const vecPlaceholders = vecMappings.map(() => '?').join(',');
+        const vecRowids = vecMappings.map(r => r.vec_rowid);
+        database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+      }
+
+      database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...ids);
+    } catch {
+      // Ignore vec table errors
+    }
+  }
+
   const result = database
     .prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
     .run(...ids);
+
+  if (result.changes > 0) {
+    logDeletion('deleteMemoriesByIds', result.changes, ids, 'batch/retention');
+  }
 
   // Invalidate BM25 index since memories changed (will be handled in bm25-indexes module)
   try {
