@@ -10,12 +10,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { QdrantVectorStore, createQdrantVectorStore } from './qdrant.js';
 
+// Unique prefix per test run to avoid conflicts when src/ and dist/ tests run in parallel
+const TEST_PREFIX = `succ_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_`;
+
 const TEST_CONFIG = {
   backend: 'sqlite' as const,
   vector: 'qdrant' as const,
   qdrant: {
     url: 'http://localhost:6333',
-    collection_prefix: 'succ_test_',
+    collection_prefix: TEST_PREFIX,
   },
 };
 
@@ -52,9 +55,9 @@ describe('Qdrant Vector Store Integration', async () => {
       try {
         const client = (store as any).client;
         if (client) {
-          await client.deleteCollection('succ_test_documents').catch(() => {});
-          await client.deleteCollection('succ_test_memories').catch(() => {});
-          await client.deleteCollection('succ_test_global_memories').catch(() => {});
+          await client.deleteCollection(`${TEST_PREFIX}documents`).catch(() => {});
+          await client.deleteCollection(`${TEST_PREFIX}memories`).catch(() => {});
+          await client.deleteCollection(`${TEST_PREFIX}global_memories`).catch(() => {});
         }
       } catch {
         // Ignore cleanup errors
@@ -69,7 +72,7 @@ describe('Qdrant Vector Store Integration', async () => {
       const client = (store as any).client;
       if (client) {
         try {
-          await client.deleteCollection('succ_test_documents');
+          await client.deleteCollection(`${TEST_PREFIX}documents`);
           await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist
@@ -150,7 +153,7 @@ describe('Qdrant Vector Store Integration', async () => {
       const client = (store as any).client;
       if (client) {
         try {
-          await client.deleteCollection('succ_test_memories');
+          await client.deleteCollection(`${TEST_PREFIX}memories`);
           await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist
@@ -186,7 +189,7 @@ describe('Qdrant Vector Store Integration', async () => {
       const client = (store as any).client;
       if (client) {
         try {
-          await client.deleteCollection('succ_test_global_memories');
+          await client.deleteCollection(`${TEST_PREFIX}global_memories`);
           await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist

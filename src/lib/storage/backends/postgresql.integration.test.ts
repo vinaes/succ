@@ -17,7 +17,8 @@ const TEST_CONFIG = {
   },
 };
 
-const TEST_PROJECT_ID = 'test/project';
+// Unique project ID per test run to avoid conflicts when src/ and dist/ tests run in parallel
+const TEST_PROJECT_ID = `test/project_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
 // Check if PostgreSQL is available by actually connecting
 async function isPostgresAvailable(): Promise<boolean> {
@@ -114,9 +115,10 @@ describe('PostgreSQL Backend Integration', async () => {
         embedding,
       }]);
 
-      // Verify it was inserted
-      const beforeStats = await backend.getDocumentStats();
-      expect(beforeStats.total_documents).toBeGreaterThan(0);
+      // Verify it was inserted by searching with the same embedding
+      const searchResults = await backend.searchDocuments(embedding, 10, 0.0);
+      const inserted = searchResults.some(r => r.file_path === '/test/delete-target.ts');
+      expect(inserted).toBe(true);
 
       const deleted = await backend.deleteDocumentsByPath('/test/delete-target.ts');
       expect(deleted.length).toBeGreaterThan(0);
