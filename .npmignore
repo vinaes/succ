@@ -1,0 +1,37 @@
+# Source (dist/ is published, not src/)
+src/
+
+# Tests
+*.test.js
+*.test.d.ts
+*.test.js.map
+*.test.d.ts.map
+**/*.test.*
+tests/
+
+# Integration test files
+dist/**/*.integration.*
+
+# Build configs
+tsconfig.json
+vitest.config.ts
+eslint.config.js
+.prettierrc
+
+# Dev/CI
+.github/
+.claude/
+.succ/
+docker/
+
+# Temp files
+tmp_*
+nul
+*.db
+
+# Environment
+.env
+.env.*
+
+# Docs (linked from README to GitHub, not needed in package)
+docs/

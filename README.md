@@ -1,11 +1,11 @@
 <p align="center">
   <img src="https://img.shields.io/badge/●%20succ-semantic%20memory-3fb950?style=for-the-badge&labelColor=0d1117" alt="succ">
   <br/><br/>
-  <em>Semantic Understanding for Claude Code</em>
+  <em>Semantic Understanding for Code Contexts</em>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.27-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/npm/v/succ?style=flat-square&color=3fb950" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -19,7 +19,7 @@
 
 ---
 
-> Local memory system that adds persistent, semantic memory to any MCP-compatible AI editor.
+> Persistent semantic memory for any MCP-compatible AI editor. Remember decisions, learn from mistakes, never lose context.
 
 ### Works with
 
@@ -59,11 +59,17 @@ succ analyze
 | **Knowledge Graph** | Link memories, auto-detect relationships |
 | **MCP Native** | Claude uses succ tools directly |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
+| **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
 
 <details>
 <summary>All features</summary>
 
+- **Dead-End Tracking** — Record failed approaches; auto-boosted in recall to prevent retrying
+- **AGENTS.md Auto-Export** — Auto-generate editor instructions from decisions, patterns, dead-ends
+- **Learning Delta** — Track knowledge growth per session (memories added, types, quality)
+- **Confidence Retention** — Time-decay scoring with auto-cleanup of low-value memories
+- **Safe Consolidation** — Soft-delete with undo support; no data loss on merge
 - **Skill Discovery** — Auto-suggest relevant skills based on user prompt (opt-in, disabled by default)
 - **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app) (requires skills.enabled = true)
 - **Soul Document** — Define AI personality and values
@@ -76,6 +82,8 @@ succ analyze
 - **Temporal Awareness** — Time decay, validity periods, point-in-time queries
 - **Unified Daemon** — Single background process for watch, analyze, idle tracking
 - **Watch Mode** — Auto-reindex on file changes via @parcel/watcher
+- **Fast Analyze** — `--fast` mode with fewer agents and smaller context for quick onboarding
+- **Incremental Analyze** — Git-based change detection, skip unchanged agents
 - **Local LLM** — Ollama, LM Studio, llama.cpp support
 - **Sleep Agent** — Offload heavy operations to local LLM
 - **Checkpoints** — Backup and restore full succ state
@@ -111,11 +119,13 @@ succ analyze
 | `succ train-bpe` | Train BPE vocabulary from indexed code |
 | `succ forget` | Delete memories |
 | `succ graph <action>` | Knowledge graph operations |
-| `succ consolidate` | Merge duplicate memories |
+| `succ consolidate` | Merge duplicate memories (soft-delete with undo) |
+| `succ agents-md` | Generate .claude/AGENTS.md from memories |
+| `succ progress` | Show learning delta history |
+| `succ retention` | Memory retention analysis and cleanup |
 | `succ soul` | Generate personalized soul.md |
 | `succ config` | Interactive configuration |
 | `succ stats` | Show token savings statistics |
-| `succ retention` | Memory retention analysis and cleanup |
 | `succ checkpoint <action>` | Create, restore, or list checkpoints |
 | `succ score` | Show AI-readiness score |
 | `succ clear` | Clear index and/or memories |
