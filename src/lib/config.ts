@@ -45,6 +45,8 @@ export interface SuccConfig {
   sensitive_auto_redact?: boolean;  // Auto-redact sensitive info without prompting (default: false)
   // Consolidation settings
   consolidation_llm_default?: boolean;  // Use LLM merge by default in consolidate (default: true)
+  // Dead-end tracking settings
+  dead_end_boost?: number;  // Similarity boost for dead-end memories in recall results (default: 0.15, 0 to disable)
   // Remember settings
   remember_extract_default?: boolean;  // Use LLM extraction by default in remember (default: true)
   // Idle reflection settings (sleep-time compute)
@@ -234,6 +236,7 @@ export interface RetentionPolicyConfig {
   delete_threshold?: number;  // Effective score threshold to delete (default: 0.15)
   default_quality_score?: number;  // Default quality for memories without score (default: 0.5)
   auto_cleanup_interval_days?: number;  // Days between auto-cleanup runs (default: 7)
+  use_temporal_decay?: boolean;  // Use exponential decay from temporal.ts instead of hyperbolic (default: true)
 }
 
 export interface TemporalConfig {
@@ -334,6 +337,7 @@ export const DEFAULT_RETENTION_POLICY_CONFIG: Required<RetentionPolicyConfig> = 
   delete_threshold: 0.15,
   default_quality_score: 0.5,
   auto_cleanup_interval_days: 7,
+  use_temporal_decay: true,
 };
 
 // Default sleep agent config
@@ -631,6 +635,7 @@ export function getRetentionConfig(): Required<RetentionPolicyConfig> {
     delete_threshold: userConfig.delete_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.delete_threshold,
     default_quality_score: userConfig.default_quality_score ?? DEFAULT_RETENTION_POLICY_CONFIG.default_quality_score,
     auto_cleanup_interval_days: userConfig.auto_cleanup_interval_days ?? DEFAULT_RETENTION_POLICY_CONFIG.auto_cleanup_interval_days,
+    use_temporal_decay: userConfig.use_temporal_decay ?? DEFAULT_RETENTION_POLICY_CONFIG.use_temporal_decay,
   };
 }
 
