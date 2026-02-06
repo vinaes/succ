@@ -13,7 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getDb } from './db.js';
+import { getDb } from './db/index.js';
 import { getSuccDir, getConfig, getProjectRoot } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';

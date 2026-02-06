@@ -8,7 +8,7 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { searchMemories, closeDb, getRecentMemories } from './db.js';
+import { searchMemories, closeDb, getRecentMemories } from './db/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';

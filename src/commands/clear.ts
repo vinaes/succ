@@ -1,4 +1,4 @@
-import { getDb, closeDb } from '../lib/db.js';
+import { getDb, closeDb } from '../lib/db/index.js';
 
 interface ClearOptions {
   indexOnly?: boolean;

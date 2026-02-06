@@ -52,7 +52,7 @@ async function benchmarkSqliteVec() {
   console.log('SQLite + sqlite-vec (default)');
   console.log('========================================');
 
-  const { getDb, closeDb } = await import('../db.js');
+  const { getDb, closeDb } = await import('../db/index.js');
   const db = getDb();
 
   try {

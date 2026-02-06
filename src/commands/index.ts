@@ -5,7 +5,7 @@ import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/db.js';
+import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/db/index.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 
 interface IndexOptions {

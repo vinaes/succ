@@ -18,7 +18,7 @@
  *   - delete: effective_score < delete_threshold (default 0.15)
  */
 
-import { MemoryForRetention } from './db.js';
+import { MemoryForRetention } from './db/index.js';
 
 // Default configuration
 export const DEFAULT_RETENTION_CONFIG = {

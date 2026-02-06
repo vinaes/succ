@@ -7,7 +7,7 @@
  */
 
 import { getCompactBriefingConfig, CompactBriefingConfig } from './config.js';
-import { searchMemories, getRecentMemories } from './db.js';
+import { searchMemories, getRecentMemories } from './db/index.js';
 import { getEmbedding } from './embeddings.js';
 import { callLLM } from './llm.js';
 import {

@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { saveMemory, searchMemories } from '../lib/db.js';
+import { saveMemory, searchMemories } from '../lib/db/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
 import { countTokens } from '../lib/token-counter.js';

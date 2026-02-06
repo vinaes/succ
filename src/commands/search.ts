@@ -1,5 +1,5 @@
 import { getEmbedding } from '../lib/embeddings.js';
-import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/db.js';
+import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/db/index.js';
 import { getConfig } from '../lib/config.js';
 import inquirer from 'inquirer';
 import { index as indexBrain } from './index.js';

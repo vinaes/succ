@@ -134,7 +134,7 @@ export {
   type TokenEventType,
   MEMORY_TYPES,
   LINK_RELATIONS,
-} from '../db.js';
+} from '../db/index.js';
 
 /**
  * Get current storage configuration.

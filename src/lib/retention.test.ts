@@ -8,7 +8,7 @@ import {
   formatRetentionAnalysis,
   DEFAULT_RETENTION_CONFIG,
 } from './retention.js';
-import type { MemoryForRetention } from './db.js';
+import type { MemoryForRetention } from './db/index.js';
 
 // Helper to create test memories
 function createMemory(overrides: Partial<MemoryForRetention> = {}): MemoryForRetention {

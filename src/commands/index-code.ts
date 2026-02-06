@@ -5,7 +5,7 @@ import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkCode } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/db.js';
+import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/db/index.js';
 import { tokenizeCode } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';

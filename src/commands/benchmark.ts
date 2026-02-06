@@ -1,5 +1,5 @@
 import { getEmbedding, getEmbeddingInfo, cleanupEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/db.js';
+import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/db/index.js';
 import {
   setConfigOverride,
   hasOpenRouterKey,

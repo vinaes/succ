@@ -17,10 +17,13 @@ const TEST_CONFIG = {
   },
 };
 
+const TEST_PROJECT_ID = 'test/project';
+
 // Check if PostgreSQL is available by actually connecting
 async function isPostgresAvailable(): Promise<boolean> {
   try {
     const backend = createPostgresBackend(TEST_CONFIG);
+    backend.setProjectId(TEST_PROJECT_ID);
     // Actually try to connect and query
     await backend.getDocumentStats();
     await backend.close();
@@ -42,6 +45,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
   beforeAll(async () => {
     backend = createPostgresBackend(TEST_CONFIG);
+    backend.setProjectId(TEST_PROJECT_ID);
   });
 
   afterAll(async () => {

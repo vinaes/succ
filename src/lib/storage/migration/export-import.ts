@@ -13,7 +13,7 @@ import {
   getDb,
   getGlobalDb,
   getAllFileHashes,
-} from '../../db.js';
+} from '../../db/index.js';
 import type {
   Document,
   Memory,

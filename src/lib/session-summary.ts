@@ -7,7 +7,7 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { saveMemory, searchMemories, closeDb, recordTokenStat } from './db.js';
+import { saveMemory, searchMemories, closeDb, recordTokenStat } from './db/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';

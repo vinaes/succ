@@ -51,7 +51,7 @@ import {
   getTokenStatsSummary,
   // Retention/access tracking
   incrementMemoryAccessBatch,
-} from './lib/db.js';
+} from './lib/db/index.js';
 import { getConfig, getProjectRoot, getSuccDir, getDaemonStatuses, isProjectInitialized, isGlobalOnlyMode } from './lib/config.js';
 import path from 'path';
 import fs from 'fs';
@@ -61,7 +61,7 @@ import { analyzeFile } from './commands/analyze.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore, cleanupQualityScoring } from './lib/quality.js';
 import { scanSensitive, formatMatches } from './lib/sensitive-filter.js';
 import { countTokens, countTokensArray, formatTokens, compressionPercent } from './lib/token-counter.js';
-import { recordTokenStat, type TokenEventType } from './lib/db.js';
+import { recordTokenStat, type TokenEventType } from './lib/db/index.js';
 import { getIdleReflectionConfig } from './lib/config.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from './lib/temporal.js';
 import { estimateSavings, getCurrentModel } from './lib/pricing.js';

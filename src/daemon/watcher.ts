@@ -20,7 +20,7 @@ import {
   getFileHash,
   setFileHash,
   deleteFileHash,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { indexCodeFile } from '../commands/index-code.js';
 import {
   CODE_EXTENSIONS,
