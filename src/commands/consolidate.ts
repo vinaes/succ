@@ -2,13 +2,17 @@
  * Memory Consolidation Command
  *
  * Find and merge/delete duplicate or similar memories.
+ * Uses soft-invalidation instead of hard delete — originals are preserved
+ * and can be restored with --undo.
  */
 
 import {
   consolidateMemories,
   findConsolidationCandidates,
   getConsolidationStats,
+  undoConsolidation,
 } from '../lib/consolidate.js';
+import { getConsolidationHistory } from '../lib/db/index.js';
 import { getConfig } from '../lib/config.js';
 
 interface ConsolidateOptions {
@@ -19,9 +23,60 @@ interface ConsolidateOptions {
   stats?: boolean;
   llm?: boolean;
   noLlm?: boolean;
+  undo?: string;
+  history?: boolean;
 }
 
 export async function consolidate(options: ConsolidateOptions = {}): Promise<void> {
+  // Undo mode
+  if (options.undo) {
+    const mergedId = parseInt(options.undo, 10);
+    if (isNaN(mergedId)) {
+      console.error('Error: --undo requires a valid memory ID');
+      return;
+    }
+
+    console.log(`Undoing consolidation for memory #${mergedId}...\n`);
+    const result = undoConsolidation(mergedId);
+
+    if (result.restored.length > 0) {
+      console.log(`  Restored ${result.restored.length} original memories: ${result.restored.join(', ')}`);
+    }
+    if (result.deletedMerge) {
+      console.log(`  Deleted synthetic merged memory #${mergedId}`);
+    }
+    if (result.errors.length > 0) {
+      for (const err of result.errors) {
+        console.log(`  Warning: ${err}`);
+      }
+    }
+    if (result.restored.length === 0 && !result.deletedMerge) {
+      console.log('  Nothing to undo — no supersedes links found for this memory.');
+    }
+    return;
+  }
+
+  // History mode
+  if (options.history) {
+    const history = getConsolidationHistory(20);
+
+    if (history.length === 0) {
+      console.log('No consolidation history found.');
+      return;
+    }
+
+    console.log('Recent consolidation operations:\n');
+    for (const entry of history) {
+      const preview = entry.mergedContent.substring(0, 80).replace(/\n/g, ' ');
+      console.log(`  #${entry.mergedMemoryId} (${entry.mergedAt})`);
+      console.log(`    Supersedes: ${entry.originalIds.join(', ')}`);
+      console.log(`    Content: ${preview}...`);
+      console.log();
+    }
+    console.log(`Use --undo <id> to restore originals and remove a merge.`);
+    return;
+  }
+
   const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
   const limit = options.limit ? parseInt(options.limit, 10) : undefined;
 
@@ -78,7 +133,7 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
     console.log('\nConsolidation Results:');
     console.log(`  Candidates found: ${result.candidatesFound}`);
     console.log(`  Merged: ${result.merged}`);
-    console.log(`  Deleted duplicates: ${result.deleted}`);
+    console.log(`  Invalidated duplicates: ${result.deleted}`);
     console.log(`  Kept & linked: ${result.kept}`);
 
     if (result.errors.length > 0) {

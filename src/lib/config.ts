@@ -605,10 +605,30 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     (userSleepAgent.mode === 'openrouter' ? config.openrouter_api_key : '') ||
     DEFAULT_SLEEP_AGENT_CONFIG.api_key;
 
+  // Safety: memory_consolidation requires GLOBAL opt-in.
+  // Project config can DISABLE (false) but cannot ENABLE (true) on its own.
+  // This prevents .succ/config.json from silently enabling destructive consolidation.
+  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
+  let globalConsolidation: boolean | undefined;
+  try {
+    if (fs.existsSync(globalConfigPath)) {
+      const globalCfg = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
+      globalConsolidation = globalCfg.idle_reflection?.operations?.memory_consolidation;
+    }
+  } catch { /* ignore parse errors */ }
+
+  // Rule: global must explicitly be true, AND merged value must not be false
+  // global=true + project=undefined → true (global opt-in honored)
+  // global=true + project=false → false (project can restrict)
+  // global=undefined + project=true → false (project alone can't enable)
+  // global=false + project=true → false (global didn't opt-in)
+  const consolidationEnabled = globalConsolidation === true
+    && (userConfig.operations?.memory_consolidation !== false);
+
   return {
     enabled: userConfig.enabled ?? DEFAULT_IDLE_REFLECTION_CONFIG.enabled,
     operations: {
-      memory_consolidation: userConfig.operations?.memory_consolidation ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.memory_consolidation,
+      memory_consolidation: consolidationEnabled,
       graph_refinement: userConfig.operations?.graph_refinement ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_refinement,
       session_summary: userConfig.operations?.session_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
       precompute_context: userConfig.operations?.precompute_context ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,

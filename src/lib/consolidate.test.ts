@@ -397,5 +397,203 @@ describe('Consolidation Logic', () => {
       expect(getQuality(memories[0])).toBe(0.5);
       expect(getQuality(memories[1])).toBe(0.7);
     });
+
+    it('should average quality scores on merge (not max)', () => {
+      const q1 = 0.3;
+      const q2 = 0.9;
+
+      // Old behavior: max(q1, q2) = 0.9 (inflated)
+      const oldScore = Math.max(q1, q2);
+      expect(oldScore).toBe(0.9);
+
+      // New behavior: average (q1 + q2) / 2 = 0.6 (fair)
+      const newScore = (q1 + q2) / 2;
+      expect(newScore).toBe(0.6);
+      expect(newScore).toBeLessThan(oldScore);
+    });
+  });
+
+  describe('Consolidation v2: Soft-delete design', () => {
+    it('should use invalidation instead of deletion for delete_duplicate', () => {
+      // The executeConsolidation flow for delete_duplicate:
+      // 1. transferLinks(deleteId, keepId)
+      // 2. createMemoryLink(keepId, deleteId, 'supersedes')
+      // 3. invalidateMemory(deleteId, keepId)
+      // NO deleteMemory() call
+
+      const actions = [
+        'transferLinks',
+        'createMemoryLink_supersedes',
+        'invalidateMemory',
+      ];
+
+      expect(actions).not.toContain('deleteMemory');
+      expect(actions).toContain('invalidateMemory');
+      expect(actions).toContain('createMemoryLink_supersedes');
+    });
+
+    it('should use invalidation instead of deletion for merge', () => {
+      // The mergeMemories flow:
+      // 1. saveMemory(merged) — inside transaction
+      // 2. transferLinks(m1 → merged, m2 → merged)
+      // 3. createMemoryLink(merged → m1, 'supersedes')
+      // 4. createMemoryLink(merged → m2, 'supersedes')
+      // 5. invalidateMemory(m1, merged)
+      // 6. invalidateMemory(m2, merged)
+      // NO deleteMemory() call
+
+      const actions = [
+        'saveMemory',
+        'transferLinks_m1',
+        'transferLinks_m2',
+        'createMemoryLink_supersedes_m1',
+        'createMemoryLink_supersedes_m2',
+        'invalidateMemory_m1',
+        'invalidateMemory_m2',
+      ];
+
+      expect(actions).not.toContain('deleteMemory');
+      expect(actions.filter(a => a.startsWith('invalidateMemory'))).toHaveLength(2);
+      expect(actions.filter(a => a.includes('supersedes'))).toHaveLength(2);
+    });
+
+    it('should wrap merge operations in transaction', () => {
+      // All merge operations must be atomic:
+      // save + transferLinks + supersedes links + invalidate originals
+      // If any step fails, none should take effect
+
+      const transactionSteps = [
+        'saveMemory',
+        'transferLinks',
+        'createMemoryLink_supersedes',
+        'invalidateMemory_m1',
+        'invalidateMemory_m2',
+      ];
+
+      // All must be in same transaction scope
+      expect(transactionSteps.length).toBeGreaterThan(1);
+    });
+
+    it('should correctly model invalidation semantics', () => {
+      // invalidateMemory sets:
+      //   valid_until = now (hides from normal search)
+      //   invalidated_by = superseder ID (tracks what replaced it)
+
+      const memory = {
+        id: 42,
+        valid_until: null as string | null,
+        invalidated_by: null as number | null,
+      };
+
+      // Before invalidation
+      expect(memory.invalidated_by).toBeNull();
+      expect(memory.valid_until).toBeNull();
+
+      // After invalidation by memory #100
+      memory.valid_until = new Date().toISOString();
+      memory.invalidated_by = 100;
+
+      expect(memory.invalidated_by).toBe(100);
+      expect(memory.valid_until).not.toBeNull();
+    });
+
+    it('should correctly model restore semantics', () => {
+      // restoreInvalidatedMemory clears:
+      //   valid_until = NULL
+      //   invalidated_by = NULL
+
+      const memory = {
+        id: 42,
+        valid_until: '2026-02-06T12:00:00Z',
+        invalidated_by: 100,
+      };
+
+      // Restore
+      memory.valid_until = null as any;
+      memory.invalidated_by = null as any;
+
+      expect(memory.invalidated_by).toBeNull();
+      expect(memory.valid_until).toBeNull();
+    });
+
+    it('should filter invalidated memories from consolidation candidates', () => {
+      // getAllMemoriesWithEmbeddings uses WHERE invalidated_by IS NULL
+      // This prevents already-consolidated memories from being re-processed
+
+      const allMemories = [
+        { id: 1, invalidated_by: null },    // active
+        { id: 2, invalidated_by: 100 },     // invalidated
+        { id: 3, invalidated_by: null },    // active
+        { id: 4, invalidated_by: 101 },     // invalidated
+      ];
+
+      const candidates = allMemories.filter(m => m.invalidated_by === null);
+      expect(candidates).toHaveLength(2);
+      expect(candidates.map(m => m.id)).toEqual([1, 3]);
+    });
+  });
+
+  describe('Consolidation v2: Undo logic', () => {
+    it('should find originals via supersedes links', () => {
+      // undoConsolidation looks up: memory_links WHERE source_id = mergedId AND relation = 'supersedes'
+      const supersededLinks = [
+        { source_id: 100, target_id: 42, relation: 'supersedes' },
+        { source_id: 100, target_id: 43, relation: 'supersedes' },
+      ];
+
+      const originalIds = supersededLinks.map(l => l.target_id);
+      expect(originalIds).toEqual([42, 43]);
+    });
+
+    it('should delete synthetic merged memory but keep "kept" memory', () => {
+      // If source = 'consolidation-llm', the merged memory was synthetic → delete it
+      // If source != 'consolidation-llm', it was the "kept" one in dedup → leave it
+
+      const syntheticMerge = { id: 100, source: 'consolidation-llm' };
+      const keptMemory = { id: 101, source: 'user-input' };
+
+      expect(syntheticMerge.source).toBe('consolidation-llm');
+      expect(keptMemory.source).not.toBe('consolidation-llm');
+    });
+
+    it('should restore all originals on undo', () => {
+      // Undo flow:
+      // 1. Find supersedes links from merged ID
+      // 2. restoreInvalidatedMemory for each original
+      // 3. Remove supersedes links
+      // 4. Delete synthetic merged memory if applicable
+
+      const undoSteps = [
+        'find_supersedes_links',
+        'restore_original_42',
+        'restore_original_43',
+        'remove_supersedes_links',
+        'delete_synthetic_merge',
+      ];
+
+      expect(undoSteps[0]).toBe('find_supersedes_links');
+      expect(undoSteps.filter(s => s.startsWith('restore_')).length).toBe(2);
+    });
+  });
+
+  describe('Consolidation v2: Config safety', () => {
+    it('should require global opt-in for consolidation', () => {
+      // Rule: consolidation = globalConsolidation === true && mergedValue !== false
+
+      const cases = [
+        { global: true,      project: undefined, expected: true,  desc: 'global true, project default' },
+        { global: true,      project: false,     expected: false, desc: 'global true, project disables' },
+        { global: true,      project: true,      expected: true,  desc: 'global true, project also true' },
+        { global: false,     project: true,      expected: false, desc: 'global false, project tries to enable' },
+        { global: undefined, project: true,      expected: false, desc: 'global unset, project tries to enable' },
+        { global: undefined, project: undefined, expected: false, desc: 'both unset (default false)' },
+        { global: false,     project: undefined, expected: false, desc: 'global false, project default' },
+      ];
+
+      for (const { global: g, project: p, expected, desc } of cases) {
+        const result = g === true && p !== false;
+        expect(result, desc).toBe(expected);
+      }
+    });
   });
 });

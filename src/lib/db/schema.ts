@@ -224,6 +224,18 @@ export function initDb(database: Database.Database): void {
     // Index already exists, ignore
   }
 
+  // Migration: add invalidated_by column for soft-delete during consolidation
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 
@@ -486,6 +498,18 @@ export function initGlobalDb(database: Database.Database): void {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
   } catch {
     // Column already exists, ignore
+  }
+
+  // Migration: add invalidated_by column for soft-delete during consolidation
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`).run();
+  } catch {
+    // Index already exists, ignore
   }
 
   // Migration: create sqlite-vec virtual table for global memories
