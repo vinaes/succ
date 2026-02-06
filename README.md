@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.18-3fb950?style=flat-square" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/badge/npm-1.1.19-3fb950?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -19,7 +19,18 @@
 
 ---
 
-> Local memory system that adds persistent, semantic memory to any Claude Code project.
+> Local memory system that adds persistent, semantic memory to any MCP-compatible AI editor.
+
+### Works with
+
+| Editor | Setup |
+|--------|-------|
+| **Claude Code** | `succ init` (auto-configured) |
+| **Cursor** | `succ setup cursor` |
+| **Windsurf** | `succ setup windsurf` |
+| **Continue.dev** | `succ setup continue` |
+
+See [Editor Guides](docs/editors/index.md) for detailed setup.
 
 ## Quick Start
 
@@ -80,6 +91,7 @@ succ analyze
 | Command | Description |
 |---------|-------------|
 | `succ init` | Interactive setup wizard |
+| `succ setup <editor>` | Configure MCP for any editor |
 | `succ analyze` | Generate brain vault with Claude agents |
 | `succ index [path]` | Index files for semantic search |
 | `succ search <query>` | Semantic search in brain vault |
@@ -126,6 +138,8 @@ Creates `.succ/` structure, configures MCP server, sets up hooks.
 
 ```bash
 succ analyze             # Run via Claude CLI (recommended)
+succ analyze --fast      # Fast mode (fewer agents, smaller context)
+succ analyze --force     # Force full re-analysis (skip incremental)
 succ analyze --local     # Use local LLM (Ollama, LM Studio)
 succ analyze --openrouter # Use OpenRouter API
 succ analyze --background # Run in background
