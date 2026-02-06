@@ -1,0 +1,220 @@
+/**
+ * MCP Status tools
+ *
+ * - succ_status: Get index status, memory stats, daemon statuses
+ * - succ_stats: Get token savings statistics
+ * - succ_score: Get AI-readiness score
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  getStats,
+  getRecentGlobalMemories,
+  getMemoryStats,
+  getTokenStatsAggregated,
+  getTokenStatsSummary,
+  closeDb,
+  type TokenEventType,
+} from '../../lib/db/index.js';
+import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
+import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
+
+export function registerStatusTools(server: McpServer) {
+  // Tool: succ_status - Get index status
+  server.tool(
+    'succ_status',
+    'Get the current status of succ (indexed files, memories, last update, daemon statuses). Shows global-only mode if project not initialized.',
+    {},
+    async () => {
+      const globalOnlyMode = isGlobalOnlyMode();
+
+      try {
+        // In global-only mode, show limited status
+        if (globalOnlyMode) {
+          const globalMemStats = getRecentGlobalMemories(1);
+          const globalCount = globalMemStats.length > 0 ? 'available' : 'empty';
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories`,
+              },
+            ],
+          };
+        }
+
+        const stats = getStats();
+        const memStats = getMemoryStats();
+        const daemons = getDaemonStatuses();
+
+        // Format type breakdown
+        const typeBreakdown = Object.entries(memStats.by_type)
+          .map(([type, count]) => `    ${type}: ${count}`)
+          .join('\n');
+
+        // Format daemon statuses
+        const daemonLines = daemons.map(d => {
+          const statusIcon = d.running ? '🟢' : '⚫';
+          const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
+          return `  ${statusIcon} ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`;
+        }).join('\n');
+
+        const status = [
+          '## Documents',
+          `  Files indexed: ${stats.total_files}`,
+          `  Total chunks: ${stats.total_documents}`,
+          `  Last indexed: ${stats.last_indexed || 'Never'}`,
+          '',
+          '## Memories',
+          `  Total: ${memStats.total_memories}`,
+          typeBreakdown ? `  By type:\n${typeBreakdown}` : '',
+          memStats.oldest_memory ? `  Oldest: ${new Date(memStats.oldest_memory).toLocaleDateString()}` : '',
+          memStats.newest_memory ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}` : '',
+          memStats.stale_count > 0 ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget` : '',
+          '',
+          '## Daemons',
+          daemonLines,
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: status,
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error getting status: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+      }
+    }
+  );
+
+  // Tool: succ_stats - Get token savings statistics
+  server.tool(
+    'succ_stats',
+    'Get token savings statistics. Shows how many tokens were saved by using RAG search instead of loading full files.',
+    {},
+    async () => {
+      try {
+        const idleConfig = getIdleReflectionConfig();
+        const summaryEnabled = idleConfig.operations?.session_summary ?? true;
+
+        const aggregated = getTokenStatsAggregated();
+        const summary = getTokenStatsSummary();
+
+        const lines: string[] = ['## Token Savings\n'];
+
+        // Session Summaries
+        const sessionStats = aggregated.find((s) => s.event_type === 'session_summary');
+        lines.push('### Session Summaries');
+        if (!summaryEnabled) {
+          lines.push('  Status: disabled');
+        } else if (sessionStats) {
+          lines.push(`  Sessions: ${sessionStats.query_count}`);
+          lines.push(`  Transcript: ${formatTokens(sessionStats.total_full_source_tokens)} tokens`);
+          lines.push(`  Summary: ${formatTokens(sessionStats.total_returned_tokens)} tokens`);
+          lines.push(
+            `  Compression: ${compressionPercent(sessionStats.total_full_source_tokens, sessionStats.total_returned_tokens)}`
+          );
+          lines.push(`  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens`);
+        } else {
+          lines.push('  No session summaries recorded yet.');
+        }
+
+        // RAG Queries
+        lines.push('\n### RAG Queries');
+
+        const ragTypes: TokenEventType[] = ['recall', 'search', 'search_code'];
+        let hasRagStats = false;
+
+        for (const type of ragTypes) {
+          const stat = aggregated.find((s) => s.event_type === type);
+          if (stat) {
+            hasRagStats = true;
+            lines.push(
+              `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
+            );
+          }
+        }
+
+        if (!hasRagStats) {
+          lines.push('  No RAG queries recorded yet.');
+        }
+
+        // Total
+        lines.push('\n### Total');
+        if (summary.total_queries > 0) {
+          lines.push(`  Queries: ${summary.total_queries}`);
+          lines.push(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
+          lines.push(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
+        } else {
+          lines.push('  No stats recorded yet.');
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: lines.join('\n'),
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error getting stats: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+      }
+    }
+  );
+
+  // Tool: succ_score - Get AI-readiness score
+  server.tool(
+    'succ_score',
+    'Get the AI-readiness score for the project. Shows how well-prepared the project is for AI collaboration, with metrics for brain vault, memories, code index, and more.',
+    {},
+    async () => {
+      try {
+        const { calculateAIReadinessScore, formatAIReadinessScore } = await import('../../lib/ai-readiness.js');
+        const result = calculateAIReadinessScore();
+        return {
+          content: [{
+            type: 'text' as const,
+            text: formatAIReadinessScore(result),
+          }],
+        };
+      } catch (error: any) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error calculating score: ${error.message}`,
+          }],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+      }
+    }
+  );
+}
