@@ -49,7 +49,7 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
   console.log('========================================');
 
   try {
-    const { getDb, closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } = await import('../db.js');
+    const { getDb, closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } = await import('../db/index.js');
     const { getEmbedding } = await import('../embeddings.js');
 
     // Save test memories
@@ -302,7 +302,7 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       return { name: 'SQLite + Qdrant', status: 'skip', error: 'Qdrant not available' };
     }
 
-    const { getDb, closeDb, saveMemory, deleteMemory, getMemoryById } = await import('../db.js');
+    const { getDb, closeDb, saveMemory, deleteMemory, getMemoryById } = await import('../db/index.js');
     const { createQdrantVectorStore } = await import('./vector/qdrant.js');
     const { getEmbedding } = await import('../embeddings.js');
 

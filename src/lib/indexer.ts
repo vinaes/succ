@@ -10,7 +10,7 @@ import {
   deleteFileHash,
   getAllFileHashes,
   updateTokenFrequencies,
-} from './db.js';
+} from './db/index.js';
 import { tokenizeCode } from './bm25.js';
 
 export interface Chunk {

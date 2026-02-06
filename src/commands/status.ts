@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getDbPath, getClaudeDir, getProjectRoot, getConfig, LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
-import { getStats, closeDb } from '../lib/db.js';
+import { getStats, closeDb } from '../lib/db/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
 
 export async function status(): Promise<void> {

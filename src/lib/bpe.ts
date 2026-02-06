@@ -14,7 +14,7 @@
  * - Otherwise daily maintenance
  */
 
-import { getDb, getTopTokens, getTokenFrequencyStats } from './db.js';
+import { getDb, getTopTokens, getTokenFrequencyStats } from './db/index.js';
 
 // ============================================================================
 // Types

@@ -12,7 +12,7 @@
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
-import { getDb } from './db.js';
+import { getDb } from './db/index.js';
 import { getSuccDir } from './config.js';
 
 // Checkpoint format version

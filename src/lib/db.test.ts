@@ -47,7 +47,7 @@ describe('Database Module', () => {
   afterAll(async () => {
     // Close databases first
     try {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
       db.closeDb();
       db.closeGlobalDb();
     } catch {
@@ -69,14 +69,14 @@ describe('Database Module', () => {
 
   describe('Database initialization', () => {
     it('should create database file on first access', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
       db.getDb();
 
       expect(fs.existsSync(path.join(tempDir, 'test.db'))).toBe(true);
     });
 
     it('should create tables on initialization', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
       const database = db.getDb();
 
       // Check tables exist
@@ -96,7 +96,7 @@ describe('Database Module', () => {
 
   describe('Document operations', () => {
     it('should upsert document', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.1);
       db.upsertDocument('test-doc.ts', 0, 'test content', 1, 10, embedding);
@@ -106,7 +106,7 @@ describe('Database Module', () => {
     });
 
     it('should batch upsert documents', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const docs = [
         { filePath: 'batch-a.ts', chunkIndex: 0, content: 'a', startLine: 1, endLine: 5, embedding: new Array(384).fill(0.1) },
@@ -120,7 +120,7 @@ describe('Database Module', () => {
     });
 
     it('should delete documents by path', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.1);
       db.upsertDocument('to-delete.ts', 0, 'will be deleted', 1, 10, embedding);
@@ -134,7 +134,7 @@ describe('Database Module', () => {
     });
 
     it('should search documents by similarity', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       // Search with a query embedding
       const queryEmbedding = new Array(384).fill(0.1);
@@ -147,7 +147,7 @@ describe('Database Module', () => {
 
   describe('File hash operations', () => {
     it('should store and retrieve file hash', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       db.setFileHash('hash-test.ts', 'abc123');
       const hash = db.getFileHash('hash-test.ts');
@@ -156,14 +156,14 @@ describe('Database Module', () => {
     });
 
     it('should return null for unknown file', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const hash = db.getFileHash('unknown-file-that-doesnt-exist.ts');
       expect(hash).toBeNull();
     });
 
     it('should delete file hash', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       db.setFileHash('delete-hash.ts', 'xyz789');
       db.deleteFileHash('delete-hash.ts');
@@ -173,7 +173,7 @@ describe('Database Module', () => {
     });
 
     it('should get all file hashes', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       db.setFileHash('map-a.ts', 'hash1');
       db.setFileHash('map-b.ts', 'hash2');
@@ -187,7 +187,7 @@ describe('Database Module', () => {
 
   describe('Memory operations', () => {
     it('should save memory', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.5);
       const result = db.saveMemory('test memory content', embedding, ['test-tag'], 'test-source', { deduplicate: false, autoLink: false });
@@ -197,7 +197,7 @@ describe('Database Module', () => {
     });
 
     it('should search memories by similarity', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.5);
       const results = db.searchMemories(embedding, 5, 0.0);
@@ -206,7 +206,7 @@ describe('Database Module', () => {
     });
 
     it('should get recent memories', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const recent = db.getRecentMemories(5);
 
@@ -214,7 +214,7 @@ describe('Database Module', () => {
     });
 
     it('should get memory by id', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.6);
       const result = db.saveMemory('get by id test', embedding, [], undefined, { deduplicate: false, autoLink: false });
@@ -225,7 +225,7 @@ describe('Database Module', () => {
     });
 
     it('should get memory stats', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const stats = db.getMemoryStats();
 
@@ -236,7 +236,7 @@ describe('Database Module', () => {
 
   describe('Memory links (Knowledge Graph)', () => {
     it('should create memory link', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.7);
       const mem1 = db.saveMemory('link test 1', embedding, [], undefined, { deduplicate: false, autoLink: false });
@@ -248,7 +248,7 @@ describe('Database Module', () => {
     });
 
     it('should get memory links', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.8);
       const mem1 = db.saveMemory('links get 1', embedding, [], undefined, { deduplicate: false, autoLink: false });
@@ -262,7 +262,7 @@ describe('Database Module', () => {
     });
 
     it('should get graph stats', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const stats = db.getGraphStats();
 
@@ -274,14 +274,14 @@ describe('Database Module', () => {
 
   describe('Global database', () => {
     it('should create global database', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
       db.getGlobalDb();
 
       expect(fs.existsSync(path.join(tempDir, 'global.db'))).toBe(true);
     });
 
     it('should save and search global memories', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.9);
       db.saveGlobalMemory('global memory test', embedding, ['global-tag'], 'source', 'project-name', { deduplicate: false });
@@ -293,7 +293,7 @@ describe('Database Module', () => {
     });
 
     it('should get global memory stats', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       const stats = db.getGlobalMemoryStats();
 
@@ -304,7 +304,7 @@ describe('Database Module', () => {
 
   describe('Constants', () => {
     it('should export MEMORY_TYPES', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       expect(db.MEMORY_TYPES).toContain('observation');
       expect(db.MEMORY_TYPES).toContain('decision');
@@ -314,7 +314,7 @@ describe('Database Module', () => {
     });
 
     it('should export LINK_RELATIONS', async () => {
-      const db = await import('./db.js');
+      const db = await import('./db/index.js');
 
       expect(db.LINK_RELATIONS).toContain('related');
       expect(db.LINK_RELATIONS).toContain('caused_by');

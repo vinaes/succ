@@ -1,4 +1,4 @@
-import { searchDocuments, closeDb } from '../lib/db.js';
+import { searchDocuments, closeDb } from '../lib/db/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { callLLMChat, ChatMessage } from '../lib/llm.js';
 import { CHAT_SYSTEM_PROMPT } from '../prompts/index.js';

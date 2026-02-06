@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir, getProjectRoot } from './config.js';
-import { getDb, getMemoryStats, getStats, getGraphStats } from './db.js';
+import { getDb, getMemoryStats, getStats, getGraphStats } from './db/index.js';
 
 // Metric weights (must sum to 100)
 export const METRIC_WEIGHTS = {

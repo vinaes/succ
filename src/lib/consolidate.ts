@@ -20,7 +20,7 @@ import {
   deleteMemoryLink,
   createMemoryLink,
   LinkRelation,
-} from './db.js';
+} from './db/index.js';
 import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';

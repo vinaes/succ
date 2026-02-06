@@ -14,7 +14,7 @@ import {
   getAllMemoriesForRetention,
   deleteMemoriesByIds,
   invalidateMemoriesBm25Index,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { getRetentionConfig } from '../lib/config.js';
 import {
   analyzeRetention,

@@ -153,7 +153,7 @@ export class StorageDispatcher {
   private qdrant: QdrantVectorStore | null;
 
   // Lazy-loaded SQLite functions
-  private _sqliteFns: typeof import('../db.js') | null = null;
+  private _sqliteFns: typeof import('../db/index.js') | null = null;
 
   constructor() {
     this.backend = _backend;
@@ -162,9 +162,9 @@ export class StorageDispatcher {
     this.qdrant = _qdrantStore;
   }
 
-  private async getSqliteFns(): Promise<typeof import('../db.js')> {
+  private async getSqliteFns(): Promise<typeof import('../db/index.js')> {
     if (!this._sqliteFns) {
-      this._sqliteFns = await import('../db.js');
+      this._sqliteFns = await import('../db/index.js');
     }
     return this._sqliteFns;
   }

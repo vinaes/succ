@@ -37,7 +37,7 @@ import {
   // Global memory
   saveGlobalMemory,
   closeGlobalDb,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';

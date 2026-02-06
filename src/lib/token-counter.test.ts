@@ -82,31 +82,31 @@ describe('Token Counter', () => {
   });
 
   describe('compressionPercent', () => {
-    it('should return 0% for zero original', () => {
-      expect(compressionPercent(0, 0)).toBe('0%');
+    it('should return 0% saved for zero original', () => {
+      expect(compressionPercent(0, 0)).toBe('0% saved');
     });
 
     it('should calculate correct percentage', () => {
       // 1000 original, 100 compressed = 90% saved
-      expect(compressionPercent(1000, 100)).toBe('90.0%');
+      expect(compressionPercent(1000, 100)).toBe('90.0% saved');
     });
 
     it('should handle 100% compression', () => {
-      expect(compressionPercent(1000, 0)).toBe('100.0%');
+      expect(compressionPercent(1000, 0)).toBe('100.0% saved');
     });
 
     it('should handle 0% compression (no savings)', () => {
-      expect(compressionPercent(1000, 1000)).toBe('0.0%');
+      expect(compressionPercent(1000, 1000)).toBe('0.0% saved');
     });
 
     it('should handle partial compression', () => {
       // 1000 original, 300 compressed = 70% saved
-      expect(compressionPercent(1000, 300)).toBe('70.0%');
+      expect(compressionPercent(1000, 300)).toBe('70.0% saved');
     });
 
     it('should format with one decimal place', () => {
       // 1000 original, 333 compressed = 66.7% saved
-      expect(compressionPercent(1000, 333)).toBe('66.7%');
+      expect(compressionPercent(1000, 333)).toBe('66.7% saved');
     });
   });
 });

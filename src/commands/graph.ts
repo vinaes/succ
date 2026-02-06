@@ -2,7 +2,7 @@ import {
   closeDb,
   getGraphStats,
   autoLinkSimilarMemories,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { exportGraphSilent } from '../lib/graph-export.js';
 
 interface GraphOptions {

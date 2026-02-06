@@ -15,7 +15,7 @@ import {
   deleteGlobalMemory,
   getGlobalMemoryStats,
   closeGlobalDb,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getConfig, getProjectRoot, getIdleReflectionConfig } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';

@@ -11,7 +11,7 @@
  * - Rate limiting
  */
 
-import { getDb } from './db.js';
+import { getDb } from './db/index.js';
 import { getConfig } from './config.js';
 import type { Skill } from './skills.js';
 

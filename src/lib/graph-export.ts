@@ -6,7 +6,7 @@ import {
   getMemoryLinks,
   getGraphStats,
   type MemoryType,
-} from './db.js';
+} from './db/index.js';
 import { calculateTemporalScore, getTemporalConfig } from './temporal.js';
 
 /**

@@ -1,0 +1,450 @@
+import { getDb, getGlobalDb } from './connection.js';
+import { cosineSimilarity } from '../embeddings.js';
+import * as bm25 from '../bm25.js';
+import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
+import { sqliteVecAvailable } from './schema.js';
+import { getTokenFrequency, getTotalTokenCount } from './token-frequency.js';
+import { SearchResult } from './types.js';
+import {
+  getCodeBm25Index,
+  getDocsBm25Index,
+  getMemoriesBm25Index,
+  getGlobalMemoriesBm25Index,
+} from './bm25-indexes.js';
+
+// ============================================================================
+// Hybrid Search Types
+// ============================================================================
+
+export interface HybridSearchResult extends SearchResult {
+  bm25Score?: number;
+  vectorScore?: number;
+}
+
+export interface HybridMemoryResult {
+  id: number;
+  content: string;
+  tags: string | null;
+  source: string | null;
+  type: string | null;
+  created_at: string;
+  similarity: number;
+  bm25Score?: number;
+  vectorScore?: number;
+  // Temporal fields
+  last_accessed?: string | null;
+  access_count?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
+}
+
+export interface HybridGlobalMemoryResult {
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  project: string | null;
+  created_at: string;
+  similarity: number;
+  bm25Score?: number;
+  vectorScore?: number;
+  isGlobal: true;
+}
+
+// ============================================================================
+// Hybrid Search Functions
+// ============================================================================
+
+/**
+ * Hybrid search combining BM25 and vector similarity.
+ * Uses sqlite-vec for fast KNN vector search when available.
+ *
+ * @param query - Search query string
+ * @param queryEmbedding - Query embedding vector
+ * @param limit - Max results
+ * @param threshold - Min similarity threshold
+ * @param alpha - Weight: 0=pure BM25, 1=pure vector, 0.5=equal (default: 0.5)
+ */
+export function hybridSearchCode(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.25,
+  alpha: number = 0.5
+): HybridSearchResult[] {
+  const database = getDb();
+
+  // 1. BM25 search with Ronin-style segmentation for flatcase queries
+  const bm25Index = getCodeBm25Index();
+
+  // Enhance query with segmented tokens if it looks like flatcase
+  let enhancedQuery = query;
+  const totalTokens = getTotalTokenCount();
+  if (totalTokens > 0) {
+    const tokens = bm25.tokenizeCodeWithSegmentation(
+      query,
+      (token) => getTokenFrequency(token),
+      totalTokens
+    );
+    if (tokens.length > query.split(/\s+/).length) {
+      enhancedQuery = tokens.join(' ');
+    }
+  }
+
+  const bm25Results = bm25.search(enhancedQuery, bm25Index, 'code', limit * 3);
+
+  // 2. Vector search - try sqlite-vec first
+  let vectorResults: { docId: number; score: number }[] = [];
+  let rowMap: Map<number, { id: number; file_path: string; content: string; start_line: number; end_line: number }> = new Map();
+
+  if (sqliteVecAvailable) {
+    try {
+      const candidateLimit = limit * 5;
+      const queryBuffer = floatArrayToBuffer(queryEmbedding);
+
+      const vecResults = database.prepare(`
+        SELECT m.doc_id, v.distance
+        FROM vec_documents v
+        JOIN vec_documents_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = ?
+        ORDER BY v.distance
+      `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
+
+      if (vecResults.length > 0) {
+        // Filter to only code documents
+        const docIds = vecResults.map(r => r.doc_id);
+        const placeholders = docIds.map(() => '?').join(',');
+        const rows = database.prepare(`
+          SELECT id, file_path, content, start_line, end_line
+          FROM documents
+          WHERE id IN (${placeholders}) AND file_path LIKE 'code:%'
+        `).all(...docIds) as Array<{
+          id: number;
+          file_path: string;
+          content: string;
+          start_line: number;
+          end_line: number;
+        }>;
+
+        rowMap = new Map(rows.map(r => [r.id, r]));
+        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+
+        for (const row of rows) {
+          const distance = distanceMap.get(row.id) ?? 1;
+          const similarity = 1 - distance;
+          if (similarity >= threshold) {
+            vectorResults.push({ docId: row.id, score: similarity });
+          }
+        }
+        vectorResults.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      // Fall through to brute-force
+      vectorResults = [];
+    }
+  }
+
+  // Brute-force fallback for vector search
+  if (vectorResults.length === 0) {
+    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+      id: number;
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: Buffer;
+    }>;
+
+    if (rows.length === 0) return [];
+
+    rowMap = new Map(rows.map(r => [r.id, r]));
+
+    for (const row of rows) {
+      const embedding = bufferToFloatArray(row.embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= threshold) {
+        vectorResults.push({ docId: row.id, score: similarity });
+      }
+    }
+    vectorResults.sort((a, b) => b.score - a.score);
+  }
+
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Ensure we have all needed rows in the map (for BM25 results that might not be in vec results)
+  if (combined.length > 0) {
+    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map(() => '?').join(',');
+      const missingRows = getDb().prepare(`
+        SELECT id, file_path, content, start_line, end_line
+        FROM documents WHERE id IN (${placeholders})
+      `).all(...missingIds) as Array<{
+        id: number;
+        file_path: string;
+        content: string;
+        start_line: number;
+        end_line: number;
+      }>;
+      for (const row of missingRows) {
+        rowMap.set(row.id, row);
+      }
+    }
+  }
+
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridSearchResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      file_path: row.file_path,
+      content: row.content,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+    });
+  }
+  return results;
+}
+
+/**
+ * Hybrid search for docs (brain/ markdown files)
+ */
+export function hybridSearchDocs(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.2,
+  alpha: number = 0.5
+): HybridSearchResult[] {
+  const database = getDb();
+
+  // Get all docs (exclude code: prefix)
+  const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%'").all() as Array<{
+    id: number;
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: Buffer;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search with docs tokenizer (stemming)
+  const bm25Index = getDocsBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridSearchResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      file_path: row.file_path,
+      content: row.content,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+    });
+  }
+  return results;
+}
+
+/**
+ * Hybrid search for memories
+ */
+export function hybridSearchMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5
+): HybridMemoryResult[] {
+  const database = getDb();
+
+  const rows = database.prepare(`
+    SELECT id, content, tags, source, type, created_at, embedding,
+           last_accessed, access_count, valid_from, valid_until
+    FROM memories WHERE embedding IS NOT NULL
+  `).all() as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    type: string | null;
+    created_at: string;
+    embedding: Buffer;
+    last_accessed: string | null;
+    access_count: number;
+    valid_from: string | null;
+    valid_until: string | null;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search
+  const bm25Index = getMemoriesBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridMemoryResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+    results.push({
+      id: row.id,
+      content: row.content,
+      tags: row.tags,
+      source: row.source,
+      type: row.type,
+      created_at: row.created_at,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+      last_accessed: row.last_accessed,
+      access_count: row.access_count,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+    });
+  }
+  return results;
+}
+
+/**
+ * Hybrid search for global memories (BM25 + vector with RRF fusion)
+ */
+export function hybridSearchGlobalMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5,
+  tags?: string[],
+  since?: Date
+): HybridGlobalMemoryResult[] {
+  const database = getGlobalDb();
+
+  let sqlQuery = 'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+  const params: any[] = [];
+
+  if (since) {
+    sqlQuery += ' AND created_at >= ?';
+    params.push(since.toISOString());
+  }
+
+  const rows = database.prepare(sqlQuery).all(...params) as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    project: string | null;
+    embedding: Buffer;
+    created_at: string;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // 1. BM25 search
+  const bm25Index = getGlobalMemoriesBm25Index();
+  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+
+  // 2. Vector search
+  const vectorResults: { docId: number; score: number }[] = [];
+  for (const row of rows) {
+    const embedding = bufferToFloatArray(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, embedding);
+    if (similarity >= threshold) {
+      vectorResults.push({ docId: row.id, score: similarity });
+    }
+  }
+  vectorResults.sort((a, b) => b.score - a.score);
+  const topVectorResults = vectorResults.slice(0, limit * 3);
+
+  // 3. Combine using RRF
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+
+  // 4. Map back to full results
+  const rowMap = new Map(rows.map((r) => [r.id, r]));
+  const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+  const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+  const results: HybridGlobalMemoryResult[] = [];
+  for (const c of combined) {
+    const row = rowMap.get(c.docId);
+    if (!row) continue;
+
+    // Parse and filter by tags if specified
+    const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    if (tags && tags.length > 0) {
+      const hasMatchingTag = tags.some((t) =>
+        rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
+      );
+      if (!hasMatchingTag) continue;
+    }
+
+    results.push({
+      id: row.id,
+      content: row.content,
+      tags: rowTags,
+      source: row.source,
+      project: row.project,
+      created_at: row.created_at,
+      similarity: c.score,
+      bm25Score: bm25Map.get(c.docId),
+      vectorScore: vectorMap.get(c.docId),
+      isGlobal: true,
+    });
+  }
+
+  return results;
+}

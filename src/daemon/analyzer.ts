@@ -12,7 +12,7 @@ import { glob } from 'glob';
 import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
 import { withLock } from '../lib/lock.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, hybridSearchDocs } from '../lib/db.js';
+import { saveMemory, hybridSearchDocs } from '../lib/db/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM, type LLMBackend } from '../lib/llm.js';
 import { DISCOVERY_PROMPT } from '../prompts/index.js';

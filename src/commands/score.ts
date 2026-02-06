@@ -5,7 +5,7 @@
  */
 
 import { calculateAIReadinessScore, formatAIReadinessScore } from '../lib/ai-readiness.js';
-import { closeDb } from '../lib/db.js';
+import { closeDb } from '../lib/db/index.js';
 
 export interface ScoreOptions {
   json?: boolean;

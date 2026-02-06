@@ -16,7 +16,7 @@ import {
   getTokenStatsSummary,
   clearTokenStats,
   type TokenEventType,
-} from '../lib/db.js';
+} from '../lib/db/index.js';
 import { formatTokens, compressionPercent } from '../lib/token-counter.js';
 import { getIdleReflectionConfig } from '../lib/config.js';
 import { estimateSavings, formatCost } from '../lib/pricing.js';
