@@ -7,7 +7,8 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { saveMemory, searchMemories, closeDb, recordTokenStat } from './db/index.js';
+import { saveMemory, saveMemoriesBatch, searchMemories, closeDb, recordTokenStat } from './db/index.js';
+import type { MemoryBatchInput } from './db/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
@@ -135,14 +136,16 @@ async function saveFactsAsMemories(
   let saved = 0;
   let skipped = 0;
   const errors: string[] = [];
+  const config = getConfig();
+
+  // Phase 1: Pre-process all facts (sensitive filter, embedding, quality scoring)
+  const prepared: MemoryBatchInput[] = [];
 
   for (let i = 0; i < facts.length; i++) {
     const fact = facts[i];
     onProgress?.(i + 1, facts.length);
 
     try {
-      // Check for sensitive info and redact if configured
-      const config = getConfig();
       let content = fact.content;
       if (config.sensitive_filter_enabled !== false) {
         const scanResult = scanSensitive(content);
@@ -150,46 +153,40 @@ async function saveFactsAsMemories(
           if (config.sensitive_auto_redact) {
             content = scanResult.redactedText;
           } else {
-            // Skip facts with sensitive info when auto-redact is off
             skipped++;
             continue;
           }
         }
       }
 
-      // Get embedding
       const embedding = await getEmbedding(content);
 
-      // Check for duplicates
-      const existing = searchMemories(embedding, 1, 0.9);
-      if (existing.length > 0) {
-        skipped++;
-        continue;
-      }
-
-      // Score quality
       const qualityScore = await scoreMemory(content);
       if (qualityScore.score < minQuality) {
         skipped++;
         continue;
       }
 
-      // Add session-summary tag
       const tags = [...fact.tags, 'session-summary', fact.type];
 
-      // Save memory
-      const result = saveMemory(content, embedding, tags, 'session-summary', {
+      prepared.push({
+        content,
+        embedding,
+        tags,
+        type: fact.type,
+        source: 'session-summary',
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
       });
-
-      if (result.isDuplicate) {
-        skipped++;
-      } else {
-        saved++;
-      }
     } catch (error) {
       errors.push(`Failed to save fact: ${fact.content.substring(0, 50)}...`);
     }
+  }
+
+  // Phase 2: Batch save with dedup threshold 0.9 (session-summary uses higher threshold)
+  if (prepared.length > 0) {
+    const batchResult = saveMemoriesBatch(prepared, 0.9);
+    saved = batchResult.saved;
+    skipped += batchResult.skipped;
   }
 
   return { saved, skipped, errors };
