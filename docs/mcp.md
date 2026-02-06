@@ -1,10 +1,13 @@
 # MCP Server Integration
 
-succ can run as an MCP server, allowing Claude to call search/index tools directly.
+succ can run as an MCP server, allowing AI agents to call search/index tools directly.
+
+**Works with:** Claude Code, Cursor, Windsurf, Continue.dev — any editor supporting MCP.
+See [Editor Integration](./editors/index.md) for editor-specific setup guides.
 
 ## Setup
 
-Add to your Claude Code MCP config (`~/.claude/mcp_servers.json`):
+Add to your Claude Code MCP config (`~/.claude.json`):
 
 ```json
 {
