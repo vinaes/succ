@@ -1,0 +1,933 @@
+/**
+ * MCP Memory tools
+ *
+ * - succ_remember: Save important information to memory
+ * - succ_recall: Recall past memories (hybrid BM25 + semantic search)
+ * - succ_forget: Delete memories
+ *
+ * Also includes helper functions:
+ * - rememberWithLLMExtraction: Extract structured facts from content
+ * - saveSingleMemory: Save single memory (fallback)
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import path from 'path';
+import {
+  saveMemory,
+  searchMemories,
+  getRecentMemories,
+  getMemoryById,
+  deleteMemory,
+  deleteMemoriesOlderThan,
+  deleteMemoriesByTag,
+  hybridSearchMemories,
+  saveGlobalMemory,
+  hybridSearchGlobalMemories,
+  getRecentGlobalMemories,
+  closeDb,
+  closeGlobalDb,
+} from '../../lib/db/index.js';
+import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
+import { getEmbedding } from '../../lib/embeddings.js';
+import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
+import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
+import { parseDuration, applyTemporalScoring, getTemporalConfig } from '../../lib/temporal.js';
+import { extractFactsWithLLM } from '../../lib/session-summary.js';
+import { trackTokenSavings, trackMemoryAccess, parseRelativeDate } from '../helpers.js';
+
+/**
+ * Remember with LLM extraction - extracts structured facts from content
+ */
+async function rememberWithLLMExtraction(params: {
+  content: string;
+  tags: string[];
+  source?: string;
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  useGlobal: boolean;
+  valid_from?: string;
+  valid_until?: string;
+  config: ReturnType<typeof getConfig>;
+}): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  const { content, tags, source, useGlobal, valid_from, valid_until, config } = params;
+  const idleConfig = getIdleReflectionConfig();
+
+  // Determine LLM options (default to Claude CLI)
+  const llmOptions: {
+    mode: 'claude' | 'local' | 'openrouter';
+    model?: string;
+    apiUrl?: string;
+    apiKey?: string;
+  } = {
+    mode: 'claude',
+    model: idleConfig.agent_model || 'haiku',
+  };
+
+  try {
+    // Extract facts from content
+    const facts = await extractFactsWithLLM(content, llmOptions);
+
+    if (facts.length === 0) {
+      // No facts extracted, fall back to saving original content
+      return await saveSingleMemory({
+        content,
+        tags,
+        source,
+        type: params.type,
+        useGlobal,
+        valid_from,
+        valid_until,
+        config,
+      });
+    }
+
+    // Parse temporal validity periods once
+    let validFromDate: Date | undefined;
+    let validUntilDate: Date | undefined;
+    if (valid_from) {
+      validFromDate = parseDuration(valid_from);
+    }
+    if (valid_until) {
+      validUntilDate = parseDuration(valid_until);
+    }
+
+    let saved = 0;
+    let skipped = 0;
+    const results: string[] = [];
+
+    for (const fact of facts) {
+      let factContent = fact.content;
+
+      // Check for sensitive information
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(factContent);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            factContent = scanResult.redactedText;
+          } else {
+            results.push(`⚠ [${fact.type}] Skipped (sensitive): "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+            continue;
+          }
+        }
+      }
+
+      try {
+        const embedding = await getEmbedding(factContent);
+
+        // Merge fact tags with base tags
+        const factTags = [...tags, ...fact.tags, fact.type, 'extracted'];
+
+        // Score quality
+        let qualityScore = null;
+        if (config.quality_scoring_enabled !== false) {
+          qualityScore = await scoreMemory(factContent);
+          if (!passesQualityThreshold(qualityScore)) {
+            results.push(`⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+            continue;
+          }
+        }
+
+        if (useGlobal) {
+          const projectName = path.basename(getProjectRoot());
+          const result = saveGlobalMemory(factContent, embedding, factTags, source || 'extraction', projectName, { type: fact.type });
+          if (result.isDuplicate) {
+            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+          } else {
+            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
+            saved++;
+          }
+        } else {
+          const result = saveMemory(factContent, embedding, factTags, source || 'extraction', {
+            type: fact.type,
+            qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+            validFrom: validFromDate,
+            validUntil: validUntilDate,
+          });
+          if (result.isDuplicate) {
+            results.push(`⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 40)}..."`);
+            skipped++;
+          } else {
+            results.push(`✓ [${fact.type}] id:${result.id} "${fact.content.substring(0, 50)}..."`);
+            saved++;
+          }
+        }
+      } catch (error: any) {
+        results.push(`✗ [${fact.type}] Error: ${error.message}`);
+        skipped++;
+      }
+    }
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Extracted ${facts.length} facts:\n${results.join('\n')}\n\nSummary: ${saved} saved, ${skipped} skipped`,
+      }],
+    };
+  } catch (error: any) {
+    // If extraction fails, fall back to saving original content
+    return await saveSingleMemory({
+      content,
+      tags,
+      source,
+      type: params.type,
+      useGlobal,
+      valid_from,
+      valid_until,
+      config,
+      fallbackReason: `LLM extraction failed: ${error.message}`,
+    });
+  } finally {
+    closeDb();
+    closeGlobalDb();
+  }
+}
+
+/**
+ * Save a single memory (used as fallback or when extraction is disabled)
+ */
+async function saveSingleMemory(params: {
+  content: string;
+  tags: string[];
+  source?: string;
+  type: 'observation' | 'decision' | 'learning' | 'error' | 'pattern';
+  useGlobal: boolean;
+  valid_from?: string;
+  valid_until?: string;
+  config: ReturnType<typeof getConfig>;
+  fallbackReason?: string;
+}): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  const { content, tags, source, type, useGlobal, valid_from, valid_until, config, fallbackReason } = params;
+
+  // Check for sensitive information
+  let processedContent = content;
+  if (config.sensitive_filter_enabled !== false) {
+    const scanResult = scanSensitive(content);
+    if (scanResult.hasSensitive) {
+      if (config.sensitive_auto_redact) {
+        processedContent = scanResult.redactedText;
+      } else {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved.`,
+          }],
+        };
+      }
+    }
+  }
+
+  // Parse temporal validity periods
+  let validFromDate: Date | undefined;
+  let validUntilDate: Date | undefined;
+  if (valid_from) {
+    validFromDate = parseDuration(valid_from);
+  }
+  if (valid_until) {
+    validUntilDate = parseDuration(valid_until);
+  }
+
+  const embedding = await getEmbedding(processedContent);
+
+  let qualityScore = null;
+  if (config.quality_scoring_enabled !== false) {
+    qualityScore = await scoreMemory(processedContent);
+    if (!passesQualityThreshold(qualityScore)) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
+        }],
+      };
+    }
+  }
+
+  const fallbackPrefix = fallbackReason ? `(${fallbackReason})\n` : '';
+
+  if (useGlobal) {
+    const projectName = path.basename(getProjectRoot());
+    const result = saveGlobalMemory(processedContent, embedding, tags, source, projectName, { type });
+    closeGlobalDb();
+
+    if (result.isDuplicate) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
+        }],
+      };
+    }
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+      }],
+    };
+  }
+
+  const result = saveMemory(processedContent, embedding, tags, source, {
+    type,
+    qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+    validFrom: validFromDate,
+    validUntil: validUntilDate,
+  });
+  closeDb();
+
+  if (result.isDuplicate) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
+      }],
+    };
+  }
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+    }],
+  };
+}
+
+export function registerMemoryTools(server: McpServer) {
+  // Tool: succ_remember - Save important information to memory
+  server.tool(
+    'succ_remember',
+    'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.',
+    {
+      content: z.string().describe('The information to remember'),
+      tags: z
+        .array(z.string())
+        .optional()
+        .default([])
+        .describe('Tags for categorization (e.g., ["decision", "architecture"])'),
+      source: z
+        .string()
+        .optional()
+        .describe('Source context (e.g., "user request", "bug fix", file path)'),
+      type: z
+        .enum(['observation', 'decision', 'learning', 'error', 'pattern'])
+        .optional()
+        .default('observation')
+        .describe('Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes)'),
+      global: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'),
+      valid_from: z
+        .string()
+        .optional()
+        .describe('When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'),
+      valid_until: z
+        .string()
+        .optional()
+        .describe('When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'),
+      extract: z
+        .boolean()
+        .optional()
+        .describe('Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'),
+    },
+    async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until, extract }) => {
+      // Force global mode if project not initialized
+      const globalOnlyMode = isGlobalOnlyMode();
+      if (globalOnlyMode && !useGlobal) {
+        useGlobal = true;
+      }
+
+      try {
+        const config = getConfig();
+
+        // Determine if LLM extraction should be used
+        const configDefault = config.remember_extract_default !== false; // default true
+        const useExtract = extract ?? configDefault;
+
+        // If extraction is enabled, use LLM to extract structured facts
+        if (useExtract) {
+          return await rememberWithLLMExtraction({
+            content,
+            tags,
+            source,
+            type,
+            useGlobal,
+            valid_from,
+            valid_until,
+            config,
+          });
+        }
+
+        // Check for sensitive information (non-interactive mode for MCP)
+        if (config.sensitive_filter_enabled !== false) {
+          const scanResult = scanSensitive(content);
+          if (scanResult.hasSensitive) {
+            if (config.sensitive_auto_redact) {
+              // Auto-redact and continue
+              content = scanResult.redactedText;
+            } else {
+              // Block - can't prompt user in MCP mode
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved. Set "sensitive_auto_redact": true in config to auto-redact, or use CLI with --redact-sensitive flag.`,
+                  },
+                ],
+              };
+            }
+          }
+        }
+
+        // Parse temporal validity periods
+        let validFromDate: Date | undefined;
+        let validUntilDate: Date | undefined;
+
+        if (valid_from) {
+          try {
+            validFromDate = parseDuration(valid_from);
+          } catch (e: any) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Invalid valid_from: ${e.message}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
+              }],
+              isError: true,
+            };
+          }
+        }
+
+        if (valid_until) {
+          try {
+            validUntilDate = parseDuration(valid_until);
+          } catch (e: any) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Invalid valid_until: ${e.message}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
+              }],
+              isError: true,
+            };
+          }
+        }
+
+        const embedding = await getEmbedding(content);
+        let qualityScore = null;
+        if (config.quality_scoring_enabled !== false) {
+          qualityScore = await scoreMemory(content);
+
+          // Check if it passes the threshold
+          if (!passesQualityThreshold(qualityScore)) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`,
+                },
+              ],
+            };
+          }
+        }
+
+        // Format validity period for display
+        const validityStr = (validFromDate || validUntilDate)
+          ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
+          : '';
+
+        if (useGlobal) {
+          const projectName = path.basename(getProjectRoot());
+          const result = saveGlobalMemory(content, embedding, tags, source, projectName, { type });
+
+          const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+          const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
+          if (result.isDuplicate) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `⚠ Similar global memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar). Skipped duplicate.`,
+                },
+              ],
+            };
+          }
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr}${validityStr} (project: ${projectName}):\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+              },
+            ],
+          };
+        }
+
+        const result = saveMemory(content, embedding, tags, source, {
+          type,
+          qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+          validFrom: validFromDate,
+          validUntil: validUntilDate,
+        });
+
+        const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+        const typeStr = type !== 'observation' ? ` (${type})` : '';
+        const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
+        if (result.isDuplicate) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar). Skipped duplicate.`,
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `✓ Remembered${typeStr} (id: ${result.id})${tagStr}${qualityStr}${validityStr}:\n"${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error saving memory: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+        closeGlobalDb();
+      }
+    }
+  );
+
+  // Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
+  server.tool(
+    'succ_recall',
+    'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.',
+    {
+      query: z.string().describe('What to recall (semantic search)'),
+      limit: z.number().optional().default(5).describe('Maximum number of memories (default: 5)'),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe('Filter by tags (e.g., ["decision"])'),
+      since: z
+        .string()
+        .optional()
+        .describe('Only memories after this date (ISO format or "yesterday", "last week")'),
+      as_of_date: z
+        .string()
+        .optional()
+        .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
+    },
+    async ({ query, limit, tags, since, as_of_date }) => {
+      const globalOnlyMode = isGlobalOnlyMode();
+
+      try {
+        // Special case: "*" means "show recent memories" (no semantic search)
+        const isWildcard = query === '*' || query === '**' || query.trim() === '';
+
+        // Parse relative date strings
+        let sinceDate: Date | undefined;
+        if (since) {
+          const now = new Date();
+          const lower = since.toLowerCase();
+          if (lower === 'yesterday') {
+            sinceDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          } else if (lower === 'last week' || lower === 'week') {
+            sinceDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          } else if (lower === 'last month' || lower === 'month') {
+            sinceDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          } else if (lower === 'today') {
+            sinceDate = new Date(now.setHours(0, 0, 0, 0));
+          } else {
+            sinceDate = new Date(since);
+            if (isNaN(sinceDate.getTime())) {
+              sinceDate = undefined;
+            }
+          }
+        }
+
+        // For wildcard queries, just get recent memories without semantic search
+        if (isWildcard) {
+          const recentLocal = globalOnlyMode ? [] : getRecentMemories(limit);
+          const recentGlobal = getRecentGlobalMemories(limit);
+
+          // Apply tag filter if specified
+          let filteredLocal = recentLocal;
+          let filteredGlobal = recentGlobal;
+          if (tags && tags.length > 0) {
+            filteredLocal = recentLocal.filter((m) => {
+              const memTags = Array.isArray(m.tags) ? m.tags : [];
+              return tags.some((t) => memTags.includes(t));
+            });
+            filteredGlobal = recentGlobal.filter((m) => {
+              const memTags = Array.isArray(m.tags) ? m.tags : [];
+              return tags.some((t) => memTags.includes(t));
+            });
+          }
+
+          // Apply date filter if specified
+          if (sinceDate) {
+            filteredLocal = filteredLocal.filter((m) => new Date(m.created_at) >= sinceDate!);
+            filteredGlobal = filteredGlobal.filter((m) => new Date(m.created_at) >= sinceDate!);
+          }
+
+          const parseTags = (t: string | string[] | null): string[] => {
+            if (!t) return [];
+            if (Array.isArray(t)) return t;
+            return t.split(',').map((s) => s.trim()).filter(Boolean);
+          };
+
+          const allRecent = [
+            ...filteredLocal.map((m) => ({ ...m, tags: parseTags(m.tags), isGlobal: false })),
+            ...filteredGlobal.map((m) => ({ ...m, isGlobal: true })),
+          ].slice(0, limit);
+
+          if (allRecent.length === 0) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: globalOnlyMode
+                  ? 'No global memories found.'
+                  : 'No memories found. Use succ_remember to save memories.',
+              }],
+            };
+          }
+
+          const localCount = filteredLocal.length;
+          const globalCount = filteredGlobal.length;
+          const formatted = allRecent
+            .map((m, i) => {
+              const tagStr = m.tags.length > 0 ? ` [[${m.tags.map((t: string) => `"${t}"`).join(', ')}]]` : '';
+              const date = new Date(m.created_at).toLocaleDateString();
+              const scope = m.isGlobal ? '[GLOBAL] ' : '';
+              const source = (m as any).source ? ` (from: ${(m as any).source})` : '';
+              const matchPct = (m as any).similarity ? ` (${Math.round((m as any).similarity * 100)}% match)` : '';
+              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
+            })
+            .join('\n---\n\n');
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Found ${allRecent.length} recent memories (${localCount} local, ${globalCount} global):\n\n${formatted}`,
+            }],
+          };
+        }
+
+        const queryEmbedding = await getEmbedding(query);
+
+        // Use hybrid search for local memories (BM25 + vector with RRF)
+        let localResults = globalOnlyMode ? [] : hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
+
+        // Apply tag filter if specified
+        if (tags && tags.length > 0) {
+          localResults = localResults.filter((m) => {
+            const memTags = m.tags ? m.tags.split(',').map((t) => t.trim()) : [];
+            return tags.some((t) => memTags.includes(t));
+          });
+        }
+
+        // Apply date filter if specified
+        if (sinceDate) {
+          localResults = localResults.filter((m) => new Date(m.created_at) >= sinceDate!);
+        }
+
+        // Apply point-in-time validity filter (as_of_date)
+        let asOfDateObj: Date | undefined;
+        if (as_of_date) {
+          asOfDateObj = new Date(as_of_date);
+          if (isNaN(asOfDateObj.getTime())) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Invalid as_of_date: "${as_of_date}". Use ISO format (2024-06-01).`,
+              }],
+              isError: true,
+            };
+          }
+
+          localResults = localResults.filter((m) => {
+            const createdAt = new Date(m.created_at);
+            if (createdAt > asOfDateObj!) return false;
+
+            if (m.valid_from) {
+              const validFrom = new Date(m.valid_from);
+              if (validFrom > asOfDateObj!) return false;
+            }
+
+            if (m.valid_until) {
+              const validUntil = new Date(m.valid_until);
+              if (validUntil < asOfDateObj!) return false;
+            }
+
+            return true;
+          });
+        }
+
+        localResults = localResults.slice(0, limit);
+
+        // Global memories now use hybrid search (BM25 + vector)
+        const globalResults = hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, 0.5, tags, sinceDate);
+
+        // Helper to parse tags (can be string or array)
+        const parseTags = (t: string | string[] | null): string[] => {
+          if (!t) return [];
+          if (Array.isArray(t)) return t;
+          return t.split(',').map((s) => s.trim()).filter(Boolean);
+        };
+
+        // Merge and sort by similarity
+        let allResults = [
+          ...localResults.map((r) => ({ ...r, tags: parseTags(r.tags), isGlobal: false })),
+          ...globalResults.map((r) => ({ ...r, isGlobal: true })),
+        ]
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, limit);
+
+        // Apply temporal scoring if enabled (time decay + access boost)
+        const temporalConfig = getTemporalConfig();
+        if (temporalConfig.enabled && !as_of_date) {
+          const scoredResults = applyTemporalScoring(
+            allResults.map(r => ({
+              ...r,
+              last_accessed: (r as any).last_accessed || null,
+              access_count: (r as any).access_count || 0,
+              valid_from: (r as any).valid_from || null,
+              valid_until: (r as any).valid_until || null,
+            })),
+            temporalConfig
+          );
+          allResults = scoredResults;
+        }
+
+        if (allResults.length === 0) {
+          // Try to show recent memories as fallback
+          const recentLocal = getRecentMemories(2);
+          const recentGlobal = getRecentGlobalMemories(2);
+
+          const recent = [
+            ...recentLocal.map((m) => ({ ...m, isGlobal: false })),
+            ...recentGlobal.map((m) => ({ ...m, isGlobal: true })),
+          ].slice(0, 3);
+
+          if (recent.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `No memories found for "${query}". Memory is empty.`,
+                },
+              ],
+            };
+          }
+
+          const recentFormatted = recent
+            .map((m, i) => {
+              const memTags = parseTags(m.tags);
+              const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
+              const date = new Date(m.created_at).toLocaleDateString();
+              const scope = m.isGlobal ? '[GLOBAL] ' : '';
+              return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`;
+            })
+            .join('\n');
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `No memories matching "${query}". Here are recent memories:\n\n${recentFormatted}`,
+              },
+            ],
+          };
+        }
+
+        // Track token savings for recall
+        trackTokenSavings(
+          'recall',
+          query,
+          allResults.map((m) => ({ file_path: `memory:${m.id || 'unknown'}`, content: m.content }))
+        );
+
+        // Track memory access for retention decay (local memories only)
+        const localMemoryIds = allResults
+          .filter((r) => !r.isGlobal && r.id)
+          .map((r) => r.id as number);
+        trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
+
+        const formatted = allResults
+          .map((m, i) => {
+            const similarity = (m.similarity * 100).toFixed(0);
+            const memTags = Array.isArray(m.tags) ? m.tags : parseTags(m.tags);
+            const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
+            const date = new Date(m.created_at).toLocaleDateString();
+            const sourceStr = m.source ? ` (from: ${m.source})` : '';
+            const scope = m.isGlobal ? ' [GLOBAL]' : '';
+            const projectStr = m.isGlobal && 'project' in m && m.project ? ` (project: ${m.project})` : '';
+
+            // Show temporal validity info if present
+            const validFrom = (m as any).valid_from;
+            const validUntil = (m as any).valid_until;
+            let validityStr = '';
+            if (validFrom || validUntil) {
+              const fromStr = validFrom ? new Date(validFrom).toLocaleDateString() : '∞';
+              const untilStr = validUntil ? new Date(validUntil).toLocaleDateString() : '∞';
+              validityStr = ` [valid: ${fromStr} → ${untilStr}]`;
+            }
+
+            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${m.content}`;
+          })
+          .join('\n\n---\n\n');
+
+        const localCount = allResults.filter((r) => !r.isGlobal).length;
+        const globalCount = allResults.filter((r) => r.isGlobal).length;
+        const asOfStr = as_of_date ? ` (as of ${as_of_date})` : '';
+        const summary = `Found ${allResults.length} memories (${localCount} local, ${globalCount} global)${asOfStr}`;
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `${summary} for "${query}":\n\n${formatted}`,
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error recalling memories: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+        closeGlobalDb();
+      }
+    }
+  );
+
+  // Tool: succ_forget - Delete memories
+  server.tool(
+    'succ_forget',
+    'Delete memories. Use to clean up old or irrelevant information.',
+    {
+      id: z.number().optional().describe('Delete memory by ID'),
+      older_than: z
+        .string()
+        .optional()
+        .describe('Delete memories older than (e.g., "30d", "1w", "3m", "1y")'),
+      tag: z.string().optional().describe('Delete all memories with this tag'),
+    },
+    async ({ id, older_than, tag }) => {
+      try {
+        // Delete by ID
+        if (id !== undefined) {
+          const memory = getMemoryById(id);
+          if (!memory) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Memory with id ${id} not found.`,
+                },
+              ],
+            };
+          }
+
+          const deleted = deleteMemory(id);
+
+          if (deleted) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `✓ Forgot memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                },
+              ],
+            };
+          }
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Failed to delete memory ${id}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Delete older than date
+        if (older_than) {
+          const date = parseRelativeDate(older_than);
+          if (!date) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Invalid date format: ${older_than}. Use "30d", "1w", "3m", "1y", or ISO date.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const count = deleteMemoriesOlderThan(date);
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `✓ Forgot ${count} memories older than ${date.toLocaleDateString()}`,
+              },
+            ],
+          };
+        }
+
+        // Delete by tag
+        if (tag) {
+          const count = deleteMemoriesByTag(tag);
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `✓ Forgot ${count} memories with tag "${tag}"`,
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Specify what to forget: id (number), older_than (e.g., "30d"), or tag (string)',
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error forgetting: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      } finally {
+        closeDb();
+      }
+    }
+  );
+}
