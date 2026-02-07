@@ -10,7 +10,7 @@ import {
   deleteFileHash,
   getAllFileHashes,
   updateTokenFrequencies,
-} from './db/index.js';
+} from './storage/index.js';
 import { tokenizeCode } from './bm25.js';
 
 export interface Chunk {
@@ -98,7 +98,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
   console.log(`Found ${uniqueFiles.length} files`);
 
   // Get existing hashes for incremental indexing
-  const existingHashes = getAllFileHashes();
+  const existingHashes = await getAllFileHashes();
   const currentFiles = new Set<string>();
 
   let totalChunks = 0;
@@ -242,10 +242,10 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         }
 
         // Delete existing chunks for this file
-        deleteDocumentsByPath(file.relativePath);
+        await deleteDocumentsByPath(file.relativePath);
 
         // Save new documents
-        upsertDocumentsBatchWithHashes(documents);
+        await upsertDocumentsBatchWithHashes(documents);
 
         // Update token frequencies for code files
         if (pathPrefix === 'code:') {
@@ -254,7 +254,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
             const tokens = tokenizeCode(doc.content);
             allTokens.push(...tokens);
           }
-          updateTokenFrequencies(allTokens);
+          await updateTokenFrequencies(allTokens);
         }
 
         totalChunks += documents.length;
@@ -275,8 +275,8 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       if (cleanupFilter && !cleanupFilter(filePath)) continue;
 
       if (!currentFiles.has(filePath)) {
-        deleteDocumentsByPath(filePath);
-        deleteFileHash(filePath);
+        await deleteDocumentsByPath(filePath);
+        await deleteFileHash(filePath);
         deletedFiles++;
       }
     }

@@ -27,42 +27,45 @@ vi.mock('./config.js', () => {
 const mockMemories: any[] = [];
 const mockLinks: any[] = [];
 
-vi.mock('./db/index.js', () => ({
-  getDb: () => ({
-    prepare: (query: string) => ({
-      all: () => {
-        if (query.includes('FROM memories')) {
-          return mockMemories;
-        }
-        if (query.includes('FROM memory_links')) {
-          return mockLinks;
-        }
-        return [];
-      },
-      get: (id: number) => {
-        const memory = mockMemories.find((m) => m.id === id);
-        return memory ? { type: memory.type } : undefined;
-      },
-    }),
-  }),
-  getMemoryLinks: (id: number) => ({
-    outgoing: mockLinks.filter((l) => l.source_id === id).map((l) => ({
+vi.mock('./storage/index.js', () => ({
+  getAllMemoriesForExport: async () => mockMemories.map((m: any) => ({
+    id: m.id, content: m.content,
+    tags: m.tags ? (typeof m.tags === 'string' ? JSON.parse(m.tags) : m.tags) : [],
+    source: m.source, type: m.type,
+    embedding: null,
+    quality_score: m.quality_score ?? null,
+    quality_factors: null,
+    access_count: m.access_count ?? 0,
+    last_accessed: m.last_accessed ?? null,
+    created_at: m.created_at,
+    invalidated_by: null,
+  })),
+  getAllMemoryLinksForExport: async () => mockLinks.map((l: any) => ({
+    id: l.id ?? 0, source_id: l.source_id, target_id: l.target_id,
+    relation: l.relation, weight: l.weight, created_at: l.created_at ?? new Date().toISOString(),
+  })),
+  getMemoryById: async (id: number) => {
+    const m = mockMemories.find((m: any) => m.id === id);
+    return m ? { id: m.id, content: m.content, type: m.type, tags: m.tags ?? [] } : null;
+  },
+  getMemoryLinks: async (id: number) => ({
+    outgoing: mockLinks.filter((l: any) => l.source_id === id).map((l: any) => ({
       target_id: l.target_id,
       relation: l.relation,
       weight: l.weight,
     })),
-    incoming: mockLinks.filter((l) => l.target_id === id).map((l) => ({
+    incoming: mockLinks.filter((l: any) => l.target_id === id).map((l: any) => ({
       source_id: l.source_id,
       relation: l.relation,
       weight: l.weight,
     })),
   }),
-  getGraphStats: () => ({
+  getGraphStats: async () => ({
     total_memories: mockMemories.length,
     total_links: mockLinks.length,
     avg_links_per_memory: mockMemories.length > 0 ? mockLinks.length / mockMemories.length : 0,
-    isolated_memories: mockMemories.filter((m) =>
-      !mockLinks.some((l) => l.source_id === m.id || l.target_id === m.id)
+    isolated_memories: mockMemories.filter((m: any) =>
+      !mockLinks.some((l: any) => l.source_id === m.id || l.target_id === m.id)
     ).length,
     relations: mockLinks.reduce((acc: Record<string, number>, l: any) => {
       acc[l.relation] = (acc[l.relation] || 0) + 1;
@@ -101,7 +104,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      const result = exportGraphSilent('json', tempDir);
+      const result = await exportGraphSilent('json', tempDir);
 
       expect(result.memoriesExported).toBe(1);
 
@@ -124,7 +127,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      const result = exportGraphSilent('obsidian', tempDir);
+      const result = await exportGraphSilent('obsidian', tempDir);
 
       expect(result.memoriesExported).toBe(1);
 
@@ -139,7 +142,7 @@ describe('Graph Export Module', () => {
 
     it('should handle empty memories', async () => {
       const { exportGraphSilent } = await import('./graph-export.js');
-      const result = exportGraphSilent('json', tempDir);
+      const result = await exportGraphSilent('json', tempDir);
 
       expect(result.memoriesExported).toBe(0);
       expect(result.linksExported).toBe(0);
@@ -173,7 +176,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      const result = exportGraphSilent('json', tempDir);
+      const result = await exportGraphSilent('json', tempDir);
 
       expect(result.linksExported).toBe(1);
 
@@ -213,7 +216,7 @@ describe('Graph Export Module', () => {
       );
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      const result = exportGraphSilent('obsidian', tempDir);
+      const result = await exportGraphSilent('obsidian', tempDir);
 
       expect(result.memoriesExported).toBe(3);
 
@@ -252,7 +255,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      exportGraphSilent('obsidian', tempDir);
+      await exportGraphSilent('obsidian', tempDir);
 
       // Find and read the source memory file
       const inboxDir = path.join(tempDir, '00_Inbox');
@@ -293,7 +296,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      exportGraphSilent('obsidian', tempDir);
+      await exportGraphSilent('obsidian', tempDir);
 
       const inboxDir = path.join(tempDir, '00_Inbox');
       const files = fs.readdirSync(inboxDir);
@@ -324,7 +327,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      exportGraphSilent('obsidian', tempDir);
+      await exportGraphSilent('obsidian', tempDir);
 
       const inboxDir = path.join(tempDir, '00_Inbox');
       const files = fs.readdirSync(inboxDir);
@@ -350,7 +353,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      exportGraphSilent('obsidian', tempDir);
+      await exportGraphSilent('obsidian', tempDir);
 
       const inboxDir = path.join(tempDir, '00_Inbox');
       const files = fs.readdirSync(inboxDir);
@@ -395,7 +398,7 @@ describe('Graph Export Module', () => {
       });
 
       const { exportGraphSilent } = await import('./graph-export.js');
-      exportGraphSilent('obsidian', tempDir);
+      await exportGraphSilent('obsidian', tempDir);
 
       const indexPath = path.join(tempDir, 'Memories.md');
       expect(fs.existsSync(indexPath)).toBe(true);

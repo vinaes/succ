@@ -7,8 +7,8 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { saveMemory, saveMemoriesBatch, searchMemories, closeDb, recordTokenStat } from './db/index.js';
-import type { MemoryBatchInput } from './db/index.js';
+import { saveMemory, saveMemoriesBatch, searchMemories, closeDb, recordTokenStat } from './storage/index.js';
+import type { MemoryBatchInput } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
@@ -184,7 +184,7 @@ async function saveFactsAsMemories(
 
   // Phase 2: Batch save with dedup threshold 0.9 (session-summary uses higher threshold)
   if (prepared.length > 0) {
-    const batchResult = saveMemoriesBatch(prepared, 0.9);
+    const batchResult = await saveMemoriesBatch(prepared, 0.9);
     saved = batchResult.saved;
     skipped += batchResult.skipped;
   }
@@ -396,7 +396,7 @@ export async function sessionSummary(
   let snapshotBefore: import('./learning-delta.js').MemorySnapshot | null = null;
   try {
     const { takeMemorySnapshot } = await import('./learning-delta.js');
-    snapshotBefore = takeMemorySnapshot();
+    snapshotBefore = await takeMemorySnapshot();
   } catch {
     // Learning delta is optional
   }
@@ -420,9 +420,9 @@ export async function sessionSummary(
     try {
       const { takeMemorySnapshot, calculateLearningDelta } = await import('./learning-delta.js');
       const { appendProgressEntry } = await import('./progress-log.js');
-      const snapshotAfter = takeMemorySnapshot();
+      const snapshotAfter = await takeMemorySnapshot();
       const delta = calculateLearningDelta(snapshotBefore, snapshotAfter, 'session-summary');
-      appendProgressEntry(delta);
+      await appendProgressEntry(delta);
       if (options.verbose) {
         console.log(`  Progress logged: +${delta.newMemories} facts`);
       }

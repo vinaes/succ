@@ -20,7 +20,7 @@ import {
   getFileHash,
   setFileHash,
   deleteFileHash,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { indexCodeFile } from '../commands/index-code.js';
 import {
   CODE_EXTENSIONS,
@@ -110,7 +110,7 @@ async function indexDocFile(
   const hash = computeHash(content);
 
   // Check hash (fast path)
-  const existingHash = getFileHash(relativePath);
+  const existingHash = await getFileHash(relativePath);
   if (existingHash === hash) {
     return;
   }
@@ -143,14 +143,14 @@ async function indexDocFile(
 
   // Database operations with lock protection
   await withLock('watch-index', async () => {
-    const currentHash = getFileHash(relativePath);
+    const currentHash = await getFileHash(relativePath);
     if (currentHash === hash) {
       return;
     }
 
-    deleteDocumentsByPath(relativePath);
-    upsertDocumentsBatch(documents);
-    setFileHash(relativePath, hash);
+    await deleteDocumentsByPath(relativePath);
+    await upsertDocumentsBatch(documents);
+    await setFileHash(relativePath, hash);
   });
 
   log(`  Indexed: ${relativePath} (${chunks.length} chunks)`);
@@ -167,7 +167,7 @@ async function indexCode(
   const content = fs.readFileSync(filePath, 'utf-8');
   const hash = computeHash(content);
 
-  const existingHash = getFileHash(`code:${relativePath}`);
+  const existingHash = await getFileHash(`code:${relativePath}`);
   if (existingHash === hash) {
     return;
   }
@@ -175,7 +175,7 @@ async function indexCode(
   await withLock('watch-code', async () => {
     const result = await indexCodeFile(filePath, { force: true });
     if (result.success && result.chunks && result.chunks > 0) {
-      setFileHash(`code:${relativePath}`, hash);
+      await setFileHash(`code:${relativePath}`, hash);
       log(`  Indexed code: ${relativePath} (${result.chunks} chunks)`);
     }
   });
@@ -189,8 +189,8 @@ async function removeDocFile(
   log: (msg: string) => void
 ): Promise<void> {
   await withLock('watch-remove', async () => {
-    deleteDocumentsByPath(relativePath);
-    deleteFileHash(relativePath);
+    await deleteDocumentsByPath(relativePath);
+    await deleteFileHash(relativePath);
   });
   log(`  Removed: ${relativePath}`);
 }
@@ -203,8 +203,8 @@ async function removeCodeFile(
   log: (msg: string) => void
 ): Promise<void> {
   await withLock('watch-remove-code', async () => {
-    deleteDocumentsByPath(relativePath);
-    deleteFileHash(`code:${relativePath}`);
+    await deleteDocumentsByPath(relativePath);
+    await deleteFileHash(`code:${relativePath}`);
   });
   log(`  Removed code: ${relativePath}`);
 }

@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { saveMemory, searchMemories, saveMemoriesBatch, type MemoryBatchInput } from '../lib/db/index.js';
+import { saveMemory, searchMemories, saveMemoriesBatch, type MemoryBatchInput } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
 import { countTokens } from '../lib/token-counter.js';
@@ -459,7 +459,7 @@ async function saveFactsAsMemories(
   }
 
   log(`[session-processor] Batch saving ${batch.length} memories (skipped ${skippedSensitive} sensitive, ${skippedQuality} low-quality)`);
-  const result = saveMemoriesBatch(batch, 0.92); // 0.92 = duplicate threshold
+  const result = await saveMemoriesBatch(batch, 0.92); // 0.92 = duplicate threshold
 
   log(`[session-processor] Batch save complete: ${result.saved} saved, ${result.skipped} duplicates`);
 

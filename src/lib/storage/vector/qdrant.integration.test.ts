@@ -68,7 +68,7 @@ describe('Qdrant Vector Store Integration', async () => {
 
   describe('Document Vectors', () => {
     beforeEach(async () => {
-      // Clear documents collection
+      // Clear documents collection (re-creates with multi-vector schema + payload indexes)
       const client = (store as any).client;
       if (client) {
         try {
@@ -78,7 +78,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
       }
-    });
+    }, 30_000);
 
     it('should upsert and search document vector', async () => {
       const embedding = new Array(DIMENSIONS).fill(0).map(() => Math.random());
@@ -159,7 +159,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
       }
-    });
+    }, 30_000);
 
     it('should upsert and search memory vector', async () => {
       const embedding = new Array(DIMENSIONS).fill(0.7);
@@ -195,7 +195,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
       }
-    });
+    }, 30_000);
 
     it('should upsert and search global memory vector', async () => {
       const embedding = new Array(DIMENSIONS).fill(0.3);

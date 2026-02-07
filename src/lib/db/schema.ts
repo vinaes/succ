@@ -314,9 +314,15 @@ export function initVecTables(database: Database.Database): void {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")
     .get();
 
+  // Check persistent migration flag to avoid re-running migrations
+  const vecMemoriesMigrated = database
+    .prepare("SELECT value FROM metadata WHERE key = 'vec_memories_migrated_dims'")
+    .get() as { value: string } | undefined;
+
   // Check if migration is needed (table empty but memories exist)
+  // ONLY migrate if no persistent flag exists — prevents repeated DROP+CREATE
   let needsMemoriesMigration = false;
-  if (vecMemoriesExists) {
+  if (vecMemoriesExists && !vecMemoriesMigrated) {
     try {
       const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
       const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
@@ -367,6 +373,11 @@ export function initVecTables(database: Database.Database): void {
         });
         migrate();
       }
+
+      // Store persistent migration flag to prevent re-running
+      database
+        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)")
+        .run(String(dims));
     } catch {
       // sqlite-vec may not support this syntax or other error
       sqliteVecAvailable = false;
@@ -377,9 +388,15 @@ export function initVecTables(database: Database.Database): void {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_documents'")
     .get();
 
+  // Check persistent migration flag for documents
+  const vecDocumentsMigrated = database
+    .prepare("SELECT value FROM metadata WHERE key = 'vec_documents_migrated_dims'")
+    .get() as { value: string } | undefined;
+
   // Check if migration is needed for documents
+  // ONLY migrate if no persistent flag exists — prevents repeated DROP+CREATE
   let needsDocumentsMigration = false;
-  if (vecDocumentsExists && sqliteVecAvailable) {
+  if (vecDocumentsExists && sqliteVecAvailable && !vecDocumentsMigrated) {
     try {
       const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as { cnt: number };
       const docCount = database.prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL').get() as { cnt: number };
@@ -428,6 +445,11 @@ export function initVecTables(database: Database.Database): void {
         });
         migrate();
       }
+
+      // Store persistent migration flag to prevent re-running
+      database
+        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_documents_migrated_dims', ?)")
+        .run(String(dims));
     } catch {
       // Ignore errors for documents table
     }
@@ -547,9 +569,14 @@ export function initGlobalVecTable(database: Database.Database): void {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")
     .get();
 
-  // Check if migration is needed
+  // Check persistent migration flag
+  const vecMigrated = database
+    .prepare("SELECT value FROM metadata WHERE key = 'vec_memories_migrated_dims'")
+    .get() as { value: string } | undefined;
+
+  // Check if migration is needed — skip if persistent flag exists
   let needsMigration = false;
-  if (vecMemoriesExists) {
+  if (vecMemoriesExists && !vecMigrated) {
     try {
       const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
       const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
@@ -598,6 +625,11 @@ export function initGlobalVecTable(database: Database.Database): void {
         });
         migrate();
       }
+
+      // Store persistent migration flag
+      database
+        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)")
+        .run(String(dims));
     } catch {
       // sqlite-vec may not be available for global db
     }

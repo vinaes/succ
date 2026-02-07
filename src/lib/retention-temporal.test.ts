@@ -16,7 +16,7 @@ import {
   type RetentionConfig,
 } from './retention.js';
 import { exponentialDecay, calculateAccessBoost as temporalAccessBoost } from './temporal.js';
-import type { MemoryForRetention } from './db/index.js';
+import type { MemoryForRetention } from './storage/index.js';
 
 // Helper to create test memory
 function makeMemory(overrides: Partial<MemoryForRetention> = {}): MemoryForRetention {

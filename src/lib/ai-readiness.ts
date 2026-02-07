@@ -17,7 +17,13 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir, getProjectRoot } from './config.js';
-import { getDb, getMemoryStats, getStats, getGraphStats } from './db/index.js';
+import {
+  getMemoryStats,
+  getStats,
+  getCodeFileCount,
+  getDocsFileCount,
+  getAverageMemoryQuality,
+} from './storage/index.js';
 
 // Metric weights (must sum to 100)
 export const METRIC_WEIGHTS = {
@@ -117,11 +123,11 @@ export function calculateBrainVaultScore(): MetricResult {
  * - 51-100 memories: 15 points
  * - 100+ memories: 20 points
  */
-export function calculateMemoryCoverageScore(): MetricResult {
+export async function calculateMemoryCoverageScore(): Promise<MetricResult> {
   const maxScore = METRIC_WEIGHTS.memory_coverage;
 
   try {
-    const memStats = getMemoryStats();
+    const memStats = await getMemoryStats();
     const total = memStats.total_memories;
 
     let score = 0;
@@ -167,7 +173,7 @@ export function calculateMemoryCoverageScore(): MetricResult {
  * - 51-75%: 15 points
  * - 76-100%: 20 points
  */
-export function calculateCodeIndexScore(): MetricResult {
+export async function calculateCodeIndexScore(): Promise<MetricResult> {
   const maxScore = METRIC_WEIGHTS.code_index;
   const projectRoot = getProjectRoot();
 
@@ -176,10 +182,8 @@ export function calculateCodeIndexScore(): MetricResult {
     const sourceExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'];
     const totalSourceFiles = countSourceFiles(projectRoot, sourceExtensions);
 
-    // Get indexed code chunks from DB
-    const db = getDb();
-    const indexedFiles = db.prepare("SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path LIKE 'code:%'").get() as { count: number };
-    const indexedCount = indexedFiles.count;
+    // Get indexed code files count via dispatcher
+    const indexedCount = await getCodeFileCount();
 
     if (totalSourceFiles === 0) {
       return {
@@ -403,7 +407,7 @@ export function calculateAgentsConfiguredScore(): MetricResult {
  * Calculate doc index score (10 points max)
  * Based on % of markdown files in brain/ that are indexed
  */
-export function calculateDocIndexScore(): MetricResult {
+export async function calculateDocIndexScore(): Promise<MetricResult> {
   const succDir = getSuccDir();
   const brainDir = path.join(succDir, 'brain');
   const maxScore = METRIC_WEIGHTS.doc_index;
@@ -433,14 +437,8 @@ export function calculateDocIndexScore(): MetricResult {
       };
     }
 
-    // Get indexed doc chunks from DB
-    const db = getDb();
-    const stats = getStats();
-    const indexedDocs = stats.total_files;
-
-    // Estimate indexed count (exclude code: prefix files)
-    const nonCodeDocs = db.prepare("SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path NOT LIKE 'code:%'").get() as { count: number };
-    const indexedCount = nonCodeDocs.count;
+    // Get indexed doc files count via dispatcher
+    const indexedCount = await getDocsFileCount();
 
     const percentage = Math.round((indexedCount / totalMdFiles) * 100);
     let score = 0;
@@ -484,18 +482,13 @@ export function calculateDocIndexScore(): MetricResult {
  * - Avg 0.7-0.85: 4 points
  * - Avg >= 0.85: 5 points
  */
-export function calculateQualityAverageScore(): MetricResult {
+export async function calculateQualityAverageScore(): Promise<MetricResult> {
   const maxScore = METRIC_WEIGHTS.quality_average;
 
   try {
-    const db = getDb();
-    const result = db.prepare(`
-      SELECT AVG(quality_score) as avg_quality, COUNT(*) as count
-      FROM memories
-      WHERE quality_score IS NOT NULL
-    `).get() as { avg_quality: number | null; count: number };
+    const result = await getAverageMemoryQuality();
 
-    if (!result.avg_quality || result.count === 0) {
+    if (!result.avg || result.count === 0) {
       return {
         name: 'quality_average',
         label: 'Quality Average',
@@ -506,7 +499,7 @@ export function calculateQualityAverageScore(): MetricResult {
       };
     }
 
-    const avg = result.avg_quality;
+    const avg = result.avg;
     let score = 0;
     if (avg >= 0.85) score = 5;
     else if (avg >= 0.7) score = 4;
@@ -542,16 +535,16 @@ export function calculateQualityAverageScore(): MetricResult {
 /**
  * Calculate full AI-Readiness Score
  */
-export function calculateAIReadinessScore(): AIReadinessScore {
+export async function calculateAIReadinessScore(): Promise<AIReadinessScore> {
   const metrics: MetricResult[] = [
     calculateBrainVaultScore(),
-    calculateMemoryCoverageScore(),
-    calculateCodeIndexScore(),
+    await calculateMemoryCoverageScore(),
+    await calculateCodeIndexScore(),
     calculateSoulDocumentScore(),
     calculateHooksActiveScore(),
     calculateAgentsConfiguredScore(),
-    calculateDocIndexScore(),
-    calculateQualityAverageScore(),
+    await calculateDocIndexScore(),
+    await calculateQualityAverageScore(),
   ];
 
   const totalScore = metrics.reduce((sum, m) => sum + m.score, 0);

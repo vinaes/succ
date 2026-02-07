@@ -15,7 +15,7 @@ import {
   deleteMemoriesByIds,
   invalidateMemory,
   invalidateMemoriesBm25Index,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { getRetentionConfig } from '../lib/config.js';
 import {
   analyzeRetention,
@@ -45,7 +45,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
   };
 
   // Get all memories
-  const memories = getAllMemoriesForRetention();
+  const memories = await getAllMemoriesForRetention();
 
   if (memories.length === 0) {
     console.log('No memories found. Nothing to analyze.');
@@ -63,7 +63,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
     }
 
     const idsToDelete = analysis.delete.map((m) => m.memoryId);
-    const deleted = deleteMemoriesByIds(idsToDelete);
+    const deleted = await deleteMemoriesByIds(idsToDelete);
 
     console.log(`Deleted ${deleted} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`);
     console.log('');
@@ -107,7 +107,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
     let invalidated = 0;
     for (const m of analysis.delete) {
       try {
-        invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
+        await invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
         invalidated++;
       } catch {
         // Skip if already invalidated

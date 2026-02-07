@@ -1,4 +1,4 @@
-import { searchDocuments, closeDb } from '../lib/db/index.js';
+import { searchDocuments, closeDb } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { callLLMChat, ChatMessage } from '../lib/llm.js';
 import { CHAT_SYSTEM_PROMPT } from '../prompts/index.js';
@@ -30,7 +30,7 @@ export async function chat(
   let context = '';
   try {
     const queryEmbedding = await getEmbedding(query);
-    const results = searchDocuments(queryEmbedding, limit, threshold);
+    const results = await searchDocuments(queryEmbedding, limit, threshold);
 
     if (results.length > 0) {
       if (verbose) {

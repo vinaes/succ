@@ -10,7 +10,7 @@
  */
 
 import { generateAgentsMd, writeAgentsMd } from '../lib/agents-md-generator.js';
-import { closeDb } from '../lib/db/index.js';
+import { closeDb } from '../lib/storage/index.js';
 
 export interface AgentsMdOptions {
   preview?: boolean;
@@ -20,12 +20,12 @@ export interface AgentsMdOptions {
 export async function agentsMd(options: AgentsMdOptions = {}): Promise<void> {
   try {
     if (options.preview) {
-      const content = generateAgentsMd();
+      const content = await generateAgentsMd();
       console.log(content);
       return;
     }
 
-    const result = writeAgentsMd(options.path ? { output_path: options.path } : undefined);
+    const result = await writeAgentsMd(options.path ? { output_path: options.path } : undefined);
     console.log(`Generated ${result.path} (${result.entries} entries)`);
   } catch (error: any) {
     console.error(`Error generating AGENTS.md: ${error.message}`);

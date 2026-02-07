@@ -38,7 +38,10 @@ import {
   // Global memory
   saveGlobalMemory,
   closeGlobalDb,
-} from '../lib/db/index.js';
+  // Dispatcher lifecycle
+  initStorageDispatcher,
+  closeStorageDispatcher,
+} from '../lib/storage/index.js';
 import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
@@ -366,7 +369,7 @@ ${reflectionText.trim()}
 
   // Also save to memory
   const embedding = await getEmbedding(reflectionText.trim());
-  saveMemory(reflectionText.trim(), embedding, ['reflection'], 'observation', {
+  await saveMemory(reflectionText.trim(), embedding, ['reflection'], 'observation', {
     qualityScore: { score: 0.6, factors: { hasContext: 1 } },
   });
 }
@@ -456,7 +459,7 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
     if (idleConfig.operations?.graph_refinement !== false) {
       log(`[reflection] Running graph auto-link`);
       const threshold = idleConfig.thresholds?.auto_link_threshold ?? 0.75;
-      const linksCreated = autoLinkSimilarMemories(threshold);
+      const linksCreated = await autoLinkSimilarMemories(threshold);
       log(`[reflection] Created ${linksCreated} new links`);
     }
 
@@ -638,14 +641,14 @@ export async function routeRequest(method: string, pathname: string, searchParam
     if (!query) {
       throw new Error('query required');
     }
-    const results = hybridSearchDocs(query, limit, threshold);
+    const results = await hybridSearchDocs(query, limit, threshold);
 
     // Track access for returned memories
     const accesses = results
       .filter((r: any) => r.memory_id)
       .map((r: any) => ({ memoryId: r.memory_id, weight: 0.5 }));
     if (accesses.length > 0) {
-      incrementMemoryAccessBatch(accesses);
+      await incrementMemoryAccessBatch(accesses);
     }
 
     return { results };
@@ -656,7 +659,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
     if (!query) {
       throw new Error('query required');
     }
-    const results = hybridSearchCode(query, limit);
+    const results = await hybridSearchCode(query, limit);
     return { results };
   }
 
@@ -665,20 +668,20 @@ export async function routeRequest(method: string, pathname: string, searchParam
 
     // Empty query returns recent memories
     if (!query) {
-      const memories = getRecentMemories(limit);
+      const memories = await getRecentMemories(limit);
       return { results: memories };
     }
 
     // Generate embedding for semantic search
     const queryEmbedding = await getEmbedding(query);
-    const results = hybridSearchMemories(query, queryEmbedding, limit, 0.3);
+    const results = await hybridSearchMemories(query, queryEmbedding, limit, 0.3);
 
     // Track access for returned memories
     const accesses = results
       .filter((r: any) => r.id)
       .map((r: any) => ({ memoryId: r.id, weight: 1.0 }));
     if (accesses.length > 0) {
-      incrementMemoryAccessBatch(accesses);
+      await incrementMemoryAccessBatch(accesses);
     }
 
     return { results };
@@ -717,9 +720,9 @@ export async function routeRequest(method: string, pathname: string, searchParam
     let result;
     if (global) {
       // Global memory has simpler signature (no quality score, no temporal)
-      result = saveGlobalMemory(finalContent, embedding, tags, type);
+      result = await saveGlobalMemory(finalContent, embedding, tags, type);
     } else {
-      result = saveMemory(finalContent, embedding, tags, type, {
+      result = await saveMemory(finalContent, embedding, tags, type, {
         qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
         validFrom: valid_from,
         validUntil: valid_until,
@@ -803,8 +806,8 @@ export async function routeRequest(method: string, pathname: string, searchParam
 
   // Status endpoints
   if (pathname === '/api/status' && method === 'GET') {
-    const stats = getStats();
-    const memStats = getMemoryStats();
+    const stats = await getStats();
+    const memStats = await getMemoryStats();
     const watchStatus = getWatcherStatus();
     const analyzeStatus = getAnalyzerStatus();
     return {
@@ -988,6 +991,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   const watcherConfig = getIdleWatcherConfig();
   const idleConfig = getIdleReflectionConfig();
 
+  // Initialize storage dispatcher (routes to SQLite or PG based on config)
+  await initStorageDispatcher();
+
   // Initialize session manager
   sessionManager = createSessionManager();
 
@@ -1140,6 +1146,7 @@ export function shutdownDaemon(): void {
   }
 
   // Cleanup DB connections
+  closeStorageDispatcher().catch(() => {});
   cleanupEmbeddings();
   cleanupQualityScoring();
   closeDb();

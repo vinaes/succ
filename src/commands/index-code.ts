@@ -5,7 +5,7 @@ import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkCode } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/db/index.js';
+import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
 import { tokenizeCode } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';
@@ -43,7 +43,7 @@ export async function indexCode(
   }
 
   // Check for dimension mismatch before indexing
-  const storedDimension = getStoredEmbeddingDimension();
+  const storedDimension = await getStoredEmbeddingDimension();
   if (storedDimension !== null && !force) {
     // Get a test embedding to check current dimension
     const testEmbedding = await getEmbedding('test');
@@ -55,7 +55,7 @@ export async function indexCode(
       console.log(`   Stored embeddings: ${storedDimension} dimensions`);
       console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
 
-      // In non-interactive mode (no TTY or autoReindex), auto-clear and reindex
+      // Determine mode: interactive (TTY), explicit auto-reindex, or non-interactive
       const isInteractive = process.stdout.isTTY && !autoReindex;
 
       let action: string;
@@ -72,10 +72,17 @@ export async function indexCode(
           },
         ]);
         action = response.action;
-      } else {
-        // Non-interactive: auto-reindex
-        console.log('Non-interactive mode: automatically clearing and reindexing...');
+      } else if (autoReindex) {
+        // Explicitly requested auto-reindex (e.g. --auto-reindex flag)
+        console.log('Auto-reindex requested: clearing and reindexing...');
         action = 'reindex';
+      } else {
+        // Non-interactive without explicit auto-reindex (MCP, daemon, scripts)
+        // DO NOT auto-clear — this destroys data silently
+        console.warn('Dimension mismatch detected in non-interactive mode.');
+        console.warn('Skipping auto-clear to prevent data loss.');
+        console.warn('Run "succ index-code --force" interactively to reindex.');
+        return;
       }
 
       if (action === 'cancel') {
@@ -85,7 +92,7 @@ export async function indexCode(
 
       if (action === 'reindex') {
         console.log('\nClearing old code index...');
-        clearCodeDocuments();
+        await clearCodeDocuments();
         force = true; // Force reindex all files
       }
     }
@@ -186,7 +193,7 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
 
   // Check if file already indexed with same hash
   if (!force) {
-    const existingHash = getFileHash(storedPath);
+    const existingHash = await getFileHash(storedPath);
     if (existingHash === contentHash) {
       return { success: true, skipped: true, reason: 'File unchanged (same hash)' };
     }
@@ -214,7 +221,7 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
   }));
 
   // Upsert to database
-  upsertDocumentsBatchWithHashes(documents);
+  await upsertDocumentsBatchWithHashes(documents);
 
   // Update token frequencies for Ronin-style segmentation
   const allTokens: string[] = [];
@@ -222,7 +229,7 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
     const tokens = tokenizeCode(chunk.content);
     allTokens.push(...tokens);
   }
-  updateTokenFrequencies(allTokens);
+  await updateTokenFrequencies(allTokens);
 
   return { success: true, chunks: chunks.length };
 }

@@ -173,7 +173,7 @@ describe('Integration Tests', () => {
     });
 
     afterEach(() => {
-      process.chdir(originalCwd);
+      try { process.chdir(originalCwd); } catch { /* vmThreads doesn't support chdir */ }
 
       // Clean up
       if (fs.existsSync(tempDir)) {

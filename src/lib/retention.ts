@@ -18,7 +18,7 @@
  *   - delete: effective_score < delete_threshold (default 0.15)
  */
 
-import { MemoryForRetention } from './db/index.js';
+import type { MemoryForRetention } from './storage/index.js';
 import { exponentialDecay, calculateAccessBoost as temporalAccessBoost, getTemporalConfig } from './temporal.js';
 
 // Default configuration

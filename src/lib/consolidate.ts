@@ -11,7 +11,6 @@ import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  getDb,
   Memory,
   deleteMemory,
   invalidateMemory,
@@ -22,7 +21,10 @@ import {
   deleteMemoryLink,
   createMemoryLink,
   LinkRelation,
-} from './db/index.js';
+  getAllMemoriesWithEmbeddings as getAllMemoriesWithEmbeddingsDb,
+  deleteMemoryLinksForMemory,
+  isPostgresBackend,
+} from './storage/index.js';
 import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
@@ -59,46 +61,28 @@ export interface ConsolidationResult {
 }
 
 /**
- * Get all memories with embeddings
+ * Get all memories with embeddings (via dispatcher)
  */
-export function getAllMemoriesWithEmbeddings(): Array<Memory & { embedding: number[] }> {
-  const database = getDb();
+export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { embedding: number[] }>> {
+  const rows = await getAllMemoriesWithEmbeddingsDb({ excludeInvalidated: true });
 
-  const rows = database
-    .prepare(
-      `SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at, embedding
-       FROM memories
-       WHERE invalidated_by IS NULL`
-    )
-    .all() as Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    quality_score: number | null;
-    quality_factors: string | null;
-    access_count: number | null;
-    last_accessed: string | null;
-    valid_from: string | null;
-    valid_until: string | null;
-    created_at: string;
-    embedding: Buffer;
-  }>;
-
-  return rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    tags: row.tags ? JSON.parse(row.tags) : [],
-    source: row.source,
-    quality_score: row.quality_score,
-    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
-    access_count: row.access_count ?? 0,
-    last_accessed: row.last_accessed,
-    valid_from: row.valid_from,
-    valid_until: row.valid_until,
-    created_at: row.created_at,
-    embedding: bufferToFloatArray(row.embedding),
-  }));
+  return rows
+    .filter(row => row.embedding !== null)
+    .map((row) => ({
+      id: row.id,
+      content: row.content,
+      tags: row.tags,
+      source: row.source,
+      type: (row.type ?? null) as any,
+      quality_score: row.quality_score,
+      quality_factors: (row as any).quality_factors ?? null,
+      access_count: (row as any).access_count ?? 0,
+      last_accessed: (row as any).last_accessed ?? null,
+      valid_from: (row as any).valid_from ?? null,
+      valid_until: (row as any).valid_until ?? null,
+      created_at: row.created_at,
+      embedding: row.embedding as number[],
+    }));
 }
 
 /**
@@ -172,7 +156,7 @@ export async function findConsolidationCandidates(
   const limit = maxCandidates ?? config.max_memories_to_process ?? 50;
   const guards = config.consolidation_guards;
 
-  const allMemories = getAllMemoriesWithEmbeddings();
+  const allMemories = await getAllMemoriesWithEmbeddings();
 
   // Fix 4: Minimum corpus size guard
   if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
@@ -241,19 +225,20 @@ export async function findConsolidationCandidates(
 }
 
 /**
- * Sync version for backwards compatibility (uses sequential processing)
+ * Sequential version for backwards compatibility (no worker threads)
+ * Note: now async since storage dispatcher is async.
  */
-export function findConsolidationCandidatesSync(
+export async function findConsolidationCandidatesSync(
   threshold?: number,
   maxCandidates?: number,
   options?: { skipGuards?: boolean }
-): ConsolidationCandidate[] {
+): Promise<ConsolidationCandidate[]> {
   const config = getIdleReflectionConfig();
   const similarityThreshold = threshold ?? config.thresholds?.similarity_for_merge ?? 0.92;
   const limit = maxCandidates ?? config.max_memories_to_process ?? 50;
   const guards = config.consolidation_guards;
 
-  const allMemories = getAllMemoriesWithEmbeddings();
+  const allMemories = await getAllMemoriesWithEmbeddings();
 
   // Same guards as async version
   if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
@@ -396,7 +381,7 @@ export async function executeConsolidation(
             : candidate.memory1.id;
 
           // Transfer links before invalidation
-          transferLinks(invalidateId, keepId);
+          await transferLinks(invalidateId, keepId);
 
           // Create supersedes link for revision tracking
           try {
@@ -444,8 +429,8 @@ export async function executeConsolidation(
 /**
  * Transfer links from one memory to another before deletion
  */
-function transferLinks(fromId: number, toId: number): void {
-  const links = getMemoryLinks(fromId);
+async function transferLinks(fromId: number, toId: number): Promise<void> {
+  const links = await getMemoryLinks(fromId);
 
   // Transfer outgoing links
   for (const link of links.outgoing) {
@@ -474,20 +459,17 @@ function transferLinks(fromId: number, toId: number): void {
  * Undo a consolidation operation by restoring original memories
  * and removing the merged result.
  */
-export function undoConsolidation(mergedMemoryId: number): {
+export async function undoConsolidation(mergedMemoryId: number): Promise<{
   restored: number[];
   deletedMerge: boolean;
   errors: string[];
-} {
-  const database = getDb();
+}> {
   const errors: string[] = [];
   const restored: number[] = [];
 
-  // Find all memories this one supersedes
-  const supersededLinks = database.prepare(`
-    SELECT target_id FROM memory_links
-    WHERE source_id = ? AND relation = 'supersedes'
-  `).all(mergedMemoryId) as Array<{ target_id: number }>;
+  // Find superseded links via dispatcher's getMemoryLinks
+  const links = await getMemoryLinks(mergedMemoryId);
+  const supersededLinks = links.outgoing.filter((l: any) => l.relation === 'supersedes');
 
   if (supersededLinks.length === 0) {
     return { restored: [], deletedMerge: false, errors: ['No supersedes links found — not a consolidation result'] };
@@ -495,34 +477,29 @@ export function undoConsolidation(mergedMemoryId: number): {
 
   let deletedMerge = false;
 
-  const undoTx = database.transaction(() => {
-    // 1. Restore each original memory
-    for (const { target_id } of supersededLinks) {
-      const success = restoreInvalidatedMemory(target_id);
-      if (success) {
-        restored.push(target_id);
-      } else {
-        errors.push(`Failed to restore memory #${target_id} (may not be invalidated)`);
-      }
+  // 1. Restore each original memory
+  for (const { target_id } of supersededLinks) {
+    const success = await restoreInvalidatedMemory(target_id);
+    if (success) {
+      restored.push(target_id);
+    } else {
+      errors.push(`Failed to restore memory #${target_id} (may not be invalidated)`);
     }
+  }
 
-    // 2. Remove supersedes links
-    database.prepare(`
-      DELETE FROM memory_links
-      WHERE source_id = ? AND relation = 'supersedes'
-    `).run(mergedMemoryId);
+  // 2. Remove supersedes links
+  for (const { target_id } of supersededLinks) {
+    await deleteMemoryLink(mergedMemoryId, target_id, 'supersedes');
+  }
 
-    // 3. If the merged memory was synthetic (created by consolidation), hard-delete it
-    const merged = getMemoryById(mergedMemoryId);
-    if (merged?.source === 'consolidation-llm') {
-      deleteMemory(mergedMemoryId);
-      deletedMerge = true;
-    }
-    // If source != 'consolidation-llm', this was a keep-one-invalidate-other (delete_duplicate),
-    // so we keep the "winner" memory alive
-  });
-
-  undoTx();
+  // 3. If the merged memory was synthetic (created by consolidation), hard-delete it
+  const merged = await getMemoryById(mergedMemoryId);
+  if (merged?.source === 'consolidation-llm') {
+    await deleteMemory(mergedMemoryId);
+    deletedMerge = true;
+  }
+  // If source != 'consolidation-llm', this was a keep-one-invalidate-other (delete_duplicate),
+  // so we keep the "winner" memory alive
 
   return { restored, deletedMerge, errors };
 }
@@ -700,38 +677,30 @@ async function mergeMemories(
   // Merge tags from both memories
   const combinedTags = [...new Set([...m1.tags, ...m2.tags])];
 
-  // Save new memory and soft-invalidate originals — all in one transaction
-  const database = getDb();
-  let mergedId: number | null = null;
-
-  const mergeTx = database.transaction(() => {
-    // Save new memory with merged content
-    const saved = saveMemory(finalContent, newEmbedding, combinedTags, 'consolidation-llm', {
-      deduplicate: false, // We're consolidating, not deduping
-      autoLink: true,
-      qualityScore: {
-        score: (q1 + q2) / 2, // Average, not max — prevent score inflation
-        factors: { merged_from: 2, original_score_1: q1, original_score_2: q2 },
-      },
-    });
-
-    // Transfer links from both memories to the new one
-    transferLinks(m1.id, saved.id);
-    transferLinks(m2.id, saved.id);
-
-    // Create supersedes links for revision tracking
-    try { createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch { /* exists */ }
-    try { createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch { /* exists */ }
-
-    // Soft-invalidate originals instead of hard delete
-    invalidateMemory(m1.id, saved.id);
-    invalidateMemory(m2.id, saved.id);
-
-    mergedId = saved.id;
+  // Save new memory and soft-invalidate originals
+  // Save new memory with merged content
+  const saved = await saveMemory(finalContent, newEmbedding, combinedTags, 'consolidation-llm', {
+    deduplicate: false, // We're consolidating, not deduping
+    autoLink: true,
+    qualityScore: {
+      score: (q1 + q2) / 2, // Average, not max — prevent score inflation
+      factors: { merged_from: 2, original_score_1: q1, original_score_2: q2 },
+    },
   });
 
-  mergeTx();
-  return mergedId;
+  // Transfer links from both memories to the new one
+  await transferLinks(m1.id, saved.id);
+  await transferLinks(m2.id, saved.id);
+
+  // Create supersedes links for revision tracking
+  try { await createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch { /* exists */ }
+  try { await createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch { /* exists */ }
+
+  // Soft-invalidate originals instead of hard delete
+  await invalidateMemory(m1.id, saved.id);
+  await invalidateMemory(m2.id, saved.id);
+
+  return saved.id;
 }
 
 /**
@@ -812,7 +781,7 @@ export async function getConsolidationStats(threshold?: number): Promise<{
   mergeCandidates: number;
   potentialReduction: number;
 }> {
-  const memories = getAllMemoriesWithEmbeddings();
+  const memories = await getAllMemoriesWithEmbeddings();
   const candidates = await findConsolidationCandidates(threshold, 1000);
 
   const duplicates = candidates.filter((c) => c.action === 'delete_duplicate').length;

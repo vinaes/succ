@@ -2,38 +2,66 @@
  * Progress Log Tests (Phase 7.4)
  *
  * Tests for DB-based progress log (learning_deltas table).
+ * Now uses storage/index.js dispatcher (async).
+ *
+ * Uses in-memory SQLite to avoid Windows EBUSY file lock flakiness.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import path from 'path';
-import os from 'os';
-import fs from 'fs';
 
-// Create a temp DB for tests
-const testDir = path.join(os.tmpdir(), 'succ-test-progress-' + process.pid);
-const testDbPath = path.join(testDir, 'test.db');
-
+// In-memory DB — no file locks, no cleanup needed
 let testDb: Database.Database;
 
-// Mock getDb to return our test database
-vi.mock('./db/connection.js', () => ({
-  getDb: () => testDb,
-  getGlobalDb: () => testDb,
-  closeDb: vi.fn(),
-  closeGlobalDb: vi.fn(),
-}));
+// Mock storage/index.js — the progress-log module now imports from there
+vi.mock('./storage/index.js', () => {
+  return {
+    appendLearningDelta: vi.fn(async (delta: any) => {
+      testDb.prepare(`
+        INSERT INTO learning_deltas (timestamp, source, memories_before, memories_after, new_memories, types_added, avg_quality)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        delta.timestamp,
+        delta.source,
+        delta.memoriesBefore,
+        delta.memoriesAfter,
+        delta.newMemories,
+        Object.keys(delta.typesAdded).length > 0 ? JSON.stringify(delta.typesAdded) : null,
+        delta.avgQualityOfNew ?? null,
+      );
+    }),
+    appendRawLearningDelta: vi.fn(async (text: string) => {
+      testDb.prepare(`
+        INSERT INTO learning_deltas (timestamp, source, memories_before, memories_after, new_memories)
+        VALUES (?, ?, 0, 0, 0)
+      `).run(new Date().toISOString(), text);
+    }),
+    getLearningDeltas: vi.fn(async (options?: { limit?: number; since?: string }) => {
+      let sql = 'SELECT * FROM learning_deltas';
+      const params: any[] = [];
+      if (options?.since) {
+        sql += ' WHERE timestamp >= ?';
+        params.push(options.since);
+      }
+      sql += ' ORDER BY id DESC';
+      if (options?.limit) {
+        sql += ' LIMIT ?';
+        params.push(options.limit);
+      }
+      return testDb.prepare(sql).all(...params);
+    }),
+  };
+});
 
 import { appendProgressEntry, appendRawEntry, readProgressLog, getProgressEntries } from './progress-log.js';
 import type { LearningDelta } from './learning-delta.js';
 
 describe('Progress Log (DB-based)', () => {
   beforeEach(() => {
-    // Create fresh test DB
-    fs.mkdirSync(testDir, { recursive: true });
-    testDb = new Database(testDbPath);
+    // Fresh in-memory DB per test — zero file I/O
+    testDb = new Database(':memory:');
     testDb.exec(`
-      CREATE TABLE IF NOT EXISTS learning_deltas (
+      CREATE TABLE learning_deltas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT NOT NULL,
         source TEXT NOT NULL,
@@ -44,19 +72,12 @@ describe('Progress Log (DB-based)', () => {
         avg_quality REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
-      CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp);
+      CREATE INDEX idx_learning_deltas_timestamp ON learning_deltas(timestamp);
     `);
   });
 
-  afterEach(() => {
-    try { testDb?.close(); } catch { /* ignore */ }
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true });
-    }
-  });
-
   describe('appendProgressEntry', () => {
-    it('should insert a learning delta row', () => {
+    it('should insert a learning delta row', async () => {
       const delta: LearningDelta = {
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 10,
@@ -66,7 +87,7 @@ describe('Progress Log (DB-based)', () => {
         source: 'session-summary',
       };
 
-      appendProgressEntry(delta);
+      await appendProgressEntry(delta);
 
       const rows = testDb.prepare('SELECT * FROM learning_deltas').all() as any[];
       expect(rows).toHaveLength(1);
@@ -76,7 +97,7 @@ describe('Progress Log (DB-based)', () => {
       expect(rows[0].memories_after).toBe(15);
     });
 
-    it('should store types_added as JSON', () => {
+    it('should store types_added as JSON', async () => {
       const delta: LearningDelta = {
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 0,
@@ -86,14 +107,14 @@ describe('Progress Log (DB-based)', () => {
         source: 'mcp-remember',
       };
 
-      appendProgressEntry(delta);
+      await appendProgressEntry(delta);
 
       const row = testDb.prepare('SELECT * FROM learning_deltas').get() as any;
       const parsed = JSON.parse(row.types_added);
       expect(parsed).toEqual({ observation: 2, dead_end: 1 });
     });
 
-    it('should store null types_added when empty', () => {
+    it('should store null types_added when empty', async () => {
       const delta: LearningDelta = {
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 5,
@@ -103,13 +124,13 @@ describe('Progress Log (DB-based)', () => {
         source: 'manual',
       };
 
-      appendProgressEntry(delta);
+      await appendProgressEntry(delta);
 
       const row = testDb.prepare('SELECT * FROM learning_deltas').get() as any;
       expect(row.types_added).toBeNull();
     });
 
-    it('should store avg_quality when provided', () => {
+    it('should store avg_quality when provided', async () => {
       const delta: LearningDelta = {
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 0,
@@ -120,19 +141,19 @@ describe('Progress Log (DB-based)', () => {
         source: 'session-summary',
       };
 
-      appendProgressEntry(delta);
+      await appendProgressEntry(delta);
 
       const row = testDb.prepare('SELECT * FROM learning_deltas').get() as any;
       expect(row.avg_quality).toBe(0.75);
     });
 
-    it('should allow multiple entries', () => {
-      appendProgressEntry({
+    it('should allow multiple entries', async () => {
+      await appendProgressEntry({
         timestamp: '2026-02-06T10:00:00Z',
         memoriesBefore: 0, memoriesAfter: 3, newMemories: 3,
         typesAdded: { learning: 3 }, source: 'session-summary',
       });
-      appendProgressEntry({
+      await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 3, memoriesAfter: 5, newMemories: 2,
         typesAdded: { decision: 2 }, source: 'manual',
@@ -144,8 +165,8 @@ describe('Progress Log (DB-based)', () => {
   });
 
   describe('appendRawEntry', () => {
-    it('should insert raw entry with zero counts', () => {
-      appendRawEntry('manual note');
+    it('should insert raw entry with zero counts', async () => {
+      await appendRawEntry('manual note');
 
       const row = testDb.prepare('SELECT * FROM learning_deltas').get() as any;
       expect(row.source).toBe('manual note');
@@ -154,8 +175,8 @@ describe('Progress Log (DB-based)', () => {
       expect(row.memories_after).toBe(0);
     });
 
-    it('should have an ISO timestamp', () => {
-      appendRawEntry('test entry');
+    it('should have an ISO timestamp', async () => {
+      await appendRawEntry('test entry');
 
       const row = testDb.prepare('SELECT * FROM learning_deltas').get() as any;
       expect(row.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -163,68 +184,68 @@ describe('Progress Log (DB-based)', () => {
   });
 
   describe('readProgressLog', () => {
-    it('should return empty array for empty table', () => {
-      const entries = readProgressLog();
+    it('should return empty array for empty table', async () => {
+      const entries = await readProgressLog();
       expect(entries).toEqual([]);
     });
 
-    it('should return formatted entries in reverse chronological order', () => {
-      appendProgressEntry({
+    it('should return formatted entries in reverse chronological order', async () => {
+      await appendProgressEntry({
         timestamp: '2026-02-06T10:00:00Z',
         memoriesBefore: 0, memoriesAfter: 3, newMemories: 3,
         typesAdded: { learning: 3 }, source: 'first',
       });
-      appendProgressEntry({
+      await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 3, memoriesAfter: 5, newMemories: 2,
         typesAdded: { decision: 2 }, source: 'second',
       });
 
-      const entries = readProgressLog();
+      const entries = await readProgressLog();
       expect(entries).toHaveLength(2);
       expect(entries[0]).toContain('second');
       expect(entries[1]).toContain('first');
     });
 
-    it('should respect limit parameter', () => {
+    it('should respect limit parameter', async () => {
       for (let i = 0; i < 5; i++) {
-        appendProgressEntry({
+        await appendProgressEntry({
           timestamp: `2026-02-0${i + 1}T10:00:00Z`,
           memoriesBefore: i, memoriesAfter: i + 1, newMemories: 1,
           typesAdded: { learning: 1 }, source: `entry-${i}`,
         });
       }
 
-      const entries = readProgressLog({ limit: 3 });
+      const entries = await readProgressLog({ limit: 3 });
       expect(entries).toHaveLength(3);
       expect(entries[0]).toContain('entry-4'); // Most recent
     });
 
-    it('should filter by since (ISO date)', () => {
-      appendProgressEntry({
+    it('should filter by since (ISO date)', async () => {
+      await appendProgressEntry({
         timestamp: '2026-01-01T10:00:00Z',
         memoriesBefore: 0, memoriesAfter: 1, newMemories: 1,
         typesAdded: {}, source: 'old',
       });
-      appendProgressEntry({
+      await appendProgressEntry({
         timestamp: '2026-02-05T10:00:00Z',
         memoriesBefore: 1, memoriesAfter: 2, newMemories: 1,
         typesAdded: {}, source: 'recent',
       });
 
-      const entries = readProgressLog({ since: '2026-02-01' });
+      const entries = await readProgressLog({ since: '2026-02-01' });
       expect(entries).toHaveLength(1);
       expect(entries[0]).toContain('recent');
     });
 
-    it('should format entries with types', () => {
-      appendProgressEntry({
+    it('should format entries with types', async () => {
+      await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 5, memoriesAfter: 8, newMemories: 3,
         typesAdded: { decision: 2, learning: 1 }, source: 'session-summary',
       });
 
-      const entries = readProgressLog();
+      const entries = await readProgressLog();
       expect(entries[0]).toContain('+3 facts');
       expect(entries[0]).toContain('5 \u2192 8');
       expect(entries[0]).toContain('decision:2');
@@ -232,30 +253,30 @@ describe('Progress Log (DB-based)', () => {
   });
 
   describe('getProgressEntries', () => {
-    it('should return structured rows', () => {
-      appendProgressEntry({
+    it('should return structured rows', async () => {
+      await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
         memoriesBefore: 10, memoriesAfter: 15, newMemories: 5,
         typesAdded: { learning: 5 }, source: 'session-summary',
       });
 
-      const entries = getProgressEntries();
+      const entries = await getProgressEntries();
       expect(entries).toHaveLength(1);
       expect(entries[0].source).toBe('session-summary');
       expect(entries[0].new_memories).toBe(5);
       expect(entries[0].id).toBeDefined();
     });
 
-    it('should respect limit', () => {
+    it('should respect limit', async () => {
       for (let i = 0; i < 5; i++) {
-        appendProgressEntry({
+        await appendProgressEntry({
           timestamp: `2026-02-0${i + 1}T10:00:00Z`,
           memoriesBefore: i, memoriesAfter: i + 1, newMemories: 1,
           typesAdded: {}, source: `e${i}`,
         });
       }
 
-      const entries = getProgressEntries({ limit: 2 });
+      const entries = await getProgressEntries({ limit: 2 });
       expect(entries).toHaveLength(2);
     });
   });

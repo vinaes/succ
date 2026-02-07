@@ -7,7 +7,7 @@
  */
 
 import { getCompactBriefingConfig, CompactBriefingConfig } from './config.js';
-import { searchMemories, getRecentMemories } from './db/index.js';
+import { searchMemories, getRecentMemories } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { callLLM } from './llm.js';
 import {
@@ -103,13 +103,13 @@ async function findRelevantMemories(
 
     if (topics.length === 0) {
       // Fall back to recent memories
-      const recent = getRecentMemories(limit);
+      const recent = await getRecentMemories(limit);
       return recent.map(m => ({ content: m.content, tags: m.tags }));
     }
 
     const searchQuery = topics.join(' ');
     const embedding = await getEmbedding(searchQuery);
-    const results = searchMemories(embedding, limit, 0.3);
+    const results = await searchMemories(embedding, limit, 0.3);
 
     return results.map(m => ({ content: m.content, tags: m.tags }));
   } catch {

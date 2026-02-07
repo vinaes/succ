@@ -17,7 +17,8 @@ import {
   getMemoryById,
   LINK_RELATIONS,
   closeDb,
-} from '../../lib/db/index.js';
+} from '../../lib/storage/index.js';
+import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerGraphTools(server: McpServer) {
   // Tool: succ_link - Create/manage memory links (knowledge graph)
@@ -34,8 +35,10 @@ export function registerGraphTools(server: McpServer) {
         'Relation type: related, caused_by, leads_to, similar_to, contradicts, implements, supersedes, references'
       ),
       threshold: z.number().optional().describe('Similarity threshold for auto-linking (default: 0.75)'),
+      project_path: projectPathParam,
     },
-    async ({ action, source_id, target_id, relation, threshold }) => {
+    async ({ action, source_id, target_id, relation, threshold, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         switch (action) {
           case 'create': {
@@ -48,7 +51,7 @@ export function registerGraphTools(server: McpServer) {
               };
             }
 
-            const result = createMemoryLink(source_id, target_id, relation || 'related');
+            const result = await createMemoryLink(source_id, target_id, relation || 'related');
 
             return {
               content: [{
@@ -70,7 +73,7 @@ export function registerGraphTools(server: McpServer) {
               };
             }
 
-            const deleted = deleteMemoryLink(source_id, target_id, relation);
+            const deleted = await deleteMemoryLink(source_id, target_id, relation);
 
             return {
               content: [{
@@ -92,7 +95,7 @@ export function registerGraphTools(server: McpServer) {
               };
             }
 
-            const memory = getMemoryWithLinks(source_id);
+            const memory = await getMemoryWithLinks(source_id);
             if (!memory) {
               return {
                 content: [{
@@ -103,10 +106,10 @@ export function registerGraphTools(server: McpServer) {
             }
 
             const outLinks = memory.outgoing_links.length > 0
-              ? memory.outgoing_links.map(l => `  → #${l.target_id} (${l.relation})`).join('\n')
+              ? memory.outgoing_links.map((l: any) => `  → #${l.target_id} (${l.relation})`).join('\n')
               : '  (none)';
             const inLinks = memory.incoming_links.length > 0
-              ? memory.incoming_links.map(l => `  ← #${l.source_id} (${l.relation})`).join('\n')
+              ? memory.incoming_links.map((l: any) => `  ← #${l.source_id} (${l.relation})`).join('\n')
               : '  (none)';
 
             const text = `Memory #${memory.id}:
@@ -127,7 +130,7 @@ ${inLinks}`;
           }
 
           case 'graph': {
-            const stats = getGraphStats();
+            const stats = await getGraphStats();
 
             const relationStats = Object.entries(stats.relations)
               .map(([r, c]) => `  ${r}: ${c}`)
@@ -150,7 +153,7 @@ ${relationStats}`;
 
           case 'auto': {
             const th = threshold || 0.75;
-            const created = autoLinkSimilarMemories(th, 3);
+            const created = await autoLinkSimilarMemories(th, 3);
 
             return {
               content: [{
@@ -189,13 +192,15 @@ ${relationStats}`;
     {
       memory_id: z.number().describe('Starting memory ID'),
       depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
+      project_path: projectPathParam,
     },
-    async ({ memory_id, depth }) => {
+    async ({ memory_id, depth, project_path }) => {
+      await applyProjectPath(project_path);
       try {
-        const connected = findConnectedMemories(memory_id, depth);
+        const connected = await findConnectedMemories(memory_id, depth);
 
         if (connected.length === 0) {
-          const memory = getMemoryById(memory_id);
+          const memory = await getMemoryById(memory_id);
           if (!memory) {
             return {
               content: [{
@@ -213,7 +218,7 @@ ${relationStats}`;
         }
 
         const formatted = connected.map(({ memory, depth: d, path: memPath }) => {
-          const pathStr = memPath.map(id => `#${id}`).join(' → ');
+          const pathStr = memPath.map((id: number) => `#${id}`).join(' → ');
           return `[Depth ${d}] Memory #${memory.id} (${pathStr})
   ${memory.content.substring(0, 150)}${memory.content.length > 150 ? '...' : ''}
   Tags: ${memory.tags.join(', ') || '(none)'}`;

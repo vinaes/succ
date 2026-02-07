@@ -861,11 +861,10 @@ function addMcpServer(projectRoot: string): boolean {
     // Add succ MCP server to global scope
     // No cwd specified - MCP server will use Claude Code's current working directory
     // This allows it to work with whichever project Claude is currently in
-    // Using npx --yes for faster startup (auto-confirm without prompt)
-    claudeConfig.mcpServers.succ = {
-      command: 'npx',
-      args: ['--yes', 'succ-mcp'],
-    };
+    // Windows: npx is a .cmd script, needs cmd /c wrapper for spawn
+    claudeConfig.mcpServers.succ = process.platform === 'win32'
+      ? { command: 'cmd', args: ['/c', 'npx', '--yes', 'succ-mcp'] }
+      : { command: 'npx', args: ['--yes', 'succ-mcp'] };
 
     // Write config
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));

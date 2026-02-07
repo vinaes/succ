@@ -1,4 +1,4 @@
-import { getDb, closeDb } from '../lib/db/index.js';
+import { closeDb, clearDocuments, clearCodeDocuments, deleteMemoriesOlderThan } from '../lib/storage/index.js';
 
 interface ClearOptions {
   indexOnly?: boolean;
@@ -19,35 +19,21 @@ export async function clear(options: ClearOptions = {}): Promise<void> {
     return;
   }
 
-  const db = getDb();
-  let clearedDocs = 0;
-  let clearedMemories = 0;
-
   if (!memoriesOnly) {
     if (codeOnly) {
       // Only clear code: prefixed documents
-      const result = db.prepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
-      const hashResult = db.prepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
-      clearedDocs = result.changes;
+      const clearedDocs = await clearCodeDocuments();
       console.log(`Cleared ${clearedDocs} code chunks`);
     } else {
-      // Clear all documents
-      const result = db.prepare('DELETE FROM documents').run();
-      db.prepare('DELETE FROM file_hashes').run();
-      clearedDocs = result.changes;
+      // Clear all documents (also clears embedding_model metadata)
+      const clearedDocs = await clearDocuments();
       console.log(`Cleared ${clearedDocs} document chunks`);
     }
   }
 
   if (!indexOnly && !codeOnly) {
-    const result = db.prepare('DELETE FROM memories').run();
-    clearedMemories = result.changes;
+    const clearedMemories = await deleteMemoriesOlderThan(new Date('2100-01-01'));
     console.log(`Cleared ${clearedMemories} memories`);
-  }
-
-  // Reset model metadata if clearing all
-  if (!memoriesOnly && !codeOnly) {
-    db.prepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
   }
 
   closeDb();

@@ -12,8 +12,7 @@ import path from 'path';
 import {
   getDb,
   getGlobalDb,
-  getAllFileHashes,
-} from '../../db/index.js';
+} from '../../db/connection.js';
 import type {
   Document,
   Memory,

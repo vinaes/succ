@@ -59,7 +59,7 @@ async function doCreate(options: CheckpointOptions): Promise<void> {
   console.log('Creating checkpoint...\n');
 
   try {
-    const { checkpoint: cp, outputPath } = createCheckpoint({
+    const { checkpoint: cp, outputPath } = await createCheckpoint({
       includeBrain: options.includeBrain ?? true,
       includeDocuments: options.includeDocuments ?? true,
       includeConfig: options.includeConfig ?? true,
@@ -124,7 +124,7 @@ async function doRestore(options: CheckpointOptions): Promise<void> {
 
     console.log('Restoring...\n');
 
-    const result = restoreCheckpoint(cp, {
+    const result = await restoreCheckpoint(cp, {
       overwrite: options.overwrite ?? false,
       restoreBrain: options.restoreBrain ?? true,
       restoreDocuments: options.restoreDocuments ?? true,

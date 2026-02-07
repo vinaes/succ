@@ -8,25 +8,25 @@ import os from 'os';
 import path from 'path';
 
 // Mock all dependencies before importing service
-vi.mock('../lib/db/index.js', () => ({
-  hybridSearchDocs: vi.fn(() => [
+vi.mock('../lib/storage/index.js', () => ({
+  hybridSearchDocs: vi.fn(async () => [
     { content: 'test doc', score: 0.8, file_path: 'test.md', memory_id: 1 },
   ]),
-  hybridSearchCode: vi.fn(() => [
+  hybridSearchCode: vi.fn(async () => [
     { content: 'function test() {}', score: 0.7, file_path: 'test.ts' },
   ]),
-  hybridSearchMemories: vi.fn(() => [
+  hybridSearchMemories: vi.fn(async () => [
     { id: 1, content: 'recalled memory', score: 0.9, tags: '["test"]', type: 'observation' },
   ]),
-  saveMemory: vi.fn(() => ({ id: 1, isDuplicate: false })),
-  saveGlobalMemory: vi.fn(() => ({ id: 2, isDuplicate: false })),
+  saveMemory: vi.fn(async () => ({ id: 1, isDuplicate: false })),
+  saveGlobalMemory: vi.fn(async () => ({ id: 2, isDuplicate: false })),
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
-  getStats: vi.fn(() => ({ documents: 10, code_files: 5, total_chunks: 100 })),
-  getMemoryStats: vi.fn(() => ({ total: 20, byType: { observation: 10, decision: 5, learning: 5 } })),
-  incrementMemoryAccessBatch: vi.fn(),
-  autoLinkSimilarMemories: vi.fn(),
-  getRecentMemories: vi.fn(() => [
+  getStats: vi.fn(async () => ({ documents: 10, code_files: 5, total_chunks: 100 })),
+  getMemoryStats: vi.fn(async () => ({ total: 20, byType: { observation: 10, decision: 5, learning: 5 } })),
+  incrementMemoryAccessBatch: vi.fn(async () => {}),
+  autoLinkSimilarMemories: vi.fn(async () => {}),
+  getRecentMemories: vi.fn(async () => [
     { id: 1, content: 'recent memory', tags: ['test'], created_at: new Date().toISOString() },
   ]),
 }));
@@ -121,7 +121,7 @@ import {
   _resetTestState,
 } from './service.js';
 
-import { hybridSearchDocs, hybridSearchCode, hybridSearchMemories, saveMemory, saveGlobalMemory, getRecentMemories, incrementMemoryAccessBatch } from '../lib/db/index.js';
+import { hybridSearchDocs, hybridSearchCode, hybridSearchMemories, saveMemory, saveGlobalMemory, getRecentMemories, incrementMemoryAccessBatch } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';

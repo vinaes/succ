@@ -10,16 +10,20 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
-import { closeDb } from '../../lib/db/index.js';
+import { closeDb } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
+import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerConfigTools(server: McpServer) {
   // Tool: succ_config - Show current configuration
   server.tool(
     'succ_config',
     'Get the current succ configuration with all settings and their effective values (with defaults applied). Shows embedding mode, analyze mode, quality scoring, graph settings, idle reflection, etc.',
-    {},
-    async () => {
+    {
+      project_path: projectPathParam,
+    },
+    async ({ project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const { getConfigDisplay, formatConfigDisplay } = await import('../../lib/config.js');
         const display = getConfigDisplay(true); // mask secrets
@@ -54,8 +58,10 @@ export function registerConfigTools(server: McpServer) {
       key: z.string().describe('Config key to set (e.g., "embedding_mode", "analyze_model", "idle_reflection.enabled")'),
       value: z.string().describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
       scope: z.enum(['global', 'project']).optional().default('global').describe('Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'),
+      project_path: projectPathParam,
     },
-    async ({ key, value, scope }) => {
+    async ({ key, value, scope, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const os = await import('os');
 
@@ -150,8 +156,10 @@ export function registerConfigTools(server: McpServer) {
       compress: z.boolean().optional().describe('Compress with gzip (default: false)'),
       include_brain: z.boolean().optional().describe('Include brain vault files (default: true)'),
       include_documents: z.boolean().optional().describe('Include indexed documents (default: true)'),
+      project_path: projectPathParam,
     },
-    async ({ action, compress, include_brain, include_documents }) => {
+    async ({ action, compress, include_brain, include_documents, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const {
           createCheckpoint,
@@ -160,7 +168,7 @@ export function registerConfigTools(server: McpServer) {
         } = await import('../../lib/checkpoint.js');
 
         if (action === 'create') {
-          const { checkpoint: cp, outputPath } = createCheckpoint({
+          const { checkpoint: cp, outputPath } = await createCheckpoint({
             includeBrain: include_brain ?? true,
             includeDocuments: include_documents ?? true,
             includeConfig: true,

@@ -11,7 +11,13 @@
  * - Rate limiting
  */
 
-import { getDb } from './db/index.js';
+import {
+  upsertSkill,
+  getCachedSkyllSkill as getCachedSkyllSkillDb,
+  clearExpiredSkyllCache as clearExpiredSkyllCacheDb,
+  getSkyllCacheStats as getSkyllCacheStatsDb,
+  searchSkillsDb,
+} from './storage/index.js';
 import { getConfig } from './config.js';
 import type { Skill } from './skills.js';
 
@@ -99,50 +105,39 @@ function recordRequest(): void {
 // Cache
 // ============================================================================
 
-function getCachedSkills(query: string): Skill[] | null {
-  const db = getDb();
-  const now = new Date().toISOString();
-
+async function getCachedSkills(query: string): Promise<Skill[] | null> {
   try {
-    // Skyll cached skills are global (project_id IS NULL)
-    const rows = db
-      .prepare(
-        `SELECT id, name, description, source, skyll_id, content, usage_count, last_used
-         FROM skills
-         WHERE source = 'skyll'
-           AND project_id IS NULL
-           AND cache_expires > ?
-           AND (name LIKE ? OR description LIKE ?)`
-      )
-      .all(now, `%${query}%`, `%${query}%`) as Skill[];
-
-    return rows.length > 0 ? rows : null;
+    // Search via dispatcher (handles both PG and SQLite)
+    const rows = await searchSkillsDb(query, 20);
+    // Filter to only Skyll cached results
+    const skyllRows = rows
+      .filter((r) => r.source === 'skyll')
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        source: 'skyll' as const,
+      }));
+    return skyllRows.length > 0 ? skyllRows : null;
   } catch (err) {
     console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skills');
     return null;
   }
 }
 
-function cacheSkills(skills: SkyllSkill[], ttlSeconds: number): void {
-  const db = getDb();
-  const now = new Date();
-  const expires = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
+async function cacheSkills(skills: SkyllSkill[], ttlSeconds: number): Promise<void> {
+  const expires = new Date(Date.now() + ttlSeconds * 1000).toISOString();
 
   for (const skill of skills) {
     try {
-      // Skyll cached skills are global (project_id = NULL)
-      // Use INSERT OR REPLACE for SQLite compatibility (works with UNIQUE(name) constraint)
-      db.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, skyll_id, content, cached_at, cache_expires, created_at, updated_at)
-         VALUES (NULL, ?, ?, 'skyll', ?, ?, ?, ?, datetime('now'), datetime('now'))`
-      ).run(
-        skill.title || skill.id, // Skyll uses 'title' not 'name'
-        skill.description,
-        skill.id,
-        skill.content || null,
-        now.toISOString(),
-        expires
-      );
+      await upsertSkill({
+        name: skill.title || skill.id,
+        description: skill.description,
+        source: 'skyll',
+        skyllId: skill.id,
+        content: skill.content,
+        cacheExpires: expires,
+      });
     } catch (err) {
       console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to cache skill');
     }
@@ -188,7 +183,7 @@ export async function searchSkyll(
 
   // Check cache first
   if (!skipCache) {
-    const cached = getCachedSkills(query);
+    const cached = await getCachedSkills(query);
     if (cached && cached.length > 0) {
       return cached.slice(0, limit);
     }
@@ -197,7 +192,7 @@ export async function searchSkyll(
   // Check rate limit
   if (!checkRateLimit(config.rateLimit)) {
     console.warn('[skyll] Rate limit reached, using cache only');
-    return getCachedSkills(query) || [];
+    return (await getCachedSkills(query)) || [];
   }
 
   try {
@@ -223,7 +218,7 @@ export async function searchSkyll(
       if (response.status === 429) {
         console.warn('[skyll] Rate limited by API');
       }
-      return getCachedSkills(query) || [];
+      return (await getCachedSkills(query)) || [];
     }
 
     const data = (await response.json()) as SkyllSearchResult;
@@ -231,7 +226,7 @@ export async function searchSkyll(
 
     // Cache results
     if (data.skills && data.skills.length > 0) {
-      cacheSkills(data.skills, config.cacheTtl);
+      await cacheSkills(data.skills, config.cacheTtl);
     }
 
     // Convert to Skill format (Skyll uses 'title' not 'name')
@@ -244,7 +239,7 @@ export async function searchSkyll(
     }));
   } catch (err) {
     console.error('[skyll] Search failed:', err);
-    return getCachedSkills(query) || [];
+    return (await getCachedSkills(query)) || [];
   }
 }
 
@@ -258,18 +253,17 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
     return null;
   }
 
-  // Check cache first (Skyll cached skills are global with project_id IS NULL)
-  const db = getDb();
+  // Check cache first (via dispatcher)
   try {
-    const cached = db
-      .prepare(
-        `SELECT id, name, description, source, skyll_id, content, usage_count, last_used
-         FROM skills WHERE skyll_id = ? AND project_id IS NULL AND cache_expires > datetime('now')`
-      )
-      .get(skillId) as Skill | undefined;
-
+    const cached = await getCachedSkyllSkillDb(skillId);
     if (cached) {
-      return cached;
+      return {
+        name: cached.name,
+        description: cached.description,
+        source: 'skyll' as const,
+        skyll_id: skillId,
+        content: cached.content,
+      };
     }
   } catch (err) {
     console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skill');
@@ -304,7 +298,7 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
     const skill = (await response.json()) as SkyllSkill;
 
     // Cache result
-    cacheSkills([skill], config.cacheTtl);
+    await cacheSkills([skill], config.cacheTtl);
 
     return {
       name: skill.title || skill.id,
@@ -322,14 +316,9 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
 /**
  * Clear expired cache entries
  */
-export function clearExpiredCache(): number {
-  const db = getDb();
+export async function clearExpiredCache(): Promise<number> {
   try {
-    // Skyll cached skills have project_id IS NULL
-    const result = db
-      .prepare(`DELETE FROM skills WHERE source = 'skyll' AND project_id IS NULL AND cache_expires < datetime('now')`)
-      .run();
-    return result.changes;
+    return await clearExpiredSkyllCacheDb();
   } catch (err) {
     console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to clear expired cache');
     return 0;
@@ -339,23 +328,19 @@ export function clearExpiredCache(): number {
 /**
  * Get Skyll API status
  */
-export function getSkyllStatus(): {
+export async function getSkyllStatus(): Promise<{
   enabled: boolean;
   hasApiKey: boolean;
   requestsThisHour: number;
   rateLimit: number;
   cachedSkills: number;
-} {
+}> {
   const config = getSkyllConfig();
-  const db = getDb();
 
   let cachedSkills = 0;
   try {
-    // Count only global Skyll cached skills
-    const row = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`).get() as {
-      count: number;
-    };
-    cachedSkills = row.count;
+    const stats = await getSkyllCacheStatsDb();
+    cachedSkills = stats.cachedSkills;
   } catch (err) {
     console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to count cached skills');
   }

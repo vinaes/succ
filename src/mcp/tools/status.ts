@@ -16,38 +16,43 @@ import {
   getTokenStatsSummary,
   closeDb,
   type TokenEventType,
-} from '../../lib/db/index.js';
-import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig } from '../../lib/config.js';
+} from '../../lib/storage/index.js';
+import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig, getProjectRoot, getSuccDir, isProjectInitialized } from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
+import { z } from 'zod';
+import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerStatusTools(server: McpServer) {
   // Tool: succ_status - Get index status
   server.tool(
     'succ_status',
     'Get the current status of succ (indexed files, memories, last update, daemon statuses). Shows global-only mode if project not initialized.',
-    {},
-    async () => {
+    {
+      project_path: projectPathParam,
+    },
+    async ({ project_path }) => {
+      await applyProjectPath(project_path);
       const globalOnlyMode = isGlobalOnlyMode();
 
       try {
-        // In global-only mode, show limited status
+        // In global-only mode, show limited status with debug info
         if (globalOnlyMode) {
-          const globalMemStats = getRecentGlobalMemories(1);
+          const globalMemStats = await getRecentGlobalMemories(1);
           const globalCount = globalMemStats.length > 0 ? 'available' : 'empty';
 
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories`,
+                text: `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories\n\nTip: Pass project_path to succ tools to access project-local data.`,
               },
             ],
           };
         }
 
-        const stats = getStats();
-        const memStats = getMemoryStats();
+        const stats = await getStats();
+        const memStats = await getMemoryStats();
         const daemons = getDaemonStatuses();
 
         // Format type breakdown
@@ -78,7 +83,7 @@ export function registerStatusTools(server: McpServer) {
 
         // Retention health (lightweight analysis)
         try {
-          const retentionMemories = getAllMemoriesForRetention();
+          const retentionMemories = await getAllMemoriesForRetention();
           if (retentionMemories.length > 0) {
             const retConfig = getRetentionConfig();
             const analysis = analyzeRetention(retentionMemories, {
@@ -137,14 +142,17 @@ export function registerStatusTools(server: McpServer) {
   server.tool(
     'succ_stats',
     'Get token savings statistics. Shows how many tokens were saved by using RAG search instead of loading full files.',
-    {},
-    async () => {
+    {
+      project_path: projectPathParam,
+    },
+    async ({ project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const idleConfig = getIdleReflectionConfig();
         const summaryEnabled = idleConfig.operations?.session_summary ?? true;
 
-        const aggregated = getTokenStatsAggregated();
-        const summary = getTokenStatsSummary();
+        const aggregated = await getTokenStatsAggregated();
+        const summary = await getTokenStatsSummary();
 
         const lines: string[] = ['## Token Savings\n'];
 
@@ -223,11 +231,14 @@ export function registerStatusTools(server: McpServer) {
   server.tool(
     'succ_score',
     'Get the AI-readiness score for the project. Shows how well-prepared the project is for AI collaboration, with metrics for brain vault, memories, code index, and more.',
-    {},
-    async () => {
+    {
+      project_path: projectPathParam,
+    },
+    async ({ project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const { calculateAIReadinessScore, formatAIReadinessScore } = await import('../../lib/ai-readiness.js');
-        const result = calculateAIReadinessScore();
+        const result = await calculateAIReadinessScore();
         return {
           content: [{
             type: 'text' as const,

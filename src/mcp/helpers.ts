@@ -12,17 +12,65 @@
 
 import path from 'path';
 import fs from 'fs';
-import { closeDb, closeGlobalDb, incrementMemoryAccessBatch, recordTokenStat, type TokenEventType } from '../lib/db/index.js';
-import { getProjectRoot, getSuccDir } from '../lib/config.js';
+import { z } from 'zod';
+import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, type TokenEventType } from '../lib/storage/index.js';
+import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { countTokens, countTokensArray } from '../lib/token-counter.js';
 import { estimateSavings, getCurrentModel } from '../lib/pricing.js';
 import type { SearchResult, ToolResponse } from './types.js';
 
+// Shared Zod param for project_path — add to every tool schema
+export const projectPathParam = z.string().optional()
+  .describe('Project directory path. Pass cwd of your project to use project-local data instead of global.');
+
+// Track current project to avoid redundant reinit
+let _currentProject: string | null = null;
+
+/**
+ * Set the current project (called once after initStorageDispatcher at startup)
+ */
+export function setCurrentProject(projectPath: string) {
+  _currentProject = path.resolve(projectPath);
+}
+
+/**
+ * Apply project_path from tool call params.
+ * If provided and different from current project, sets SUCC_PROJECT_ROOT
+ * and reinitializes storage dispatcher to use the correct database.
+ */
+export async function applyProjectPath(projectPath?: string): Promise<void> {
+  if (!projectPath) return;
+
+  // Normalize: forward slashes to OS separators, trim whitespace
+  const normalized = projectPath.trim().replace(/\//g, path.sep);
+  const resolved = path.resolve(normalized);
+  if (resolved === _currentProject) return;
+
+  // Validate: must have .succ/ dir
+  if (!fs.existsSync(path.join(resolved, '.succ'))) return;
+
+  process.env.SUCC_PROJECT_ROOT = resolved;
+  invalidateConfigCache();
+
+  // Reinit storage if we already had a different project OR this is first time
+  if (_currentProject !== null) {
+    closeDb();
+    closeGlobalDb();
+    await closeStorageDispatcher();
+  }
+
+  // Always init storage dispatcher to ensure config is applied
+  await initStorageDispatcher();
+
+  _currentProject = resolved;
+}
+
 // Graceful shutdown handler
 export function setupGracefulShutdown() {
-  const cleanup = () => {
+  const cleanup = async () => {
+    await closeStorageDispatcher();
     cleanupEmbeddings();
     cleanupQualityScoring();
     closeDb();
@@ -39,11 +87,11 @@ export function setupGracefulShutdown() {
 }
 
 // Helper: Track token savings for RAG queries
-export function trackTokenSavings(
+export async function trackTokenSavings(
   eventType: TokenEventType,
   query: string,
   results: SearchResult[]
-): void {
+): Promise<void> {
   if (results.length === 0) return;
 
   try {
@@ -96,7 +144,7 @@ export function trackTokenSavings(
     const model = getCurrentModel();
     const estimatedCost = estimateSavings(savingsTokens, model);
 
-    recordTokenStat({
+    await recordTokenStat({
       event_type: eventType,
       query,
       returned_tokens: returnedTokens,
@@ -120,11 +168,11 @@ export function trackTokenSavings(
  * @param limit - The search limit (top N results)
  * @param totalResults - Total number of results before limit
  */
-export function trackMemoryAccess(
+export async function trackMemoryAccess(
   memoryIds: number[],
   limit: number,
   totalResults: number
-): void {
+): Promise<void> {
   if (memoryIds.length === 0) return;
 
   try {
@@ -140,7 +188,7 @@ export function trackMemoryAccess(
       accesses.push({ memoryId: memoryIds[i], weight });
     }
 
-    incrementMemoryAccessBatch(accesses);
+    await incrementMemoryAccessBatch(accesses);
   } catch {
     // Don't fail the search if tracking fails
   }

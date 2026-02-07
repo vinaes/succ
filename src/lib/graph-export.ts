@@ -2,12 +2,30 @@ import fs from 'fs';
 import path from 'path';
 import { getClaudeDir, getConfig, getProjectRoot } from './config.js';
 import {
-  getDb,
   getMemoryLinks,
   getGraphStats,
+  getAllMemoriesForExport,
+  getAllMemoryLinksForExport,
+  getMemoryById,
   type MemoryType,
-} from './db/index.js';
+} from './storage/index.js';
 import { calculateTemporalScore, getTemporalConfig } from './temporal.js';
+
+// Shared memory row type used across export functions
+interface ExportMemoryRow {
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  type: string | null;
+  created_at: string;
+  access_count: number;
+  last_accessed: string | null;
+  // Temporal fields from getAllMemoriesForExport have these on the raw row,
+  // but we derive them from the shared export format
+  valid_from?: string | null;
+  valid_until?: string | null;
+}
 
 /**
  * Map memory type to brain vault folder
@@ -77,7 +95,7 @@ export function scheduleAutoExport(): void {
   }
 
   // Schedule export after debounce period
-  exportTimer = setTimeout(() => {
+  exportTimer = setTimeout(async () => {
     exportTimer = null;
     const now = Date.now();
 
@@ -89,7 +107,7 @@ export function scheduleAutoExport(): void {
     lastExportTime = now;
 
     try {
-      exportGraphSilent(
+      await exportGraphSilent(
         config.graph_export_format || 'obsidian',
         config.graph_export_path
       );
@@ -110,32 +128,28 @@ export function scheduleAutoExport(): void {
 /**
  * Export graph silently (no console output) - for auto-export
  */
-export function exportGraphSilent(
+export async function exportGraphSilent(
   format: 'obsidian' | 'json' = 'obsidian',
   outputDir?: string
-): { memoriesExported: number; linksExported: number } {
-  const database = getDb();
+): Promise<{ memoriesExported: number; linksExported: number }> {
+  // Get all memories via dispatcher (works for both SQLite and PG)
+  const rawMemories = await getAllMemoriesForExport();
 
-  // Get all memories with temporal fields
-  const memories = database
-    .prepare(`
-      SELECT id, content, tags, source, type, created_at,
-             valid_from, valid_until, last_accessed, access_count
-      FROM memories
-      ORDER BY created_at DESC
-    `)
-    .all() as Array<{
-      id: number;
-      content: string;
-      tags: string | null;
-      source: string | null;
-      type: string | null;
-      created_at: string;
-      valid_from: string | null;
-      valid_until: string | null;
-      last_accessed: string | null;
-      access_count: number;
-    }>;
+  // Map to the shape needed by export functions
+  const memories: ExportMemoryRow[] = rawMemories
+    .filter(m => m.invalidated_by === null) // Only active memories
+    .map(m => ({
+      id: m.id,
+      content: m.content,
+      tags: m.tags,
+      source: m.source,
+      type: m.type,
+      created_at: m.created_at,
+      access_count: m.access_count ?? 0,
+      last_accessed: m.last_accessed,
+      valid_from: (m as any).valid_from ?? null,
+      valid_until: (m as any).valid_until ?? null,
+    }));
 
   if (memories.length === 0) {
     return { memoriesExported: 0, linksExported: 0 };
@@ -151,28 +165,16 @@ export function exportGraphSilent(
   }
 
   if (format === 'json') {
-    return exportToJson(memories, graphDir, database);
+    return await exportToJson(memories, graphDir);
   }
 
-  return exportToObsidian(memories, graphDir, database);
+  return await exportToObsidian(memories, graphDir);
 }
 
-function exportToJson(
-  memories: Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    type: string | null;
-    created_at: string;
-    valid_from?: string | null;
-    valid_until?: string | null;
-    last_accessed?: string | null;
-    access_count?: number;
-  }>,
-  graphDir: string,
-  database: ReturnType<typeof getDb>
-): { memoriesExported: number; linksExported: number } {
+async function exportToJson(
+  memories: ExportMemoryRow[],
+  graphDir: string
+): Promise<{ memoriesExported: number; linksExported: number }> {
   const temporalConfig = getTemporalConfig();
   const now = new Date();
 
@@ -200,7 +202,7 @@ function exportToJson(
       return {
         id: m.id,
         content: m.content,
-        tags: m.tags ? JSON.parse(m.tags) : [],
+        tags: m.tags,
         source: m.source,
         type: m.type || 'observation',
         created_at: m.created_at,
@@ -214,7 +216,7 @@ function exportToJson(
       };
     }),
     links: [] as Array<{ source: number; target: number; relation: string; weight: number }>,
-    stats: getGraphStats(),
+    stats: await getGraphStats(),
     temporal_summary: {
       active: 0,
       expired: 0,
@@ -229,12 +231,10 @@ function exportToJson(
     graphData.temporal_summary[m.temporal_status as keyof typeof graphData.temporal_summary]++;
   }
 
-  // Get all links
-  const links = database
-    .prepare('SELECT source_id, target_id, relation, weight FROM memory_links')
-    .all() as Array<{ source_id: number; target_id: number; relation: string; weight: number }>;
+  // Get all links via dispatcher
+  const allLinks = await getAllMemoryLinksForExport();
 
-  graphData.links = links.map(l => ({
+  graphData.links = allLinks.map(l => ({
     source: l.source_id,
     target: l.target_id,
     relation: l.relation,
@@ -244,25 +244,13 @@ function exportToJson(
   const jsonPath = path.join(graphDir, 'memories-graph.json');
   fs.writeFileSync(jsonPath, JSON.stringify(graphData, null, 2));
 
-  return { memoriesExported: memories.length, linksExported: links.length };
+  return { memoriesExported: memories.length, linksExported: allLinks.length };
 }
 
-function exportToObsidian(
-  memories: Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    type: string | null;
-    created_at: string;
-    valid_from?: string | null;
-    valid_until?: string | null;
-    last_accessed?: string | null;
-    access_count?: number;
-  }>,
-  brainDir: string,
-  database: ReturnType<typeof getDb>
-): { memoriesExported: number; linksExported: number } {
+async function exportToObsidian(
+  memories: ExportMemoryRow[],
+  brainDir: string
+): Promise<{ memoriesExported: number; linksExported: number }> {
   let exported = 0;
   let totalLinks = 0;
 
@@ -273,14 +261,16 @@ function exportToObsidian(
   // Build maps for link resolution
   const memoryTagsMap = new Map<number, string[]>();
   const memoryDatesMap = new Map<number, string>();
+  const memoryTypesMap = new Map<number, string>();
   for (const m of memories) {
-    memoryTagsMap.set(m.id, m.tags ? JSON.parse(m.tags) : []);
+    memoryTagsMap.set(m.id, m.tags);
     memoryDatesMap.set(m.id, new Date(m.created_at).toISOString().split('T')[0]);
+    memoryTypesMap.set(m.id, m.type || 'observation');
   }
 
   for (const memory of memories) {
-    const tags: string[] = memory.tags ? JSON.parse(memory.tags) : [];
-    const links = getMemoryLinks(memory.id);
+    const tags: string[] = memory.tags;
+    const links = await getMemoryLinks(memory.id);
     totalLinks += links.outgoing.length;
 
     // Determine target folder based on type/tags
@@ -371,7 +361,7 @@ ${memory.content}
     if (links.outgoing.length > 0) {
       content += `## Related\n\n`;
       for (const link of links.outgoing) {
-        const targetType = getMemoryType(link.target_id, database);
+        const targetType = memoryTypesMap.get(link.target_id) || await getMemoryTypeAsync(link.target_id);
         const targetTags = memoryTagsMap.get(link.target_id) || [];
         const targetDate = memoryDatesMap.get(link.target_id) || dateStr;
         const wikiPath = getWikiLinkPath(targetType, targetTags, link.target_id, targetDate);
@@ -384,7 +374,7 @@ ${memory.content}
     if (links.incoming.length > 0) {
       content += `## Referenced By\n\n`;
       for (const link of links.incoming) {
-        const sourceType = getMemoryType(link.source_id, database);
+        const sourceType = memoryTypesMap.get(link.source_id) || await getMemoryTypeAsync(link.source_id);
         const sourceTags = memoryTagsMap.get(link.source_id) || [];
         const sourceDate = memoryDatesMap.get(link.source_id) || dateStr;
         const wikiPath = getWikiLinkPath(sourceType, sourceTags, link.source_id, sourceDate);
@@ -400,7 +390,7 @@ ${memory.content}
   }
 
   // Create index file in brain root (Memories.md - no kebab-case)
-  const indexContent = generateIndexContent(memories, brainDir, database);
+  const indexContent = await generateIndexContent(memories, brainDir);
   fs.writeFileSync(path.join(brainDir, 'Memories.md'), indexContent);
 
   // Create/update Obsidian config for graph colors
@@ -508,29 +498,19 @@ function ensureObsidianGraphConfig(brainDir: string): void {
   );
 }
 
-function getMemoryType(id: number, database: ReturnType<typeof getDb>): string {
-  const row = database
-    .prepare('SELECT type FROM memories WHERE id = ?')
-    .get(id) as { type: string | null } | undefined;
-  return row?.type || 'observation';
+/**
+ * Get memory type by ID via dispatcher (async)
+ */
+async function getMemoryTypeAsync(id: number): Promise<string> {
+  const memory = await getMemoryById(id);
+  return (memory as any)?.type || 'observation';
 }
 
-function generateIndexContent(
-  memories: Array<{
-    id: number;
-    content: string;
-    type: string | null;
-    tags: string | null;
-    created_at: string;
-    valid_from?: string | null;
-    valid_until?: string | null;
-    last_accessed?: string | null;
-    access_count?: number;
-  }>,
-  brainDir: string,
-  database: ReturnType<typeof getDb>
-): string {
-  const stats = getGraphStats();
+async function generateIndexContent(
+  memories: ExportMemoryRow[],
+  brainDir: string
+): Promise<string> {
+  const stats = await getGraphStats();
   const projectName = path.basename(getProjectRoot());
   const temporalConfig = getTemporalConfig();
   const now = new Date();
@@ -552,7 +532,7 @@ function generateIndexContent(
 
   for (const m of memories) {
     const type = m.type || 'observation';
-    const tags: string[] = m.tags ? JSON.parse(m.tags) : [];
+    const tags: string[] = m.tags;
     const dateStr = new Date(m.created_at).toISOString().split('T')[0];
 
     // Calculate temporal status

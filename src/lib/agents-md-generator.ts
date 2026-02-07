@@ -9,9 +9,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getDb, closeDb } from './db/index.js';
+import { getMemoriesForAgentsExport } from './storage/index.js';
 import { getProjectRoot, getConfig } from './config.js';
-import type { MemoryType } from './db/schema.js';
+import type { MemoryType } from './storage/index.js';
 
 export interface AgentsMdConfig {
   enabled: boolean;
@@ -32,7 +32,7 @@ interface MemoryRow {
   id: number;
   content: string;
   type: string | null;
-  tags: string | null;
+  tags: string[];
   source: string | null;
   quality_score: number | null;
   created_at: string;
@@ -55,34 +55,24 @@ export function getAgentsMdConfig(): AgentsMdConfig {
 }
 
 /**
- * Query memories suitable for AGENTS.md export
+ * Query memories suitable for AGENTS.md export via dispatcher
  */
-function queryMemoriesForExport(config: AgentsMdConfig): MemoryRow[] {
-  const database = getDb();
+async function queryMemoriesForExport(config: AgentsMdConfig): Promise<MemoryRow[]> {
+  const rows = await getMemoriesForAgentsExport({
+    types: config.include_types,
+    minQuality: config.min_quality,
+    limit: config.max_entries,
+  });
 
-  // Build type filter
-  const typePlaceholders = config.include_types.map(() => '?').join(', ');
-
-  const rows = database.prepare(`
-    SELECT id, content, type, tags, source, quality_score, created_at
-    FROM memories
-    WHERE invalidated_by IS NULL
-      AND type IN (${typePlaceholders})
-      AND (quality_score IS NULL OR quality_score >= ?)
-    ORDER BY
-      CASE type
-        WHEN 'dead_end' THEN 0
-        WHEN 'decision' THEN 1
-        WHEN 'pattern' THEN 2
-        WHEN 'learning' THEN 3
-        ELSE 4
-      END,
-      quality_score DESC,
-      created_at DESC
-    LIMIT ?
-  `).all(...config.include_types, config.min_quality, config.max_entries) as MemoryRow[];
-
-  return rows;
+  return rows.map(r => ({
+    id: r.id,
+    content: r.content,
+    type: r.type,
+    tags: r.tags,
+    source: r.source,
+    quality_score: r.quality_score,
+    created_at: r.created_at,
+  }));
 }
 
 /**
@@ -119,9 +109,9 @@ function formatEntry(m: MemoryRow, isDeadEnd: boolean): string {
 /**
  * Generate AGENTS.md content from memories
  */
-export function generateAgentsMd(configOverrides?: Partial<AgentsMdConfig>): string {
+export async function generateAgentsMd(configOverrides?: Partial<AgentsMdConfig>): Promise<string> {
   const config = { ...getAgentsMdConfig(), ...configOverrides };
-  const memories = queryMemoriesForExport(config);
+  const memories = await queryMemoriesForExport(config);
   const grouped = groupByType(memories);
 
   const lines: string[] = [
@@ -182,9 +172,9 @@ export function generateAgentsMd(configOverrides?: Partial<AgentsMdConfig>): str
 /**
  * Write AGENTS.md to disk
  */
-export function writeAgentsMd(configOverrides?: Partial<AgentsMdConfig>): { path: string; entries: number } {
+export async function writeAgentsMd(configOverrides?: Partial<AgentsMdConfig>): Promise<{ path: string; entries: number }> {
   const config = { ...getAgentsMdConfig(), ...configOverrides };
-  const content = generateAgentsMd(config);
+  const content = await generateAgentsMd(config);
 
   // Determine output path
   const projectRoot = getProjectRoot();
