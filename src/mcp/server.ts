@@ -17,10 +17,11 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { closeDb, closeGlobalDb } from '../lib/db/index.js';
+import { closeDb, closeGlobalDb, initStorageDispatcher, closeStorageDispatcher } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
-import { setupGracefulShutdown } from './helpers.js';
+import { getProjectRoot } from '../lib/config.js';
+import { setupGracefulShutdown, setCurrentProject } from './helpers.js';
 import { registerResources } from './resources.js';
 import { registerSearchTools } from './tools/search.js';
 import { registerMemoryTools } from './tools/memory.js';
@@ -29,6 +30,12 @@ import { registerIndexingTools } from './tools/indexing.js';
 import { registerStatusTools } from './tools/status.js';
 import { registerConfigTools } from './tools/config.js';
 import { registerDeadEndTools } from './tools/dead-end.js';
+
+// Parse --project arg: succ-mcp --project /path/to/project
+const projectArgIdx = process.argv.indexOf('--project');
+if (projectArgIdx !== -1 && process.argv[projectArgIdx + 1]) {
+  process.env.SUCC_PROJECT_ROOT = process.argv[projectArgIdx + 1];
+}
 
 // Create MCP server
 const server = new McpServer({
@@ -55,17 +62,49 @@ process.on('unhandledRejection', (error) => {
   process.exit(1);
 });
 
+// Idle timeout: exit if no MCP requests for 30 minutes (zombie prevention)
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    console.error('succ MCP server shutting down (idle timeout)');
+    process.exit(0);
+  }, IDLE_TIMEOUT_MS);
+  // Don't keep process alive just for the timer
+  if (idleTimer.unref) idleTimer.unref();
+}
+
 // Start server with stdio transport
 async function main() {
   setupGracefulShutdown();
+
+  // Stdin close detection: when parent process dies, stdin closes
+  process.stdin.on('end', () => {
+    console.error('succ MCP server shutting down (stdin closed)');
+    process.exit(0);
+  });
+  process.stdin.on('error', () => {
+    process.exit(0);
+  });
+
+  await initStorageDispatcher();
+  setCurrentProject(getProjectRoot());
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Reset idle timer on any stdin data (MCP messages)
+  process.stdin.on('data', () => resetIdleTimer());
+  resetIdleTimer();
+
   // Use stderr for logging (stdout is for MCP protocol)
-  console.error('succ MCP server started');
+  console.error(`succ MCP server started (project: ${getProjectRoot()}, cwd: ${process.cwd()})`);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('Failed to start MCP server:', error);
+  await closeStorageDispatcher();
   cleanupEmbeddings();
   cleanupQualityScoring();
   closeDb();

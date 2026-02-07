@@ -7,7 +7,7 @@
  * Provides quantitative metrics on knowledge growth.
  */
 
-import { getMemoryStats } from './db/index.js';
+import { getMemoryStats } from './storage/index.js';
 
 export interface MemorySnapshot {
   totalMemories: number;
@@ -28,8 +28,8 @@ export interface LearningDelta {
 /**
  * Take a snapshot of current memory state
  */
-export function takeMemorySnapshot(): MemorySnapshot {
-  const stats = getMemoryStats();
+export async function takeMemorySnapshot(): Promise<MemorySnapshot> {
+  const stats = await getMemoryStats();
   return {
     totalMemories: stats.active_memories,
     byType: { ...stats.by_type },

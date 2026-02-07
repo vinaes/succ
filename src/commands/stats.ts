@@ -16,7 +16,7 @@ import {
   getTokenStatsSummary,
   clearTokenStats,
   type TokenEventType,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { formatTokens, compressionPercent } from '../lib/token-counter.js';
 import { getIdleReflectionConfig } from '../lib/config.js';
 import { estimateSavings, formatCost } from '../lib/pricing.js';
@@ -29,7 +29,7 @@ interface StatsOptions {
 
 export async function stats(options: StatsOptions = {}): Promise<void> {
   if (options.clear) {
-    clearTokenStats();
+    await clearTokenStats();
     console.log('Token stats cleared.');
     return;
   }
@@ -42,8 +42,8 @@ export async function stats(options: StatsOptions = {}): Promise<void> {
 }
 
 async function showGeneralStats(): Promise<void> {
-  const docStats = getStats();
-  const memStats = getMemoryStats();
+  const docStats = await getStats();
+  const memStats = await getMemoryStats();
 
   console.log('## Documents');
   console.log(`  Files indexed: ${docStats.total_files}`);
@@ -67,8 +67,8 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   const idleConfig = getIdleReflectionConfig();
   const summaryEnabled = idleConfig.operations?.session_summary ?? true;
 
-  const aggregated = getTokenStatsAggregated();
-  const summary = getTokenStatsSummary();
+  const aggregated = await getTokenStatsAggregated();
+  const summary = await getTokenStatsSummary();
 
   // Always use Opus as reference model for "Claude equivalent" pricing
   // This provides consistent comparison regardless of actual backend used

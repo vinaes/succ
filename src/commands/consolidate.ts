@@ -12,7 +12,7 @@ import {
   getConsolidationStats,
   undoConsolidation,
 } from '../lib/consolidate.js';
-import { getConsolidationHistory } from '../lib/db/index.js';
+import { getConsolidationHistory } from '../lib/storage/index.js';
 import { getConfig } from '../lib/config.js';
 
 interface ConsolidateOptions {
@@ -37,7 +37,7 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
     }
 
     console.log(`Undoing consolidation for memory #${mergedId}...\n`);
-    const result = undoConsolidation(mergedId);
+    const result = await undoConsolidation(mergedId);
 
     if (result.restored.length > 0) {
       console.log(`  Restored ${result.restored.length} original memories: ${result.restored.join(', ')}`);
@@ -58,7 +58,7 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
 
   // History mode
   if (options.history) {
-    const history = getConsolidationHistory(20);
+    const history = await getConsolidationHistory(20);
 
     if (history.length === 0) {
       console.log('No consolidation history found.');

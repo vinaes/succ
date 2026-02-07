@@ -31,6 +31,7 @@ import { migrate } from './commands/migrate.js';
 import { setup } from './commands/setup.js';
 import { agentsMd } from './commands/agents-md.js';
 import { progress } from './commands/progress.js';
+import { backfill } from './commands/backfill.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -502,6 +503,22 @@ program
       apply: options.apply,
       autoCleanup: options.autoCleanup,
       verbose: options.verbose,
+    });
+  });
+
+program
+  .command('backfill')
+  .description('Sync existing SQL data (memories, documents) into Qdrant vector store')
+  .option('--memories', 'Only backfill project memories')
+  .option('--global', 'Only backfill global memories')
+  .option('--documents', 'Only backfill documents')
+  .option('--dry-run', 'Show counts without writing')
+  .action((options) => {
+    backfill({
+      memories: options.memories,
+      global: options.global,
+      documents: options.documents,
+      dryRun: options.dryRun,
     });
   });
 

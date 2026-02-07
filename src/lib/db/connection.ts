@@ -4,7 +4,6 @@ import { initDb, initGlobalDb, loadSqliteVec } from './schema.js';
 
 let db: Database.Database | null = null;
 let globalDb: Database.Database | null = null;
-
 /**
  * Apply SQLite performance tuning PRAGMAs.
  * Safe with WAL mode; optimizes for read-heavy workloads.

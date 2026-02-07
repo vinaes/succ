@@ -9,6 +9,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { analyzeFile } from '../../commands/analyze.js';
+import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerIndexingTools(server: McpServer) {
   // Tool: succ_index_file - Index a single documentation file
@@ -18,8 +19,10 @@ export function registerIndexingTools(server: McpServer) {
     {
       file: z.string().describe('Path to the file to index'),
       force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
+      project_path: projectPathParam,
     },
-    async ({ file, force }) => {
+    async ({ file, force, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const { indexDocFile } = await import('../../commands/index.js');
         const result = await indexDocFile(file, { force });
@@ -76,8 +79,10 @@ export function registerIndexingTools(server: McpServer) {
     {
       file: z.string().describe('Path to the file to analyze'),
       mode: z.enum(['claude', 'local', 'openrouter']).optional().describe('claude = Claude CLI (Haiku), local = Ollama/LM Studio/llama.cpp, openrouter = cloud API (default: from config)'),
+      project_path: projectPathParam,
     },
-    async ({ file, mode }) => {
+    async ({ file, mode, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const result = await analyzeFile(file, { mode });
 
@@ -122,8 +127,10 @@ export function registerIndexingTools(server: McpServer) {
     {
       file: z.string().describe('Path to the code file to index'),
       force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
+      project_path: projectPathParam,
     },
-    async ({ file, force }) => {
+    async ({ file, force, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         const { indexCodeFile } = await import('../../commands/index-code.js');
         const result = await indexCodeFile(file, { force });

@@ -2,7 +2,7 @@ import {
   closeDb,
   getGraphStats,
   autoLinkSimilarMemories,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { exportGraphSilent } from '../lib/graph-export.js';
 
 interface GraphOptions {
@@ -19,13 +19,13 @@ export async function graph(options: GraphOptions): Promise<void> {
   try {
     switch (options.action) {
       case 'export':
-        exportGraph(options.format || 'obsidian', options.output);
+        await exportGraph(options.format || 'obsidian', options.output);
         break;
       case 'stats':
-        showStats();
+        await showStats();
         break;
       case 'auto-link':
-        autoLink(options.threshold || 0.75);
+        await autoLink(options.threshold || 0.75);
         break;
     }
   } finally {
@@ -36,8 +36,8 @@ export async function graph(options: GraphOptions): Promise<void> {
 /**
  * Export graph to Obsidian-compatible markdown
  */
-function exportGraph(format: 'obsidian' | 'json', outputDir?: string): void {
-  const result = exportGraphSilent(format, outputDir);
+async function exportGraph(format: 'obsidian' | 'json', outputDir?: string): Promise<void> {
+  const result = await exportGraphSilent(format, outputDir);
 
   if (result.memoriesExported === 0) {
     console.log('No memories to export.');
@@ -50,8 +50,8 @@ function exportGraph(format: 'obsidian' | 'json', outputDir?: string): void {
   }
 }
 
-function showStats(): void {
-  const stats = getGraphStats();
+async function showStats(): Promise<void> {
+  const stats = await getGraphStats();
 
   console.log('\nKnowledge Graph Statistics\n');
   console.log(`  Memories:         ${stats.total_memories}`);
@@ -68,8 +68,8 @@ function showStats(): void {
   console.log('');
 }
 
-function autoLink(threshold: number): void {
+async function autoLink(threshold: number): Promise<void> {
   console.log(`Auto-linking similar memories (threshold: ${threshold})...`);
-  const created = autoLinkSimilarMemories(threshold, 3);
+  const created = await autoLinkSimilarMemories(threshold, 3);
   console.log(`Created ${created} new links.`);
 }

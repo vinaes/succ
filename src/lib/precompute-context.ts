@@ -8,7 +8,7 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { searchMemories, closeDb, getRecentMemories } from './db/index.js';
+import { searchMemories, closeDb, getRecentMemories } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
@@ -87,7 +87,7 @@ async function findRelevantMemories(
 
   if (topics.length === 0) {
     // Fall back to recent memories if no topics extracted
-    const recent = getRecentMemories(limit);
+    const recent = await getRecentMemories(limit);
     return recent.map(m => ({
       content: m.content,
       tags: m.tags,
@@ -98,7 +98,7 @@ async function findRelevantMemories(
   // Search for memories related to extracted topics
   const searchQuery = topics.join(' ');
   const embedding = await getEmbedding(searchQuery);
-  const results = searchMemories(embedding, limit, 0.3);
+  const results = await searchMemories(embedding, limit, 0.3);
 
   return results.map(m => ({
     content: m.content,

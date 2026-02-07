@@ -11,6 +11,9 @@
  */
 
 import spawn from 'cross-spawn';
+// cross-spawn exposes .sync at runtime but not in types
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
 import { getConfig } from './config.js';
 
 // ============================================================================
@@ -288,16 +291,40 @@ export async function callLLMChat(
 // Backend Implementations
 // ============================================================================
 
+// ---- Shared Claude CLI helpers ----
+
+export interface ClaudeCLIOptions {
+  model?: string;    // default: 'haiku'
+  tools?: string;    // e.g. '' to disable tools; omit for default
+  timeout?: number;  // ms, default: 60000
+}
+
+function buildClaudeArgs(options?: ClaudeCLIOptions): string[] {
+  const model = options?.model ?? 'haiku';
+  const args = ['-p', '--no-session-persistence', '--model', model];
+  if (options?.tools !== undefined) {
+    args.push('--tools', options.tools);
+  }
+  return args;
+}
+
+const CLAUDE_SPAWN_OPTIONS = {
+  env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+  windowsHide: true,
+} as const;
+
 /**
- * Call Claude Code CLI
- * WARNING: Using this programmatically may violate Anthropic ToS
+ * Spawn Claude CLI asynchronously and return stdout.
+ * Single source of truth for all async Claude CLI calls.
  */
-function runClaudeCLI(prompt: string, model: string, timeout: number): Promise<string> {
+export function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions): Promise<string> {
+  const timeout = options?.timeout ?? 60000;
+  const args = buildClaudeArgs(options);
+
   return new Promise((resolve, reject) => {
-    const proc = spawn('claude', ['-p', '--model', model], {
+    const proc = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true,
+      ...CLAUDE_SPAWN_OPTIONS,
     });
 
     proc.stdin?.write(prompt);
@@ -333,6 +360,36 @@ function runClaudeCLI(prompt: string, model: string, timeout: number): Promise<s
       reject(err);
     });
   });
+}
+
+/**
+ * Spawn Claude CLI synchronously and return stdout.
+ * Single source of truth for all sync Claude CLI calls.
+ */
+export function spawnClaudeCLISync(prompt: string, options?: ClaudeCLIOptions): string {
+  const timeout = options?.timeout ?? 60000;
+  const args = buildClaudeArgs(options);
+
+  const result = crossSpawnSync('claude', args, {
+    input: prompt,
+    encoding: 'utf-8',
+    timeout,
+    ...CLAUDE_SPAWN_OPTIONS,
+  });
+
+  if (result.error) {
+    throw new Error(`Claude CLI error: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`Claude CLI failed: ${result.stderr || 'unknown error'}`);
+  }
+
+  return (result.stdout ?? '').trim();
+}
+
+/** Internal wrapper used by callLLM() */
+function runClaudeCLI(prompt: string, model: string, timeout: number): Promise<string> {
+  return spawnClaudeCLI(prompt, { model, timeout });
 }
 
 /**

@@ -1,4 +1,5 @@
 import spawn from 'cross-spawn';
+import { spawnClaudeCLI } from '../lib/llm.js';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
@@ -581,15 +582,13 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
   printTimingSummary(timings, Date.now() - totalStart);
 }
 
-function runClaudeAgent(agent: Agent, context: string): Promise<void> {
+async function runClaudeAgent(agent: Agent, context: string): Promise<void> {
+  // Ensure output directory exists
+  const outputDir = path.dirname(agent.outputPath);
+  fs.mkdirSync(outputDir, { recursive: true });
 
-  return new Promise((resolve, reject) => {
-    // Ensure output directory exists
-    const outputDir = path.dirname(agent.outputPath);
-    fs.mkdirSync(outputDir, { recursive: true });
-
-    // Build prompt with context
-    const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:
+  // Build prompt with context
+  const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:
 
 ${context}
 
@@ -597,65 +596,13 @@ ${context}
 
 ${agent.prompt}`;
 
-    // Write prompt to temp file to avoid command line length issues
-    const tempPromptFile = path.join(outputDir, `.${agent.name}-prompt.txt`);
-    fs.writeFileSync(tempPromptFile, fullPrompt);
+  const stdout = await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 180000 });
 
-    // Run claude CLI with:
-    // - --tools "" to disable all tools (no file reading, just generate from context)
-    // - --model haiku for speed
-    // - -p for print mode
-    // - Read prompt from stdin via cat
-    const proc = spawn('claude', [
-      '-p',
-      '--tools', '',
-      '--model', 'haiku',
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true, // Hide CMD window on Windows (works without detached)
-    });
-
-    // Send prompt via stdin
-    proc.stdin?.write(fullPrompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', async (code: number | null) => {
-      // Clean up temp file
-      try { fs.unlinkSync(tempPromptFile); } catch {}
-
-      if (code === 0 && stdout.trim()) {
-        // Write output (handles both single and multi-file)
-        await writeAgentOutput(agent, stdout.trim());
-        resolve();
-      } else {
-        reject(new Error(stderr || `Exit code ${code}, no output`));
-      }
-    });
-
-    proc.on('error', (err: Error) => {
-      try { fs.unlinkSync(tempPromptFile); } catch {}
-      reject(err);
-    });
-
-    // Timeout (3 minutes for multi-file agents)
-    setTimeout(() => {
-      proc.kill();
-      try { fs.unlinkSync(tempPromptFile); } catch {}
-      reject(new Error('Timeout (3 min)'));
-    }, 180000);
-  });
+  if (stdout) {
+    await writeAgentOutput(agent, stdout);
+  } else {
+    throw new Error('No output from Claude CLI');
+  }
 }
 
 type ProgressFn = (status: string, completed: number, total: number, current?: string) => void;
@@ -1378,30 +1325,13 @@ CRITICAL FORMATTING RULES:
       };
       content = data.choices[0]?.message?.content || null;
     } else {
-      // Claude CLI mode - use cross-spawn sync
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { sync: spawnSync } = await import('cross-spawn') as any;
-
-      const result = spawnSync('claude', [
-        '-p',
-        '--tools', '',
-        '--model', 'haiku',
-      ], {
-        input: prompt,
-        encoding: 'utf-8',
-        timeout: 120000, // 2 minutes timeout
-        env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      });
-
-      if (result.error) {
-        return { success: false, error: `Claude CLI error: ${result.error.message}` };
+      // Claude CLI mode
+      try {
+        const { spawnClaudeCLISync } = await import('../lib/llm.js');
+        content = spawnClaudeCLISync(prompt, { tools: '', model: 'haiku', timeout: 120000 }) || null;
+      } catch (err: any) {
+        return { success: false, error: err.message };
       }
-
-      if (result.status !== 0) {
-        return { success: false, error: `Claude CLI failed: ${result.stderr || 'Unknown error'}` };
-      }
-
-      content = result.stdout?.toString().trim() || null;
     }
 
     if (!content) {

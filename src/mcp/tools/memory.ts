@@ -28,15 +28,15 @@ import {
   getRecentGlobalMemories,
   closeDb,
   closeGlobalDb,
-} from '../../lib/db/index.js';
-import type { MemoryBatchInput } from '../../lib/db/index.js';
+} from '../../lib/storage/index.js';
+import type { MemoryBatchInput } from '../../lib/storage/index.js';
 import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from '../../lib/temporal.js';
 import { extractFactsWithLLM } from '../../lib/session-summary.js';
-import { trackTokenSavings, trackMemoryAccess, parseRelativeDate } from '../helpers.js';
+import { trackTokenSavings, trackMemoryAccess, parseRelativeDate, projectPathParam, applyProjectPath } from '../helpers.js';
 
 /**
  * Remember with LLM extraction - extracts structured facts from content
@@ -97,7 +97,7 @@ async function rememberWithLLMExtraction(params: {
     let snapshotBefore: import('../../lib/learning-delta.js').MemorySnapshot | null = null;
     try {
       const { takeMemorySnapshot } = await import('../../lib/learning-delta.js');
-      snapshotBefore = takeMemorySnapshot();
+      snapshotBefore = await takeMemorySnapshot();
     } catch {
       // Learning delta is optional
     }
@@ -159,7 +159,7 @@ async function rememberWithLLMExtraction(params: {
       // Global memories don't have batch API — save individually
       for (const item of prepared) {
         const projectName = path.basename(getProjectRoot());
-        const result = saveGlobalMemory(item.content, item.embedding, item.tags, source || 'extraction', projectName, { type: item.fact.type });
+        const result = await saveGlobalMemory(item.content, item.embedding, item.tags, source || 'extraction', projectName, { type: item.fact.type });
         if (result.isDuplicate) {
           results.push(`⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`);
           skipped++;
@@ -181,7 +181,7 @@ async function rememberWithLLMExtraction(params: {
         validUntil: validUntilDate,
       }));
 
-      const batchResult = saveMemoriesBatch(batchInputs);
+      const batchResult = await saveMemoriesBatch(batchInputs);
 
       for (let i = 0; i < batchResult.results.length; i++) {
         const r = batchResult.results[i];
@@ -201,9 +201,9 @@ async function rememberWithLLMExtraction(params: {
       try {
         const { takeMemorySnapshot, calculateLearningDelta } = await import('../../lib/learning-delta.js');
         const { appendProgressEntry } = await import('../../lib/progress-log.js');
-        const snapshotAfter = takeMemorySnapshot();
+        const snapshotAfter = await takeMemorySnapshot();
         const delta = calculateLearningDelta(snapshotBefore, snapshotAfter, 'mcp-remember');
-        appendProgressEntry(delta);
+        await appendProgressEntry(delta);
       } catch {
         // Progress logging is optional
       }
@@ -297,7 +297,7 @@ async function saveSingleMemory(params: {
 
   if (useGlobal) {
     const projectName = path.basename(getProjectRoot());
-    const result = saveGlobalMemory(processedContent, embedding, tags, source, projectName, { type });
+    const result = await saveGlobalMemory(processedContent, embedding, tags, source, projectName, { type });
     closeGlobalDb();
 
     if (result.isDuplicate) {
@@ -316,7 +316,7 @@ async function saveSingleMemory(params: {
     };
   }
 
-  const result = saveMemory(processedContent, embedding, tags, source, {
+  const result = await saveMemory(processedContent, embedding, tags, source, {
     type,
     qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
     validFrom: validFromDate,
@@ -378,8 +378,10 @@ export function registerMemoryTools(server: McpServer) {
         .boolean()
         .optional()
         .describe('Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'),
+      project_path: projectPathParam,
     },
-    async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until, extract }) => {
+    async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until, extract, project_path }) => {
+      await applyProjectPath(project_path);
       // Force global mode if project not initialized
       const globalOnlyMode = isGlobalOnlyMode();
       if (globalOnlyMode && !useGlobal) {
@@ -485,7 +487,7 @@ export function registerMemoryTools(server: McpServer) {
 
         if (useGlobal) {
           const projectName = path.basename(getProjectRoot());
-          const result = saveGlobalMemory(content, embedding, tags, source, projectName, { type });
+          const result = await saveGlobalMemory(content, embedding, tags, source, projectName, { type });
 
           const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
           const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
@@ -509,7 +511,7 @@ export function registerMemoryTools(server: McpServer) {
           };
         }
 
-        const result = saveMemory(content, embedding, tags, source, {
+        const result = await saveMemory(content, embedding, tags, source, {
           type,
           qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
           validFrom: validFromDate,
@@ -533,7 +535,7 @@ export function registerMemoryTools(server: McpServer) {
         // Log to progress file (fire-and-forget)
         try {
           const { appendRawEntry } = await import('../../lib/progress-log.js');
-          appendRawEntry(`manual | +1 fact (${type}) | topics: ${tags.join(', ') || 'untagged'}`);
+          await appendRawEntry(`manual | +1 fact (${type}) | topics: ${tags.join(', ') || 'untagged'}`);
         } catch {
           // Progress logging is optional
         }
@@ -582,8 +584,10 @@ export function registerMemoryTools(server: McpServer) {
         .string()
         .optional()
         .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
+      project_path: projectPathParam,
     },
-    async ({ query, limit, tags, since, as_of_date }) => {
+    async ({ query, limit, tags, since, as_of_date, project_path }) => {
+      await applyProjectPath(project_path);
       const globalOnlyMode = isGlobalOnlyMode();
 
       try {
@@ -613,8 +617,8 @@ export function registerMemoryTools(server: McpServer) {
 
         // For wildcard queries, just get recent memories without semantic search
         if (isWildcard) {
-          const recentLocal = globalOnlyMode ? [] : getRecentMemories(limit);
-          const recentGlobal = getRecentGlobalMemories(limit);
+          const recentLocal = globalOnlyMode ? [] : await getRecentMemories(limit);
+          const recentGlobal = await getRecentGlobalMemories(limit);
 
           // Apply tag filter if specified
           let filteredLocal = recentLocal;
@@ -682,12 +686,12 @@ export function registerMemoryTools(server: McpServer) {
         const queryEmbedding = await getEmbedding(query);
 
         // Use hybrid search for local memories (BM25 + vector with RRF)
-        let localResults = globalOnlyMode ? [] : hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
+        let localResults = globalOnlyMode ? [] : await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
 
         // Apply tag filter if specified
         if (tags && tags.length > 0) {
           localResults = localResults.filter((m) => {
-            const memTags = m.tags ? m.tags.split(',').map((t) => t.trim()) : [];
+            const memTags = m.tags ? m.tags.split(',').map((t: string) => t.trim()) : [];
             return tags.some((t) => memTags.includes(t));
           });
         }
@@ -732,7 +736,7 @@ export function registerMemoryTools(server: McpServer) {
         localResults = localResults.slice(0, limit);
 
         // Global memories now use hybrid search (BM25 + vector)
-        const globalResults = hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, 0.5, tags, sinceDate);
+        const globalResults = await hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, 0.5, tags, sinceDate);
 
         // Helper to parse tags (can be string or array)
         const parseTags = (t: string | string[] | null): string[] => {
@@ -783,8 +787,8 @@ export function registerMemoryTools(server: McpServer) {
 
         if (allResults.length === 0) {
           // Try to show recent memories as fallback
-          const recentLocal = getRecentMemories(2);
-          const recentGlobal = getRecentGlobalMemories(2);
+          const recentLocal = await getRecentMemories(2);
+          const recentGlobal = await getRecentGlobalMemories(2);
 
           const recent = [
             ...recentLocal.map((m) => ({ ...m, isGlobal: false })),
@@ -823,7 +827,7 @@ export function registerMemoryTools(server: McpServer) {
         }
 
         // Track token savings for recall
-        trackTokenSavings(
+        await trackTokenSavings(
           'recall',
           query,
           allResults.map((m) => ({ file_path: `memory:${m.id || 'unknown'}`, content: m.content }))
@@ -833,7 +837,7 @@ export function registerMemoryTools(server: McpServer) {
         const localMemoryIds = allResults
           .filter((r) => !r.isGlobal && r.id)
           .map((r) => r.id as number);
-        trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
+        await trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
 
         const formatted = allResults
           .map((m, i) => {
@@ -903,12 +907,14 @@ export function registerMemoryTools(server: McpServer) {
         .optional()
         .describe('Delete memories older than (e.g., "30d", "1w", "3m", "1y")'),
       tag: z.string().optional().describe('Delete all memories with this tag'),
+      project_path: projectPathParam,
     },
-    async ({ id, older_than, tag }) => {
+    async ({ id, older_than, tag, project_path }) => {
+      await applyProjectPath(project_path);
       try {
         // Delete by ID
         if (id !== undefined) {
-          const memory = getMemoryById(id);
+          const memory = await getMemoryById(id);
           if (!memory) {
             return {
               content: [
@@ -920,7 +926,7 @@ export function registerMemoryTools(server: McpServer) {
             };
           }
 
-          const deleted = deleteMemory(id);
+          const deleted = await deleteMemory(id);
 
           if (deleted) {
             return {
@@ -958,7 +964,7 @@ export function registerMemoryTools(server: McpServer) {
             };
           }
 
-          const count = deleteMemoriesOlderThan(date);
+          const count = await deleteMemoriesOlderThan(date);
 
           return {
             content: [
@@ -972,7 +978,7 @@ export function registerMemoryTools(server: McpServer) {
 
         // Delete by tag
         if (tag) {
-          const count = deleteMemoriesByTag(tag);
+          const count = await deleteMemoriesByTag(tag);
 
           return {
             content: [

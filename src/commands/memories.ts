@@ -15,7 +15,7 @@ import {
   deleteGlobalMemory,
   getGlobalMemoryStats,
   closeGlobalDb,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getConfig, getProjectRoot, getIdleReflectionConfig } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
@@ -55,7 +55,7 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
 
       if (useGlobal) {
         // Global only
-        const globalMemories = getRecentGlobalMemories(count);
+        const globalMemories = await getRecentGlobalMemories(count);
         closeGlobalDb();
 
         if (globalMemories.length === 0) {
@@ -88,7 +88,7 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
       }
 
       // Local memories
-      const recentMemories = getRecentMemories(count);
+      const recentMemories = await getRecentMemories(count);
       closeDb();
 
       if (recentMemories.length === 0) {
@@ -130,7 +130,7 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
 
       if (useGlobal) {
         // Global only
-        const results = searchGlobalMemories(queryEmbedding, limit, 0.3, tagList);
+        const results = await searchGlobalMemories(queryEmbedding, limit, 0.3, tagList);
         closeGlobalDb();
 
         if (results.length === 0) {
@@ -154,7 +154,7 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
       }
 
       // Local memories
-      const results = searchMemories(queryEmbedding, limit, 0.3, tagList);
+      const results = await searchMemories(queryEmbedding, limit, 0.3, tagList);
       closeDb();
 
       if (results.length === 0) {
@@ -295,7 +295,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
     if (useGlobal) {
       // Save to global memory with project name
       const projectName = path.basename(getProjectRoot());
-      const result = saveGlobalMemory(content, embedding, tagList, source, projectName);
+      const result = await saveGlobalMemory(content, embedding, tagList, source, projectName);
       closeGlobalDb();
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
@@ -310,7 +310,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
       }
     } else {
       // Save to local memory with quality score and validity period
-      const result = saveMemory(content, embedding, tagList, source, {
+      const result = await saveMemory(content, embedding, tagList, source, {
         qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
         validFrom: validFromDate,
         validUntil: validUntilDate,
@@ -447,7 +447,7 @@ async function rememberWithExtraction(
 
       if (useGlobal) {
         const projectName = path.basename(getProjectRoot());
-        const result = saveGlobalMemory(factContent, embedding, factTags, source || 'extraction');
+        const result = await saveGlobalMemory(factContent, embedding, factTags, source || 'extraction');
         if (result.isDuplicate) {
           console.log(`  ⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 50)}..."`);
           skipped++;
@@ -456,7 +456,7 @@ async function rememberWithExtraction(
           saved++;
         }
       } else {
-        const result = saveMemory(factContent, embedding, factTags, source || 'extraction', {
+        const result = await saveMemory(factContent, embedding, factTags, source || 'extraction', {
           qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
           validFrom: validFromDate,
           validUntil: validUntilDate,
@@ -533,11 +533,11 @@ async function saveSingleFact(
 
   if (useGlobal) {
     const projectName = path.basename(getProjectRoot());
-    const result = saveGlobalMemory(content, embedding, tagList, source);
+    const result = await saveGlobalMemory(content, embedding, tagList, source);
     closeGlobalDb();
     console.log(`✓ Remembered globally (id: ${result.id})`);
   } else {
-    const result = saveMemory(content, embedding, tagList, source, {
+    const result = await saveMemory(content, embedding, tagList, source, {
       qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
       validFrom: validFromDate,
       validUntil: validUntilDate,
@@ -550,9 +550,9 @@ async function saveSingleFact(
 /**
  * Show memory statistics
  */
-export function memoryStats(): void {
+export async function memoryStats(): Promise<void> {
   try {
-    const stats = getMemoryStats();
+    const stats = await getMemoryStats();
     closeDb();
 
     console.log('Memory Statistics:');
@@ -580,20 +580,20 @@ interface ForgetOptions {
 /**
  * Forget (delete) memories
  */
-export function forget(options: ForgetOptions): void {
+export async function forget(options: ForgetOptions): Promise<void> {
   try {
     const { id, olderThan, tag, all } = options;
 
     // Delete by ID
     if (id !== undefined) {
-      const memory = getMemoryById(id);
+      const memory = await getMemoryById(id);
       if (!memory) {
         console.log(`Memory with id ${id} not found.`);
         closeDb();
         return;
       }
 
-      const deleted = deleteMemory(id);
+      const deleted = await deleteMemory(id);
       closeDb();
 
       if (deleted) {
@@ -615,7 +615,7 @@ export function forget(options: ForgetOptions): void {
         process.exit(1);
       }
 
-      const count = deleteMemoriesOlderThan(date);
+      const count = await deleteMemoriesOlderThan(date);
       closeDb();
 
       console.log(`✓ Forgot ${count} memories older than ${date.toLocaleDateString()}`);
@@ -624,7 +624,7 @@ export function forget(options: ForgetOptions): void {
 
     // Delete by tag
     if (tag) {
-      const count = deleteMemoriesByTag(tag);
+      const count = await deleteMemoriesByTag(tag);
       closeDb();
 
       console.log(`✓ Forgot ${count} memories with tag "${tag}"`);
@@ -633,7 +633,7 @@ export function forget(options: ForgetOptions): void {
 
     // Delete all
     if (all) {
-      const stats = getMemoryStats();
+      const stats = await getMemoryStats();
       const count = stats.total_memories;
 
       if (count === 0) {
@@ -643,7 +643,7 @@ export function forget(options: ForgetOptions): void {
       }
 
       // Delete all by using a very old date
-      const deleted = deleteMemoriesOlderThan(new Date('2100-01-01'));
+      const deleted = await deleteMemoriesOlderThan(new Date('2100-01-01'));
       closeDb();
 
       console.log(`✓ Forgot all ${deleted} memories`);

@@ -73,23 +73,29 @@ export class EmbeddingPool {
       const initPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error(`Worker ${i} init timeout`)), 120000);
 
+        const cleanup = () => {
+          clearTimeout(timeout);
+          worker.off('message', handler);
+          worker.off('error', errorHandler);
+        };
+
         const handler = (msg: WorkerResponse) => {
           if (msg.type === 'ready') {
-            clearTimeout(timeout);
-            worker.off('message', handler);
+            cleanup();
             resolve();
           } else if (msg.type === 'error') {
-            clearTimeout(timeout);
-            worker.off('message', handler);
+            cleanup();
             reject(new Error(msg.error));
           }
         };
 
-        worker.on('message', handler);
-        worker.on('error', (err) => {
-          clearTimeout(timeout);
+        const errorHandler = (err: Error) => {
+          cleanup();
           reject(err);
-        });
+        };
+
+        worker.on('message', handler);
+        worker.on('error', errorHandler);
       });
 
       worker.postMessage({ type: 'init', model: this.model } as WorkerRequest);
@@ -136,11 +142,15 @@ export class EmbeddingPool {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Embedding timeout')), 300000);
 
-      const handler = (msg: WorkerResponse) => {
+      const cleanup = () => {
         clearTimeout(timeout);
         poolWorker.worker.off('message', handler);
+        poolWorker.worker.off('error', errorHandler);
         poolWorker.busy = false;
+      };
 
+      const handler = (msg: WorkerResponse) => {
+        cleanup();
         if (msg.type === 'result') {
           resolve(msg.embeddings!);
         } else if (msg.type === 'error') {
@@ -148,12 +158,13 @@ export class EmbeddingPool {
         }
       };
 
-      poolWorker.worker.on('message', handler);
-      poolWorker.worker.on('error', (err) => {
-        clearTimeout(timeout);
-        poolWorker.busy = false;
+      const errorHandler = (err: Error) => {
+        cleanup();
         reject(err);
-      });
+      };
+
+      poolWorker.worker.on('message', handler);
+      poolWorker.worker.on('error', errorHandler);
 
       poolWorker.busy = true;
       poolWorker.worker.postMessage({ type: 'embed', texts } as WorkerRequest);

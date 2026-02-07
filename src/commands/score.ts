@@ -5,7 +5,7 @@
  */
 
 import { calculateAIReadinessScore, formatAIReadinessScore } from '../lib/ai-readiness.js';
-import { closeDb } from '../lib/db/index.js';
+import { closeDb } from '../lib/storage/index.js';
 
 export interface ScoreOptions {
   json?: boolean;
@@ -13,7 +13,7 @@ export interface ScoreOptions {
 
 export async function score(options: ScoreOptions = {}): Promise<void> {
   try {
-    const result = calculateAIReadinessScore();
+    const result = await calculateAIReadinessScore();
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));

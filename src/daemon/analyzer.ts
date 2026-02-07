@@ -12,7 +12,7 @@ import { glob } from 'glob';
 import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
 import { withLock } from '../lib/lock.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, hybridSearchDocs } from '../lib/db/index.js';
+import { saveMemory, hybridSearchDocs } from '../lib/storage/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM, type LLMBackend } from '../lib/llm.js';
 import { DISCOVERY_PROMPT } from '../prompts/index.js';
@@ -179,7 +179,7 @@ async function saveDiscoveriesBatch(
       const embedding = embeddings[i];
 
       // Check for duplicates
-      const similar = hybridSearchDocs(content, embedding, 3, 0.85);
+      const similar = await hybridSearchDocs(content, embedding, 3, 0.85);
       if (similar.length > 0) {
         return { valid: false, reason: 'duplicate' };
       }
@@ -210,7 +210,7 @@ async function saveDiscoveriesBatch(
     const embedding = embeddings[i];
     const tags = [...discovery.tags, discovery.type, 'discovery'];
 
-    const result = saveMemory(content, embedding, tags, discovery.type, {
+    const result = await saveMemory(content, embedding, tags, discovery.type, {
       qualityScore: {
         score: validation.qualityResult!.score,
         factors: validation.qualityResult!.factors,

@@ -13,7 +13,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getDb } from './db/index.js';
+import {
+  getAllSkills as getAllSkillsDb,
+  searchSkillsDb,
+  upsertSkill,
+  trackSkillUsageDb,
+} from './storage/index.js';
 import { getSuccDir, getConfig, getProjectRoot } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
@@ -133,23 +138,13 @@ function cacheSuggestions(prompt: string, suggestions: SkillSuggestion[]): void 
 let skillsBm25Index: bm25.BM25Index | null = null;
 const BM25_FAST_PATH_THRESHOLD = 0.8; // Skip LLM ranking if top BM25 score > 0.8
 
-function getSkillsBm25Index(): bm25.BM25Index {
+async function getSkillsBm25Index(): Promise<bm25.BM25Index> {
   if (skillsBm25Index) {
     return skillsBm25Index;
   }
 
-  const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
-  // Include both project-specific local skills AND global Skyll cached skills (project_id IS NULL)
-  const rows = db.prepare(
-    `SELECT id, name, description, content FROM skills
-     WHERE project_id = ? OR project_id IS NULL`
-  ).all(projectId) as Array<{
-    id: number;
-    name: string;
-    description: string;
-    content: string | null;
-  }>;
+  // Use dispatcher to get all skills (routes to PG or SQLite)
+  const rows = await getAllSkillsDb();
 
   // Build searchable content from name + description + content
   const docs = rows.map((r) => ({
@@ -220,16 +215,15 @@ export async function extractKeywords(
  * Search for skill candidates using BM25
  * Returns skills and top BM25 score for fast-path optimization
  */
-export function searchSkillCandidates(
+export async function searchSkillCandidates(
   keywords: string[],
   limit: number = 15
-): { skills: Skill[]; topScore: number } {
+): Promise<{ skills: Skill[]; topScore: number }> {
   if (keywords.length === 0) {
     return { skills: [], topScore: 0 };
   }
 
-  const db = getDb();
-  const index = getSkillsBm25Index();
+  const index = await getSkillsBm25Index();
 
   // Search with combined keywords
   const query = keywords.join(' ');
@@ -239,15 +233,20 @@ export function searchSkillCandidates(
     return { skills: [], topScore: 0 };
   }
 
-  const ids = results.map((r) => r.docId);
-  const placeholders = ids.map(() => '?').join(',');
-
-  const rows = db
-    .prepare(
-      `SELECT id, name, description, source, path, usage_count, last_used
-       FROM skills WHERE id IN (${placeholders})`
-    )
-    .all(...ids) as Skill[];
+  // Get all skills from dispatcher and filter by matched IDs
+  const allSkills = await getAllSkillsDb();
+  const matchedIds = new Set(results.map((r) => r.docId));
+  const rows: Skill[] = allSkills
+    .filter((s) => matchedIds.has(s.id))
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      source: s.source as 'local' | 'skyll',
+      path: s.path,
+      usage_count: s.usageCount,
+      last_used: s.lastUsed,
+    }));
 
   // Sort by BM25 score order
   const idToScore = new Map(results.map((r) => [r.docId, r.score]));
@@ -390,7 +389,7 @@ export async function suggestSkills(
 
       // Step 2: Search candidates (local first, then Skyll if enabled)
       console.log(`[skills] Searching candidates for keywords: ${JSON.stringify(keywords)}`);
-      const { skills: candidateSkills, topScore } = searchSkillCandidates(keywords, 15);
+      const { skills: candidateSkills, topScore } = await searchSkillCandidates(keywords, 15);
       console.log(`[skills] Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`);
 
       // Skyll fallback: if no local candidates or onlyWhenNoLocal is false
@@ -535,21 +534,20 @@ export function scanLocalSkills(projectDir: string): Skill[] {
 /**
  * Index local skills into database
  */
-export function indexLocalSkills(projectDir: string): number {
+export async function indexLocalSkills(projectDir: string): Promise<number> {
   const skills = scanLocalSkills(projectDir);
-  const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
 
   let indexed = 0;
 
   for (const skill of skills) {
     try {
-      // Local skills are project-scoped
-      // Use INSERT OR REPLACE for SQLite compatibility (works with UNIQUE(name) constraint)
-      db.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
-      ).run(projectId, skill.name, skill.description, skill.source, skill.path, skill.content);
+      await upsertSkill({
+        name: skill.name,
+        description: skill.description,
+        source: 'local',
+        path: skill.path,
+        content: skill.content,
+      });
       indexed++;
     } catch (err) {
       console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to index skill');
@@ -565,15 +563,9 @@ export function indexLocalSkills(projectDir: string): number {
 /**
  * Track skill usage
  */
-export function trackSkillUsage(skillName: string): void {
-  const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+export async function trackSkillUsage(skillName: string): Promise<void> {
   try {
-    // Update both project-specific and global (Skyll) skills matching the name
-    db.prepare(
-      `UPDATE skills SET usage_count = usage_count + 1, last_used = datetime('now')
-       WHERE name = ? AND (project_id = ? OR project_id IS NULL)`
-    ).run(skillName, projectId);
+    await trackSkillUsageDb(skillName);
   } catch (err) {
     console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to track skill usage');
   }

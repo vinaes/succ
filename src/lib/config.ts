@@ -458,11 +458,25 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Read project config
+  // Read project config (deep merge for nested objects like storage, bpe)
   if (activeProjectPath) {
     try {
       const projectConfig = JSON.parse(fs.readFileSync(activeProjectPath, 'utf-8'));
-      fileConfig = { ...fileConfig, ...projectConfig };
+      // Deep merge nested objects so project config extends (not replaces) global
+      for (const [key, value] of Object.entries(projectConfig)) {
+        if (value && typeof value === 'object' && !Array.isArray(value) &&
+            fileConfig[key as keyof typeof fileConfig] && typeof fileConfig[key as keyof typeof fileConfig] === 'object' &&
+            !Array.isArray(fileConfig[key as keyof typeof fileConfig])) {
+          // Deep merge: global + project for nested objects (storage, bpe, etc.)
+          (fileConfig as Record<string, unknown>)[key] = {
+            ...(fileConfig[key as keyof typeof fileConfig] as Record<string, unknown>),
+            ...(value as Record<string, unknown>),
+          };
+        } else {
+          // Shallow override for scalar values and arrays
+          (fileConfig as Record<string, unknown>)[key] = value;
+        }
+      }
     } catch {
       // Ignore parse errors
     }
@@ -520,16 +534,27 @@ export function getConfig(): SuccConfig {
 }
 
 export function getProjectRoot(): string {
-  // Walk up to find .git or .succ (legacy: .claude)
+  // 1. Check env overrides: SUCC_PROJECT_ROOT (explicit), CLAUDE_PROJECT_DIR (Claude Code hooks/MCP)
+  const envRoot = process.env.SUCC_PROJECT_ROOT || process.env.CLAUDE_PROJECT_DIR;
+  if (envRoot && (fs.existsSync(path.join(envRoot, '.succ')) || fs.existsSync(path.join(envRoot, '.git')))) {
+    return envRoot;
+  }
+
+  // 2. Walk up to find a real project root
+  // .git or .claude = definite project. .succ alone = project only if not $HOME
+  // (bare ~/.succ is the global config dir, not a project)
+  const homeDir = os.homedir();
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, '.git')) ||
-        fs.existsSync(path.join(dir, '.succ')) ||
-        fs.existsSync(path.join(dir, '.claude'))) {
+    const hasGit = fs.existsSync(path.join(dir, '.git'));
+    const hasClaude = fs.existsSync(path.join(dir, '.claude'));
+    const hasSucc = fs.existsSync(path.join(dir, '.succ'));
+    if (hasGit || hasClaude || (hasSucc && path.resolve(dir) !== path.resolve(homeDir))) {
       return dir;
     }
     dir = path.dirname(dir);
   }
+
   return process.cwd();
 }
 
@@ -541,6 +566,10 @@ export function getSuccDir(): string {
  * Check if succ is initialized in current project
  */
 export function isProjectInitialized(): boolean {
+  // ~/.succ is the global config dir, not an initialized project
+  if (path.resolve(getProjectRoot()) === path.resolve(os.homedir())) {
+    return false;
+  }
   const succDir = getSuccDir();
   return fs.existsSync(succDir) && fs.existsSync(path.join(succDir, 'succ.db'));
 }

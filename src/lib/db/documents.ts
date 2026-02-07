@@ -1,9 +1,28 @@
+import fs from 'fs';
+import path from 'path';
 import { getDb } from './connection.js';
 import { sqliteVecAvailable } from './schema.js';
 import { floatArrayToBuffer, bufferToFloatArray } from './helpers.js';
 import { SearchResult } from './types.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { invalidateCodeBm25Index, invalidateDocsBm25Index } from './bm25-indexes.js';
+import { getSuccDir } from '../config.js';
+
+/**
+ * Log document deletion events to .succ/document-audit.log for debugging.
+ */
+function logDocDeletion(caller: string, count: number, detail?: string): void {
+  try {
+    const succDir = getSuccDir();
+    const logFile = path.join(succDir, 'document-audit.log');
+    const timestamp = new Date().toISOString();
+    const detailStr = detail ? ` | ${detail}` : '';
+    const line = `[${timestamp}] [DELETE] ${caller} | count=${count}${detailStr}\n`;
+    fs.appendFileSync(logFile, line);
+  } catch {
+    // Never let audit logging break actual operations
+  }
+}
 
 /** Invalidate the BM25 index appropriate for a file path */
 function invalidateBm25ForPath(filePath: string): void {
@@ -90,8 +109,8 @@ export function upsertDocument(
  * Batch upsert documents in a single transaction.
  * ~100x faster than individual upserts due to single fsync.
  */
-export function upsertDocumentsBatch(documents: DocumentBatch[]): void {
-  if (documents.length === 0) return;
+export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
+  if (documents.length === 0) return [];
 
   const database = getDb();
 
@@ -123,6 +142,9 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): void {
   const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
   if (hasCode) invalidateCodeBm25Index();
   if (hasDocs) invalidateDocsBm25Index();
+
+  // SQLite uses sqlite-vec internally, no need to return IDs for Qdrant
+  return [];
 }
 
 /**
@@ -165,8 +187,8 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
  * Batch upsert documents AND their file hashes in a single transaction.
  * Prevents race condition where chunks are saved but hashes are not.
  */
-export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[]): void {
-  if (documents.length === 0) return;
+export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[]): number[] {
+  if (documents.length === 0) return [];
 
   const database = getDb();
 
@@ -215,6 +237,9 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
   if (hasCode) invalidateCodeBm25Index();
   if (hasDocs) invalidateDocsBm25Index();
+
+  // SQLite uses sqlite-vec internally, no need to return IDs for Qdrant
+  return [];
 }
 
 export function deleteDocumentsByPath(filePath: string): void {
@@ -238,7 +263,10 @@ export function deleteDocumentsByPath(filePath: string): void {
     }
   }
 
-  database.prepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
+  const result = database.prepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
+  if (result.changes > 0) {
+    logDocDeletion('deleteDocumentsByPath', result.changes, `path="${filePath}"`);
+  }
   invalidateBm25ForPath(filePath);
 }
 
@@ -392,9 +420,14 @@ export function getStats(): {
  */
 export function clearDocuments(): void {
   const database = getDb();
+  const docCount = (database.prepare('SELECT COUNT(*) as cnt FROM documents').get() as { cnt: number }).cnt;
+  logDocDeletion('clearDocuments', docCount, 'all documents + file_hashes cleared');
   database.prepare('DELETE FROM documents').run();
   database.prepare('DELETE FROM file_hashes').run();
   database.prepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
+  // Reset vec migration flags so next init can re-populate vec tables
+  database.prepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
+  database.prepare("DELETE FROM metadata WHERE key = 'vec_memories_migrated_dims'").run();
   invalidateCodeBm25Index();
   invalidateDocsBm25Index();
 }
@@ -405,8 +438,12 @@ export function clearDocuments(): void {
  */
 export function clearCodeDocuments(): void {
   const database = getDb();
+  const codeCount = (database.prepare("SELECT COUNT(*) as cnt FROM documents WHERE file_path LIKE 'code:%'").get() as { cnt: number }).cnt;
+  logDocDeletion('clearCodeDocuments', codeCount, 'code documents cleared');
   database.prepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
   database.prepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
+  // Reset vec documents migration flag so next init can re-populate
+  database.prepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
   invalidateCodeBm25Index();
 }
 

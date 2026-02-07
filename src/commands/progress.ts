@@ -10,7 +10,7 @@
  */
 
 import { readProgressLog } from '../lib/progress-log.js';
-import { closeDb } from '../lib/db/index.js';
+import { closeDb } from '../lib/storage/index.js';
 
 export interface ProgressOptions {
   limit?: number;
@@ -20,7 +20,7 @@ export interface ProgressOptions {
 export async function progress(options: ProgressOptions = {}): Promise<void> {
   try {
     const limit = options.limit || 20;
-    const entries = readProgressLog({ limit, since: options.since });
+    const entries = await readProgressLog({ limit, since: options.since });
 
     if (entries.length === 0) {
       console.log('No progress log entries yet.');

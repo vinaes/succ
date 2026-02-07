@@ -16,9 +16,9 @@ import * as os from 'os';
 let testTmpDir: string;
 
 // Mock external dependencies before importing
-vi.mock('../lib/db/index.js', () => ({
-  saveMemory: vi.fn(() => ({ id: 'test-id', isDuplicate: false })),
-  saveMemoriesBatch: vi.fn((memories: any[]) => ({
+vi.mock('../lib/storage/index.js', () => ({
+  saveMemory: vi.fn(async () => ({ id: 'test-id', isDuplicate: false })),
+  saveMemoriesBatch: vi.fn(async (memories: any[]) => ({
     saved: memories.length,
     skipped: 0,
     results: memories.map((_: any, index: number) => ({
@@ -28,7 +28,7 @@ vi.mock('../lib/db/index.js', () => ({
       reason: 'saved' as const,
     })),
   })),
-  searchMemories: vi.fn(() => []),
+  searchMemories: vi.fn(async () => []),
 }));
 
 vi.mock('../lib/embeddings.js', () => ({
@@ -457,7 +457,7 @@ describe('batch memory save optimization', () => {
   it('should call saveMemoriesBatch with correct deduplication threshold', async () => {
     // Note: Full integration tests are complex due to LLM mocking.
     // This test verifies the batch API contract.
-    const db = await import('../lib/db/index.js');
+    const db = await import('../lib/storage/index.js');
 
     const batch = [
       {
@@ -474,11 +474,11 @@ describe('batch memory save optimization', () => {
       },
     ];
 
-    const result = db.saveMemoriesBatch(batch, 0.92);
+    const result = await db.saveMemoriesBatch(batch, 0.92);
 
     expect(result.saved).toBeGreaterThanOrEqual(0);
     expect(result.skipped).toBeGreaterThanOrEqual(0);
     expect(result.results).toHaveLength(2);
-    expect(result.results.every(r => r.reason === 'saved' || r.reason === 'duplicate')).toBe(true);
+    expect(result.results.every((r: any) => r.reason === 'saved' || r.reason === 'duplicate')).toBe(true);
   });
 });

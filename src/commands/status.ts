@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getDbPath, getClaudeDir, getProjectRoot, getConfig, LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
-import { getStats, closeDb } from '../lib/db/index.js';
+import { getStats, closeDb } from '../lib/storage/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
 
 export async function status(): Promise<void> {
@@ -67,7 +67,7 @@ export async function status(): Promise<void> {
   }
 
   try {
-    const stats = getStats();
+    const stats = await getStats();
 
     console.log('Status: Initialized');
     console.log();

@@ -12,10 +12,10 @@ import {
   hybridSearchDocs,
   getRecentDocuments,
   closeDb,
-} from '../../lib/db/index.js';
+} from '../../lib/storage/index.js';
 import { isGlobalOnlyMode } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
-import { trackTokenSavings } from '../helpers.js';
+import { trackTokenSavings, projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
@@ -26,8 +26,10 @@ export function registerSearchTools(server: McpServer) {
       query: z.string().describe('The search query'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
       threshold: z.number().optional().default(0.2).describe('Similarity threshold 0-1 (default: 0.2)'),
+      project_path: projectPathParam,
     },
-    async ({ query, limit, threshold }) => {
+    async ({ query, limit, threshold, project_path }) => {
+      await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
         return {
@@ -45,7 +47,7 @@ export function registerSearchTools(server: McpServer) {
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
         if (isWildcard) {
-          const recentDocs = getRecentDocuments(limit);
+          const recentDocs = await getRecentDocuments(limit);
           if (recentDocs.length === 0) {
             return {
               content: [{
@@ -71,7 +73,7 @@ export function registerSearchTools(server: McpServer) {
 
         const queryEmbedding = await getEmbedding(query);
         // Use hybrid search for docs
-        const results = hybridSearchDocs(query, queryEmbedding, limit, threshold);
+        const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold);
 
         if (results.length === 0) {
           return {
@@ -85,7 +87,7 @@ export function registerSearchTools(server: McpServer) {
         }
 
         // Track token savings
-        trackTokenSavings('search', query, results);
+        await trackTokenSavings('search', query, results);
 
         const formatted = results
           .map((r, i) => {
@@ -126,8 +128,10 @@ export function registerSearchTools(server: McpServer) {
       query: z.string().describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
       threshold: z.number().optional().default(0.25).describe('Similarity threshold 0-1 (default: 0.25)'),
+      project_path: projectPathParam,
     },
-    async ({ query, limit, threshold }) => {
+    async ({ query, limit, threshold, project_path }) => {
+      await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
         return {
@@ -143,7 +147,7 @@ export function registerSearchTools(server: McpServer) {
       try {
         const queryEmbedding = await getEmbedding(query);
         // Hybrid search: BM25 + vector with RRF fusion
-        const codeResults = hybridSearchCode(query, queryEmbedding, limit, threshold);
+        const codeResults = await hybridSearchCode(query, queryEmbedding, limit, threshold);
 
         if (codeResults.length === 0) {
           return {
@@ -157,7 +161,7 @@ export function registerSearchTools(server: McpServer) {
         }
 
         // Track token savings
-        trackTokenSavings('search_code', query, codeResults);
+        await trackTokenSavings('search_code', query, codeResults);
 
         const formatted = codeResults
           .map((r, i) => {

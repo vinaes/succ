@@ -11,11 +11,12 @@ import {
   saveMemory,
   searchMemories,
   closeDb,
-} from '../../lib/db/index.js';
+} from '../../lib/storage/index.js';
 import { getConfig, isGlobalOnlyMode } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
+import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerDeadEndTools(server: McpServer) {
   server.tool(
@@ -33,8 +34,10 @@ export function registerDeadEndTools(server: McpServer) {
         .optional()
         .default([])
         .describe('Tags for categorization'),
+      project_path: projectPathParam,
     },
-    async ({ approach, why_failed, context, tags }) => {
+    async ({ approach, why_failed, context, tags, project_path }) => {
+      await applyProjectPath(project_path);
       if (isGlobalOnlyMode()) {
         return {
           content: [{
@@ -75,7 +78,7 @@ export function registerDeadEndTools(server: McpServer) {
         const embedding = await getEmbedding(content);
 
         // Dedup: check if a similar dead-end already exists
-        const existing = searchMemories(embedding, 1, 0.85);
+        const existing = await searchMemories(embedding, 1, 0.85);
         if (existing.length > 0 && existing[0].content.startsWith('DEAD END:')) {
           return {
             content: [{
@@ -102,7 +105,7 @@ export function registerDeadEndTools(server: McpServer) {
         // Ensure 'dead-end' tag is always present
         const allTags = [...new Set([...tags, 'dead-end'])];
 
-        const result = saveMemory(content, embedding, allTags, 'dead-end-tracking', {
+        const result = await saveMemory(content, embedding, allTags, 'dead-end-tracking', {
           type: 'dead_end',
           qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
         });

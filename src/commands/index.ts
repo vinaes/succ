@@ -5,7 +5,7 @@ import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot, getConfig } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/db/index.js';
+import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/storage/index.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 
 interface IndexOptions {
@@ -34,7 +34,7 @@ export async function index(
   }
 
   // Check for dimension mismatch before indexing
-  const storedDimension = getStoredEmbeddingDimension();
+  const storedDimension = await getStoredEmbeddingDimension();
   if (storedDimension !== null && !force) {
     // Get a test embedding to check current dimension
     const testEmbedding = await getEmbedding('test');
@@ -46,7 +46,7 @@ export async function index(
       console.log(`   Stored embeddings: ${storedDimension} dimensions`);
       console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
 
-      // In non-interactive mode (no TTY or autoReindex), auto-clear and reindex
+      // Determine mode: interactive (TTY), explicit auto-reindex, or non-interactive
       const isInteractive = process.stdout.isTTY && !autoReindex;
 
       let action: string;
@@ -63,10 +63,17 @@ export async function index(
           },
         ]);
         action = response.action;
-      } else {
-        // Non-interactive: auto-reindex
-        console.log('Non-interactive mode: automatically clearing and reindexing...');
+      } else if (autoReindex) {
+        // Explicitly requested auto-reindex (e.g. --auto-reindex flag)
+        console.log('Auto-reindex requested: clearing and reindexing...');
         action = 'reindex';
+      } else {
+        // Non-interactive without explicit auto-reindex (MCP, daemon, scripts)
+        // DO NOT auto-clear — this destroys data silently
+        console.warn('Dimension mismatch detected in non-interactive mode.');
+        console.warn('Skipping auto-clear to prevent data loss.');
+        console.warn('Run "succ index --force" interactively to reindex.');
+        return;
       }
 
       if (action === 'cancel') {
@@ -76,7 +83,7 @@ export async function index(
 
       if (action === 'reindex') {
         console.log('\nClearing old index...');
-        clearDocuments();
+        await clearDocuments();
         force = true; // Force reindex all files
       }
     }
@@ -163,7 +170,7 @@ export async function indexDocFile(filePath: string, options: { force?: boolean 
 
   // Check if file already indexed with same hash
   if (!force) {
-    const existingHash = getFileHash(relativePath);
+    const existingHash = await getFileHash(relativePath);
     if (existingHash === contentHash) {
       return { success: true, skipped: true, reason: 'File unchanged (same hash)' };
     }
@@ -197,7 +204,7 @@ export async function indexDocFile(filePath: string, options: { force?: boolean 
   }));
 
   // Upsert to database
-  upsertDocumentsBatchWithHashes(documents);
+  await upsertDocumentsBatchWithHashes(documents);
 
   return { success: true, chunks: chunks.length };
 }

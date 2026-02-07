@@ -1,5 +1,5 @@
 import { getEmbedding, getEmbeddingInfo, cleanupEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/db/index.js';
+import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/storage/index.js';
 import {
   setConfigOverride,
   hasOpenRouterKey,
@@ -146,7 +146,7 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
     const uniqueContent = mem.content + ` (${modeName} test ${i})`;
     const start = Date.now();
     const embedding = await getEmbedding(uniqueContent);
-    const result = saveMemory(uniqueContent, embedding, mem.tags, `benchmark-${modeName}`, { deduplicate: false, autoLink: false });
+    const result = await saveMemory(uniqueContent, embedding, mem.tags, `benchmark-${modeName}`, { deduplicate: false, autoLink: false });
     saveTimes.push(Date.now() - start);
     savedIds.push(result.id);
   }
@@ -160,7 +160,7 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
     const query = queries[i % queries.length] + ` unique${i}`;
     const start = Date.now();
     const queryEmbedding = await getEmbedding(query);
-    searchMemories(queryEmbedding, 5, 0.3);
+    await searchMemories(queryEmbedding, 5, 0.3);
     recallTimes.push(Date.now() - start);
   }
   results.push(formatResult('Memory recall (full)', recallTimes));
@@ -173,7 +173,7 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
   for (let i = 0; i < iterations * 10; i++) {
     const embedding = precomputedEmbeddings[i % precomputedEmbeddings.length];
     const start = Date.now();
-    searchMemories(embedding, 5, 0.3);
+    await searchMemories(embedding, 5, 0.3);
     searchTimes.push(Date.now() - start);
   }
   results.push(formatResult('DB search only', searchTimes));
@@ -184,11 +184,11 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
 
   for (const test of accuracyTests) {
     const queryEmbedding = await getEmbedding(test.query);
-    const searchResults = searchMemories(queryEmbedding, 1, 0.0);
+    const searchResults = await searchMemories(queryEmbedding, 1, 0.0);
 
     if (searchResults.length > 0) {
       const topResult = searchResults[0];
-      const hasExpectedTag = topResult.tags.some((t) =>
+      const hasExpectedTag = topResult.tags.some((t: string) =>
         t.toLowerCase().includes(test.expected.toLowerCase())
       );
       if (hasExpectedTag) correct++;
@@ -204,7 +204,7 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
 
   // Cleanup benchmark data
   for (const id of savedIds) {
-    deleteMemory(id);
+    await deleteMemory(id);
   }
 
   return {
@@ -235,7 +235,7 @@ async function runAdvancedBenchmark(
   console.log(`  Inserting ${dataset.memories.length} test memories...`);
   for (const mem of dataset.memories) {
     const embedding = await getEmbedding(mem.content);
-    const result = saveMemory(mem.content, embedding, mem.tags, 'benchmark-advanced', {
+    const result = await saveMemory(mem.content, embedding, mem.tags, 'benchmark-advanced', {
       deduplicate: false,
       autoLink: false,
     });
@@ -273,7 +273,7 @@ async function runAdvancedBenchmark(
 
     // Search timing
     const searchStart = Date.now();
-    const searchResults = searchMemories(queryEmbedding, k * 2, 0.0);
+    const searchResults = await searchMemories(queryEmbedding, k * 2, 0.0);
     searchTimes.push(Date.now() - searchStart);
 
     pipelineTimes.push(Date.now() - pipelineStart);
@@ -300,7 +300,7 @@ async function runAdvancedBenchmark(
 
   // Cleanup
   for (const id of savedIds) {
-    deleteMemory(id);
+    await deleteMemory(id);
   }
 
   return { accuracy, latency };
@@ -540,7 +540,7 @@ export async function benchmarkExisting(options: { k?: number; json?: boolean } 
   console.log('                SUCC BENCHMARK (Existing Data)              ');
   console.log('═══════════════════════════════════════════════════════════');
 
-  const stats = getMemoryStats();
+  const stats = await getMemoryStats();
   console.log(`\nMemories in database: ${stats.total_memories}`);
 
   if (stats.total_memories === 0) {
@@ -571,7 +571,7 @@ export async function benchmarkExisting(options: { k?: number; json?: boolean } 
       embeddingTimes.push(Date.now() - embedStart);
 
       const searchStart = Date.now();
-      searchMemories(embedding, k, 0.3);
+      await searchMemories(embedding, k, 0.3);
       searchTimes.push(Date.now() - searchStart);
 
       pipelineTimes.push(Date.now() - pipelineStart);
@@ -721,7 +721,7 @@ export async function runHybridBenchmark(
   console.log(`  Inserting ${dataset.memories.length} test memories...`);
   for (const mem of dataset.memories) {
     const embedding = await getEmbedding(mem.content);
-    const result = saveMemory(mem.content, embedding, mem.tags, 'benchmark-hybrid', {
+    const result = await saveMemory(mem.content, embedding, mem.tags, 'benchmark-hybrid', {
       deduplicate: false,
       autoLink: false,
     });
@@ -749,21 +749,21 @@ export async function runHybridBenchmark(
     const queryEmbedding = await getEmbedding(q.query);
 
     // Semantic-only search
-    const semanticSearch = searchMemories(queryEmbedding, k * 2, 0.0);
+    const semanticSearch = await searchMemories(queryEmbedding, k * 2, 0.0);
     semanticResults.push({
       results: semanticSearch.map((r) => ({ id: r.id, score: r.similarity })),
       relevantIds: mappedRelevantIds,
     });
 
     // Hybrid search (RRF fusion) - alpha=0.5 for balanced fusion
-    const hybridSearch = hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.5);
+    const hybridSearch = await hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.5);
     hybridResults.push({
       results: hybridSearch.map((r) => ({ id: r.id, score: r.similarity })),
       relevantIds: mappedRelevantIds,
     });
 
     // BM25-only search (use hybrid with alpha=0.0 for pure BM25)
-    const bm25Search = hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.0);
+    const bm25Search = await hybridSearchMemories(q.query, queryEmbedding, k * 2, 0.0, 0.0);
     bm25Results.push({
       results: bm25Search.map((r) => ({ id: r.id, score: r.similarity })),
       relevantIds: mappedRelevantIds,
@@ -777,7 +777,7 @@ export async function runHybridBenchmark(
 
   // Cleanup
   for (const id of savedIds) {
-    deleteMemory(id);
+    await deleteMemory(id);
   }
 
   return compareHybridModes(semanticMetrics, bm25Metrics, hybridMetrics);

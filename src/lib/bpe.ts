@@ -14,7 +14,8 @@
  * - Otherwise daily maintenance
  */
 
-import { getDb, getTopTokens, getTokenFrequencyStats } from './db/index.js';
+import { getTopTokens, getTokenFrequencyStats, isPostgresBackend } from './storage/index.js';
+import { getDb } from './db/connection.js';
 
 // ============================================================================
 // Types
@@ -40,6 +41,7 @@ export interface BPEConfig {
 // ============================================================================
 
 export function initBPESchema(): void {
+  if (isPostgresBackend()) return; // BPE tables only exist in SQLite
   const db = getDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS bpe_vocab (
@@ -217,6 +219,7 @@ export function segmentWithBPE(word: string, vocab: BPEVocab): string[] {
  * Save BPE vocabulary to database
  */
 export function saveBPEVocab(vocab: BPEVocab): void {
+  if (isPostgresBackend()) return; // BPE tables only exist in SQLite
   initBPESchema();
   const db = getDb();
 
@@ -247,6 +250,7 @@ export function saveBPEVocab(vocab: BPEVocab): void {
  * Load BPE vocabulary from database
  */
 export function loadBPEVocab(): BPEVocab | null {
+  if (isPostgresBackend()) return null; // BPE tables only exist in SQLite
   initBPESchema();
   const db = getDb();
 
@@ -275,6 +279,7 @@ export function loadBPEVocab(): BPEVocab | null {
  * Get last BPE training timestamp
  */
 export function getLastBPETrainTime(): string | null {
+  if (isPostgresBackend()) return null; // BPE tables only exist in SQLite
   initBPESchema();
   const db = getDb();
 
@@ -335,7 +340,7 @@ export async function trainBPEFromDatabase(
   minFrequency: number = 2
 ): Promise<BPEVocab | null> {
   // Get stats to check if we have enough data
-  const stats = getTokenFrequencyStats();
+  const stats = await getTokenFrequencyStats();
 
   if (stats.unique_tokens === 0) {
     console.log('No tokens indexed, skipping BPE training');
@@ -355,7 +360,7 @@ export async function trainBPEFromDatabase(
   // Get top tokens (limit to reasonable amount for BPE training)
   // More tokens = better coverage, but slower training
   const maxTokens = Math.min(50000, stats.unique_tokens);
-  const topTokens = getTopTokens(maxTokens);
+  const topTokens = await getTopTokens(maxTokens);
 
   // Expand tokens by frequency to create training corpus
   // Token with freq=100 appears 100 times in corpus

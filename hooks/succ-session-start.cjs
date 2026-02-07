@@ -91,6 +91,9 @@ process.stdin.on('end', async () => {
     // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
     contextParts.push(`<succ-tools>
 <critical>
+⚠️ ALWAYS pass project_path="${projectDir}" to ALL succ_* tool calls.
+Without it, succ works in global-only mode and can't access project data.
+
 ⚠️ ALWAYS use succ tools for knowledge retrieval:
 - User says "brain", "docs", "vault", "spec" → **succ_search**
 - User says "remember", "decided", "learned", "how did we" → **succ_recall**

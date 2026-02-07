@@ -1,5 +1,5 @@
 import { getEmbedding } from '../lib/embeddings.js';
-import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/db/index.js';
+import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/storage/index.js';
 import { getConfig } from '../lib/config.js';
 import inquirer from 'inquirer';
 import { index as indexBrain } from './index.js';
@@ -21,7 +21,7 @@ export async function search(
 
   try {
     // Check for dimension mismatch before searching
-    const storedDimension = getStoredEmbeddingDimension();
+    const storedDimension = await getStoredEmbeddingDimension();
     if (storedDimension !== null) {
       // Get a test embedding to check current dimension
       const testEmbedding = await getEmbedding('test');
@@ -63,7 +63,7 @@ export async function search(
 
         if (action === 'reindex') {
           console.log('\nClearing old index...');
-          clearDocuments();
+          await clearDocuments();
           console.log('Reindexing with current model...\n');
           await indexBrain(undefined, { force: true, autoReindex: true });
           console.log('\n--- Continuing search ---\n');
@@ -75,7 +75,7 @@ export async function search(
     const queryEmbedding = await getEmbedding(query);
 
     // Search
-    const results = searchDocuments(queryEmbedding, limit, threshold);
+    const results = await searchDocuments(queryEmbedding, limit, threshold);
 
     if (results.length === 0) {
       console.log('No results found above threshold.');

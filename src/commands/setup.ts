@@ -80,6 +80,10 @@ function getSuccMcpCommand(): { command: string; args: string[] } {
     return { command: 'succ-mcp', args: [] };
   } catch {
     // Fall back to npx
+    // Windows: npx is a .cmd script, needs cmd /c wrapper for spawn
+    if (process.platform === 'win32') {
+      return { command: 'cmd', args: ['/c', 'npx', '--yes', 'succ-mcp'] };
+    }
     return { command: 'npx', args: ['--yes', 'succ-mcp'] };
   }
 }

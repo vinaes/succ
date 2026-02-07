@@ -11,42 +11,42 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mocks — correct return shapes matching actual DB functions
 // ============================================================================
 
-vi.mock('../lib/db/index.js', () => ({
-  hybridSearchDocs: vi.fn(() => [
+vi.mock('../lib/storage/index.js', () => ({
+  hybridSearchDocs: vi.fn(async () => [
     { content: 'doc result', file_path: 'test.md', similarity: 0.85, chunk_index: 0, start_line: 1, end_line: 10 },
   ]),
-  hybridSearchCode: vi.fn(() => [
+  hybridSearchCode: vi.fn(async () => [
     { content: 'code result', file_path: 'code:test.ts', similarity: 0.8, chunk_index: 0, start_line: 1, end_line: 5 },
   ]),
-  hybridSearchMemories: vi.fn(() => [
+  hybridSearchMemories: vi.fn(async () => [
     { id: 1, content: 'memory result', tags: ['test'], similarity: 0.9, type: 'observation', created_at: new Date().toISOString() },
   ]),
-  hybridSearchGlobalMemories: vi.fn(() => [
+  hybridSearchGlobalMemories: vi.fn(async () => [
     { id: 10, content: 'global memory', tags: ['global'], similarity: 0.85, type: 'learning', created_at: new Date().toISOString() },
   ]),
-  getRecentDocuments: vi.fn(() => [
+  getRecentDocuments: vi.fn(async () => [
     { content: 'recent doc', file_path: 'recent.md', chunk_index: 0, start_line: 1, end_line: 5 },
   ]),
-  getRecentMemories: vi.fn(() => [
+  getRecentMemories: vi.fn(async () => [
     { id: 1, content: 'recent memory', tags: [], type: 'observation', created_at: new Date().toISOString() },
   ]),
-  getRecentGlobalMemories: vi.fn(() => []),
-  saveMemory: vi.fn(() => ({ id: 1, isDuplicate: false })),
-  saveGlobalMemory: vi.fn(() => ({ id: 10, isDuplicate: false })),
-  searchMemories: vi.fn(() => []),
-  getMemoryById: vi.fn((id: number) => ({
+  getRecentGlobalMemories: vi.fn(async () => []),
+  saveMemory: vi.fn(async () => ({ id: 1, isDuplicate: false })),
+  saveGlobalMemory: vi.fn(async () => ({ id: 10, isDuplicate: false })),
+  searchMemories: vi.fn(async () => []),
+  getMemoryById: vi.fn(async (id: number) => ({
     id,
     content: `Memory #${id}`,
     tags: ['test'],
     type: 'observation',
     created_at: new Date().toISOString(),
   })),
-  deleteMemory: vi.fn(() => true),
-  deleteMemoriesOlderThan: vi.fn(() => 3),
-  deleteMemoriesByTag: vi.fn(() => 2),
-  createMemoryLink: vi.fn(() => ({ id: 1, created: true })),
-  deleteMemoryLink: vi.fn(() => true),
-  getMemoryWithLinks: vi.fn((id: number) => ({
+  deleteMemory: vi.fn(async () => true),
+  deleteMemoriesOlderThan: vi.fn(async () => 3),
+  deleteMemoriesByTag: vi.fn(async () => 2),
+  createMemoryLink: vi.fn(async () => ({ id: 1, created: true })),
+  deleteMemoryLink: vi.fn(async () => true),
+  getMemoryWithLinks: vi.fn(async (id: number) => ({
     id,
     content: `Memory #${id}`,
     tags: ['test'],
@@ -55,25 +55,25 @@ vi.mock('../lib/db/index.js', () => ({
     outgoing_links: [],
     incoming_links: [],
   })),
-  findConnectedMemories: vi.fn(() => [
+  findConnectedMemories: vi.fn(async () => [
     { memory: { id: 2, content: 'connected memory', tags: ['test'] }, depth: 1, path: [1, 2] },
   ]),
-  autoLinkSimilarMemories: vi.fn(() => 2),
-  getGraphStats: vi.fn(() => ({
+  autoLinkSimilarMemories: vi.fn(async () => 2),
+  getGraphStats: vi.fn(async () => ({
     total_memories: 10, total_links: 5, avg_links_per_memory: 0.5,
     isolated_memories: 3, relations: { related: 3, caused_by: 2 },
   })),
   LINK_RELATIONS: ['related', 'caused_by', 'leads_to', 'similar_to', 'contradicts', 'implements', 'supersedes', 'references'],
-  getStats: vi.fn(() => ({ total_documents: 100, total_files: 10, last_indexed: '2025-01-01' })),
-  getMemoryStats: vi.fn(() => ({
+  getStats: vi.fn(async () => ({ total_documents: 100, total_files: 10, last_indexed: '2025-01-01' })),
+  getMemoryStats: vi.fn(async () => ({
     total_memories: 20,
     oldest_memory: '2024-01-01',
     newest_memory: '2025-01-01',
     by_type: { observation: 10, decision: 5, learning: 5 },
     stale_count: 2,
   })),
-  getTokenStatsAggregated: vi.fn(() => []),
-  getTokenStatsSummary: vi.fn(() => ({
+  getTokenStatsAggregated: vi.fn(async () => []),
+  getTokenStatsSummary: vi.fn(async () => ({
     total_queries: 50,
     total_savings_tokens: 10000,
     total_returned_tokens: 2000,
@@ -81,7 +81,7 @@ vi.mock('../lib/db/index.js', () => ({
   })),
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
-  incrementMemoryAccessBatch: vi.fn(),
+  incrementMemoryAccessBatch: vi.fn(async () => {}),
 }));
 
 vi.mock('../lib/embeddings.js', () => ({
@@ -163,7 +163,7 @@ import {
   getMemoryWithLinks,
   autoLinkSimilarMemories,
   findConnectedMemories,
-} from '../lib/db/index.js';
+} from '../lib/storage/index.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 
 // ============================================================================

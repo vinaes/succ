@@ -1,4 +1,4 @@
-import spawn from 'cross-spawn';
+import { spawnClaudeCLI } from '../lib/llm.js';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
@@ -92,50 +92,13 @@ Keep each line concise. If uncertain about something, skip that line.`;
 }
 
 async function generateViaClaude(context: string, prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fullPrompt = `${context}\n\n---\n\n${prompt}`;
-
-    const proc = spawn('claude', ['-p', '--tools', '', '--model', 'haiku'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
-      windowsHide: true, // Hide CMD window on Windows (works without detached)
-    });
-
-    proc.stdin?.write(fullPrompt);
-    proc.stdin?.end();
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim());
-      } else {
-        console.error('Claude CLI error:', stderr || `Exit code ${code}`);
-        resolve('');
-      }
-    });
-
-    proc.on('error', (err) => {
-      console.error('Failed to run Claude CLI:', err.message);
-      resolve('');
-    });
-
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      proc.kill();
-      console.error('Claude CLI timeout');
-      resolve('');
-    }, 30000);
-  });
+  const fullPrompt = `${context}\n\n---\n\n${prompt}`;
+  try {
+    return await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 30000 });
+  } catch (err: any) {
+    console.error('Claude CLI error:', err.message);
+    return '';
+  }
 }
 
 async function generateViaOpenRouter(context: string, prompt: string): Promise<string> {
