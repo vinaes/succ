@@ -17,7 +17,9 @@ describe('prdArchive', () => {
   beforeEach(() => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process.exit(${code})`);
+    });
   });
 
   afterEach(() => {
@@ -120,5 +122,71 @@ describe('prdArchive', () => {
     }));
     expect(consoleLogSpy).toHaveBeenCalledWith('Archived PRD: Latest PRD (prd_latest)');
     expect(processExitSpy).not.toHaveBeenCalled();
+  });
+
+  it('should exit with error when no PRDs exist', async () => {
+    vi.mocked(findLatestPrd).mockReturnValue(null);
+
+    await expect(prdArchive()).rejects.toThrow('process.exit(1)');
+
+    expect(findLatestPrd).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith('No PRDs found. Create one with: succ prd generate "description"');
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(loadPrd).not.toHaveBeenCalled();
+    expect(savePrd).not.toHaveBeenCalled();
+  });
+
+  it('should exit with error when PRD not found', async () => {
+    vi.mocked(loadPrd).mockReturnValue(null);
+
+    await expect(prdArchive('prd_nonexistent')).rejects.toThrow('process.exit(1)');
+
+    expect(loadPrd).toHaveBeenCalledWith('prd_nonexistent');
+    expect(consoleErrorSpy).toHaveBeenCalledWith('PRD not found: prd_nonexistent');
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(savePrd).not.toHaveBeenCalled();
+  });
+
+  it('should exit with error when savePrd throws', async () => {
+    const mockPrd: Prd = {
+      id: 'prd_save_error',
+      version: 1,
+      title: 'Save Error PRD',
+      description: 'Test description',
+      status: 'ready',
+      execution_mode: 'loop',
+      source_file: 'prd.md',
+      goals: [],
+      out_of_scope: [],
+      quality_gates: [],
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+      stats: {
+        total_tasks: 0,
+        completed_tasks: 0,
+        failed_tasks: 0,
+        skipped_tasks: 0,
+        total_attempts: 0,
+        total_duration_ms: 0,
+      },
+    };
+
+    vi.mocked(loadPrd).mockReturnValue(mockPrd);
+    vi.mocked(savePrd).mockImplementation(() => {
+      throw new Error('Disk write error');
+    });
+
+    await expect(prdArchive('prd_save_error')).rejects.toThrow('process.exit(1)');
+
+    expect(loadPrd).toHaveBeenCalledWith('prd_save_error');
+    expect(savePrd).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'prd_save_error',
+      status: 'archived',
+    }));
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to archive PRD: Disk write error');
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(consoleLogSpy).not.toHaveBeenCalled();
   });
 });
