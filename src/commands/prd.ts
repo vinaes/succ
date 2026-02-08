@@ -50,6 +50,7 @@ interface RunCmdOptions {
   maxIterations?: string;
   noBranch?: boolean;
   model?: string;
+  force?: boolean;
 }
 
 interface ListOptions {
@@ -233,6 +234,7 @@ export async function prdRun(
       maxIterations: options.maxIterations ? parseInt(options.maxIterations, 10) : undefined,
       noBranch: options.noBranch,
       model: options.model,
+      force: options.force,
     });
 
     if (!options.dryRun) {

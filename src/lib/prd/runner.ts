@@ -45,6 +45,7 @@ export interface RunOptions {
   maxIterations?: number;
   noBranch?: boolean;    // Skip branch isolation
   model?: string;
+  force?: boolean;       // Force resume even if another runner may be active
 }
 
 export interface RunResult {
@@ -87,6 +88,18 @@ function getModifiedFiles(cwd: string): string[] {
     return output ? output.split('\n').filter(Boolean) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Check if a process with the given PID is still running.
+ */
+export function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // signal 0 = check existence, doesn't kill
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -148,16 +161,66 @@ export async function runPrd(
     // Resume existing execution
     const existing = loadExecution(prdId);
     if (!existing) throw new Error(`No execution state for ${prdId}. Start fresh without --resume`);
+
+    // Validate PRD status
+    if (prd.status === 'completed') throw new Error(`PRD ${prdId} already completed. Nothing to resume.`);
+    if (prd.status === 'archived') throw new Error(`PRD ${prdId} is archived. Unarchive first.`);
+
+    // Check branch exists
+    if (!options.noBranch) {
+      try {
+        git(`rev-parse --verify ${existing.branch}`, root);
+      } catch {
+        throw new Error(`Branch ${existing.branch} not found. Cannot resume.`);
+      }
+    }
+
+    // Stale process detection
+    if (existing.pid && existing.pid !== process.pid && isProcessRunning(existing.pid)) {
+      if (!options.force) {
+        throw new Error(
+          `Another runner (PID ${existing.pid}) may still be running.\n` +
+          `Use --force to override, or kill the process first.`
+        );
+      }
+    }
+
     execution = existing;
+    execution.pid = process.pid;
     console.log(`Resuming PRD ${prdId} on branch ${execution.branch}`);
 
-    // Checkout the prd branch if not already on it
+    // Checkout branch if needed
     const currentBranch = getCurrentBranch(root);
-    if (currentBranch !== execution.branch.replace('prd/', '')) {
+    if (currentBranch !== execution.branch) {
       if (!options.noBranch) {
         git(`checkout ${execution.branch}`, root);
       }
     }
+
+    // Reset working tree to clean state
+    resetWorkingTree(root);
+
+    // Reset stuck tasks: in_progress → pending, failed → pending
+    for (const task of tasks) {
+      if (task.status === 'in_progress') {
+        task.status = 'pending';
+        appendProgress(prdId, `Reset ${task.id} from in_progress to pending`);
+      }
+      if (task.status === 'failed') {
+        task.status = 'pending';
+        appendProgress(prdId, `Reset ${task.id} from failed to pending (retry on resume)`);
+      }
+    }
+    saveTasks(prdId, tasks);
+
+    // Update PRD status if it was 'failed'
+    if (prd.status === 'failed') {
+      prd.status = 'in_progress';
+      savePrd(prd);
+    }
+
+    saveExecution(execution);
+    appendProgress(prdId, `Resumed execution (PID ${process.pid})`);
   } else {
     const originalBranch = getCurrentBranch(root);
     const branch = `prd/${prdId}`;

@@ -670,6 +670,7 @@ prdCmd
   .option('--max-iterations <num>', 'Max full-PRD retries (default: 3)')
   .option('--no-branch', 'Execute in current branch (no isolation)')
   .option('--model <model>', 'Claude model override (default: sonnet)')
+  .option('--force', 'Force resume even if another runner may be active')
   .action((prdId, options) => {
     prdRun(prdId, {
       resume: options.resume,
@@ -678,6 +679,7 @@ prdCmd
       maxIterations: options.maxIterations,
       noBranch: options.noBranch,
       model: options.model,
+      force: options.force,
     });
   });
 

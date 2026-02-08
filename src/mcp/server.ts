@@ -13,6 +13,7 @@
  * - succ_status / succ_stats / succ_score: Status and metrics
  * - succ_config / succ_config_set / succ_checkpoint: Configuration
  * - succ_dead_end: Record failed approaches to prevent retrying
+ * - succ_prd_generate / succ_prd_list / succ_prd_status / succ_prd_run: PRD pipeline
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -30,6 +31,7 @@ import { registerIndexingTools } from './tools/indexing.js';
 import { registerStatusTools } from './tools/status.js';
 import { registerConfigTools } from './tools/config.js';
 import { registerDeadEndTools } from './tools/dead-end.js';
+import { registerPrdTools } from './tools/prd.js';
 
 // Parse --project arg: succ-mcp --project /path/to/project
 const projectArgIdx = process.argv.indexOf('--project');
@@ -52,6 +54,7 @@ registerIndexingTools(server);
 registerStatusTools(server);
 registerConfigTools(server);
 registerDeadEndTools(server);
+registerPrdTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
