@@ -32,6 +32,7 @@ import { setup } from './commands/setup.js';
 import { agentsMd } from './commands/agents-md.js';
 import { progress } from './commands/progress.js';
 import { backfill } from './commands/backfill.js';
+import { prdGenerate, prdParse, prdRun, prdList, prdStatus } from './commands/prd.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -624,6 +625,79 @@ program
     setup({
       editor,
       detect: options.detect,
+    });
+  });
+
+// PRD Pipeline
+const prdCmd = program
+  .command('prd')
+  .description('PRD-to-Task pipeline — generate, parse, and manage PRDs');
+
+prdCmd
+  .command('generate <description>')
+  .description('Generate a PRD from a feature description')
+  .option('--mode <mode>', 'Execution mode (loop or team)', 'loop')
+  .option('--gates <gates>', 'Quality gates (comma-separated, e.g. "typecheck,test")')
+  .option('--model <model>', 'LLM model override')
+  .option('--auto-parse', 'Automatically parse PRD into tasks')
+  .action((description, options) => {
+    prdGenerate(description, {
+      mode: options.mode,
+      gates: options.gates,
+      model: options.model,
+      autoParse: options.autoParse,
+    });
+  });
+
+prdCmd
+  .command('parse <file-or-id>')
+  .description('Parse a PRD markdown into executable tasks')
+  .option('--prd-id <id>', 'Add tasks to an existing PRD')
+  .option('--dry-run', 'Show tasks without saving')
+  .action((fileOrId, options) => {
+    prdParse(fileOrId, {
+      prdId: options.prdId,
+      dryRun: options.dryRun,
+    });
+  });
+
+prdCmd
+  .command('run [prd-id]')
+  .description('Execute PRD tasks with Claude Code agent')
+  .option('--resume', 'Resume from previous execution')
+  .option('--task <task-id>', 'Run a specific task only')
+  .option('--dry-run', 'Show execution plan without running')
+  .option('--max-iterations <num>', 'Max full-PRD retries (default: 3)')
+  .option('--no-branch', 'Execute in current branch (no isolation)')
+  .option('--model <model>', 'Claude model override (default: sonnet)')
+  .action((prdId, options) => {
+    prdRun(prdId, {
+      resume: options.resume,
+      task: options.task,
+      dryRun: options.dryRun,
+      maxIterations: options.maxIterations,
+      noBranch: options.noBranch,
+      model: options.model,
+    });
+  });
+
+prdCmd
+  .command('list')
+  .description('List all PRDs')
+  .option('--all', 'Include archived PRDs')
+  .action((options) => {
+    prdList({ all: options.all });
+  });
+
+prdCmd
+  .command('status [prd-id]')
+  .description('Show PRD status and tasks')
+  .option('--json', 'Output as JSON')
+  .option('--verbose', 'Show detailed task info')
+  .action((prdId, options) => {
+    prdStatus(prdId, {
+      json: options.json,
+      verbose: options.verbose,
     });
   });
 

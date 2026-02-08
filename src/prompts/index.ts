@@ -49,3 +49,6 @@ export {
 
 // Quality scoring
 export { QUALITY_SCORER_SYSTEM } from './quality.js';
+
+// PRD pipeline prompts
+export { PRD_GENERATE_PROMPT, PRD_PARSE_PROMPT, TASK_EXECUTION_PROMPT } from './prd.js';
