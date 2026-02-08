@@ -59,13 +59,18 @@ export function appendFailureContext(
   gateOutput: string,
   agentOutput: string,
 ): string {
-  return prompt + `\n\n## Previous Attempt (${attemptNumber}) Failed
+  // Strip any previous failure context to prevent prompt bloat across retries
+  const stripped = prompt.replace(/\n\n## Previous Attempt.*$/s, '');
+  const truncatedGate = gateOutput.slice(-2000) || '(No gate output)';
+  const truncatedAgent = agentOutput.slice(-1000) || '(No output)';
+
+  return stripped + `\n\n## Previous Attempt (${attemptNumber}) Failed
 
 ### Gate Failures
-${gateOutput || '(No gate output)'}
+${truncatedGate}
 
-### Agent Output (last 2000 chars)
-${agentOutput.slice(-2000) || '(No output)'}
+### Agent Output (last 1000 chars)
+${truncatedAgent}
 
 ### Instructions for Retry
 - Fix the issues identified above

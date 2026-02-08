@@ -14,6 +14,18 @@ import { execSync } from 'child_process';
 import type { QualityGate, GateResult } from './types.js';
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Truncate text keeping the tail (where errors typically appear).
+ */
+function tailTruncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return '...(truncated)\n' + text.slice(-maxLen);
+}
+
+// ============================================================================
 // Run a single gate
 // ============================================================================
 
@@ -33,15 +45,15 @@ export function runGate(gate: QualityGate, cwd: string): GateResult {
     return {
       gate,
       passed: true,
-      output: output.slice(0, 5000), // Truncate large outputs
+      output: tailTruncate(output, 5000),
       duration_ms: Date.now() - start,
     };
   } catch (error: unknown) {
     const err = error as { stdout?: string; stderr?: string; message?: string };
-    const output = [err.stdout, err.stderr, err.message]
-      .filter(Boolean)
-      .join('\n')
-      .slice(0, 5000);
+    const output = tailTruncate(
+      [err.stdout, err.stderr, err.message].filter(Boolean).join('\n'),
+      5000,
+    );
     return {
       gate,
       passed: false,
@@ -80,8 +92,8 @@ export function formatGateResults(results: GateResult[]): string {
     const req = r.gate.required ? '' : ' (optional)';
     lines.push(`  ${icon} ${r.gate.type}: ${r.gate.command}${req} (${r.duration_ms}ms)`);
     if (!r.passed && r.output) {
-      // Show first few lines of failure output
-      const outputLines = r.output.split('\n').slice(0, 10);
+      // Show last 20 lines of failure output (errors are at the end)
+      const outputLines = r.output.split('\n').slice(-20);
       for (const line of outputLines) {
         lines.push(`      ${line}`);
       }

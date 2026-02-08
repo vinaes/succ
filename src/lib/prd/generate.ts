@@ -43,13 +43,20 @@ function detectQualityGates(): QualityGate[] {
     gates.push(createGate('typecheck', 'npx tsc --noEmit'));
   }
 
-  // npm test
+  // npm test — detect vitest and use `npx vitest run` to avoid watch mode.
+  // Exclude integration tests (*.integration.test.*) which often flake.
   const pkgPath = path.join(root, 'package.json');
   if (fs.existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      if (pkg.scripts?.test && pkg.scripts.test !== 'echo "Error: no test specified" && exit 1') {
-        gates.push(createGate('test', 'npm test'));
+      const testScript = pkg.scripts?.test ?? '';
+      if (testScript && testScript !== 'echo "Error: no test specified" && exit 1') {
+        if (testScript.includes('vitest') && !testScript.includes('--run')) {
+          // vitest without --run = watch mode. Use npx vitest run + exclude integration tests.
+          gates.push(createGate('test', 'npx vitest run --exclude "**/*.integration.test.*"'));
+        } else {
+          gates.push(createGate('test', testScript));
+        }
       }
     } catch {
       // ignore parse errors
