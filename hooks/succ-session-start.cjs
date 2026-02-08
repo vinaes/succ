@@ -160,6 +160,20 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_config_set** key="quality_threshold" value="0.4" [global=true]
 **succ_checkpoint** action="create|list|restore|info" [compress=true] [file="backup.json"]
 </status>
+
+<prd hint="PRD pipeline — generate, track, and execute product requirements with quality gates">
+**succ_prd_generate** description="Add user auth with JWT" [gates="test:npm test,lint:eslint ."] [auto_parse=true]
+→ Generate PRD from feature description, auto-detect quality gates
+
+**succ_prd_list** [all=false]
+→ List all PRDs (ID, status, title)
+
+**succ_prd_status** [prd_id="prd_xxx"]
+→ Show PRD details and task status (defaults to latest)
+
+**succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [no_branch=true]
+→ Execute or resume a PRD with branch isolation and quality gates
+</prd>
 </succ-tools>`);
 
     // succ Agents Reference - reminds AI about available subagents
