@@ -1,13 +1,13 @@
 /**
  * Agent Executor
  *
- * Thin abstraction over child_process.spawn for running Claude Code CLI.
+ * Thin abstraction over cross-spawn for running Claude Code CLI.
  * Uses `-p --no-session-persistence` with SUCC_SERVICE_SESSION env marker,
  * matching the canonical pattern from llm.ts (buildClaudeArgs / CLAUDE_SPAWN_OPTIONS).
  * Prompt is piped via stdin to avoid shell escaping issues.
  */
 
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 import type { ChildProcess } from 'child_process';
 
 // ============================================================================

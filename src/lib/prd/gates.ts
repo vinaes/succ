@@ -49,6 +49,7 @@ export function runGate(gate: QualityGate, cwd: string): GateResult {
       stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 10 * 1024 * 1024, // 10MB
       env,
+      windowsHide: true,
     });
     return {
       gate,

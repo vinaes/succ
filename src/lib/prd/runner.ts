@@ -67,6 +67,7 @@ function git(cmd: string, cwd: string): string {
       cwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
   } catch (error: unknown) {
     const err = error as { stderr?: string; message?: string };
