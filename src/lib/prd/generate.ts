@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { callLLM } from '../llm.js';
 import { getProjectRoot } from '../config.js';
 import { PRD_GENERATE_PROMPT } from '../../prompts/prd.js';
@@ -28,34 +29,124 @@ export interface GenerateResult {
 }
 
 // ============================================================================
-// Quality gate auto-detection
+// Quality gate auto-detection (with monorepo support)
 // ============================================================================
 
-/**
- * Detect quality gates based on project files.
- */
-function detectQualityGates(): QualityGate[] {
-  const root = getProjectRoot();
-  const gates: QualityGate[] = [];
+/** Config files we scan for when detecting project roots. */
+const CONFIG_FILES = [
+  'tsconfig.json', 'package.json', 'go.mod',
+  'pyproject.toml', 'setup.py', 'Cargo.toml', '.golangci.yml',
+];
 
-  // TypeScript
-  if (fs.existsSync(path.join(root, 'tsconfig.json'))) {
-    gates.push(createGate('typecheck', 'npx tsc --noEmit'));
+/** Directories to skip during subdirectory scanning. */
+const IGNORE_DIRS = new Set([
+  'node_modules', 'dist', '.git', '.succ', '.claude', 'vendor',
+  'coverage', '.next', '.cache', '__pycache__', 'build', 'out',
+]);
+
+/** A directory that contains project config files. */
+export interface ProjectRoot {
+  relPath: string;        // '' for root, 'frontend', 'apps/web', etc.
+  configs: Set<string>;   // config file basenames found
+}
+
+/**
+ * Check if a CLI tool is available on PATH.
+ *
+ * NOTE: execSync is used intentionally here — the binary name is always a
+ * hardcoded string (e.g., 'golangci-lint'), never user input.
+ */
+export function binaryAvailable(name: string): boolean {
+  try {
+    const cmd = process.platform === 'win32' ? `where ${name}` : `which ${name}`;
+    execSync(cmd, { stdio: 'pipe', timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scan for directories containing recognized config files.
+ * Checks project root + up to maxDepth levels of subdirectories.
+ */
+export function discoverProjectRoots(root: string, maxDepth = 2): ProjectRoot[] {
+  const results: ProjectRoot[] = [];
+
+  function checkDir(dir: string): Set<string> {
+    const found = new Set<string>();
+    for (const f of CONFIG_FILES) {
+      if (fs.existsSync(path.join(dir, f))) found.add(f);
+    }
+    return found;
   }
 
-  // npm test — detect vitest and use `npx vitest run` to avoid watch mode.
-  // Exclude integration tests (*.integration.test.*) which often flake.
-  const pkgPath = path.join(root, 'package.json');
-  if (fs.existsSync(pkgPath)) {
+  // Check root
+  const rootConfigs = checkDir(root);
+  if (rootConfigs.size > 0) {
+    results.push({ relPath: '', configs: rootConfigs });
+  }
+
+  // Scan subdirectories
+  function scanDir(dir: string, relBase: string, depth: number): void {
+    if (depth > maxDepth) return;
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (IGNORE_DIRS.has(entry) || entry.startsWith('.')) continue;
+      const full = path.join(dir, entry);
+      try {
+        if (!fs.statSync(full).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      const rel = relBase ? `${relBase}/${entry}` : entry;
+      const configs = checkDir(full);
+      if (configs.size > 0) {
+        results.push({ relPath: rel, configs });
+      }
+      if (depth < maxDepth) {
+        scanDir(full, rel, depth + 1);
+      }
+    }
+  }
+
+  scanDir(root, '', 1);
+  return results;
+}
+
+/**
+ * Detect quality gates for a single project root directory.
+ */
+export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): QualityGate[] {
+  const gates: QualityGate[] = [];
+  const dir = projectRoot.relPath
+    ? path.join(absRoot, projectRoot.relPath)
+    : absRoot;
+  const prefix = projectRoot.relPath
+    ? `cd "${projectRoot.relPath.replace(/\\/g, '/')}" && `
+    : '';
+
+  // TypeScript
+  if (projectRoot.configs.has('tsconfig.json')) {
+    gates.push(createGate('typecheck', prefix + 'npx tsc --noEmit'));
+  }
+
+  // npm test
+  if (projectRoot.configs.has('package.json')) {
+    const pkgPath = path.join(dir, 'package.json');
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       const testScript = pkg.scripts?.test ?? '';
       if (testScript && testScript !== 'echo "Error: no test specified" && exit 1') {
         if (testScript.includes('vitest') && !testScript.includes('--run')) {
-          // vitest without --run = watch mode. Use npx vitest run + exclude integration tests.
-          gates.push(createGate('test', 'npx vitest run --exclude "**/*integration*test*"'));
+          gates.push(createGate('test', prefix + 'npx vitest run --exclude "**/*integration*test*"'));
         } else {
-          gates.push(createGate('test', testScript));
+          gates.push(createGate('test', prefix + testScript));
         }
       }
     } catch {
@@ -64,20 +155,61 @@ function detectQualityGates(): QualityGate[] {
   }
 
   // Python
-  if (fs.existsSync(path.join(root, 'pyproject.toml')) || fs.existsSync(path.join(root, 'setup.py'))) {
-    gates.push(createGate('test', 'pytest'));
+  if (projectRoot.configs.has('pyproject.toml') || projectRoot.configs.has('setup.py')) {
+    gates.push(createGate('test', prefix + 'pytest'));
   }
 
   // Go
-  if (fs.existsSync(path.join(root, 'go.mod'))) {
-    gates.push(createGate('build', 'go build ./...'));
-    gates.push(createGate('test', 'go test ./...'));
+  if (projectRoot.configs.has('go.mod')) {
+    gates.push(createGate('build', prefix + 'go build ./...'));
+    gates.push(createGate('test', prefix + 'go test ./...'));
+    gates.push(createGate('lint', prefix + 'go vet ./...'));
+
+    // golangci-lint: add if .golangci.yml exists OR binary available
+    if (projectRoot.configs.has('.golangci.yml') || binaryAvailable('golangci-lint')) {
+      gates.push(createGate('lint', prefix + 'golangci-lint run', false)); // optional
+    }
   }
 
   // Rust
-  if (fs.existsSync(path.join(root, 'Cargo.toml'))) {
-    gates.push(createGate('build', 'cargo build'));
-    gates.push(createGate('test', 'cargo test'));
+  if (projectRoot.configs.has('Cargo.toml')) {
+    gates.push(createGate('build', prefix + 'cargo build'));
+    gates.push(createGate('test', prefix + 'cargo test'));
+  }
+
+  return gates;
+}
+
+/**
+ * Detect quality gates based on project files.
+ * Scans project root and up to 2 levels of subdirectories for monorepo support.
+ * Root config files shadow subdirectory configs of the same type.
+ */
+function detectQualityGates(): QualityGate[] {
+  const root = getProjectRoot();
+  const projectRoots = discoverProjectRoots(root);
+
+  const rootEntry = projectRoots.find(r => r.relPath === '');
+  const subEntries = projectRoots.filter(r => r.relPath !== '');
+
+  // Detect gates at root first
+  const gates: QualityGate[] = [];
+  const rootConfigTypes = new Set<string>();
+
+  if (rootEntry) {
+    gates.push(...detectGatesForRoot(rootEntry, root));
+    for (const c of rootEntry.configs) rootConfigTypes.add(c);
+  }
+
+  // Detect gates in subdirectories — only for config types NOT at root
+  for (const sub of subEntries) {
+    const uniqueConfigs = new Set(
+      [...sub.configs].filter(c => !rootConfigTypes.has(c))
+    );
+    if (uniqueConfigs.size === 0) continue;
+
+    const filtered: ProjectRoot = { relPath: sub.relPath, configs: uniqueConfigs };
+    gates.push(...detectGatesForRoot(filtered, root));
   }
 
   return gates;
