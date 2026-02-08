@@ -8,6 +8,7 @@
  * 3. Test runs - save test results
  * 4. File creation - note new files
  * 5. MEMORY.md sync - auto-save bullets to long-term memory
+ * 6. Task/Explore results - save subagent findings to long-term memory
  *
  * Uses daemon API for memory operations
  */
@@ -76,7 +77,7 @@ process.stdin.on('end', async () => {
 
     const toolName = hookInput.tool_name || '';
     const toolInput = hookInput.tool_input || {};
-    const toolOutput = hookInput.tool_output || '';
+    const toolOutput = hookInput.tool_output || hookInput.tool_response || '';
     const wasSuccess = !hookInput.tool_error;
 
     if (!wasSuccess) {
@@ -160,7 +161,37 @@ process.stdin.on('end', async () => {
       }
     }
 
-    // Pattern 3: MEMORY.md sync → save bullets to long-term memory (parallel)
+    // Pattern 3: Task/Explore results → save subagent findings to long-term memory
+    if (toolName === 'Task' && toolInput.subagent_type) {
+      const agentType = toolInput.subagent_type;
+      // Capture Explore, Plan, and feature-dev agents
+      if (/^(Explore|Plan|feature-dev)/.test(agentType)) {
+        // Extract clean text from agent response (strip JSON wrapper with status/prompt/agentId)
+        let text = '';
+        try {
+          const parsed = typeof toolOutput === 'string' ? JSON.parse(toolOutput) : toolOutput;
+          if (parsed && Array.isArray(parsed.content)) {
+            // Claude SDK format: { status, prompt, agentId, content: [{ type: "text", text: "..." }] }
+            text = parsed.content
+              .filter(c => c.type === 'text' && c.text)
+              .map(c => c.text)
+              .join('\n\n');
+          } else if (typeof parsed === 'string') {
+            text = parsed;
+          }
+        } catch {
+          text = typeof toolOutput === 'string' ? toolOutput : '';
+        }
+
+        if (text.length > 50 && text.length < 20000) {
+          const desc = (toolInput.description || '').slice(0, 100);
+          const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
+          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`);
+        }
+      }
+    }
+
+    // Pattern 4: MEMORY.md sync → save bullets to long-term memory (parallel)
     if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path && wasSuccess) {
       if (path.basename(toolInput.file_path) === 'MEMORY.md') {
         try {

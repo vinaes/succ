@@ -91,6 +91,11 @@ interface BriefingCache {
 const briefingCache = new Map<string, BriefingCache>();
 let briefingGenerationInProgress = new Set<string>();
 
+// In-flight dedup: prevents race condition when identical /api/remember requests
+// arrive within a short window (e.g. hook fires twice for same tool_use)
+const rememberInFlight = new Map<string, Promise<any>>();
+const REMEMBER_DEDUP_TTL_MS = 5000;
+
 // ============================================================================
 // File Paths
 // ============================================================================
@@ -688,48 +693,68 @@ export async function routeRequest(method: string, pathname: string, searchParam
   }
 
   if (pathname === '/api/remember' && method === 'POST') {
-    const { content, tags = [], type = 'observation', global = false, valid_from, valid_until } = body;
+    const { content, tags = [], type = 'observation', source, global = false, valid_from, valid_until } = body;
     if (!content) {
       throw new Error('content required');
     }
 
-    // Check for sensitive content
-    const config = getConfig();
-    let finalContent = content;
-    if (config.sensitive_filter_enabled !== false) {
-      const scanResult = scanSensitive(content);
-      if (scanResult.hasSensitive) {
-        if (config.sensitive_auto_redact) {
-          finalContent = scanResult.redactedText;
-        } else {
-          throw new Error('Content contains sensitive information');
+    // In-flight dedup: if an identical request is already being processed, wait for it
+    // Prevents race condition when hooks fire twice for the same tool_use
+    const contentHash = content.slice(0, 200) + '|' + (tags || []).join(',');
+    const existing = rememberInFlight.get(contentHash);
+    if (existing) {
+      const result = await existing;
+      return { success: false, id: result.id, isDuplicate: true, reason: 'in-flight dedup' };
+    }
+
+    const processRemember = async () => {
+      // Check for sensitive content
+      const config = getConfig();
+      let finalContent = content;
+      if (config.sensitive_filter_enabled !== false) {
+        const scanResult = scanSensitive(content);
+        if (scanResult.hasSensitive) {
+          if (config.sensitive_auto_redact) {
+            finalContent = scanResult.redactedText;
+          } else {
+            throw new Error('Content contains sensitive information');
+          }
         }
       }
+
+      // Get embedding
+      const embedding = await getEmbedding(finalContent);
+
+      // Score quality
+      const qualityResult = await scoreMemory(finalContent);
+      if (!passesQualityThreshold(qualityResult)) {
+        return { success: false, reason: 'Below quality threshold', score: qualityResult.score };
+      }
+
+      // Save to appropriate DB
+      let result;
+      if (global) {
+        result = await saveGlobalMemory(finalContent, embedding, tags, type);
+      } else {
+        result = await saveMemory(finalContent, embedding, tags, source ?? type, {
+          qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
+          validFrom: valid_from,
+          validUntil: valid_until,
+        });
+      }
+
+      return { success: !result.isDuplicate, id: result.id, isDuplicate: result.isDuplicate };
+    };
+
+    const promise = processRemember();
+    rememberInFlight.set(contentHash, promise);
+    setTimeout(() => rememberInFlight.delete(contentHash), REMEMBER_DEDUP_TTL_MS);
+
+    try {
+      return await promise;
+    } finally {
+      rememberInFlight.delete(contentHash);
     }
-
-    // Get embedding
-    const embedding = await getEmbedding(finalContent);
-
-    // Score quality
-    const qualityResult = await scoreMemory(finalContent);
-    if (!passesQualityThreshold(qualityResult)) {
-      return { success: false, reason: 'Below quality threshold', score: qualityResult.score };
-    }
-
-    // Save to appropriate DB
-    let result;
-    if (global) {
-      // Global memory has simpler signature (no quality score, no temporal)
-      result = await saveGlobalMemory(finalContent, embedding, tags, type);
-    } else {
-      result = await saveMemory(finalContent, embedding, tags, type, {
-        qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
-        validFrom: valid_from,
-        validUntil: valid_until,
-      });
-    }
-
-    return { success: !result.isDuplicate, id: result.id, isDuplicate: result.isDuplicate };
   }
 
   // Reflection endpoint
