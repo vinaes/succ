@@ -410,6 +410,134 @@ Set to `false` to disable the `<commit-format>` block injection:
 
 ---
 
+## Quality Gates Settings
+
+Controls quality gates for the PRD pipeline (`succ prd`). Gates run after each task to verify code quality. By default, succ auto-detects gates from project files (TypeScript, Node.js, Python, Go, Rust). Use this config to add custom gates, disable auto-detected ones, or configure per-subdirectory gates for monorepos.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `quality_gates.auto_detect` | boolean | `true` | Auto-detect gates from project files |
+| `quality_gates.gates` | GateConfig[] | `[]` | Custom gates to add at root level |
+| `quality_gates.disable` | string[] | `[]` | Gate types to remove from auto-detection |
+| `quality_gates.subdirs` | Record | `{}` | Per-subdirectory gate overrides |
+
+### GateConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | - | Gate type: `typecheck`, `test`, `lint`, `build`, `custom` |
+| `command` | string | - | Shell command to run |
+| `required` | boolean | `true` | If false, failure doesn't block task completion |
+| `timeout_ms` | number | `120000` | Max execution time in milliseconds |
+
+### Auto-Detected Languages
+
+When `auto_detect` is `true` (default), succ scans for:
+
+| Config File | Language | Gates |
+|-------------|----------|-------|
+| `tsconfig.json` | TypeScript | `npx tsc --noEmit` |
+| `package.json` | Node.js | test script from package.json |
+| `go.mod` | Go | `go build`, `go test`, `go vet`, optional `golangci-lint` |
+| `pyproject.toml` / `setup.py` | Python | `pytest` |
+| `Cargo.toml` | Rust | `cargo build`, `cargo test` |
+
+### Examples
+
+**Add gates for unsupported language (Java/Maven):**
+```json
+{
+  "quality_gates": {
+    "gates": [
+      { "type": "build", "command": "mvn compile" },
+      { "type": "test", "command": "mvn test", "timeout_ms": 300000 }
+    ]
+  }
+}
+```
+
+**Disable auto-detected typecheck:**
+```json
+{
+  "quality_gates": {
+    "disable": ["typecheck"]
+  }
+}
+```
+
+**Only use custom gates (no auto-detection):**
+```json
+{
+  "quality_gates": {
+    "auto_detect": false,
+    "gates": [
+      { "type": "build", "command": "dotnet build" },
+      { "type": "test", "command": "dotnet test" },
+      { "type": "lint", "command": "dotnet format --verify-no-changes", "required": false }
+    ]
+  }
+}
+```
+
+**Monorepo with per-subdirectory gates:**
+```json
+{
+  "quality_gates": {
+    "auto_detect": true,
+    "subdirs": {
+      "backend": {
+        "gates": [
+          { "type": "build", "command": "mvn compile" },
+          { "type": "test", "command": "mvn test" }
+        ]
+      },
+      "frontend": {
+        "disable": ["typecheck"],
+        "gates": [
+          { "type": "lint", "command": "eslint .", "required": false }
+        ]
+      }
+    }
+  }
+}
+```
+
+Subdirectory commands are automatically prefixed with `cd "<subdir>" &&`.
+
+**Full monorepo example (Go + Next.js + Python ML service):**
+```json
+{
+  "quality_gates": {
+    "subdirs": {
+      "api": {
+        "gates": [
+          { "type": "build", "command": "go build ./..." },
+          { "type": "test", "command": "go test ./..." },
+          { "type": "lint", "command": "golangci-lint run", "required": false }
+        ]
+      },
+      "web": {
+        "gates": [
+          { "type": "typecheck", "command": "npx tsc --noEmit" },
+          { "type": "test", "command": "npx vitest run" },
+          { "type": "lint", "command": "npx next lint", "required": false }
+        ]
+      },
+      "ml": {
+        "gates": [
+          { "type": "test", "command": "pytest", "timeout_ms": 600000 },
+          { "type": "lint", "command": "ruff check .", "required": false }
+        ]
+      }
+    }
+  }
+}
+```
+
+> **Note**: The CLI `--gates` flag overrides all config when specified: `succ prd generate "..." --gates "test:npm test,lint:eslint ."`
+
+---
+
 ## Daemon Settings
 
 Controls the background daemon service.
@@ -818,6 +946,13 @@ LLM-powered skill discovery and suggestions.
       "enabled": true,
       "only_when_no_local": true
     }
+  },
+
+  "quality_gates": {
+    "auto_detect": true,
+    "disable": [],
+    "gates": [],
+    "subdirs": {}
   },
 
   "retention": {
