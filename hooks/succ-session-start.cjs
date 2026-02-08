@@ -159,6 +159,31 @@ Without it, succ works in global-only mode and can't access project data.
 </status>
 </succ-tools>`);
 
+    // succ Agents Reference - reminds AI about available subagents
+    contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these agents. Use proactively when relevant.">
+
+**Proactive agents** (run without being asked when situation matches):
+| Agent | When to use |
+|-------|-------------|
+| succ-memory-curator | After long sessions or when memories feel cluttered — consolidates, dedupes, applies retention |
+| succ-memory-health-monitor | Periodically — detects decay, staleness, low quality scores |
+| succ-session-handoff-orchestrator | At session end — extracts summary, generates briefing, captures undocumented decisions |
+| succ-pattern-detective | After multiple bug fixes or learnings — surfaces recurring patterns and anti-patterns |
+
+**On-demand agents** (run when user asks or task requires):
+| Agent | When to use |
+|-------|-------------|
+| succ-deep-search | "How was X decided/implemented/documented?" — searches memories + brain vault + code |
+| succ-decision-auditor | Audit architectural decisions — finds contradictions, reversals, orphaned decisions |
+| succ-knowledge-indexer | After adding docs or major code changes — indexes files into knowledge base |
+| succ-knowledge-mapper | Maintain knowledge graph — finds orphaned memories, auto-links related content |
+| succ-checkpoint-manager | Before major changes/migrations — creates and manages backups |
+| succ-session-reviewer | Review past sessions — extracts missed learnings from transcripts |
+| succ-context-optimizer | Optimize session start context — learns from usage patterns |
+| succ-quality-improvement-coach | Improve memory quality — analyzes and suggests better content/tags |
+| succ-readiness-improver | Improve AI-readiness score — actionable steps for each metric |
+</succ-agents>`);
+
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
     if (includeCoAuthoredBy) {
       contextParts.push(`<commit-format>
