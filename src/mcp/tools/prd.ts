@@ -29,7 +29,7 @@ export function registerPrdTools(server: McpServer) {
     'Generate a PRD (Product Requirements Document) from a feature description. Auto-detects quality gates from project files. Returns PRD ID and parsed tasks.',
     {
       description: z.string().describe('Feature description (e.g., "Add user authentication with JWT")'),
-      mode: z.enum(['loop']).optional().default('loop').describe('Execution mode (default: loop)'),
+      mode: z.enum(['loop', 'team']).optional().default('loop').describe('Execution mode (default: loop)'),
       gates: z.string().optional().describe('Custom quality gates as comma-separated specs (e.g., "test:npm test,lint:eslint .")'),
       auto_parse: z.boolean().optional().default(true).describe('Automatically parse PRD into tasks (default: true)'),
       model: z.string().optional().describe('LLM model override'),
@@ -158,9 +158,11 @@ export function registerPrdTools(server: McpServer) {
       no_branch: z.boolean().optional().default(false).describe('Skip branch isolation, run in current branch'),
       model: z.string().optional().describe('Claude model override (default: sonnet)'),
       force: z.boolean().optional().default(false).describe('Force resume even if another runner may be active'),
+      mode: z.enum(['loop', 'team']).optional().default('loop').describe('Execution mode: loop (sequential) or team (parallel)'),
+      concurrency: z.number().optional().describe('Max parallel workers in team mode (default: 3)'),
       project_path: projectPathParam,
     },
-    async ({ prd_id, resume, task_id, dry_run, max_iterations, no_branch, model, force, project_path }) => {
+    async ({ prd_id, resume, task_id, dry_run, max_iterations, no_branch, model, force, mode, concurrency, project_path }) => {
       await applyProjectPath(project_path);
       try {
         let id = prd_id;
@@ -171,7 +173,8 @@ export function registerPrdTools(server: McpServer) {
         }
 
         const result = await runPrd(id, {
-          mode: 'loop',
+          mode: (mode as 'loop' | 'team') ?? 'loop',
+          concurrency,
           resume,
           taskId: task_id,
           dryRun: dry_run,

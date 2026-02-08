@@ -199,6 +199,18 @@ export const TASK_EXECUTION_PROMPT = `You are an AI coding agent executing a spe
 5. Do not add comments explaining what you changed — the code should be self-explanatory
 6. Do not add extra features beyond what acceptance criteria require
 
+## Memory Tools
+
+You have access to succ MCP tools. Use them:
+
+- **succ_recall** query="relevant topic" — Search past decisions, patterns, gotchas before starting work
+- **succ_remember** content="what you learned" type="learning" — Record important decisions or patterns you discover
+- **succ_dead_end** approach="what you tried" why_failed="why it failed" — Record failed approaches so future tasks don't repeat them
+- **succ_search** query="topic" — Search project documentation
+- **succ_search_code** query="function name" — Search source code
+
+Always pass project_path to these tools.
+
 ## Important
 
 If you cannot complete this task, output a clear explanation starting with "BLOCKED:" followed by the reason. This allows the pipeline to record a dead-end and retry with different context.`;

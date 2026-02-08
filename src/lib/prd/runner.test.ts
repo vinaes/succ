@@ -99,6 +99,7 @@ vi.mock('./types.js', () => ({
     max_iterations: opts.max_iterations ?? 3,
     pid: null,
     team_name: null,
+    concurrency: null,
     log_file: '',
   }),
   computeStats: () => ({
@@ -160,6 +161,7 @@ function makeExecution(overrides: Partial<PrdExecution> = {}): PrdExecution {
     max_iterations: 3,
     pid: null,
     team_name: null,
+    concurrency: null,
     log_file: '',
     ...overrides,
   };

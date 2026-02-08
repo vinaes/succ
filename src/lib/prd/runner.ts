@@ -38,7 +38,8 @@ import type { Prd, Task, TaskAttempt, PrdExecution } from './types.js';
 // ============================================================================
 
 export interface RunOptions {
-  mode?: 'loop';
+  mode?: 'loop' | 'team';
+  concurrency?: number;  // Max parallel workers in team mode (default: 3)
   resume?: boolean;
   taskId?: string;       // Run a specific task only
   dryRun?: boolean;
@@ -117,6 +118,34 @@ function resetWorkingTree(cwd: string): void {
 }
 
 // ============================================================================
+// MCP config for worker agents
+// ============================================================================
+
+/**
+ * Built-in tools + succ MCP tools that workers can use.
+ * Workers can recall memories, record learnings, and flag dead-ends.
+ */
+export const WORKER_ALLOWED_TOOLS = [
+  'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+  'mcp__succ__succ_recall',
+  'mcp__succ__succ_remember',
+  'mcp__succ__succ_dead_end',
+  'mcp__succ__succ_search',
+  'mcp__succ__succ_search_code',
+];
+
+/**
+ * Build MCP server config for spawned claude processes.
+ * Since user-scope MCP servers aren't inherited by spawned processes,
+ * we pass the succ MCP server config explicitly via --mcp-config.
+ */
+export function buildMcpConfig(): Record<string, { command: string; args?: string[] }> {
+  return {
+    succ: { command: 'succ-mcp', args: [] },
+  };
+}
+
+// ============================================================================
 // Main Runner
 // ============================================================================
 
@@ -150,7 +179,7 @@ export async function runPrd(
 
   // 3. Dry run — just show the plan
   if (options.dryRun) {
-    return showDryRun(prd, tasks, validation);
+    return showDryRun(prd, tasks, validation, options.mode ?? 'loop', options.concurrency ?? 3);
   }
 
   // 4. Branch setup
@@ -213,6 +242,12 @@ export async function runPrd(
     }
     saveTasks(prdId, tasks);
 
+    // Team mode: clean up stale worktrees from crashed run
+    if (existing.mode === 'team') {
+      const { cleanupAllWorktrees } = await import('./worktree.js');
+      cleanupAllWorktrees(root);
+    }
+
     // Update PRD status if it was 'failed'
     if (prd.status === 'failed') {
       prd.status = 'in_progress';
@@ -252,14 +287,27 @@ export async function runPrd(
     prd.status = 'in_progress';
     prd.started_at = new Date().toISOString();
     savePrd(prd);
-    appendProgress(prdId, `Execution started — branch: ${branch}, mode: loop`);
+    appendProgress(prdId, `Execution started — branch: ${branch}, mode: ${options.mode ?? 'loop'}`);
   }
 
   // 5. Execute tasks
-  const executor = new LoopExecutor();
   const model = options.model ?? 'sonnet';
 
   try {
+    if ((options.mode ?? 'loop') === 'team') {
+      // Parallel execution via team runner
+      const { runTeam } = await import('./team-runner.js');
+      await runTeam(tasks, {
+        concurrency: options.concurrency ?? 3,
+        model,
+        prdId,
+        root,
+        prd,
+        execution,
+      });
+    } else {
+    // Sequential execution (loop mode)
+    const executor = new LoopExecutor();
     for (let iteration = 1; iteration <= execution.max_iterations; iteration++) {
       execution.iteration = iteration;
       saveExecution(execution);
@@ -323,6 +371,7 @@ export async function runPrd(
       const remaining = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
       if (remaining.length === 0) break;
     }
+    } // end else (loop mode)
   } finally {
     // 6. Branch teardown
     if (!options.noBranch && !options.resume) {
@@ -426,7 +475,8 @@ async function executeTask(
       timeout_ms: 900_000, // 15 minutes per task
       model,
       permissionMode: 'acceptEdits',
-      allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
+      allowedTools: WORKER_ALLOWED_TOOLS,
+      mcpConfig: buildMcpConfig(),
       onOutput: (chunk) => appendTaskLog(prdId, task.id, chunk),
     };
 
@@ -528,16 +578,54 @@ async function executeTask(
 // Dry Run
 // ============================================================================
 
-function showDryRun(prd: Prd, tasks: Task[], validation: ReturnType<typeof validateTaskGraph>): RunResult {
-  console.log(`\n[DRY RUN] PRD: ${prd.title} (${prd.id})\n`);
-  console.log('Execution plan:\n');
+function showDryRun(
+  prd: Prd,
+  tasks: Task[],
+  validation: ReturnType<typeof validateTaskGraph>,
+  mode: 'loop' | 'team',
+  concurrency: number,
+): RunResult {
+  console.log(`\n[DRY RUN] PRD: ${prd.title} (${prd.id})`);
+  console.log(`Mode: ${mode}${mode === 'team' ? ` (concurrency: ${concurrency})` : ''}\n`);
 
-  const sorted = topologicalSort(tasks);
-  for (const task of sorted) {
-    const deps = task.depends_on.length > 0 ? ` (after: ${task.depends_on.join(', ')})` : '';
-    console.log(`  ${task.id} [${task.priority}] ${task.title}${deps}`);
-    if (task.files_to_modify.length > 0) {
-      console.log(`    files: ${task.files_to_modify.join(', ')}`);
+  if (mode === 'team') {
+    // Show parallelization waves — simulate dispatch to show concurrency
+    const simTasks = tasks.map(t => ({ ...t }));
+    let wave = 1;
+    while (simTasks.some(t => t.status === 'pending')) {
+      // Inline ready-task check (same logic as getReadyTasks but without the import)
+      const ready = simTasks.filter(t => {
+        if (t.status !== 'pending') return false;
+        return t.depends_on.every(depId => {
+          const dep = simTasks.find(d => d.id === depId);
+          return dep && (dep.status === 'completed' || dep.status === 'skipped');
+        });
+      });
+      if (ready.length === 0) break;
+
+      const batch = ready.slice(0, concurrency);
+      console.log(`  Wave ${wave}:`);
+      for (const task of batch) {
+        const deps = task.depends_on.length > 0 ? ` (after: ${task.depends_on.join(', ')})` : '';
+        console.log(`    ${task.id} [${task.priority}] ${task.title}${deps}`);
+      }
+
+      // Simulate completion for next wave
+      for (const task of batch) {
+        const sim = simTasks.find(t => t.id === task.id);
+        if (sim) sim.status = 'completed';
+      }
+      wave++;
+    }
+  } else {
+    console.log('Execution plan:\n');
+    const sorted = topologicalSort(tasks);
+    for (const task of sorted) {
+      const deps = task.depends_on.length > 0 ? ` (after: ${task.depends_on.join(', ')})` : '';
+      console.log(`  ${task.id} [${task.priority}] ${task.title}${deps}`);
+      if (task.files_to_modify.length > 0) {
+        console.log(`    files: ${task.files_to_modify.join(', ')}`);
+      }
     }
   }
 

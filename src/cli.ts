@@ -671,6 +671,8 @@ prdCmd
   .option('--no-branch', 'Execute in current branch (no isolation)')
   .option('--model <model>', 'Claude model override (default: sonnet)')
   .option('--force', 'Force resume even if another runner may be active')
+  .option('--mode <mode>', 'Execution mode: loop (sequential) or team (parallel)', 'loop')
+  .option('--concurrency <num>', 'Max parallel workers in team mode (default: 3)')
   .action((prdId, options) => {
     prdRun(prdId, {
       resume: options.resume,
@@ -680,6 +682,8 @@ prdCmd
       noBranch: options.noBranch,
       model: options.model,
       force: options.force,
+      mode: options.mode,
+      concurrency: options.concurrency,
     });
   });
 

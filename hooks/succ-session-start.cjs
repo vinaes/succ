@@ -171,8 +171,8 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_prd_status** [prd_id="prd_xxx"]
 → Show PRD details and task status (defaults to latest)
 
-**succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [no_branch=true]
-→ Execute or resume a PRD with branch isolation and quality gates
+**succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [mode="team"] [concurrency=3]
+→ Execute or resume a PRD. mode=team for parallel execution with git worktrees
 </prd>
 </succ-tools>`);
 
