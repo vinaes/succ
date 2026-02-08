@@ -5,9 +5,11 @@ import os from 'os';
 import {
   discoverProjectRoots,
   detectGatesForRoot,
+  detectQualityGates,
   binaryAvailable,
 } from './generate.js';
 import type { ProjectRoot } from './generate.js';
+import type { QualityGatesConfig } from '../config.js';
 
 // ============================================================================
 // binaryAvailable
@@ -248,6 +250,153 @@ describe('detectGatesForRoot', () => {
     );
     const root: ProjectRoot = { relPath: '', configs: new Set(['package.json']) };
     const gates = detectGatesForRoot(root, tmpDir);
+
+    expect(gates).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// detectQualityGates (config-driven)
+// ============================================================================
+
+vi.mock('../config.js', () => {
+  let _projectRoot = '';
+  let _config: Record<string, unknown> = {};
+  return {
+    getProjectRoot: () => _projectRoot,
+    getConfig: () => _config,
+    __setProjectRoot: (root: string) => { _projectRoot = root; },
+    __setConfig: (cfg: Record<string, unknown>) => { _config = cfg; },
+  };
+});
+
+// Import mocked helpers — the cast is needed because these are test-only exports
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const configMock: any = await import('../config.js');
+const __setProjectRoot: (r: string) => void = configMock.__setProjectRoot;
+const __setConfig: (c: Record<string, unknown>) => void = configMock.__setConfig;
+
+describe('detectQualityGates (config-driven)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'succ-gate-cfg-'));
+    __setProjectRoot(tmpDir);
+    __setConfig({});
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('should auto-detect with no config (backward compat)', () => {
+    fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
+    const gates = detectQualityGates();
+
+    expect(gates.some(g => g.type === 'typecheck')).toBe(true);
+  });
+
+  it('should add config gates alongside auto-detected', () => {
+    fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
+    const cfg: QualityGatesConfig = {
+      gates: [{ type: 'build', command: 'dotnet build' }],
+    };
+    const gates = detectQualityGates(cfg);
+
+    expect(gates.some(g => g.type === 'typecheck')).toBe(true);
+    expect(gates.some(g => g.command === 'dotnet build')).toBe(true);
+  });
+
+  it('should skip auto-detect when auto_detect is false', () => {
+    fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
+    const cfg: QualityGatesConfig = {
+      auto_detect: false,
+      gates: [{ type: 'test', command: 'dotnet test' }],
+    };
+    const gates = detectQualityGates(cfg);
+
+    expect(gates).toHaveLength(1);
+    expect(gates[0].command).toBe('dotnet test');
+  });
+
+  it('should disable auto-detected gate types', () => {
+    fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
+    const cfg: QualityGatesConfig = {
+      disable: ['typecheck'],
+    };
+    const gates = detectQualityGates(cfg);
+
+    expect(gates.some(g => g.type === 'typecheck')).toBe(false);
+  });
+
+  it('should add subdirectory gates with cd prefix', () => {
+    const cfg: QualityGatesConfig = {
+      auto_detect: false,
+      subdirs: {
+        backend: {
+          gates: [
+            { type: 'build', command: 'mvn compile' },
+            { type: 'test', command: 'mvn test' },
+          ],
+        },
+      },
+    };
+    const gates = detectQualityGates(cfg);
+
+    expect(gates).toHaveLength(2);
+    expect(gates[0].command).toBe('cd "backend" && mvn compile');
+    expect(gates[1].command).toBe('cd "backend" && mvn test');
+  });
+
+  it('should disable auto-detected gates in specific subdirectory', () => {
+    fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
+    fs.mkdirSync(path.join(tmpDir, 'api'));
+    fs.writeFileSync(path.join(tmpDir, 'api', 'go.mod'), '');
+    const cfg: QualityGatesConfig = {
+      subdirs: {
+        api: { disable: ['test'] },
+      },
+    };
+    const gates = detectQualityGates(cfg);
+
+    // Root typecheck should still be there
+    expect(gates.some(g => g.type === 'typecheck' && !g.command.includes('cd '))).toBe(true);
+    // api should have build and lint but NOT test
+    expect(gates.some(g => g.command === 'cd "api" && go build ./...')).toBe(true);
+    expect(gates.some(g => g.command === 'cd "api" && go vet ./...')).toBe(true);
+    expect(gates.some(g => g.command === 'cd "api" && go test ./...')).toBe(false);
+  });
+
+  it('should respect required and timeout_ms from config', () => {
+    const cfg: QualityGatesConfig = {
+      auto_detect: false,
+      gates: [
+        { type: 'test', command: 'pytest', required: false, timeout_ms: 300000 },
+      ],
+    };
+    const gates = detectQualityGates(cfg);
+
+    expect(gates).toHaveLength(1);
+    expect(gates[0].required).toBe(false);
+    expect(gates[0].timeout_ms).toBe(300000);
+  });
+
+  it('should read config from getConfig() when no override', () => {
+    __setConfig({
+      quality_gates: {
+        auto_detect: false,
+        gates: [{ type: 'custom', command: 'make check' }],
+      },
+    });
+    const gates = detectQualityGates();
+
+    expect(gates).toHaveLength(1);
+    expect(gates[0].command).toBe('make check');
+  });
+
+  it('should return empty when auto_detect false and no gates', () => {
+    const cfg: QualityGatesConfig = { auto_detect: false };
+    const gates = detectQualityGates(cfg);
 
     expect(gates).toHaveLength(0);
   });

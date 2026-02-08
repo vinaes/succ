@@ -2,6 +2,25 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+export interface GateConfig {
+  type: string;
+  command: string;
+  required?: boolean;
+  timeout_ms?: number;
+}
+
+export interface SubdirGateConfig {
+  gates?: GateConfig[];
+  disable?: string[];
+}
+
+export interface QualityGatesConfig {
+  auto_detect?: boolean;
+  gates?: GateConfig[];
+  disable?: string[];
+  subdirs?: Record<string, SubdirGateConfig>;
+}
+
 export interface SuccConfig {
   openrouter_api_key?: string;
   embedding_model: string;
@@ -75,6 +94,8 @@ export interface SuccConfig {
   sleep_agent?: SleepAgentConfig;
   // Storage backend settings (SQLite, PostgreSQL, Qdrant)
   storage?: StorageConfig;
+  // Quality gate settings for PRD pipeline
+  quality_gates?: QualityGatesConfig;
 }
 
 /**

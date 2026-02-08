@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { callLLM } from '../llm.js';
-import { getProjectRoot } from '../config.js';
+import { getProjectRoot, getConfig } from '../config.js';
+import type { QualityGatesConfig } from '../config.js';
 import { PRD_GENERATE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createPrd, createGate } from './types.js';
@@ -181,35 +182,89 @@ export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): Q
 }
 
 /**
- * Detect quality gates based on project files.
+ * Convert a GateConfig from config.json into a QualityGate.
+ */
+function gateFromConfig(cfg: { type: string; command: string; required?: boolean; timeout_ms?: number }, prefix = ''): QualityGate {
+  return createGate(
+    cfg.type as QualityGate['type'],
+    prefix + cfg.command,
+    cfg.required ?? true,
+    cfg.timeout_ms,
+  );
+}
+
+/**
+ * Detect quality gates based on project files and config.
  * Scans project root and up to 2 levels of subdirectories for monorepo support.
  * Root config files shadow subdirectory configs of the same type.
+ * Config in .succ/config.json can add, disable, or override gates.
  */
-function detectQualityGates(): QualityGate[] {
+export function detectQualityGates(configOverride?: QualityGatesConfig): QualityGate[] {
   const root = getProjectRoot();
-  const projectRoots = discoverProjectRoots(root);
+  const gatesCfg: QualityGatesConfig | undefined = configOverride ?? getConfig().quality_gates;
 
-  const rootEntry = projectRoots.find(r => r.relPath === '');
-  const subEntries = projectRoots.filter(r => r.relPath !== '');
-
-  // Detect gates at root first
   const gates: QualityGate[] = [];
-  const rootConfigTypes = new Set<string>();
 
-  if (rootEntry) {
-    gates.push(...detectGatesForRoot(rootEntry, root));
-    for (const c of rootEntry.configs) rootConfigTypes.add(c);
+  // Auto-detect from project files (default: true)
+  if (gatesCfg?.auto_detect !== false) {
+    const projectRoots = discoverProjectRoots(root);
+    const rootEntry = projectRoots.find(r => r.relPath === '');
+    const subEntries = projectRoots.filter(r => r.relPath !== '');
+    const rootConfigTypes = new Set<string>();
+
+    if (rootEntry) {
+      gates.push(...detectGatesForRoot(rootEntry, root));
+      for (const c of rootEntry.configs) rootConfigTypes.add(c);
+    }
+
+    for (const sub of subEntries) {
+      const uniqueConfigs = new Set(
+        [...sub.configs].filter(c => !rootConfigTypes.has(c))
+      );
+      if (uniqueConfigs.size === 0) continue;
+      const filtered: ProjectRoot = { relPath: sub.relPath, configs: uniqueConfigs };
+      gates.push(...detectGatesForRoot(filtered, root));
+    }
+
+    // Apply root-level disable filter
+    if (gatesCfg?.disable?.length) {
+      const disabled = new Set(gatesCfg.disable);
+      for (let i = gates.length - 1; i >= 0; i--) {
+        if (disabled.has(gates[i].type)) gates.splice(i, 1);
+      }
+    }
+
+    // Apply per-subdir disable filters
+    if (gatesCfg?.subdirs) {
+      for (const [subdir, subdirCfg] of Object.entries(gatesCfg.subdirs)) {
+        if (!subdirCfg.disable?.length) continue;
+        const disabledTypes = new Set(subdirCfg.disable);
+        const prefix = `cd "${subdir}" && `;
+        for (let i = gates.length - 1; i >= 0; i--) {
+          if (disabledTypes.has(gates[i].type) && gates[i].command.startsWith(prefix)) {
+            gates.splice(i, 1);
+          }
+        }
+      }
+    }
   }
 
-  // Detect gates in subdirectories — only for config types NOT at root
-  for (const sub of subEntries) {
-    const uniqueConfigs = new Set(
-      [...sub.configs].filter(c => !rootConfigTypes.has(c))
-    );
-    if (uniqueConfigs.size === 0) continue;
+  // Append root-level config gates
+  if (gatesCfg?.gates?.length) {
+    for (const g of gatesCfg.gates) {
+      gates.push(gateFromConfig(g));
+    }
+  }
 
-    const filtered: ProjectRoot = { relPath: sub.relPath, configs: uniqueConfigs };
-    gates.push(...detectGatesForRoot(filtered, root));
+  // Append per-subdirectory config gates
+  if (gatesCfg?.subdirs) {
+    for (const [subdir, subdirCfg] of Object.entries(gatesCfg.subdirs)) {
+      if (!subdirCfg.gates?.length) continue;
+      const prefix = `cd "${subdir}" && `;
+      for (const g of subdirCfg.gates) {
+        gates.push(gateFromConfig(g, prefix));
+      }
+    }
   }
 
   return gates;
