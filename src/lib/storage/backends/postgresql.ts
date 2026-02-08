@@ -1049,24 +1049,24 @@ export class PostgresBackend {
       throw new Error('Cannot link memories from different projects');
     }
 
-    try {
-      const result = await pool.query<{ id: number }>(
-        `INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [sourceId, targetId, relation, weight, validFrom ?? null, validUntil ?? null]
-      );
+    const result = await pool.query<{ id: number }>(
+      `INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (source_id, target_id, relation) DO NOTHING
+       RETURNING id`,
+      [sourceId, targetId, relation, weight, validFrom ?? null, validUntil ?? null]
+    );
+
+    if (result.rows.length > 0) {
       return { id: result.rows[0].id, created: true };
-    } catch (e: any) {
-      if (e.code === '23505') { // unique_violation
-        const existing = await pool.query<{ id: number }>(
-          'SELECT id FROM memory_links WHERE source_id = $1 AND target_id = $2 AND relation = $3',
-          [sourceId, targetId, relation]
-        );
-        return { id: existing.rows[0].id, created: false };
-      }
-      throw e;
     }
+
+    // Link already existed — fetch its id
+    const existing = await pool.query<{ id: number }>(
+      'SELECT id FROM memory_links WHERE source_id = $1 AND target_id = $2 AND relation = $3',
+      [sourceId, targetId, relation]
+    );
+    return { id: existing.rows[0].id, created: false };
   }
 
   async deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): Promise<boolean> {
