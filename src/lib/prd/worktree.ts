@@ -188,6 +188,8 @@ export function mergeWorktreeChanges(
 
 /**
  * Remove a single worktree.
+ * Always does git worktree remove + fallback rmSync + prune.
+ * Retries rmSync on Windows (EBUSY / EPERM from delayed file deletion).
  */
 export function removeWorktree(
   taskId: string,
@@ -195,23 +197,37 @@ export function removeWorktree(
 ): void {
   const worktreePath = path.join(getWorktreesDir(), taskId);
 
+  // 1. Try git worktree remove
   try {
     execSync(`git worktree remove --force "${worktreePath}"`, {
       cwd: projectRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch {
-    // Fallback: manual cleanup
-    try {
-      if (fs.existsSync(worktreePath)) {
+  } catch { /* fallback below */ }
+
+  // 2. If directory still exists, force remove with retry for Windows EBUSY
+  if (fs.existsSync(worktreePath)) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
         fs.rmSync(worktreePath, { recursive: true, force: true });
+        break;
+      } catch {
+        if (attempt < 2) {
+          // Brief sync delay for Windows file handle release (EBUSY)
+          const start = Date.now();
+          while (Date.now() - start < 500) { /* spin wait ~500ms */ }
+        }
       }
-      execSync('git worktree prune', {
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch { /* best effort */ }
+    }
   }
+
+  // 3. Always prune git's worktree registry
+  try {
+    execSync('git worktree prune', {
+      cwd: projectRoot,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch { /* best effort */ }
 }
 
 /**
