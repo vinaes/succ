@@ -32,7 +32,7 @@ import { setup } from './commands/setup.js';
 import { agentsMd } from './commands/agents-md.js';
 import { progress } from './commands/progress.js';
 import { backfill } from './commands/backfill.js';
-import { prdGenerate, prdParse, prdRun, prdList, prdStatus } from './commands/prd.js';
+import { prdGenerate, prdParse, prdRun, prdList, prdStatus, prdArchive } from './commands/prd.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -699,6 +699,14 @@ prdCmd
       json: options.json,
       verbose: options.verbose,
     });
+  });
+
+prdCmd
+  .command('archive [prd-id]')
+  .description('Archive a PRD (set status to archived)')
+  .option('--prd-id <id>', 'PRD ID to archive (or use positional argument)')
+  .action((prdId, options) => {
+    prdArchive(prdId || options.prdId);
   });
 
 program.parse();
