@@ -13,8 +13,9 @@ import {
   getRecentDocuments,
   closeDb,
 } from '../../lib/storage/index.js';
-import { isGlobalOnlyMode } from '../../lib/config.js';
+import { isGlobalOnlyMode, getReadinessGateConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
+import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
 import { trackTokenSavings, projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerSearchTools(server: McpServer) {
@@ -96,11 +97,20 @@ export function registerSearchTools(server: McpServer) {
           })
           .join('\n\n---\n\n');
 
+        // Readiness gate: assess result confidence
+        const gateConfig = getReadinessGateConfig();
+        let readinessHeader = '';
+        if (gateConfig.enabled) {
+          const assessment = assessReadiness(results, 'docs', gateConfig);
+          readinessHeader = formatReadinessHeader(assessment);
+          if (readinessHeader) readinessHeader += '\n\n';
+        }
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Found ${results.length} results for "${query}":\n\n${formatted}`,
+              text: `${readinessHeader}Found ${results.length} results for "${query}":\n\n${formatted}`,
             },
           ],
         };
@@ -172,11 +182,20 @@ export function registerSearchTools(server: McpServer) {
           })
           .join('\n\n---\n\n');
 
+        // Readiness gate: assess result confidence
+        const codeGateConfig = getReadinessGateConfig();
+        let codeReadinessHeader = '';
+        if (codeGateConfig.enabled) {
+          const assessment = assessReadiness(codeResults, 'code', codeGateConfig);
+          codeReadinessHeader = formatReadinessHeader(assessment);
+          if (codeReadinessHeader) codeReadinessHeader += '\n\n';
+        }
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Found ${codeResults.length} code matches for "${query}":\n\n${formatted}`,
+              text: `${codeReadinessHeader}Found ${codeResults.length} code matches for "${query}":\n\n${formatted}`,
             },
           ],
         };
