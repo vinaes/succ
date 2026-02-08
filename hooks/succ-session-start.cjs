@@ -103,11 +103,14 @@ Without it, succ works in global-only mode and can't access project data.
 ❌ NEVER use Grep to find memories — use succ_recall instead
 ❌ NEVER use Read to browse brain vault — use succ_search first
 
-📦 MEMORY STORAGE — where to put what:
-- **succ_remember** → learnings, decisions, patterns, errors, changelogs (long-term, searchable)
-- **MEMORY.md** → ONLY hot cache: project structure, current phase, critical gotchas (loaded every session)
-- After fixing a bug or learning something → succ_remember, NOT a .md file
-- succ_recall to retrieve past learnings before solving similar problems
+📦 MEMORY — two-tier system:
+- **MEMORY.md** (Claude Code built-in) = hot cache. ~200 line limit, auto-loaded every session.
+  Good for: project structure, current phase, critical gotchas — things needed EVERY session.
+  You CAN write to it, but keep it short and high-signal. It's a summary card, not a knowledge base.
+- **succ_remember** = long-term memory. Unlimited, searchable, tagged, scored.
+  Good for: decisions, learnings, patterns, errors, changelogs — anything worth keeping.
+  Use succ_recall to retrieve. This is the REAL knowledge store.
+- Rule: if you learn something → succ_remember. Only update MEMORY.md if it changes the project's core summary.
 </critical>
 
 <decision-guide>
