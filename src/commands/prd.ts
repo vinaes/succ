@@ -389,3 +389,33 @@ function extractTitleFromMarkdown(markdown: string): string {
   if (match) return match[1].trim();
   return 'Untitled PRD';
 }
+
+export async function prdArchive(
+  prdIdArg?: string,
+  options: Record<string, unknown> = {}
+): Promise<void> {
+  let prdId = prdIdArg;
+  if (!prdId) {
+    const latest = findLatestPrd();
+    if (!latest) {
+      console.error('No PRDs found. Create one with: succ prd generate "description"');
+      process.exit(1);
+    }
+    prdId = latest.id;
+  }
+
+  const prd = loadPrd(prdId);
+  if (!prd) {
+    console.error(`PRD not found: ${prdId}`);
+    process.exit(1);
+  }
+
+  try {
+    prd.status = 'archived';
+    savePrd(prd);
+    console.log(`Archived PRD: ${prd.title} (${prdId})`);
+  } catch (error) {
+    console.error(`Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
