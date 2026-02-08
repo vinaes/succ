@@ -118,6 +118,7 @@ export interface PrdExecution {
   max_iterations: number;         // default: 3 (Ralph-style retry whole PRD)
   pid: number | null;
   team_name: string | null;       // for team mode
+  concurrency: number | null;     // max parallel workers (team mode)
   log_file: string;
 }
 
@@ -279,6 +280,7 @@ export function createExecution(opts: {
     max_iterations: opts.max_iterations ?? 3,
     pid: null,
     team_name: null,
+    concurrency: null,
     log_file: '',
   };
 }

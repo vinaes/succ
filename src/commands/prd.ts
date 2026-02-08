@@ -44,6 +44,7 @@ interface StatusOptions {
 
 interface RunCmdOptions {
   mode?: string;
+  concurrency?: string;
   resume?: boolean;
   task?: string;
   dryRun?: boolean;
@@ -227,7 +228,8 @@ export async function prdRun(
     console.log(`Running PRD: ${prdId}`);
 
     const result = await runPrd(prdId, {
-      mode: 'loop',
+      mode: (options.mode as 'loop' | 'team') ?? 'loop',
+      concurrency: options.concurrency ? parseInt(options.concurrency, 10) : undefined,
       resume: options.resume,
       taskId: options.task,
       dryRun: options.dryRun,

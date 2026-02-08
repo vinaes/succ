@@ -19,6 +19,7 @@ export interface ExecuteOptions {
   model?: string;
   permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
   allowedTools?: string[];
+  mcpConfig?: Record<string, { command: string; args?: string[] }>;
   onOutput?: (chunk: string) => void;
 }
 
@@ -63,6 +64,12 @@ export class LoopExecutor implements AgentExecutor {
 
     if (options.allowedTools && options.allowedTools.length > 0) {
       args.push('--allowedTools', options.allowedTools.join(','));
+    }
+
+    // Pass MCP server config so spawned claude can access succ tools
+    if (options.mcpConfig && Object.keys(options.mcpConfig).length > 0) {
+      const mcpJson = JSON.stringify({ mcpServers: options.mcpConfig });
+      args.push('--mcp-config', mcpJson);
     }
 
     return new Promise<ExecuteResult>((resolve) => {
