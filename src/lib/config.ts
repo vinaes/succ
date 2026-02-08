@@ -1318,44 +1318,63 @@ export function markOnboardingCompleted(mode: 'wizard' | 'ai-chat' | 'skipped'):
 /**
  * Get status of all succ daemons (watch, analyze)
  */
-export function getDaemonStatuses(): DaemonStatus[] {
+export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
   const succDir = getSuccDir();
   const statuses: DaemonStatus[] = [];
+  const tmpDir = path.join(succDir, '.tmp');
 
-  // Watch daemon
-  const watchPidFile = path.join(succDir, 'watch.pid');
-  const watchLogFile = path.join(succDir, 'watch.log');
-  if (fs.existsSync(watchPidFile)) {
-    const pid = parseInt(fs.readFileSync(watchPidFile, 'utf-8').trim(), 10);
+  // Daemon API server (PID in .tmp/)
+  const daemonPidFile = path.join(tmpDir, 'daemon.pid');
+  const daemonPortFile = path.join(tmpDir, 'daemon.port');
+  const daemonLogFile = path.join(succDir, 'daemon.log');
+  let daemonRunning = false;
+  let daemonPort: number | null = null;
+
+  if (fs.existsSync(daemonPidFile)) {
+    const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf-8').trim(), 10);
+    daemonRunning = isProcessRunning(pid);
+    if (fs.existsSync(daemonPortFile)) {
+      daemonPort = parseInt(fs.readFileSync(daemonPortFile, 'utf-8').trim(), 10);
+    }
     statuses.push({
-      name: 'watch',
-      running: isProcessRunning(pid),
+      name: 'daemon',
+      running: daemonRunning,
       pid,
-      pidFile: watchPidFile,
-      logFile: fs.existsSync(watchLogFile) ? watchLogFile : undefined,
+      pidFile: daemonPidFile,
+      logFile: fs.existsSync(daemonLogFile) ? daemonLogFile : undefined,
     });
   } else {
-    statuses.push({ name: 'watch', running: false });
+    statuses.push({ name: 'daemon', running: false });
   }
 
-  // Analyze daemon
-  const analyzePidFile = path.join(succDir, 'daemon.pid');
-  const analyzeLogFile = path.join(succDir, 'daemon.log');
-  if (fs.existsSync(analyzePidFile)) {
-    const pid = parseInt(fs.readFileSync(analyzePidFile, 'utf-8').trim(), 10);
-    statuses.push({
-      name: 'analyze',
-      running: isProcessRunning(pid),
-      pid,
-      pidFile: analyzePidFile,
-      logFile: fs.existsSync(analyzeLogFile) ? analyzeLogFile : undefined,
-    });
-  } else {
-    statuses.push({ name: 'analyze', running: false });
+  // Watch & Analyze are services inside the daemon — query via HTTP
+  let services: { watch?: { active?: boolean }; analyze?: { active?: boolean; running?: boolean } } | null = null;
+  if (daemonRunning && daemonPort) {
+    try {
+      const http = await import('http');
+      services = await new Promise((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:${daemonPort}/api/services`, { timeout: 2000 }, (res) => {
+          let data = '';
+          res.on('data', (chunk: string) => { data += chunk; });
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+        });
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+      });
+    } catch { /* daemon unreachable */ }
   }
+
+  statuses.push({
+    name: 'watch',
+    running: services?.watch?.active ?? false,
+  });
+
+  statuses.push({
+    name: 'analyze',
+    running: services?.analyze?.active ?? services?.analyze?.running ?? false,
+  });
 
   // Idle watcher (from hooks)
-  const tmpDir = path.join(succDir, '.tmp');
   const watcherActiveFile = path.join(tmpDir, 'watcher-active.txt');
   if (fs.existsSync(watcherActiveFile)) {
     statuses.push({

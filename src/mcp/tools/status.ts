@@ -54,7 +54,7 @@ export function registerStatusTools(server: McpServer) {
 
         const stats = await getStats();
         const memStats = await getMemoryStats();
-        const daemons = getDaemonStatuses();
+        const daemons = await getDaemonStatuses();
 
         // Format type breakdown
         const typeBreakdown = Object.entries(memStats.by_type)
