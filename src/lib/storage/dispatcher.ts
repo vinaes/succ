@@ -107,11 +107,58 @@ export class StorageDispatcher {
   private qdrant: QdrantVectorStore | null;
   private _sqliteFns: typeof import('../db/index.js') | null = null;
 
+  // Learning delta auto-tracking counters
+  private _sessionCounters = {
+    memoriesCreated: 0,
+    memoriesDuplicated: 0,
+    globalMemoriesCreated: 0,
+    recallQueries: 0,
+    searchQueries: 0,
+    codeSearchQueries: 0,
+    typesCreated: {} as Record<string, number>,
+    startedAt: new Date().toISOString(),
+  };
+
   constructor() {
     this.backend = _backend;
     this.vectorBackend = _vectorBackend;
     this.postgres = _postgresBackend;
     this.qdrant = _qdrantStore;
+  }
+
+  /** Get current session counters (non-destructive read) */
+  getSessionCounters() {
+    return { ...this._sessionCounters };
+  }
+
+  /** Flush session counters to learning_deltas table and reset */
+  async flushSessionCounters(source: string): Promise<void> {
+    const c = this._sessionCounters;
+    const totalCreated = c.memoriesCreated + c.globalMemoriesCreated;
+
+    if (totalCreated === 0 && c.recallQueries === 0 && c.searchQueries === 0 && c.codeSearchQueries === 0) return;
+
+    try {
+      const stats = await this.getMemoryStats();
+      await this.appendLearningDelta({
+        timestamp: new Date().toISOString(),
+        source,
+        memoriesBefore: (stats.total_memories ?? 0) - totalCreated,
+        memoriesAfter: stats.total_memories ?? 0,
+        newMemories: totalCreated,
+        typesAdded: c.typesCreated,
+        avgQualityOfNew: null,
+      });
+    } catch (error) {
+      // Don't let flush errors break shutdown
+      console.error('[StorageDispatcher] Failed to flush session counters:', error);
+    }
+
+    this._sessionCounters = {
+      memoriesCreated: 0, memoriesDuplicated: 0, globalMemoriesCreated: 0,
+      recallQueries: 0, searchQueries: 0, codeSearchQueries: 0,
+      typesCreated: {}, startedAt: new Date().toISOString(),
+    };
   }
 
   private async getSqliteFns(): Promise<typeof import('../db/index.js')> {
@@ -304,7 +351,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
         const similar = await this.findSimilarMemory(embedding, 0.95);
-        if (similar) return { id: similar.id, created: false, duplicate: similar };
+        if (similar) { this._sessionCounters.memoriesDuplicated++; return { id: similar.id, created: false, duplicate: similar }; }
       }
       const id = await this.postgres.saveMemory(content, embedding, tags, source, type, qualityScore, qualityFactors, validFrom, validUntil);
 
@@ -321,6 +368,8 @@ export class StorageDispatcher {
           }
         } catch (error) { console.error(`[Qdrant] Failed to sync memory vector ${id}:`, error); }
       }
+      this._sessionCounters.memoriesCreated++;
+      this._sessionCounters.typesCreated[type] = (this._sessionCounters.typesCreated[type] ?? 0) + 1;
       return { id, created: true };
     }
 
@@ -345,8 +394,15 @@ export class StorageDispatcher {
       } catch (error) { console.error(`[Qdrant] Failed to sync memory vector ${result.id}:`, error); }
     }
 
+    const created = !result.isDuplicate;
+    if (created) {
+      this._sessionCounters.memoriesCreated++;
+      this._sessionCounters.typesCreated[type] = (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+    } else {
+      this._sessionCounters.memoriesDuplicated++;
+    }
     return {
-      id: result.id, created: !result.isDuplicate,
+      id: result.id, created,
       duplicate: result.isDuplicate && result.similarity != null
         ? { id: result.id, content: '', similarity: result.similarity } : undefined,
     };
@@ -754,6 +810,7 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async hybridSearchCode(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+    this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrantHybrid('documents')) {
@@ -770,6 +827,7 @@ export class StorageDispatcher {
   }
 
   async hybridSearchDocs(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+    this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrantHybrid('documents')) {
@@ -786,6 +844,7 @@ export class StorageDispatcher {
   }
 
   async hybridSearchMemories(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+    this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrantHybrid('memories')) {
@@ -829,7 +888,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
         const similar = await this.findSimilarGlobalMemory(embedding, 0.95);
-        if (similar) return { id: similar.id, created: false, duplicate: similar };
+        if (similar) { this._sessionCounters.memoriesDuplicated++; return { id: similar.id, created: false, duplicate: similar }; }
       }
       const id = await this.postgres.saveGlobalMemory(content, embedding, tags, source, type, qualityScore, qualityFactors);
 
@@ -842,6 +901,7 @@ export class StorageDispatcher {
           }
         } catch (error) { console.error(`[Qdrant] Failed to sync global memory vector ${id}:`, error); }
       }
+      this._sessionCounters.globalMemoriesCreated++;
       return { id, created: true };
     }
 
@@ -858,6 +918,11 @@ export class StorageDispatcher {
       } catch (error) { console.error(`[Qdrant] Failed to sync global memory vector ${result.id}:`, error); }
     }
 
+    if (!result.isDuplicate) {
+      this._sessionCounters.globalMemoriesCreated++;
+    } else {
+      this._sessionCounters.memoriesDuplicated++;
+    }
     return {
       id: result.id, created: !result.isDuplicate,
       duplicate: result.isDuplicate && result.similarity != null ? { id: result.id, content: '', similarity: result.similarity } : undefined,

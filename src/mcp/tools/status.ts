@@ -14,6 +14,7 @@ import {
   getAllMemoriesForRetention,
   getTokenStatsAggregated,
   getTokenStatsSummary,
+  getStorageDispatcher,
   closeDb,
   type TokenEventType,
 } from '../../lib/storage/index.js';
@@ -105,6 +106,27 @@ export function registerStatusTools(server: McpServer) {
         } catch {
           // Skip retention health if it fails
         }
+
+        // Session counters (in-memory, no DB query)
+        try {
+          const d = await getStorageDispatcher();
+          const sc = d.getSessionCounters();
+          const totalOps = sc.memoriesCreated + sc.globalMemoriesCreated + sc.memoriesDuplicated + sc.recallQueries + sc.searchQueries + sc.codeSearchQueries;
+          if (totalOps > 0) {
+            const typesList = Object.entries(sc.typesCreated).map(([t, n]) => `${t} (${n})`).join(', ');
+            status.push(
+              '',
+              '## Current Session',
+              `  Memories created: ${sc.memoriesCreated + sc.globalMemoriesCreated}${sc.memoriesCreated > 0 && sc.globalMemoriesCreated > 0 ? ` (${sc.memoriesCreated} local, ${sc.globalMemoriesCreated} global)` : ''}`,
+              sc.memoriesDuplicated > 0 ? `  Duplicates skipped: ${sc.memoriesDuplicated}` : '',
+              `  Recall queries: ${sc.recallQueries}`,
+              `  Search queries: ${sc.searchQueries}`,
+              sc.codeSearchQueries > 0 ? `  Code search queries: ${sc.codeSearchQueries}` : '',
+              typesList ? `  Types: ${typesList}` : '',
+              `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`,
+            );
+          }
+        } catch { /* ignore */ }
 
         status.push(
           '',

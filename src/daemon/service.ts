@@ -41,6 +41,7 @@ import {
   // Dispatcher lifecycle
   initStorageDispatcher,
   closeStorageDispatcher,
+  getStorageDispatcher,
 } from '../lib/storage/index.js';
 import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
@@ -578,6 +579,12 @@ export async function routeRequest(method: string, pathname: string, searchParam
 
     const session = sessionManager!.get(session_id);
     const transcriptFile = transcript_path || session?.transcriptPath || '';
+
+    // Flush session counters to learning_deltas before unregister
+    try {
+      const d = await getStorageDispatcher();
+      await d.flushSessionCounters('daemon-session');
+    } catch (err) { log(`[session] Failed to flush session counters: ${err}`); }
 
     // Unregister the session immediately (don't block on processing)
     const removed = sessionManager!.unregister(session_id);
