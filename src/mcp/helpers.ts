@@ -13,7 +13,7 @@
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, type TokenEventType } from '../lib/storage/index.js';
+import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, getStorageDispatcher, type TokenEventType } from '../lib/storage/index.js';
 import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
@@ -56,6 +56,7 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 
   // Reinit storage if we already had a different project OR this is first time
   if (_currentProject !== null) {
+    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-project-switch'); } catch (_) { /* ignore */ }
     closeDb();
     closeGlobalDb();
     await closeStorageDispatcher();
@@ -70,6 +71,7 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 // Graceful shutdown handler
 export function setupGracefulShutdown() {
   const cleanup = async () => {
+    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-session'); } catch (_) { /* ignore */ }
     await closeStorageDispatcher();
     cleanupEmbeddings();
     cleanupQualityScoring();
