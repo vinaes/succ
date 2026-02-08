@@ -382,6 +382,8 @@ export async function runPrd(
         }
         if (stashed) {
           try {
+            // Ensure clean working tree before stash pop to avoid conflicts
+            resetWorkingTree(root);
             git('stash pop', root);
           } catch {
             console.log('Warning: Could not pop stash. Check git stash list.');

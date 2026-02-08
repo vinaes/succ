@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.1.51",
+  "version": "1.1.52",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "bin": {

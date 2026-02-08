@@ -11,6 +11,7 @@
  */
 
 import { execSync } from 'child_process';
+import path from 'path';
 import type { QualityGate, GateResult } from './types.js';
 
 // ============================================================================
@@ -34,6 +35,12 @@ function tailTruncate(text: string, maxLen: number): string {
  */
 export function runGate(gate: QualityGate, cwd: string): GateResult {
   const start = Date.now();
+
+  // Prepend node_modules/.bin to PATH so tools resolve in worktrees
+  const binDir = path.join(cwd, 'node_modules', '.bin');
+  const envPath = process.env.PATH || process.env.Path || '';
+  const env = { ...process.env, PATH: `${binDir}${path.delimiter}${envPath}` };
+
   try {
     const output = execSync(gate.command, {
       cwd,
@@ -41,6 +48,7 @@ export function runGate(gate: QualityGate, cwd: string): GateResult {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 10 * 1024 * 1024, // 10MB
+      env,
     });
     return {
       gate,
