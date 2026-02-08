@@ -60,7 +60,7 @@ export interface ProjectRoot {
 export function binaryAvailable(name: string): boolean {
   try {
     const cmd = process.platform === 'win32' ? `where ${name}` : `which ${name}`;
-    execSync(cmd, { stdio: 'pipe', timeout: 5000 });
+    execSync(cmd, { stdio: 'pipe', timeout: 5000, windowsHide: true });
     return true;
   } catch {
     return false;

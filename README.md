@@ -60,11 +60,16 @@ succ analyze
 | **MCP Native** | Claude uses succ tools directly |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
+| **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
+| **Team Mode** | Parallel task execution with git worktrees |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
 
 <details>
 <summary>All features</summary>
 
+- **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent
+- **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
+- **Quality Gates** — Auto-detected (TypeScript, Go, Python, Rust) or custom; run after each task to verify code quality
 - **Dead-End Tracking** — Record failed approaches; auto-boosted in recall to prevent retrying
 - **AGENTS.md Auto-Export** — Auto-generate editor instructions from decisions, patterns, dead-ends
 - **Learning Delta** — Track knowledge growth per session (memories added, types, quality)
@@ -107,6 +112,8 @@ succ analyze
 | `succ memories` | List and search memories |
 | `succ watch` | Watch for changes and auto-reindex |
 | `succ daemon <action>` | Manage unified daemon |
+| `succ prd generate` | Generate PRD from feature description |
+| `succ prd run` | Execute PRD tasks with quality gates |
 | `succ status` | Show index statistics |
 
 <details>
@@ -128,6 +135,10 @@ succ analyze
 | `succ stats` | Show token savings statistics |
 | `succ checkpoint <action>` | Create, restore, or list checkpoints |
 | `succ score` | Show AI-readiness score |
+| `succ prd parse <file>` | Parse PRD markdown into tasks |
+| `succ prd list` | List all PRDs |
+| `succ prd status [id]` | Show PRD status and tasks |
+| `succ prd archive [id]` | Archive a PRD |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 | `succ migrate` | Migrate data between storage backends |
@@ -187,6 +198,21 @@ succ daemon start        # Start daemon manually
 succ daemon stop         # Stop daemon
 succ daemon logs         # Show recent logs
 ```
+
+### succ prd
+
+```bash
+succ prd generate "Add JWT authentication"   # Generate PRD + parse tasks
+succ prd run                                  # Execute sequentially (default)
+succ prd run --mode team                      # Execute in parallel (git worktrees)
+succ prd run --mode team --concurrency 5      # Parallel with 5 workers
+succ prd run --resume                         # Resume interrupted run
+succ prd run --dry-run                        # Preview execution plan
+succ prd status                               # Show latest PRD status
+succ prd list                                 # List all PRDs
+```
+
+Team mode runs independent tasks in parallel using git worktrees for isolation. Each worker gets its own checkout; results merge via cherry-pick. Quality gates (typecheck, test, lint, build) run automatically after each task.
 
 ## Configuration
 

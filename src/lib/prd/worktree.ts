@@ -73,7 +73,7 @@ export function createWorktree(
   // Create detached worktree at the current HEAD of the PRD branch
   execSync(
     `git worktree add --detach "${worktreePath}" ${prdBranch}`,
-    { cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'] },
+    { cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
   );
 
   // Symlink node_modules so tools like tsc/vitest work in the worktree
@@ -128,6 +128,7 @@ export function mergeWorktreeChanges(
     execSync('git add -A', {
       cwd: worktreePath,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
 
     // Check if there's anything to commit
@@ -135,6 +136,7 @@ export function mergeWorktreeChanges(
       cwd: worktreePath,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
 
     if (!status) {
@@ -146,6 +148,7 @@ export function mergeWorktreeChanges(
     execSync(`git commit -m "${safeMsg}"`, {
       cwd: worktreePath,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
 
     // Get the commit SHA
@@ -153,6 +156,7 @@ export function mergeWorktreeChanges(
       cwd: worktreePath,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
 
     // Cherry-pick onto the main PRD branch
@@ -160,6 +164,7 @@ export function mergeWorktreeChanges(
       execSync(`git cherry-pick ${sha}`, {
         cwd: projectRoot,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
       return { success: true, commitSha: sha };
     } catch {
@@ -168,6 +173,7 @@ export function mergeWorktreeChanges(
         execSync('git cherry-pick --abort', {
           cwd: projectRoot,
           stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
         });
       } catch { /* best effort */ }
 
@@ -202,6 +208,7 @@ export function removeWorktree(
     execSync(`git worktree remove --force "${worktreePath}"`, {
       cwd: projectRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
   } catch { /* fallback below */ }
 
@@ -226,6 +233,7 @@ export function removeWorktree(
     execSync('git worktree prune', {
       cwd: projectRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
   } catch { /* best effort */ }
 }
@@ -251,6 +259,7 @@ export function cleanupAllWorktrees(projectRoot: string): void {
     execSync('git worktree prune', {
       cwd: projectRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
   } catch { /* best effort */ }
 }
@@ -265,6 +274,7 @@ function getConflictingFiles(projectRoot: string): string[] {
       cwd: projectRoot,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
     return output ? output.split('\n').filter(Boolean) : [];
   } catch {

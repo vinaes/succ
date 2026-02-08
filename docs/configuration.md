@@ -538,6 +538,78 @@ Subdirectory commands are automatically prefixed with `cd "<subdir>" &&`.
 
 ---
 
+## PRD Pipeline Settings
+
+The PRD (Product Requirements Document) pipeline generates tasks from feature descriptions and executes them with Claude Code agent. Tasks run with branch isolation, quality gates, and auto-commit.
+
+### CLI Reference
+
+```bash
+# Generate
+succ prd generate "Add JWT authentication"
+succ prd generate "..." --mode team              # Team mode (parallel)
+succ prd generate "..." --gates "test:npm test"   # Custom gates
+succ prd generate "..." --model claude-sonnet     # LLM override
+succ prd generate "..." --auto-parse              # Auto-parse into tasks
+
+# Parse (if not auto-parsed)
+succ prd parse <file-or-prd-id>
+succ prd parse <file> --prd-id prd_xxx            # Add to existing PRD
+succ prd parse <file> --dry-run                   # Preview without saving
+
+# Run
+succ prd run [prd-id]                             # Sequential (default)
+succ prd run --mode team                          # Parallel with git worktrees
+succ prd run --mode team --concurrency 5          # 5 parallel workers
+succ prd run --resume                             # Resume interrupted run
+succ prd run --resume --force                     # Force resume (skip lock check)
+succ prd run --task task_001                      # Run single task
+succ prd run --dry-run                            # Preview execution plan
+succ prd run --no-branch                          # Skip branch isolation
+succ prd run --model claude-sonnet                # Model override
+succ prd run --max-iterations 5                   # Max full-PRD retries
+
+# Management
+succ prd list                                     # List all PRDs
+succ prd list --all                               # Include archived
+succ prd status [prd-id]                          # Show status + tasks
+succ prd status --verbose                         # Detailed task info
+succ prd status --json                            # JSON output
+succ prd archive [prd-id]                         # Archive PRD
+```
+
+### MCP Tools
+
+The same operations are available via MCP:
+
+| Tool | Description |
+|------|-------------|
+| `succ_prd_generate` | Generate PRD from description |
+| `succ_prd_list` | List all PRDs |
+| `succ_prd_status` | Show PRD and task status |
+| `succ_prd_run` | Execute or resume a PRD |
+
+### Execution Modes
+
+| Mode | Description |
+|------|-------------|
+| `loop` | Sequential execution (default). Tasks run one at a time in topological order. |
+| `team` | Parallel execution with git worktrees. Independent tasks run concurrently, each in an isolated checkout. Results merge via cherry-pick. |
+
+**Team mode details:**
+- Each worker gets a detached git worktree under `.succ/worktrees/`
+- `node_modules` is symlinked (junction on Windows) so tools like `tsc`/`vitest` work
+- Quality gates run in the worktree before merging
+- Cherry-pick merges changes back to the PRD branch
+- On conflict: task retries with updated context
+- Concurrency defaults to 3 workers
+
+### Branch Isolation
+
+By default, `succ prd run` creates a `prd/{id}` branch, executes all tasks there, then returns to the original branch. Use `--no-branch` to execute in the current branch.
+
+---
+
 ## Daemon Settings
 
 Controls the background daemon service.
