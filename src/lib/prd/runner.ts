@@ -92,11 +92,12 @@ function getModifiedFiles(cwd: string): string[] {
 
 /**
  * Reset working tree to HEAD — discard all changes from failed attempt.
+ * Uses `git clean -fd -e .succ` to preserve PRD state files.
  */
 function resetWorkingTree(cwd: string): void {
   try {
     git('checkout -- .', cwd);
-    git('clean -fd', cwd);
+    git('clean -fd -e .succ', cwd);
   } catch {
     // best-effort
   }
