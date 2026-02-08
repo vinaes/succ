@@ -90,6 +90,18 @@ function getModifiedFiles(cwd: string): string[] {
   }
 }
 
+/**
+ * Reset working tree to HEAD — discard all changes from failed attempt.
+ */
+function resetWorkingTree(cwd: string): void {
+  try {
+    git('checkout -- .', cwd);
+    git('clean -fd', cwd);
+  } catch {
+    // best-effort
+  }
+}
+
 // ============================================================================
 // Main Runner
 // ============================================================================
@@ -347,7 +359,7 @@ async function executeTask(
     // Execute via claude --print
     const executeOptions: ExecuteOptions = {
       cwd: root,
-      timeout_ms: 600_000, // 10 minutes per task
+      timeout_ms: 900_000, // 15 minutes per task
       model,
       permissionMode: 'acceptEdits',
       allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
@@ -372,6 +384,7 @@ async function executeTask(
       taskAttempt.error = `Exit code: ${result.exit_code}`;
       console.log(`  [x] Agent failed (exit ${result.exit_code})`);
       appendProgress(prdId, `${task.id} attempt ${attempt} failed (exit ${result.exit_code})`);
+      resetWorkingTree(root);
 
       if (attempt < task.max_attempts) {
         prompt = appendFailureContext(prompt, attempt, '', result.output);
@@ -395,6 +408,7 @@ async function executeTask(
         taskAttempt.error = `Gates failed: ${failedGates.map(r => r.gate.type).join(', ')}`;
         console.log(`  [x] Gates failed:\n${formatGateResults(gateResults)}`);
         appendProgress(prdId, `${task.id} attempt ${attempt} gates failed: ${taskAttempt.error}`);
+        resetWorkingTree(root);
 
         if (attempt < task.max_attempts) {
           const gateOutput = formatGateResults(gateResults);
