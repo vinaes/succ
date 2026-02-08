@@ -2,7 +2,8 @@
  * Agent Executor
  *
  * Thin abstraction over child_process.spawn for running Claude Code CLI.
- * Loop mode: `claude --print --model <model> --allowedTools ...`
+ * Uses `-p --no-session-persistence` with SUCC_SERVICE_SESSION env marker,
+ * matching the canonical pattern from llm.ts (buildClaudeArgs / CLAUDE_SPAWN_OPTIONS).
  * Prompt is piped via stdin to avoid shell escaping issues.
  */
 
@@ -51,8 +52,8 @@ export class LoopExecutor implements AgentExecutor {
     this.aborted = false;
     const start = Date.now();
 
-    // Build args — prompt goes via stdin, not as positional arg
-    const args = ['--print'];
+    // Build args matching llm.ts pattern: -p, --no-session-persistence
+    const args = ['-p', '--no-session-persistence'];
 
     if (options.model) {
       args.push('--model', options.model);
@@ -93,7 +94,8 @@ export class LoopExecutor implements AgentExecutor {
         this.process = spawn('claude', args, {
           cwd: options.cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env },
+          env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+          windowsHide: true,
         });
 
         // Write prompt to stdin and close it
