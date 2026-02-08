@@ -30,12 +30,13 @@ import {
   closeGlobalDb,
 } from '../../lib/storage/index.js';
 import type { MemoryBatchInput } from '../../lib/storage/index.js';
-import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig } from '../../lib/config.js';
+import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig, getReadinessGateConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from '../../lib/temporal.js';
 import { extractFactsWithLLM } from '../../lib/session-summary.js';
+import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
 import { trackTokenSavings, trackMemoryAccess, parseRelativeDate, projectPathParam, applyProjectPath } from '../helpers.js';
 
 /**
@@ -871,11 +872,20 @@ export function registerMemoryTools(server: McpServer) {
         const asOfStr = as_of_date ? ` (as of ${as_of_date})` : '';
         const summary = `Found ${allResults.length} memories (${localCount} local, ${globalCount} global)${asOfStr}`;
 
+        // Readiness gate: assess result confidence
+        const memGateConfig = getReadinessGateConfig();
+        let memReadinessHeader = '';
+        if (memGateConfig.enabled) {
+          const assessment = assessReadiness(allResults, 'memories', memGateConfig);
+          memReadinessHeader = formatReadinessHeader(assessment);
+          if (memReadinessHeader) memReadinessHeader += '\n\n';
+        }
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: `${summary} for "${query}":\n\n${formatted}`,
+              text: `${memReadinessHeader}${summary} for "${query}":\n\n${formatted}`,
             },
           ],
         };

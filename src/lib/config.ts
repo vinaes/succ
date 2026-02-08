@@ -96,6 +96,8 @@ export interface SuccConfig {
   storage?: StorageConfig;
   // Quality gate settings for PRD pipeline
   quality_gates?: QualityGatesConfig;
+  // Readiness gate: confidence assessment for search results
+  readiness_gate?: ReadinessGateConfig;
 }
 
 /**
@@ -276,6 +278,15 @@ export interface TemporalConfig {
   filter_expired?: boolean;  // Filter out expired facts (default: true)
 }
 
+export interface ReadinessGateConfig {
+  enabled?: boolean;  // Enable readiness gate for search results (default: false)
+  thresholds?: {
+    proceed?: number;  // Confidence threshold for "proceed" (default: 0.7)
+    warn?: number;     // Confidence threshold for "warn" (default: 0.4)
+  };
+  expected_results?: number;  // Expected result count for coverage calc (default: 5)
+}
+
 export interface BPETokenizerConfig {
   enabled?: boolean;  // Enable BPE tokenizer (default: false)
   vocab_size?: number;  // Target vocabulary size (default: 5000)
@@ -338,6 +349,13 @@ export interface IdleReflectionConfig {
 // Model names for different modes
 export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2';  // 384 dimensions
 export const OPENROUTER_MODEL = 'openai/text-embedding-3-small';
+
+// Default readiness gate config
+export const DEFAULT_READINESS_GATE_CONFIG = {
+  enabled: true,
+  thresholds: { proceed: 0.7, warn: 0.4 },
+  expected_results: 5,
+} as const;
 
 // Default idle watcher config
 export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
@@ -778,6 +796,24 @@ export function getCompactBriefingConfig(): Required<CompactBriefingConfig> {
     include_memories: userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
     max_memories: userConfig.max_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.max_memories,
     timeout_ms: userConfig.timeout_ms ?? DEFAULT_COMPACT_BRIEFING_CONFIG.timeout_ms,
+  };
+}
+
+/**
+ * Get readiness gate configuration with defaults
+ */
+export function getReadinessGateConfig() {
+  const config = getConfig();
+  const userConfig = config.readiness_gate || {};
+  const userThresholds = userConfig.thresholds || {};
+
+  return {
+    enabled: userConfig.enabled ?? DEFAULT_READINESS_GATE_CONFIG.enabled,
+    thresholds: {
+      proceed: userThresholds.proceed ?? DEFAULT_READINESS_GATE_CONFIG.thresholds.proceed,
+      warn: userThresholds.warn ?? DEFAULT_READINESS_GATE_CONFIG.thresholds.warn,
+    },
+    expected_results: userConfig.expected_results ?? DEFAULT_READINESS_GATE_CONFIG.expected_results,
   };
 }
 

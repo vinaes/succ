@@ -106,6 +106,11 @@ vi.mock('../lib/config.js', () => ({
     cooldown_minutes: 10,
   })),
   isProjectInitialized: vi.fn(() => true),
+  getReadinessGateConfig: vi.fn(() => ({
+    enabled: false,
+    thresholds: { proceed: 0.7, warn: 0.4 },
+    expected_results: 5,
+  })),
 }));
 
 vi.mock('../lib/quality.js', () => ({
