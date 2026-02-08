@@ -53,7 +53,7 @@ function detectQualityGates(): QualityGate[] {
       if (testScript && testScript !== 'echo "Error: no test specified" && exit 1') {
         if (testScript.includes('vitest') && !testScript.includes('--run')) {
           // vitest without --run = watch mode. Use npx vitest run + exclude integration tests.
-          gates.push(createGate('test', 'npx vitest run --exclude "**/*.integration.test.*"'));
+          gates.push(createGate('test', 'npx vitest run --exclude "**/*integration*test*"'));
         } else {
           gates.push(createGate('test', testScript));
         }
