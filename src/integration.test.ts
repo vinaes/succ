@@ -172,7 +172,7 @@ describe('Integration Tests', () => {
       }
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       try { process.chdir(originalCwd); } catch { /* vmThreads doesn't support chdir */ }
 
       // Clean up
@@ -187,7 +187,15 @@ describe('Integration Tests', () => {
             // Process already dead
           }
         }
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        // Retry rmSync for Windows EBUSY (file handles may linger after daemon kill)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+            break;
+          } catch {
+            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+          }
+        }
       }
     });
 
@@ -224,9 +232,16 @@ describe('Integration Tests', () => {
       fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+            break;
+          } catch {
+            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+          }
+        }
       }
     });
 

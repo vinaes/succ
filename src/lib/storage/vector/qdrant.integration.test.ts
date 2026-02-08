@@ -73,10 +73,12 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}documents`);
-          await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist
         }
+        // Brief delay for Qdrant to finish deletion before recreating
+        await new Promise(r => setTimeout(r, 200));
+        await store.init(DIMENSIONS);
       }
     }, 30_000);
 
@@ -154,10 +156,12 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}memories`);
-          await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist
         }
+        // Brief delay for Qdrant to finish deletion before recreating
+        await new Promise(r => setTimeout(r, 200));
+        await store.init(DIMENSIONS);
       }
     }, 30_000);
 
@@ -190,10 +194,12 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}global_memories`);
-          await store.init(DIMENSIONS);
         } catch {
           // Collection might not exist
         }
+        // Brief delay for Qdrant to finish deletion before recreating
+        await new Promise(r => setTimeout(r, 200));
+        await store.init(DIMENSIONS);
       }
     }, 30_000);
 
