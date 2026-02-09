@@ -4,7 +4,7 @@ description: Design implementation plans using succ semantic search + standard t
 tools: Read, Glob, Grep, Bash, WebFetch, WebSearch
 mcpServers:
   - succ
-model: sonnet
+model: opus
 memory: project
 permissionMode: plan
 ---
