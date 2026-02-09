@@ -65,7 +65,6 @@ process.stdin.on('end', async () => {
 
     // Load config settings
     let includeCoAuthoredBy = true;   // default: true
-    let preCommitReview = false;      // default: false
     let communicationAutoAdapt = true; // default: true
     let communicationTrackHistory = false; // default: false
     const configPaths = [
@@ -78,9 +77,6 @@ process.stdin.on('end', async () => {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
           if (config.includeCoAuthoredBy === false) {
             includeCoAuthoredBy = false;
-          }
-          if (config.preCommitReview === true) {
-            preCommitReview = true;
           }
           if (config.communicationAutoAdapt === false) {
             communicationAutoAdapt = false;
@@ -250,6 +246,7 @@ NEVER write to random project dirs (\`/research/\`, \`/output/\`). After writing
 | succ-readiness-improver | Improve AI-readiness score — actionable steps for each metric |
 | succ-code-reviewer | Full code review with OWASP Top 10 checklist — security vulnerabilities, bugs, quality issues |
 | succ-diff-reviewer | Fast pre-commit diff review — security, bugs, regressions in changed code only |
+| succ-debug | Structured debugging — hypothesize, instrument, reproduce, fix. Saves failed approaches as dead_ends |
 </succ-agents>`);
 
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
@@ -267,18 +264,8 @@ Co-Authored-By order (succ always LAST):
 </commit-format>`);
     }
 
-    // Pre-commit review — run diff-reviewer agent before git commit
-    if (preCommitReview) {
-      contextParts.push(`<pre-commit-review>
-Before ANY git commit, run the succ-diff-reviewer agent on the staged changes.
-Use: Task tool with subagent_type="succ-diff-reviewer"
-Prompt: "Review the staged git diff for bugs, security issues, and regressions before commit"
-
-If diff-reviewer finds CRITICAL issues — do NOT commit until fixed.
-If diff-reviewer finds HIGH issues — warn the user before committing.
-MEDIUM and below — commit is OK, mention findings in summary.
-</pre-commit-review>`);
-    }
+    // Pre-commit review + commit guidelines are now handled by PreToolUse hook (succ-pre-tool.cjs)
+    // They inject context at the exact moment of git commit, not at session start
 
     // Soul Document
     const soulPaths = [

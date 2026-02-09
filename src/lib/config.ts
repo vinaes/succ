@@ -14,6 +14,24 @@ export interface SubdirGateConfig {
   disable?: string[];
 }
 
+export interface CommandSafetyGuardConfig {
+  /** Guard mode: 'deny' blocks, 'ask' prompts user, 'off' disables (default: 'deny') */
+  mode?: 'deny' | 'ask' | 'off';
+  /** Commands to always allow even if they match dangerous patterns */
+  allowlist?: string[];
+  /** Custom regex patterns to block (user-defined blacklist) */
+  customPatterns?: CommandSafetyPattern[];
+}
+
+export interface CommandSafetyPattern {
+  /** Regex pattern string to match against the command */
+  pattern: string;
+  /** Why this command is blocked */
+  reason?: string;
+  /** Regex flags (e.g. 'i' for case-insensitive) */
+  flags?: string;
+}
+
 export interface QualityGatesConfig {
   auto_detect?: boolean;
   gates?: GateConfig[];
@@ -87,6 +105,8 @@ export interface SuccConfig {
   preCommitReview?: boolean;      // Run succ-diff-reviewer agent before git commit (default: false)
   communicationAutoAdapt?: boolean;  // Allow Claude to auto-update communication preferences in soul.md (default: true)
   communicationTrackHistory?: boolean;  // Log communication style changes to brain vault for Obsidian graph (default: false)
+  // Command safety guard (PreToolUse hook) — blocks dangerous git/filesystem operations
+  commandSafetyGuard?: CommandSafetyGuardConfig;
   // Skills discovery and suggestion settings
   skills?: SkillsConfig;
   // Unified LLM settings (used by all LLM-powered features)
