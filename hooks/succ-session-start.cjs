@@ -206,6 +206,7 @@ Without it, succ works in global-only mode and can't access project data.
 | Agent | When to use |
 |-------|-------------|
 | succ-explore | Codebase exploration with succ semantic search — "where is X", "how does Y work", "find code for Z" |
+| succ-plan | Implementation planning with succ context — designs concrete plans grounded in codebase patterns and past decisions |
 | succ-deep-search | "How was X decided/implemented/documented?" — searches memories + brain vault + code |
 | succ-decision-auditor | Audit architectural decisions — finds contradictions, reversals, orphaned decisions |
 | succ-knowledge-indexer | After adding docs or major code changes — indexes files into knowledge base |
