@@ -35,7 +35,8 @@ interface PoolWorker {
 }
 
 export interface EmbeddingPoolConfig {
-  poolSize?: number;  // Default: min(cpuCount - 1, 4)
+  poolSize?: number;  // Default: auto based on CPU cores and memory
+  maxWorkers?: number;  // Max workers cap (default: 8)
   model: string;
 }
 
@@ -48,9 +49,10 @@ export class EmbeddingPool {
 
   constructor(config: EmbeddingPoolConfig) {
     this.model = config.model;
-    // Auto-tune: cap at 4 workers max, ~200MB per worker (model + inference buffers)
-    const maxByCpu = Math.min(os.cpus().length - 1, 4);
-    const maxByMem = Math.min(4, Math.max(1, Math.floor(os.freemem() / (200 * 1024 * 1024))));
+    // Auto-tune: ~200MB per worker (model + inference buffers)
+    const maxWorkers = config.maxWorkers ?? 8;
+    const maxByCpu = Math.min(os.cpus().length - 1, maxWorkers);
+    const maxByMem = Math.min(maxWorkers, Math.max(1, Math.floor(os.freemem() / (200 * 1024 * 1024))));
     this.poolSize = config.poolSize ?? Math.min(maxByCpu, maxByMem);
     if (this.poolSize < 1) this.poolSize = 1;
 
