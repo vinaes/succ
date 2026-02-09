@@ -158,6 +158,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
       'succ-stop-reflection.cjs',
       'succ-user-prompt.cjs',
       'succ-post-tool.cjs',
+      'succ-pre-tool.cjs',
     ];
 
     for (const hookFile of hooksToCreate) {
@@ -401,7 +402,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
               // Also remove any legacy hooks with succ hook names
               if (cmd.includes('session-start.cjs') || cmd.includes('session-end.cjs') ||
                   cmd.includes('stop-reflection.cjs') || cmd.includes('user-prompt.cjs') ||
-                  cmd.includes('post-tool.cjs') || cmd.includes('idle-reflection.cjs')) return false;
+                  cmd.includes('post-tool.cjs') || cmd.includes('pre-tool.cjs') ||
+                  cmd.includes('idle-reflection.cjs')) return false;
               return true;
             });
             if (nonSuccHooks.length > 0) {
