@@ -243,6 +243,7 @@ Direct file reads (Read/Grep) are fine when you know the exact path — but for 
 | succ-session-reviewer | Review past sessions — extracts missed learnings from transcripts |
 | succ-context-optimizer | Optimize session start context — learns from usage patterns |
 | succ-quality-improvement-coach | Improve memory quality — analyzes and suggests better content/tags |
+| succ-general | Multi-step tasks, research, web search — general-purpose agent routed through succ tools |
 | succ-readiness-improver | Improve AI-readiness score — actionable steps for each metric |
 | succ-code-reviewer | Full code review with OWASP Top 10 checklist — security vulnerabilities, bugs, quality issues |
 | succ-diff-reviewer | Fast pre-commit diff review — security, bugs, regressions in changed code only |
