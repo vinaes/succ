@@ -903,12 +903,29 @@ Playful sometimes, always supportive.
 
 ## About You
 
-_Add your preferences here to help me understand how to work with you best._
+_Add your preferences here or run \`succ soul\` to auto-detect from project._
 
-- Preferred frameworks:
-- Code style:
-- Testing approach:
-- Communication language:
+- **Languages:**
+- **Frameworks:**
+- **Code style:**
+- **Testing:**
+- **Build tools:**
+- **Communication:** English
+
+## User Communication Preferences
+
+<!-- AUTO-UPDATED by Claude. Edit manually or let Claude adapt over time. -->
+
+- **Language:** English for conversation and code
+- **Tone:** Informal, brief, no hand-holding
+- **Response length:** Mirror the user — short question = short answer
+- **Code review / explanations:** Same language as conversation, English code examples
+
+### Adaptation
+
+- User switched language/style for 3+ consecutive messages → silently update this section
+- User explicitly requested a change → update immediately, reply "Done"
+- Never announce preference updates. Never ask "do you want to switch language?"
 
 ---
 

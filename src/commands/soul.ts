@@ -22,30 +22,45 @@ export async function soul(options: SoulOptions = {}): Promise<void> {
   // Gather project context
   const context = await gatherProjectContext(projectRoot);
 
-  // Generate "About You" section
-  const prompt = `Analyze this project and generate a personalized "About You" section for a soul.md file.
+  // Generate "About You" + "User Communication Preferences" sections
+  const prompt = `Analyze this project and generate two sections for a soul.md file.
 
 Based on the codebase, determine:
 1. Primary programming language(s) and frameworks used
 2. Code style preferences (naming conventions, formatting patterns)
 3. Testing approach (what testing frameworks, unit/integration/e2e)
 4. Build tools and development workflow
-5. Communication language (detect from comments, docs - if non-English found, note it)
+5. Communication language (detect from comments, docs, README — if non-English found, note it)
 
-Output ONLY the "About You" section in this exact format (no extra text):
+Output ONLY these two sections in this exact format (no extra text):
 
 ## About You
 
 _Detected from project analysis._
 
-- **Languages:** [detected languages]
+- **Languages:** [detected languages with targets, e.g. "TypeScript (ES2022 target, ESNext modules)"]
 - **Frameworks:** [detected frameworks/libraries]
-- **Code style:** [observed patterns like "camelCase, functional components, async/await"]
+- **Code style:** [observed patterns like "camelCase, single quotes, 2-space indent, async/await"]
 - **Testing:** [testing approach or "No tests detected"]
 - **Build tools:** [npm/yarn/pnpm, bundler, etc.]
-- **Communication:** [English or other detected language]
+- **Communication:** [detected language, e.g. "English" or "Russian (primary), English for code"]
 
-Keep each line concise. If uncertain about something, skip that line.`;
+## User Communication Preferences
+
+<!-- AUTO-UPDATED by Claude. Edit manually or let Claude adapt over time. -->
+
+- **Language:** [detected language] for conversation, English for code/commits/docs
+- **Tone:** Informal, brief, no hand-holding
+- **Response length:** Mirror the user — short question = short answer
+- **Code review / explanations:** [detected language] prose, English code examples
+
+### Adaptation
+
+- User switched language/style for 3+ consecutive messages → silently update this section
+- User explicitly requested a change → update immediately, reply "Done"
+- Never announce preference updates. Never ask "do you want to switch language?"
+
+Keep each line concise. If uncertain about communication language, default to English.`;
 
   let generatedSection: string;
 
@@ -68,12 +83,19 @@ Keep each line concise. If uncertain about something, skip that line.`;
     soulContent = getSoulTemplate();
   }
 
-  // Replace "About You" section
-  const aboutYouRegex = /## About You[\s\S]*?(?=\n---|\n## |$)/;
-  if (aboutYouRegex.test(soulContent)) {
-    soulContent = soulContent.replace(aboutYouRegex, generatedSection.trim() + '\n');
+  // Replace "About You" + "User Communication Preferences" sections
+  // Match from "## About You" through "## User Communication Preferences" (including its content)
+  const sectionsRegex = /## About You[\s\S]*?## User Communication Preferences[\s\S]*?(?=\n---|\n## (?!#)|$)/;
+  const aboutYouOnlyRegex = /## About You[\s\S]*?(?=\n---|\n## |$)/;
+
+  if (sectionsRegex.test(soulContent)) {
+    // Both sections exist — replace both
+    soulContent = soulContent.replace(sectionsRegex, generatedSection.trim() + '\n');
+  } else if (aboutYouOnlyRegex.test(soulContent)) {
+    // Only "About You" exists — replace it with both sections
+    soulContent = soulContent.replace(aboutYouOnlyRegex, generatedSection.trim() + '\n');
   } else {
-    // Append before the footer
+    // Neither exists — append before footer
     const footerIndex = soulContent.lastIndexOf('\n---');
     if (footerIndex !== -1) {
       soulContent = soulContent.slice(0, footerIndex) + '\n' + generatedSection.trim() + '\n' + soulContent.slice(footerIndex);
@@ -232,12 +254,29 @@ Playful sometimes, always supportive.
 
 ## About You
 
-_Add your preferences here to help me understand how to work with you best._
+_Add your preferences here or run \`succ soul\` to auto-detect from project._
 
-- Preferred frameworks:
-- Code style:
-- Testing approach:
-- Communication language:
+- **Languages:**
+- **Frameworks:**
+- **Code style:**
+- **Testing:**
+- **Build tools:**
+- **Communication:** English
+
+## User Communication Preferences
+
+<!-- AUTO-UPDATED by Claude. Edit manually or let Claude adapt over time. -->
+
+- **Language:** English for conversation and code
+- **Tone:** Informal, brief, no hand-holding
+- **Response length:** Mirror the user — short question = short answer
+- **Code review / explanations:** Same language as conversation, English code examples
+
+### Adaptation
+
+- User switched language/style for 3+ consecutive messages → silently update this section
+- User explicitly requested a change → update immediately, reply "Done"
+- Never announce preference updates. Never ask "do you want to switch language?"
 
 ---
 
