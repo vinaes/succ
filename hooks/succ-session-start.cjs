@@ -222,8 +222,8 @@ Without it, succ works in global-only mode and can't access project data.
 succ agents have semantic search + memories + brain vault. Built-in agents don't.
 Direct file reads (Read/Grep) are fine when you know the exact path — but for discovery, always succ agents.
 
-**Output rule:** Agents save findings via \`succ_remember\`, NOT by writing files to disk.
-File writes only when user explicitly requests a deliverable file. Research results = memory entries.
+**Output rule:** Key findings → \`succ_remember\`. Substantial research → \`.succ/brain/\` as Obsidian markdown (wikilinks, frontmatter, Mermaid).
+NEVER write to random project dirs (\`/research/\`, \`/output/\`). After writing vault files → \`succ_index_file\`.
 
 **Proactive agents** (run without being asked when situation matches):
 | Agent | When to use |
