@@ -29,6 +29,10 @@ import type {
   QualityScoreData,
   LinkRelation,
   StorageConfig,
+  WebSearchHistoryInput,
+  WebSearchHistoryRecord,
+  WebSearchHistoryFilter,
+  WebSearchHistorySummary,
 } from '../types.js';
 
 // Lazy-load pg to make it optional
@@ -418,6 +422,27 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_project_id ON learning_deltas(project_id)');
+
+    // Web search history table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS web_search_history (
+        id SERIAL PRIMARY KEY,
+        project_id TEXT,
+        tool_name TEXT NOT NULL,
+        model TEXT NOT NULL,
+        query TEXT NOT NULL,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd REAL NOT NULL DEFAULT 0,
+        citations_count INTEGER NOT NULL DEFAULT 0,
+        has_reasoning BOOLEAN NOT NULL DEFAULT FALSE,
+        response_length_chars INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_project_id ON web_search_history(project_id)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name)');
   }
 
   /**
@@ -1891,6 +1916,149 @@ export class PostgresBackend {
       await pool.query('DELETE FROM token_stats WHERE LOWER(project_id) = $1', [this.projectId]);
     } else {
       await pool.query('DELETE FROM token_stats');
+    }
+  }
+
+  // ============================================================================
+  // Web Search History
+  // ============================================================================
+
+  async recordWebSearch(record: WebSearchHistoryInput): Promise<number> {
+    const pool = await this.getPool();
+    const result = await pool.query<{ id: number }>(
+      `INSERT INTO web_search_history (project_id, tool_name, model, query, prompt_tokens, completion_tokens, estimated_cost_usd, citations_count, has_reasoning, response_length_chars)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      [
+        this.projectId,
+        record.tool_name,
+        record.model,
+        record.query,
+        record.prompt_tokens,
+        record.completion_tokens,
+        record.estimated_cost_usd,
+        record.citations_count,
+        record.has_reasoning,
+        record.response_length_chars,
+      ]
+    );
+    return result.rows[0].id;
+  }
+
+  async getWebSearchHistory(filter: WebSearchHistoryFilter): Promise<WebSearchHistoryRecord[]> {
+    const pool = await this.getPool();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (this.projectId) {
+      conditions.push(`LOWER(project_id) = $${paramIdx++}`);
+      params.push(this.projectId);
+    }
+    if (filter.tool_name) {
+      conditions.push(`tool_name = $${paramIdx++}`);
+      params.push(filter.tool_name);
+    }
+    if (filter.model) {
+      conditions.push(`model = $${paramIdx++}`);
+      params.push(filter.model);
+    }
+    if (filter.query_text) {
+      conditions.push(`query ILIKE $${paramIdx++}`);
+      params.push(`%${filter.query_text}%`);
+    }
+    if (filter.date_from) {
+      conditions.push(`created_at >= $${paramIdx++}`);
+      params.push(filter.date_from);
+    }
+    if (filter.date_to) {
+      conditions.push(`created_at <= $${paramIdx++}::date + interval '1 day'`);
+      params.push(filter.date_to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = filter.limit ?? 20;
+    params.push(limit);
+
+    const result = await pool.query(
+      `SELECT id, tool_name, model, query, prompt_tokens, completion_tokens, estimated_cost_usd, citations_count, has_reasoning, response_length_chars, created_at
+       FROM web_search_history ${where} ORDER BY created_at DESC LIMIT $${paramIdx}`,
+      params
+    );
+
+    return result.rows.map((row: any) => ({
+      id: parseInt(row.id),
+      tool_name: row.tool_name,
+      model: row.model,
+      query: row.query,
+      prompt_tokens: parseInt(row.prompt_tokens),
+      completion_tokens: parseInt(row.completion_tokens),
+      estimated_cost_usd: parseFloat(row.estimated_cost_usd),
+      citations_count: parseInt(row.citations_count),
+      has_reasoning: !!row.has_reasoning,
+      response_length_chars: parseInt(row.response_length_chars),
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    }));
+  }
+
+  async getWebSearchSummary(): Promise<WebSearchHistorySummary> {
+    const pool = await this.getPool();
+    const whereClause = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
+    const params = this.projectId ? [this.projectId] : [];
+
+    const totals = await pool.query(
+      `SELECT COUNT(*) as total_searches, COALESCE(SUM(estimated_cost_usd), 0) as total_cost_usd
+       FROM web_search_history ${whereClause}`,
+      params
+    );
+
+    const byTool = await pool.query(
+      `SELECT tool_name, COUNT(*) as count, COALESCE(SUM(estimated_cost_usd), 0) as cost
+       FROM web_search_history ${whereClause} GROUP BY tool_name`,
+      params
+    );
+
+    const todayWhere = this.projectId
+      ? 'WHERE LOWER(project_id) = $1 AND DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())'
+      : 'WHERE DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())';
+    const today = await pool.query(
+      `SELECT COUNT(*) as today_searches, COALESCE(SUM(estimated_cost_usd), 0) as today_cost_usd
+       FROM web_search_history ${todayWhere}`,
+      params
+    );
+
+    const by_tool: Record<string, { count: number; cost: number }> = {};
+    for (const row of byTool.rows) {
+      by_tool[row.tool_name] = { count: parseInt(row.count), cost: parseFloat(row.cost) };
+    }
+
+    return {
+      total_searches: parseInt(totals.rows[0].total_searches),
+      total_cost_usd: parseFloat(totals.rows[0].total_cost_usd),
+      by_tool,
+      today_searches: parseInt(today.rows[0].today_searches),
+      today_cost_usd: parseFloat(today.rows[0].today_cost_usd),
+    };
+  }
+
+  async getTodayWebSearchSpend(): Promise<number> {
+    const pool = await this.getPool();
+    const whereClause = this.projectId
+      ? 'WHERE LOWER(project_id) = $1 AND DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())'
+      : 'WHERE DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())';
+    const params = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(estimated_cost_usd), 0) as total FROM web_search_history ${whereClause}`,
+      params
+    );
+    return parseFloat(result.rows[0].total);
+  }
+
+  async clearWebSearchHistory(): Promise<void> {
+    const pool = await this.getPool();
+    if (this.projectId) {
+      await pool.query('DELETE FROM web_search_history WHERE LOWER(project_id) = $1', [this.projectId]);
+    } else {
+      await pool.query('DELETE FROM web_search_history');
     }
   }
 

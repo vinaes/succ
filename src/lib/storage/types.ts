@@ -315,6 +315,55 @@ export interface MemoryForRetention {
 }
 
 // ============================================================================
+// Web Search History Types
+// ============================================================================
+
+export type WebSearchToolName = 'succ_quick_search' | 'succ_web_search' | 'succ_deep_research';
+
+export interface WebSearchHistoryRecord {
+  id: number;
+  tool_name: WebSearchToolName;
+  model: string;
+  query: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost_usd: number;
+  citations_count: number;
+  has_reasoning: boolean;
+  response_length_chars: number;
+  created_at: string;
+}
+
+export interface WebSearchHistoryInput {
+  tool_name: WebSearchToolName;
+  model: string;
+  query: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost_usd: number;
+  citations_count: number;
+  has_reasoning: boolean;
+  response_length_chars: number;
+}
+
+export interface WebSearchHistoryFilter {
+  tool_name?: WebSearchToolName;
+  model?: string;
+  query_text?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+}
+
+export interface WebSearchHistorySummary {
+  total_searches: number;
+  total_cost_usd: number;
+  by_tool: Record<string, { count: number; cost: number }>;
+  today_searches: number;
+  today_cost_usd: number;
+}
+
+// ============================================================================
 // Vector Search Types (for VectorStore interface)
 // ============================================================================
 

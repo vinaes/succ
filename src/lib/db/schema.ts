@@ -271,6 +271,26 @@ export function initDb(database: Database.Database): void {
     );
   `);
 
+  // Web search history table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS web_search_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool_name TEXT NOT NULL,
+      model TEXT NOT NULL,
+      query TEXT NOT NULL,
+      prompt_tokens INTEGER NOT NULL DEFAULT 0,
+      completion_tokens INTEGER NOT NULL DEFAULT 0,
+      estimated_cost_usd REAL NOT NULL DEFAULT 0,
+      citations_count INTEGER NOT NULL DEFAULT 0,
+      has_reasoning INTEGER NOT NULL DEFAULT 0,
+      response_length_chars INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at);
+    CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name);
+  `);
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 

@@ -4,15 +4,16 @@
  * - succ_quick_search: Fast, cheap search using Perplexity Sonar ($1/MTok)
  * - succ_web_search: Quality search using Perplexity Sonar Pro ($3/$15 MTok)
  * - succ_deep_research: Multi-step deep research using Perplexity Sonar Deep Research
+ * - succ_web_search_history: Browse and filter past web search history
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import fs from 'fs';
-import path from 'path';
-import { getWebSearchConfig, getSuccDir } from '../../lib/config.js';
+import { getWebSearchConfig } from '../../lib/config.js';
 import { isOpenRouterConfigured, callOpenRouterSearch, type OpenRouterSearchResponse, type ChatMessage } from '../../lib/llm.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
+import { recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
+import type { WebSearchToolName } from '../../lib/storage/types.js';
 
 // Approximate pricing per 1M tokens (USD) — OpenRouter Perplexity models
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -34,45 +35,30 @@ function estimateCost(usage: OpenRouterSearchResponse['usage'], model: string): 
 }
 
 /**
- * Get today's spend file path
+ * Record search to database
  */
-function getSpendFilePath(): string {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  return path.join(getSuccDir(), `web-search-spend-${today}.json`);
-}
-
-/**
- * Read today's cumulative spend
- */
-function getTodaySpend(): number {
+async function recordSearchToDb(
+  toolName: WebSearchToolName,
+  model: string,
+  query: string,
+  usage: OpenRouterSearchResponse['usage'],
+  cost: number,
+  citations: string[] | undefined,
+  hasReasoning: boolean,
+  responseLength: number,
+): Promise<void> {
   try {
-    const data = JSON.parse(fs.readFileSync(getSpendFilePath(), 'utf-8'));
-    return data.total_usd || 0;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Record spend for a request
- */
-function recordSpend(cost: number, model: string, query: string): void {
-  const filePath = getSpendFilePath();
-  let data: { total_usd: number; requests: Array<{ time: string; model: string; cost: number; query: string }> };
-  try {
-    data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    data = { total_usd: 0, requests: [] };
-  }
-  data.total_usd += cost;
-  data.requests.push({
-    time: new Date().toISOString(),
-    model,
-    cost: Math.round(cost * 1_000_000) / 1_000_000,
-    query: query.slice(0, 100),
-  });
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    await recordWebSearch({
+      tool_name: toolName,
+      model,
+      query,
+      prompt_tokens: usage?.prompt_tokens ?? 0,
+      completion_tokens: usage?.completion_tokens ?? 0,
+      estimated_cost_usd: cost,
+      citations_count: citations?.length ?? 0,
+      has_reasoning: hasReasoning,
+      response_length_chars: responseLength,
+    });
   } catch {
     // Non-critical — don't fail the search
   }
@@ -81,11 +67,15 @@ function recordSpend(cost: number, model: string, query: string): void {
 /**
  * Check budget and return error message if exceeded
  */
-function checkBudget(dailyBudget: number): string | null {
-  if (dailyBudget <= 0) return null; // unlimited
-  const spent = getTodaySpend();
-  if (spent >= dailyBudget) {
-    return `Daily web search budget exceeded ($${spent.toFixed(4)} / $${dailyBudget}). Reset tomorrow or increase with: succ_config_set key="web_search.daily_budget_usd" value="..."`;
+async function checkBudget(dailyBudget: number): Promise<string | null> {
+  if (dailyBudget <= 0) return null;
+  try {
+    const spent = await getTodayWebSearchSpend();
+    if (spent >= dailyBudget) {
+      return `Daily web search budget exceeded ($${spent.toFixed(4)} / $${dailyBudget}). Reset tomorrow or increase with: succ_config_set key="web_search.daily_budget_usd" value="..."`;
+    }
+  } catch {
+    // Can't check budget — allow the search
   }
   return null;
 }
@@ -117,15 +107,14 @@ function formatCitations(
 /**
  * Format usage/cost information
  */
-function formatUsage(usage: OpenRouterSearchResponse['usage'], cost: number, dailyBudget: number): string {
+function formatUsage(usage: OpenRouterSearchResponse['usage'], cost: number, dailyBudget: number, todaySpent: number): string {
   if (!usage) return '';
   const parts = [
     `Tokens: ${usage.total_tokens.toLocaleString()} (prompt: ${usage.prompt_tokens.toLocaleString()}, completion: ${usage.completion_tokens.toLocaleString()})`,
     `Cost: ~$${cost.toFixed(4)}`,
   ];
   if (dailyBudget > 0) {
-    const spent = getTodaySpend();
-    parts.push(`Budget: $${spent.toFixed(4)} / $${dailyBudget}`);
+    parts.push(`Budget: $${todaySpent.toFixed(4)} / $${dailyBudget}`);
   }
   return `\n\n_${parts.join(' | ')}_`;
 }
@@ -198,7 +187,7 @@ export function registerWebSearchTools(server: McpServer) {
         };
       }
 
-      const budgetError = checkBudget(wsConfig.daily_budget_usd);
+      const budgetError = await checkBudget(wsConfig.daily_budget_usd);
       if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       try {
@@ -218,11 +207,12 @@ export function registerWebSearchTools(server: McpServer) {
         );
 
         const cost = estimateCost(result.usage, effectiveModel);
-        recordSpend(cost, effectiveModel, query);
+        await recordSearchToDb('succ_quick_search', effectiveModel, query, result.usage, cost, result.citations, false, result.content.length);
 
+        const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = result.content;
         text += formatCitations(result.citations, result.search_results);
-        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd);
+        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd, todaySpent);
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
@@ -266,7 +256,7 @@ export function registerWebSearchTools(server: McpServer) {
         };
       }
 
-      const budgetError = checkBudget(wsConfig.daily_budget_usd);
+      const budgetError = await checkBudget(wsConfig.daily_budget_usd);
       if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       const effectiveModel = model || wsConfig.model;
@@ -287,11 +277,12 @@ export function registerWebSearchTools(server: McpServer) {
         );
 
         const cost = estimateCost(result.usage, effectiveModel);
-        recordSpend(cost, effectiveModel, query);
+        await recordSearchToDb('succ_web_search', effectiveModel, query, result.usage, cost, result.citations, false, result.content.length);
 
+        const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = result.content;
         text += formatCitations(result.citations, result.search_results);
-        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd);
+        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd, todaySpent);
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
@@ -335,7 +326,7 @@ export function registerWebSearchTools(server: McpServer) {
         };
       }
 
-      const budgetError = checkBudget(wsConfig.daily_budget_usd);
+      const budgetError = await checkBudget(wsConfig.daily_budget_usd);
       if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       try {
@@ -354,15 +345,16 @@ export function registerWebSearchTools(server: McpServer) {
         );
 
         const cost = estimateCost(result.usage, wsConfig.deep_research_model);
-        recordSpend(cost, wsConfig.deep_research_model, query);
+        await recordSearchToDb('succ_deep_research', wsConfig.deep_research_model, query, result.usage, cost, result.citations, !!result.reasoning, result.content.length);
 
+        const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = '';
         if (include_reasoning && result.reasoning) {
           text += `**Reasoning Process:**\n${result.reasoning}\n\n---\n\n`;
         }
         text += result.content;
         text += formatCitations(result.citations, result.search_results);
-        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd);
+        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd, todaySpent);
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
@@ -372,6 +364,64 @@ export function registerWebSearchTools(server: McpServer) {
         return { content: [{ type: 'text' as const, text }] };
       } catch (error: any) {
         return { content: [{ type: 'text' as const, text: `Deep research failed: ${error.message}` }], isError: true };
+      }
+    },
+  );
+
+  // succ_web_search_history — view past searches
+  server.tool(
+    'succ_web_search_history',
+    'View web search history with filtering. Shows past searches, costs, and usage statistics. Useful for tracking spend, reviewing past queries, and auditing search usage.',
+    {
+      tool_name: z.enum(['succ_quick_search', 'succ_web_search', 'succ_deep_research']).optional().describe('Filter by tool'),
+      model: z.string().optional().describe('Filter by model (e.g., "perplexity/sonar-pro")'),
+      query_text: z.string().optional().describe('Filter by query substring'),
+      date_from: z.string().optional().describe('Start date (ISO, e.g., "2025-01-01")'),
+      date_to: z.string().optional().describe('End date (ISO, e.g., "2025-12-31")'),
+      limit: z.number().optional().describe('Max records to return (default: 20)'),
+      project_path: projectPathParam,
+    },
+    async ({ tool_name, model, query_text, date_from, date_to, limit, project_path }) => {
+      await applyProjectPath(project_path);
+
+      try {
+        const [records, summary] = await Promise.all([
+          getWebSearchHistory({ tool_name, model, query_text, date_from, date_to, limit }),
+          getWebSearchSummary(),
+        ]);
+
+        const lines: string[] = [];
+
+        // Summary section
+        lines.push('## Web Search Summary');
+        lines.push(`Total: ${summary.total_searches} searches, $${summary.total_cost_usd.toFixed(4)}`);
+        lines.push(`Today: ${summary.today_searches} searches, $${summary.today_cost_usd.toFixed(4)}`);
+
+        if (Object.keys(summary.by_tool).length > 0) {
+          lines.push('');
+          lines.push('**By tool:**');
+          for (const [tool, stats] of Object.entries(summary.by_tool)) {
+            lines.push(`  ${tool}: ${stats.count} queries, $${stats.cost.toFixed(4)}`);
+          }
+        }
+
+        // Records section
+        if (records.length > 0) {
+          lines.push('');
+          lines.push(`## Recent Searches (${records.length})`);
+          for (const r of records) {
+            const date = r.created_at.slice(0, 16).replace('T', ' ');
+            const tokens = r.prompt_tokens + r.completion_tokens;
+            lines.push(`- **[${date}]** \`${r.tool_name}\` — "${r.query.slice(0, 80)}${r.query.length > 80 ? '...' : ''}"`);
+            lines.push(`  Model: ${r.model} | Tokens: ${tokens.toLocaleString()} | Cost: $${r.estimated_cost_usd.toFixed(4)}${r.citations_count > 0 ? ` | Citations: ${r.citations_count}` : ''}`);
+          }
+        } else {
+          lines.push('\n_No search records found matching filters._');
+        }
+
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+      } catch (error: any) {
+        return { content: [{ type: 'text' as const, text: `Failed to retrieve search history: ${error.message}` }], isError: true };
       }
     },
   );

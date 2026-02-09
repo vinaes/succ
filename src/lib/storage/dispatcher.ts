@@ -29,6 +29,10 @@ import type {
   MemoryType,
   LinkRelation,
   StorageConfig,
+  WebSearchHistoryInput,
+  WebSearchHistoryRecord,
+  WebSearchHistoryFilter,
+  WebSearchHistorySummary,
 } from './types.js';
 import type { DocumentUpsertMeta, MemoryUpsertMeta } from './vector/qdrant.js';
 
@@ -115,6 +119,8 @@ export class StorageDispatcher {
     recallQueries: 0,
     searchQueries: 0,
     codeSearchQueries: 0,
+    webSearchQueries: 0,
+    webSearchCostUsd: 0,
     typesCreated: {} as Record<string, number>,
     startedAt: new Date().toISOString(),
   };
@@ -136,7 +142,7 @@ export class StorageDispatcher {
     const c = this._sessionCounters;
     const totalCreated = c.memoriesCreated + c.globalMemoriesCreated;
 
-    if (totalCreated === 0 && c.recallQueries === 0 && c.searchQueries === 0 && c.codeSearchQueries === 0) return;
+    if (totalCreated === 0 && c.recallQueries === 0 && c.searchQueries === 0 && c.codeSearchQueries === 0 && c.webSearchQueries === 0) return;
 
     try {
       const stats = await this.getMemoryStats();
@@ -157,6 +163,7 @@ export class StorageDispatcher {
     this._sessionCounters = {
       memoriesCreated: 0, memoriesDuplicated: 0, globalMemoriesCreated: 0,
       recallQueries: 0, searchQueries: 0, codeSearchQueries: 0,
+      webSearchQueries: 0, webSearchCostUsd: 0,
       typesCreated: {}, startedAt: new Date().toISOString(),
     };
   }
@@ -830,6 +837,44 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearTokenStats(); return; }
     const sqlite = await this.getSqliteFns();
     sqlite.clearTokenStats();
+  }
+
+  // ===========================================================================
+  // Web Search History
+  // ===========================================================================
+
+  async recordWebSearch(record: WebSearchHistoryInput): Promise<number> {
+    this._sessionCounters.webSearchQueries++;
+    this._sessionCounters.webSearchCostUsd += record.estimated_cost_usd;
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.recordWebSearch(record);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.recordWebSearch(record);
+  }
+
+  async getWebSearchHistory(filter: WebSearchHistoryFilter): Promise<WebSearchHistoryRecord[]> {
+    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getWebSearchHistory(filter);
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getWebSearchHistory(filter);
+  }
+
+  async getWebSearchSummary(): Promise<WebSearchHistorySummary> {
+    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getWebSearchSummary();
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getWebSearchSummary();
+  }
+
+  async getTodayWebSearchSpend(): Promise<number> {
+    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTodayWebSearchSpend();
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getTodayWebSearchSpend();
+  }
+
+  async clearWebSearchHistory(): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearWebSearchHistory(); return; }
+    const sqlite = await this.getSqliteFns();
+    sqlite.clearWebSearchHistory();
   }
 
   // ===========================================================================
