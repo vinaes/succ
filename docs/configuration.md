@@ -75,6 +75,11 @@ Controls how text is converted to vectors for semantic search.
 | `embedding_api_key` | string | - | API key for custom endpoint |
 | `embedding_batch_size` | number | 32 | Batch size for API calls |
 | `embedding_dimensions` | number | - | Override embedding dimensions |
+| `embedding_local_batch_size` | number | 16 | Batch size for local embeddings |
+| `embedding_local_concurrency` | number | 4 | Concurrent batches for local embeddings |
+| `embedding_worker_pool_enabled` | boolean | true | Use worker thread pool for local embeddings |
+| `embedding_worker_pool_size` | number | auto | Worker pool size (auto = based on CPU cores) |
+| `embedding_cache_size` | number | 500 | Embedding LRU cache size |
 
 ### Default Models by Mode
 
@@ -431,6 +436,7 @@ Auto-group memories into thematic communities via Label Propagation algorithm. R
 | `graph_community_detection.enabled` | boolean | false | Enable community detection |
 | `graph_community_detection.algorithm` | string | `"label-propagation"` | Detection algorithm |
 | `graph_community_detection.max_iterations` | number | 100 | Max LP iterations |
+| `graph_community_detection.min_community_size` | number | 2 | Min members to form a community |
 | `graph_community_detection.tag_prefix` | string | `"community"` | Tag prefix for communities |
 
 ```json
@@ -492,6 +498,7 @@ Obsidian export includes community colors (HLS palette per community) and enrich
 |--------|------|---------|-------------|
 | `remember_extract_default` | boolean | true | Use LLM extraction by default |
 | `consolidation_llm_default` | boolean | true | Use LLM merge by default |
+| `dead_end_boost` | number | 0.15 | Similarity boost for dead-end memories in recall results (0 to disable) |
 
 ---
 
@@ -563,6 +570,32 @@ Disable auto-adaptation entirely:
   "communicationAutoAdapt": false
 }
 ```
+
+---
+
+## Readiness Gate Settings
+
+Confidence assessment for search results. When enabled, succ evaluates whether search results are sufficient before proceeding.
+
+```json
+{
+  "readiness_gate": {
+    "enabled": true,
+    "thresholds": {
+      "proceed": 0.7,
+      "warn": 0.4
+    },
+    "expected_results": 5
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `readiness_gate.enabled` | boolean | true | Enable readiness gate |
+| `readiness_gate.thresholds.proceed` | number | 0.7 | Confidence threshold to proceed |
+| `readiness_gate.thresholds.warn` | number | 0.4 | Confidence threshold to warn |
+| `readiness_gate.expected_results` | number | 5 | Expected result count for coverage calculation |
 
 ---
 
@@ -885,14 +918,72 @@ Controls what happens during idle reflection.
 
 | Operation | Default | Description |
 |-----------|---------|-------------|
-| `memory_consolidation` | true | Merge similar memories |
-| `graph_refinement` | true | Auto-link by similarity |
-| `session_summary` | true | Extract facts from session |
-| `precompute_context` | true | Prepare next session context |
-| `write_reflection` | true | Write reflection text |
-| `retention_cleanup` | true | Delete decayed memories |
+| `memory_consolidation` | true | Merge similar memories, remove duplicates |
+| `graph_refinement` | true | Auto-link memories by similarity |
+| `graph_enrichment` | true | LLM enrich + proximity + communities + centrality |
+| `session_summary` | true | Extract key facts from session transcript |
+| `precompute_context` | false | Prepare context for next session-start |
+| `write_reflection` | true | Write human-like reflection text |
+| `retention_cleanup` | true | Delete decayed memories below threshold (if `retention.enabled`) |
 
-### Sleep Agent (Secondary LLM)
+### Thresholds
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `idle_reflection.thresholds.similarity_for_merge` | number | 0.92 | Cosine similarity to consider memories duplicates |
+| `idle_reflection.thresholds.auto_link_threshold` | number | 0.75 | Similarity threshold for graph auto-linking |
+| `idle_reflection.thresholds.min_quality_for_summary` | number | 0.5 | Min quality score for extracted facts |
+
+### Consolidation Guards
+
+Safety limits to prevent destructive consolidation.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `idle_reflection.consolidation_guards.min_memory_age_days` | number | 7 | Don't consolidate memories younger than N days |
+| `idle_reflection.consolidation_guards.min_corpus_size` | number | 20 | Don't consolidate if total memories < N |
+| `idle_reflection.consolidation_guards.require_llm_merge` | boolean | true | Always use LLM for merge, never destructive delete |
+
+### Agent Model
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `idle_reflection.agent_model` | `"haiku"` \| `"sonnet"` \| `"opus"` | `"haiku"` | Claude model for reflection |
+| `idle_reflection.max_memories_to_process` | number | 50 | Max memories to process per idle cycle |
+| `idle_reflection.timeout_seconds` | number | 25 | Max time for idle operations |
+
+### Idle Reflection Sleep Agent
+
+Optional secondary LLM running in parallel for heavy lifting during idle reflection. Separate from the top-level `sleep_agent` config.
+
+```json
+{
+  "idle_reflection": {
+    "sleep_agent": {
+      "enabled": true,
+      "mode": "local",
+      "model": "qwen2.5:7b",
+      "api_url": "http://localhost:11434/v1",
+      "handle_operations": {
+        "memory_consolidation": true,
+        "session_summary": true,
+        "precompute_context": true
+      }
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `idle_reflection.sleep_agent.enabled` | boolean | false | Enable secondary sleep agent |
+| `idle_reflection.sleep_agent.mode` | `"local"` \| `"openrouter"` | `"local"` | Backend |
+| `idle_reflection.sleep_agent.model` | string | - | Model name |
+| `idle_reflection.sleep_agent.api_url` | string | - | API URL for local mode |
+| `idle_reflection.sleep_agent.api_key` | string | - | API key for openrouter |
+| `idle_reflection.sleep_agent.handle_operations` | object | all true | Which operations to offload |
+
+### Sleep Agent (Top-Level Secondary LLM)
 
 Use a separate LLM for background operations (idle reflection, memory consolidation, precompute context). This allows using a premium model for interactive work while offloading background tasks to a free/local model.
 
@@ -955,6 +1046,7 @@ Automatic memory cleanup based on decay.
 | `retention.delete_threshold` | number | 0.15 | Score to delete |
 | `retention.default_quality_score` | number | 0.5 | Default quality |
 | `retention.auto_cleanup_interval_days` | number | 7 | Days between cleanups |
+| `retention.use_temporal_decay` | boolean | true | Use exponential decay from temporal.ts instead of hyperbolic |
 
 ---
 
@@ -1116,6 +1208,75 @@ LLM-powered skill discovery and suggestions.
 5. LLM ranks candidates and suggests best matches
 
 **Environment variable:** `SKYLL_API_KEY` (alternative to config)
+
+---
+
+## Web Search Settings
+
+Real-time web search via Perplexity Sonar models through OpenRouter. Requires `openrouter_api_key`.
+
+```json
+{
+  "web_search": {
+    "enabled": true,
+    "quick_search_model": "perplexity/sonar",
+    "model": "perplexity/sonar-pro",
+    "deep_research_model": "perplexity/sonar-deep-research",
+    "max_tokens": 4000,
+    "temperature": 0.1,
+    "save_to_memory": false
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `web_search.enabled` | boolean | true | Enable web search tools |
+| `web_search.quick_search_model` | string | `"perplexity/sonar"` | Model for `succ_quick_search` |
+| `web_search.quick_search_max_tokens` | number | 2000 | Max tokens for quick search |
+| `web_search.quick_search_timeout_ms` | number | 15000 | Timeout for quick search (ms) |
+| `web_search.model` | string | `"perplexity/sonar-pro"` | Model for `succ_web_search` |
+| `web_search.deep_research_model` | string | `"perplexity/sonar-deep-research"` | Model for `succ_deep_research` |
+| `web_search.max_tokens` | number | 4000 | Max tokens for web search |
+| `web_search.deep_research_max_tokens` | number | 8000 | Max tokens for deep research |
+| `web_search.timeout_ms` | number | 30000 | Timeout for web search (ms) |
+| `web_search.deep_research_timeout_ms` | number | 120000 | Timeout for deep research (ms) |
+| `web_search.temperature` | number | 0.1 | Temperature (low for factual search) |
+| `web_search.save_to_memory` | boolean | false | Auto-save search results to memory |
+| `web_search.daily_budget_usd` | number | 0 | Daily spending limit in USD (0 = unlimited) |
+
+### Cost Comparison
+
+| Tool | Model | Cost | Use case |
+|------|-------|------|----------|
+| `succ_quick_search` | Sonar | ~$1/MTok | Simple facts, version numbers |
+| `succ_web_search` | Sonar Pro | ~$3-15/MTok | Complex queries, documentation |
+| `succ_deep_research` | Sonar Deep Research | ~$1+/query | Multi-step synthesis, 30+ sources |
+
+---
+
+## Chat LLM Settings
+
+Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defaults to Claude CLI with Sonnet for best interactive quality.
+
+```json
+{
+  "chat_llm": {
+    "backend": "claude",
+    "model": "sonnet",
+    "max_tokens": 4000,
+    "temperature": 0.7
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `chat_llm.backend` | `"claude"` \| `"local"` \| `"openrouter"` | `"claude"` | LLM provider |
+| `chat_llm.model` | string | `"sonnet"` | Model name |
+| `chat_llm.local_endpoint` | string | from `llm.local_endpoint` | Local LLM endpoint |
+| `chat_llm.max_tokens` | number | 4000 | Max tokens per response |
+| `chat_llm.temperature` | number | 0.7 | Generation temperature |
 
 ---
 
