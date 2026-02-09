@@ -1,7 +1,8 @@
 /**
  * MCP Web Search tools (Perplexity Sonar via OpenRouter)
  *
- * - succ_web_search: Real-time web search using Perplexity Sonar
+ * - succ_quick_search: Fast, cheap search using Perplexity Sonar ($1/MTok)
+ * - succ_web_search: Quality search using Perplexity Sonar Pro ($3/$15 MTok)
  * - succ_deep_research: Multi-step deep research using Perplexity Sonar Deep Research
  */
 
@@ -152,7 +153,7 @@ async function saveResultToMemory(
     const result = await saveMemory(
       memoryContent,
       embedding,
-      [toolName === 'succ_web_search' ? 'web-search' : 'deep-research', 'auto-saved'],
+      [toolName === 'succ_deep_research' ? 'deep-research' : 'web-search', 'auto-saved'],
       toolName,
       { type },
     );
@@ -168,10 +169,77 @@ async function saveResultToMemory(
 
 export function registerWebSearchTools(server: McpServer) {
 
+  // succ_quick_search — cheapest, fastest web search
+  server.tool(
+    'succ_quick_search',
+    'Quick, cheap web search using Perplexity Sonar ($1/MTok — ~10x cheaper than succ_web_search). Best for simple factual queries: version numbers, release dates, quick lookups. Use succ_web_search for complex queries needing higher quality. Requires OPENROUTER_API_KEY.',
+    {
+      query: z.string().describe('Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'),
+      system_prompt: z.string().optional().describe('Optional system prompt to guide response format'),
+      max_tokens: z.number().optional().describe('Max response tokens (default: 2000)'),
+      save_to_memory: z.boolean().optional().describe('Save result to succ memory (default: from config)'),
+      project_path: projectPathParam,
+    },
+    async ({ query, system_prompt, max_tokens, save_to_memory, project_path }) => {
+      await applyProjectPath(project_path);
+
+      if (!isOpenRouterConfigured()) {
+        return {
+          content: [{ type: 'text' as const, text: 'OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="openrouter_api_key" value="sk-or-..."' }],
+          isError: true,
+        };
+      }
+
+      const wsConfig = getWebSearchConfig();
+      if (!wsConfig.enabled) {
+        return {
+          content: [{ type: 'text' as const, text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"' }],
+          isError: true,
+        };
+      }
+
+      const budgetError = checkBudget(wsConfig.daily_budget_usd);
+      if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+
+      try {
+        const messages: ChatMessage[] = [];
+        if (system_prompt) {
+          messages.push({ role: 'system', content: system_prompt });
+        }
+        messages.push({ role: 'user', content: query });
+
+        const effectiveModel = wsConfig.quick_search_model;
+        const result = await callOpenRouterSearch(
+          messages,
+          effectiveModel,
+          wsConfig.quick_search_timeout_ms,
+          max_tokens || wsConfig.quick_search_max_tokens,
+          wsConfig.temperature,
+        );
+
+        const cost = estimateCost(result.usage, effectiveModel);
+        recordSpend(cost, effectiveModel, query);
+
+        let text = result.content;
+        text += formatCitations(result.citations, result.search_results);
+        text += formatUsage(result.usage, cost, wsConfig.daily_budget_usd);
+
+        const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
+        if (shouldSave) {
+          text += await saveResultToMemory(query, result.content, result.citations, 'succ_quick_search', 'observation');
+        }
+
+        return { content: [{ type: 'text' as const, text }] };
+      } catch (error: any) {
+        return { content: [{ type: 'text' as const, text: `Quick search failed: ${error.message}` }], isError: true };
+      }
+    },
+  );
+
   // succ_web_search — fast real-time web search
   server.tool(
     'succ_web_search',
-    'Search the web in real-time using Perplexity Sonar via OpenRouter. Returns answers with citations. Requires OPENROUTER_API_KEY. Use for current events, documentation lookups, fact-checking, and queries needing up-to-date web information.',
+    'Search the web using Perplexity Sonar Pro via OpenRouter. Higher quality than succ_quick_search but ~10x more expensive ($3/$15 MTok). Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Requires OPENROUTER_API_KEY.',
     {
       query: z.string().describe('The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'),
       model: z.string().optional().describe('Override search model (default: perplexity/sonar-pro). Options: perplexity/sonar, perplexity/sonar-pro, perplexity/sonar-reasoning-pro'),

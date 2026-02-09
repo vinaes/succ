@@ -322,6 +322,9 @@ export interface GraphCentralityConfig {
 
 export interface WebSearchConfig {
   enabled?: boolean;                  // Enable web search tools (default: true)
+  quick_search_model?: string;        // Model for succ_quick_search (default: 'perplexity/sonar')
+  quick_search_max_tokens?: number;   // Max tokens for quick search (default: 2000)
+  quick_search_timeout_ms?: number;   // Timeout for quick search in ms (default: 15000)
   model?: string;                     // Model for succ_web_search (default: 'perplexity/sonar-pro')
   deep_research_model?: string;       // Model for succ_deep_research (default: 'perplexity/sonar-deep-research')
   max_tokens?: number;                // Max tokens for web search response (default: 4000)
@@ -761,6 +764,9 @@ export function getWebSearchConfig(): Required<WebSearchConfig> {
   const userConfig = config.web_search || {};
   return {
     enabled: userConfig.enabled ?? true,
+    quick_search_model: userConfig.quick_search_model ?? 'perplexity/sonar',
+    quick_search_max_tokens: userConfig.quick_search_max_tokens ?? 2000,
+    quick_search_timeout_ms: userConfig.quick_search_timeout_ms ?? 15000,
     model: userConfig.model ?? 'perplexity/sonar-pro',
     deep_research_model: userConfig.deep_research_model ?? 'perplexity/sonar-deep-research',
     max_tokens: userConfig.max_tokens ?? 4000,
@@ -1048,6 +1054,7 @@ export interface ConfigDisplay {
   // Web search settings
   web_search: {
     enabled: boolean;
+    quick_search_model: string;
     model: string;
     deep_research_model: string;
     max_tokens: number;
@@ -1166,6 +1173,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       const ws = getWebSearchConfig();
       return {
         enabled: ws.enabled,
+        quick_search_model: ws.quick_search_model,
         model: ws.model,
         deep_research_model: ws.deep_research_model,
         max_tokens: ws.max_tokens,
@@ -1308,7 +1316,8 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   // Web Search
   lines.push('## Web Search (Perplexity Sonar via OpenRouter)');
   lines.push(`  Enabled: ${display.web_search.enabled}`);
-  lines.push(`  Model: ${display.web_search.model}`);
+  lines.push(`  Quick Search Model: ${display.web_search.quick_search_model}`);
+  lines.push(`  Search Model: ${display.web_search.model}`);
   lines.push(`  Deep Research Model: ${display.web_search.deep_research_model}`);
   lines.push(`  Max tokens: ${display.web_search.max_tokens}`);
   lines.push(`  Deep Research timeout: ${display.web_search.deep_research_timeout_ms}ms`);
