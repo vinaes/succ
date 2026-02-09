@@ -55,7 +55,7 @@ vi.mock('../lib/config.js', () => ({
     sensitive_auto_redact: false,
     quality_threshold: 0.3,
   })),
-  getDaemonStatuses: vi.fn(() => ({})),
+  getDaemonStatuses: vi.fn(async () => ({})),
   isProjectInitialized: vi.fn(() => true),
   isGlobalOnlyMode: vi.fn(() => false),
 }));

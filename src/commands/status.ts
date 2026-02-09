@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { getDbPath, getClaudeDir, getProjectRoot, getConfig, LOCAL_MODEL, OPENROUTER_MODEL } from '../lib/config.js';
-import { getStats, closeDb } from '../lib/storage/index.js';
+import { getDbPath, getClaudeDir, getProjectRoot, getConfig, getDaemonStatuses } from '../lib/config.js';
+import { getStats, getStaleFileCount, closeDb } from '../lib/storage/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
 
 export async function status(): Promise<void> {
@@ -104,6 +104,39 @@ export async function status(): Promise<void> {
     } catch (error: any) {
       // Config validation failed - show the issue
       console.log(`Config status:        ${error.message}`);
+    }
+
+    // Index freshness
+    try {
+      const freshness = await getStaleFileCount(projectRoot);
+      if (freshness.stale > 0 || freshness.deleted > 0) {
+        console.log();
+        console.log('Index freshness:');
+        console.log(`  Indexed files:      ${freshness.total}`);
+        if (freshness.stale > 0) {
+          console.log(`  Stale (modified):   ${freshness.stale}`);
+        }
+        if (freshness.deleted > 0) {
+          console.log(`  Missing (deleted):  ${freshness.deleted}`);
+        }
+        console.log('  Run `succ index` and `succ index-code` to refresh');
+      }
+    } catch {
+      // Skip freshness check if it fails
+    }
+
+    // Daemon statuses
+    try {
+      const daemons = await getDaemonStatuses();
+      console.log();
+      console.log('Daemons:');
+      for (const d of daemons) {
+        const icon = d.running ? '+' : '-';
+        const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
+        console.log(`  [${icon}] ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`);
+      }
+    } catch {
+      // Skip daemon status if it fails
     }
   } catch (error) {
     console.error('Error reading database:', error);

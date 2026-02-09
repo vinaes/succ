@@ -97,7 +97,7 @@ vi.mock('../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),
-  getDaemonStatuses: vi.fn(() => [
+  getDaemonStatuses: vi.fn(async () => [
     { name: 'daemon', running: false, pid: null },
   ]),
   getIdleReflectionConfig: vi.fn(() => ({

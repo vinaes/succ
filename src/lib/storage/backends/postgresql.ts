@@ -778,6 +778,18 @@ export class PostgresBackend {
     return new Map(result.rows.map(r => [r.file_path, r.content_hash]));
   }
 
+  async getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
+    if (!this.projectId) {
+      throw new Error('Project ID must be set before getting file hashes');
+    }
+    const pool = await this.getPool();
+    const result = await pool.query<{ file_path: string; content_hash: string; indexed_at: string }>(
+      'SELECT file_path, content_hash, indexed_at::text FROM file_hashes WHERE project_id = $1',
+      [this.projectId]
+    );
+    return result.rows;
+  }
+
   // ============================================================================
   // Memory Operations
   // ============================================================================
