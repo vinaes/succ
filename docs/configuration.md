@@ -511,6 +511,31 @@ Set to `false` to disable the `<commit-format>` block injection:
 
 ---
 
+## Pre-Commit Review Settings
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `preCommitReview` | boolean | false | Run `succ-diff-reviewer` agent before every git commit |
+
+When enabled, the session-start hook injects a `<pre-commit-review>` instruction that tells the AI to run the `succ-diff-reviewer` agent on staged changes before committing. The agent checks for security issues (OWASP Top 10), bugs, regressions, and leftover debug code.
+
+**Behavior on findings:**
+- **CRITICAL** — commit is blocked until fixed
+- **HIGH** — user is warned before committing
+- **MEDIUM and below** — commit proceeds, findings mentioned in summary
+
+```json
+{
+  "preCommitReview": true
+}
+```
+
+Enable via CLI: `succ config_set preCommitReview true`
+
+> **Note**: This adds review time before each commit. The `succ-diff-reviewer` agent works with any programming language.
+
+---
+
 ## Quality Gates Settings
 
 Controls quality gates for the PRD pipeline (`succ prd`). Gates run after each task to verify code quality. By default, succ auto-detects gates from project files (TypeScript, Node.js, Python, Go, Rust). Use this config to add custom gates, disable auto-detected ones, or configure per-subdirectory gates for monorepos.
@@ -1084,6 +1109,7 @@ LLM-powered skill discovery and suggestions.
   "consolidation_llm_default": true,
 
   "includeCoAuthoredBy": true,
+  "preCommitReview": false,
 
   "daemon": {
     "enabled": true,
