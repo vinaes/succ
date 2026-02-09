@@ -222,6 +222,9 @@ Without it, succ works in global-only mode and can't access project data.
 succ agents have semantic search + memories + brain vault. Built-in agents don't.
 Direct file reads (Read/Grep) are fine when you know the exact path — but for discovery, always succ agents.
 
+**Output rule:** Agents save findings via \`succ_remember\`, NOT by writing files to disk.
+File writes only when user explicitly requests a deliverable file. Research results = memory entries.
+
 **Proactive agents** (run without being asked when situation matches):
 | Agent | When to use |
 |-------|-------------|
