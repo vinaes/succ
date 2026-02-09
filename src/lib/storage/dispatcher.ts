@@ -687,6 +687,12 @@ export class StorageDispatcher {
     return sqlite.getAllFileHashes();
   }
 
+  async getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
+    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getAllFileHashesWithTimestamps();
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getAllFileHashesWithTimestamps();
+  }
+
   // ===========================================================================
   // Token Frequency Operations
   // ===========================================================================

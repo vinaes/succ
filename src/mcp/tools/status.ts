@@ -12,6 +12,7 @@ import {
   getRecentGlobalMemories,
   getMemoryStats,
   getAllMemoriesForRetention,
+  getStaleFileCount,
   getTokenStatsAggregated,
   getTokenStatsSummary,
   getStorageDispatcher,
@@ -81,6 +82,24 @@ export function registerStatusTools(server: McpServer) {
           memStats.newest_memory ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}` : '',
           memStats.stale_count > 0 ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget` : '',
         ];
+
+        // Index freshness (only show if stale files detected)
+        try {
+          const projectRoot = getProjectRoot();
+          const freshness = await getStaleFileCount(projectRoot);
+          if (freshness.stale > 0 || freshness.deleted > 0) {
+            status.push(
+              '',
+              '## Index Freshness',
+              `  Indexed files: ${freshness.total}`,
+              freshness.stale > 0 ? `  Stale (modified since indexing): ${freshness.stale}` : '',
+              freshness.deleted > 0 ? `  Missing (deleted since indexing): ${freshness.deleted}` : '',
+              '  Run `succ index` and `succ index-code` to refresh',
+            );
+          }
+        } catch {
+          // Skip freshness check if it fails
+        }
 
         // Retention health (lightweight analysis)
         try {

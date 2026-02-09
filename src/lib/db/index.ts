@@ -13,7 +13,7 @@ export type { Document, SearchResult, GraphStats } from './types.js';
 export { getDb, getGlobalDb, closeDb, closeGlobalDb } from './connection.js';
 
 // Re-export file hash functions
-export { getFileHash, setFileHash, deleteFileHash, getAllFileHashes } from './file-hash.js';
+export { getFileHash, setFileHash, deleteFileHash, getAllFileHashes, getAllFileHashesWithTimestamps } from './file-hash.js';
 
 // Re-export token frequency functions
 export {

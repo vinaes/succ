@@ -215,6 +215,54 @@ export async function getAllFileHashes(): Promise<Map<string, string>> {
   return d.getAllFileHashes();
 }
 
+export async function getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
+  const d = await getStorageDispatcher();
+  return d.getAllFileHashesWithTimestamps();
+}
+
+/**
+ * Check how many indexed files are stale (modified or deleted since indexing).
+ * Uses mtime-first optimization: only reads+hashes files whose mtime > indexed_at.
+ */
+export async function getStaleFileCount(projectRoot: string): Promise<{ stale: number; deleted: number; total: number }> {
+  const { createHash } = await import('crypto');
+  const { readFileSync, statSync } = await import('fs');
+  const { resolve, sep } = await import('path');
+
+  const entries = await getAllFileHashesWithTimestamps();
+  let stale = 0;
+  let deleted = 0;
+
+  for (const entry of entries) {
+    // Code-indexed files have "code:" prefix — strip it for disk path
+    const isCode = entry.file_path.startsWith('code:');
+    const relativePath = isCode ? entry.file_path.slice(5) : entry.file_path;
+
+    // Normalize path separators for current OS
+    const normalized = relativePath.split(/[\\/]/).join(sep);
+    const fullPath = resolve(projectRoot, normalized);
+
+    try {
+      const stat = statSync(fullPath);
+      // Compare mtime against indexed_at — only hash if file is newer
+      const indexedAt = new Date(entry.indexed_at).getTime();
+      if (stat.mtimeMs > indexedAt) {
+        // File was modified after indexing — verify with hash
+        const content = readFileSync(fullPath, 'utf-8');
+        const currentHash = createHash('md5').update(content).digest('hex');
+        if (currentHash !== entry.content_hash) {
+          stale++;
+        }
+      }
+    } catch {
+      // File doesn't exist on disk
+      deleted++;
+    }
+  }
+
+  return { stale, deleted, total: entries.length };
+}
+
 // ===========================================================================
 // Local Memories
 // ===========================================================================

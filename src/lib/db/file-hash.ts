@@ -50,3 +50,14 @@ export function getAllFileHashes(): Map<string, string> {
   }
   return map;
 }
+
+/**
+ * Get all stored file hashes with indexed_at timestamps.
+ * Used for freshness checks — compare file mtime against indexed_at.
+ */
+export function getAllFileHashesWithTimestamps(): Array<{ file_path: string; content_hash: string; indexed_at: string }> {
+  const database = getDb();
+  return database
+    .prepare('SELECT file_path, content_hash, indexed_at FROM file_hashes')
+    .all() as Array<{ file_path: string; content_hash: string; indexed_at: string }>;
+}
