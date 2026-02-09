@@ -67,6 +67,7 @@ process.stdin.on('end', async () => {
     let includeCoAuthoredBy = true;   // default: true
     let preCommitReview = false;      // default: false
     let communicationAutoAdapt = true; // default: true
+    let communicationTrackHistory = false; // default: false
     const configPaths = [
       path.join(succDir, 'config.json'),
       path.join(require('os').homedir(), '.succ', 'config.json'),
@@ -83,6 +84,9 @@ process.stdin.on('end', async () => {
           }
           if (config.communicationAutoAdapt === false) {
             communicationAutoAdapt = false;
+          }
+          if (config.communicationTrackHistory === true) {
+            communicationTrackHistory = true;
           }
           break;
         } catch {
@@ -185,6 +189,9 @@ Without it, succ works in global-only mode and can't access project data.
 
 **succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [mode="team"] [concurrency=3]
 → Execute or resume a PRD. mode=team for parallel execution with git worktrees
+
+**succ_prd_export** [prd_id="prd_xxx"] [all=true] [output="path"]
+→ Export PRD workflow to Obsidian (Mermaid Gantt + dependency DAG + task pages)
 </prd>
 
 <web-search hint="Real-time web search via Perplexity Sonar (OpenRouter). Requires OPENROUTER_API_KEY.">
@@ -282,6 +289,35 @@ MEDIUM and below — commit is OK, mention findings in summary.
           // Strip Adaptation rules if auto-adapt is disabled
           if (!communicationAutoAdapt) {
             soulContent = soulContent.replace(/### Adaptation[\s\S]*?(?=\n## |\n---|\s*$)/, '');
+          }
+          // Inject brain vault tracking instructions if enabled
+          if (communicationTrackHistory && communicationAutoAdapt) {
+            soulContent += `\n\n### Vault Tracking
+
+When you update User Communication Preferences, also create a brain vault entry:
+
+1. Write a file to \`.succ/brain/05_Communication/YYYY-MM-DD_short-description.md\`
+2. Use this template:
+
+\`\`\`markdown
+---
+date: YYYY-MM-DD
+tags: [communication, preference-change]
+---
+# Communication Style: [short label]
+
+| Preference | Value |
+|------------|-------|
+| Language | ... |
+| Tone | ... |
+| Response length | ... |
+
+**Trigger:** [why the change happened — user request or pattern detected]
+**Previous:** [[previous-file-name]]
+\`\`\`
+
+3. Link to the previous entry with \`[[...]]\` wiki-link (check existing files in the directory)
+4. Keep filenames: \`YYYY-MM-DD_language-tone.md\` (e.g. \`2026-02-09_russian-informal.md\`)`;
           }
           contextParts.push('<soul>\n' + soulContent + '\n</soul>');
         }

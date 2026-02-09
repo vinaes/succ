@@ -86,6 +86,7 @@ export interface SuccConfig {
   includeCoAuthoredBy?: boolean;  // Include commit guidelines in session-start hook (default: true)
   preCommitReview?: boolean;      // Run succ-diff-reviewer agent before git commit (default: false)
   communicationAutoAdapt?: boolean;  // Allow Claude to auto-update communication preferences in soul.md (default: true)
+  communicationTrackHistory?: boolean;  // Log communication style changes to brain vault for Obsidian graph (default: false)
   // Skills discovery and suggestion settings
   skills?: SkillsConfig;
   // Unified LLM settings (used by all LLM-powered features)
