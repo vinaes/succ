@@ -210,6 +210,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
     'succ-quality-improvement-coach.md',
     'succ-decision-auditor.md',
     'succ-context-optimizer.md',
+    'succ-explore.md',
+    'succ-plan.md',
   ];
 
   for (const agentFile of agentFiles) {
