@@ -75,7 +75,7 @@ export interface PostgresBackendConfig {
   database?: string;
   user?: string;
   password?: string;
-  ssl?: boolean;
+  ssl?: boolean | { rejectUnauthorized?: boolean; ca?: string };
   poolSize?: number;
 }
 
@@ -126,7 +126,14 @@ export class PostgresBackend {
     }
 
     if (this.config.ssl) {
-      poolConfig.ssl = { rejectUnauthorized: false };
+      if (typeof this.config.ssl === 'object') {
+        poolConfig.ssl = {
+          rejectUnauthorized: this.config.ssl.rejectUnauthorized ?? true,
+          ca: this.config.ssl.ca,
+        };
+      } else {
+        poolConfig.ssl = { rejectUnauthorized: true };
+      }
     }
 
     this.pool = new Pool(poolConfig);
@@ -1736,7 +1743,7 @@ export class PostgresBackend {
   async updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
     const pool = await this.getPool();
     const sets: string[] = [];
-    const params: any[] = [];
+    const params: (string | number)[] = [];
     let idx = 1;
     if (updates.relation !== undefined) { sets.push(`relation = $${idx++}`); params.push(updates.relation); }
     if (updates.weight !== undefined) { sets.push(`weight = $${idx++}`); params.push(updates.weight); }
