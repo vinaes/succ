@@ -205,6 +205,7 @@ Without it, succ works in global-only mode and can't access project data.
 **On-demand agents** (run when user asks or task requires):
 | Agent | When to use |
 |-------|-------------|
+| succ-explore | Codebase exploration with succ semantic search — "where is X", "how does Y work", "find code for Z" |
 | succ-deep-search | "How was X decided/implemented/documented?" — searches memories + brain vault + code |
 | succ-decision-auditor | Audit architectural decisions — finds contradictions, reversals, orphaned decisions |
 | succ-knowledge-indexer | After adding docs or major code changes — indexes files into knowledge base |
