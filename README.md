@@ -102,12 +102,14 @@ succ analyze
 
 ## Claude Code Agents
 
-succ ships with 15 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
+succ ships with 17 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
 
 | Agent | What it does |
 |-------|-------------|
 | `succ-explore` | Codebase exploration powered by semantic search |
-| `succ-plan` | Implementation planning grounded in codebase patterns and past decisions |
+| `succ-plan` | TDD-enforced implementation planning with red-green-refactor cycles |
+| `succ-code-reviewer` | Full code review with OWASP Top 10 checklist — works with any language |
+| `succ-diff-reviewer` | Fast pre-commit diff review for security, bugs, and regressions |
 | `succ-deep-search` | Cross-search memories, brain vault, and code |
 | `succ-memory-curator` | Consolidate, deduplicate, and clean up memories |
 | `succ-memory-health-monitor` | Detect decayed, stale, or low-quality memories |
@@ -297,6 +299,23 @@ No API key required. Uses local embeddings by default.
   }
 }
 ```
+
+</details>
+
+<details>
+<summary>Pre-commit review</summary>
+
+Automatically run the `succ-diff-reviewer` agent before every git commit to catch security issues, bugs, and regressions:
+
+```json
+{
+  "preCommitReview": true
+}
+```
+
+When enabled, Claude will run a diff review before each commit. Critical findings block the commit; high findings trigger a warning.
+
+Disabled by default. Set via `succ config_set preCommitReview true`.
 
 </details>
 
