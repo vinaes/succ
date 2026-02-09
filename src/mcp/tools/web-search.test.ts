@@ -1,5 +1,5 @@
 /**
- * Tests for web search MCP tools (succ_web_search, succ_deep_research)
+ * Tests for web search MCP tools (succ_quick_search, succ_web_search, succ_deep_research)
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -49,6 +49,9 @@ vi.mock('../../lib/config.js', () => ({
     temperature: 0.1,
     save_to_memory: false,
     daily_budget_usd: 0,
+    quick_search_model: 'perplexity/sonar',
+    quick_search_max_tokens: 2000,
+    quick_search_timeout_ms: 15000,
   })),
   getSuccDir: vi.fn(() => '/tmp/test-succ'),
   getProjectRoot: vi.fn(() => '/test/project'),
@@ -114,6 +117,9 @@ describe('Web Search MCP Tools', () => {
     vi.mocked(callOpenRouterSearch).mockResolvedValue({ ...mockSearchResponse });
     vi.mocked(getWebSearchConfig).mockReturnValue({
       enabled: true,
+      quick_search_model: 'perplexity/sonar',
+      quick_search_max_tokens: 2000,
+      quick_search_timeout_ms: 15000,
       model: 'perplexity/sonar-pro',
       deep_research_model: 'perplexity/sonar-deep-research',
       max_tokens: 4000,
@@ -140,9 +146,86 @@ describe('Web Search MCP Tools', () => {
   // --------------------------------------------------------------------------
 
   describe('registration', () => {
-    it('should register both tools', () => {
+    it('should register all three tools', () => {
+      expect(toolHandlers.has('succ_quick_search')).toBe(true);
       expect(toolHandlers.has('succ_web_search')).toBe(true);
       expect(toolHandlers.has('succ_deep_research')).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // succ_quick_search
+  // --------------------------------------------------------------------------
+
+  describe('succ_quick_search', () => {
+    it('should use sonar model with quick settings', async () => {
+      const handler = toolHandlers.get('succ_quick_search')!;
+      await handler({ query: 'latest Node.js LTS version' });
+
+      expect(callOpenRouterSearch).toHaveBeenCalledWith(
+        [{ role: 'user', content: 'latest Node.js LTS version' }],
+        'perplexity/sonar',
+        15000,
+        2000,
+        0.1,
+      );
+    });
+
+    it('should return formatted results with citations', async () => {
+      const handler = toolHandlers.get('succ_quick_search')!;
+      const result = await handler({ query: 'test' });
+
+      expect(result.content[0].text).toContain('TypeScript 5.8 introduced');
+      expect(result.content[0].text).toContain('**Sources:**');
+    });
+
+    it('should handle API errors gracefully', async () => {
+      vi.mocked(callOpenRouterSearch).mockRejectedValueOnce(new Error('network error'));
+
+      const handler = toolHandlers.get('succ_quick_search')!;
+      const result = await handler({ query: 'test' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Quick search failed: network error');
+    });
+
+    it('should error when OpenRouter not configured', async () => {
+      vi.mocked(isOpenRouterConfigured).mockReturnValueOnce(false);
+
+      const handler = toolHandlers.get('succ_quick_search')!;
+      const result = await handler({ query: 'test' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('API key not configured');
+    });
+
+    it('should save to memory as observation type', async () => {
+      const handler = toolHandlers.get('succ_quick_search')!;
+      await handler({ query: 'test query', save_to_memory: true });
+
+      expect(saveMemory).toHaveBeenCalledWith(
+        expect.stringContaining('Web search: "test query"'),
+        expect.any(Float32Array),
+        ['web-search', 'auto-saved'],
+        'succ_quick_search',
+        { type: 'observation' },
+      );
+    });
+
+    it('should include system prompt when provided', async () => {
+      const handler = toolHandlers.get('succ_quick_search')!;
+      await handler({ query: 'test', system_prompt: 'Answer briefly' });
+
+      expect(callOpenRouterSearch).toHaveBeenCalledWith(
+        [
+          { role: 'system', content: 'Answer briefly' },
+          { role: 'user', content: 'test' },
+        ],
+        expect.any(String),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+      );
     });
   });
 
@@ -218,6 +301,9 @@ describe('Web Search MCP Tools', () => {
     it('should error when web search disabled', async () => {
       vi.mocked(getWebSearchConfig).mockReturnValueOnce({
         enabled: false,
+        quick_search_model: 'perplexity/sonar',
+        quick_search_max_tokens: 2000,
+        quick_search_timeout_ms: 15000,
         model: 'perplexity/sonar-pro',
         deep_research_model: 'perplexity/sonar-deep-research',
         max_tokens: 4000,
@@ -316,6 +402,9 @@ describe('Web Search MCP Tools', () => {
     it('should block when daily budget exceeded', async () => {
       vi.mocked(getWebSearchConfig).mockReturnValue({
         enabled: true,
+        quick_search_model: 'perplexity/sonar',
+        quick_search_max_tokens: 2000,
+        quick_search_timeout_ms: 15000,
         model: 'perplexity/sonar-pro',
         deep_research_model: 'perplexity/sonar-deep-research',
         max_tokens: 4000,
@@ -342,6 +431,9 @@ describe('Web Search MCP Tools', () => {
     it('should show budget info when budget is set', async () => {
       vi.mocked(getWebSearchConfig).mockReturnValueOnce({
         enabled: true,
+        quick_search_model: 'perplexity/sonar',
+        quick_search_max_tokens: 2000,
+        quick_search_timeout_ms: 15000,
         model: 'perplexity/sonar-pro',
         deep_research_model: 'perplexity/sonar-deep-research',
         max_tokens: 4000,
@@ -435,6 +527,9 @@ describe('Web Search MCP Tools', () => {
     it('should use config default for save_to_memory', async () => {
       vi.mocked(getWebSearchConfig).mockReturnValue({
         enabled: true,
+        quick_search_model: 'perplexity/sonar',
+        quick_search_max_tokens: 2000,
+        quick_search_timeout_ms: 15000,
         model: 'perplexity/sonar-pro',
         deep_research_model: 'perplexity/sonar-deep-research',
         max_tokens: 4000,
