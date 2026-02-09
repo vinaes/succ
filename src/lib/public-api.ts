@@ -85,6 +85,7 @@ export {
   isProjectInitialized,
   isGlobalOnlyMode,
   invalidateConfigCache,
+  setConfigOverride,
 } from './config.js';
 export type { SuccConfig } from './config.js';
 
@@ -105,7 +106,7 @@ export {
 } from './storage/index.js';
 
 // --- Web search ---
-export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './db/web-search-history.js';
+export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './storage/index.js';
 export { callOpenRouterSearch } from './llm.js';
 
 // --- AI readiness ---
@@ -139,6 +140,5 @@ export { exportPrdToObsidian, exportAllPrds } from './prd/export.js';
 export { getConfigDisplay, formatConfigDisplay } from './config.js';
 
 // --- Types ---
-export type { MemoryBatchInput, MemoryBatchResult } from './db/memories.js';
-export type { LinkRelation } from './storage/types.js';
-export type { MemoryType } from './db/schema.js';
+export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
+export type { LinkRelation, MemoryType } from './storage/types.js';
