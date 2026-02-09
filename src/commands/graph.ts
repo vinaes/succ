@@ -6,10 +6,14 @@ import {
 import { exportGraphSilent } from '../lib/graph-export.js';
 
 interface GraphOptions {
-  action: 'export' | 'stats' | 'auto-link';
+  action: 'export' | 'stats' | 'auto-link' | 'enrich-relations' | 'proximity' | 'communities' | 'centrality';
   format?: 'obsidian' | 'json';
   threshold?: number;
   output?: string;
+  force?: boolean;
+  limit?: number;
+  dryRun?: boolean;
+  minCount?: number;
 }
 
 /**
@@ -26,6 +30,18 @@ export async function graph(options: GraphOptions): Promise<void> {
         break;
       case 'auto-link':
         await autoLink(options.threshold || 0.75);
+        break;
+      case 'enrich-relations':
+        await enrichRelations(options.force, options.limit);
+        break;
+      case 'proximity':
+        await proximity(options.minCount, options.dryRun);
+        break;
+      case 'communities':
+        await communities();
+        break;
+      case 'centrality':
+        await centrality();
         break;
     }
   } finally {
@@ -72,4 +88,39 @@ async function autoLink(threshold: number): Promise<void> {
   console.log(`Auto-linking similar memories (threshold: ${threshold})...`);
   const created = await autoLinkSimilarMemories(threshold, 3);
   console.log(`Created ${created} new links.`);
+}
+
+async function enrichRelations(force?: boolean, limit?: number): Promise<void> {
+  const { enrichExistingLinks } = await import('../lib/graph/llm-relations.js');
+  console.log('Enriching link relations via LLM...');
+  const result = await enrichExistingLinks({ force, limit });
+  console.log(`Enriched: ${result.enriched}, Failed: ${result.failed}, Skipped: ${result.skipped}`);
+}
+
+async function proximity(minCount?: number, dryRun?: boolean): Promise<void> {
+  const { createProximityLinks } = await import('../lib/graph/contextual-proximity.js');
+  console.log('Creating contextual proximity links...');
+  const result = await createProximityLinks({ minCooccurrence: minCount ?? 2, dryRun });
+  if (dryRun) {
+    console.log(`Dry run: ${result.total_pairs} pairs found (minCooccurrence: ${minCount ?? 2}).`);
+  } else {
+    console.log(`Created: ${result.created}, Skipped: ${result.skipped}, Total pairs: ${result.total_pairs}`);
+  }
+}
+
+async function communities(): Promise<void> {
+  const { detectCommunities } = await import('../lib/graph/community-detection.js');
+  console.log('Running community detection...');
+  const result = await detectCommunities();
+  console.log(`Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.`);
+  for (const c of result.communities) {
+    console.log(`  Community ${c.id}: ${c.size} members [${c.members.slice(0, 10).join(', ')}${c.size > 10 ? '...' : ''}]`);
+  }
+}
+
+async function centrality(): Promise<void> {
+  const { updateCentralityCache } = await import('../lib/graph/centrality.js');
+  console.log('Computing centrality scores...');
+  const result = await updateCentralityCache();
+  console.log(`Updated centrality for ${result.updated} memories.`);
 }

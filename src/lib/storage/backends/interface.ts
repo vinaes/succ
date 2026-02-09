@@ -442,6 +442,30 @@ export interface StorageBackend {
   getGraphStatsAsOf(asOfDate: Date): GraphStats;
 
   // ============================================================================
+  // Graph Enrichment
+  // ============================================================================
+
+  /**
+   * Update tags for a memory.
+   */
+  updateMemoryTags(memoryId: number, tags: string[]): void;
+
+  /**
+   * Update a memory link's relation, weight, and enrichment flag.
+   */
+  updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): void;
+
+  /**
+   * Upsert centrality score cache for a memory.
+   */
+  upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): void;
+
+  /**
+   * Get centrality scores for a batch of memory IDs.
+   */
+  getCentralityScores(memoryIds: number[]): Map<number, number>;
+
+  // ============================================================================
   // Token Frequencies
   // ============================================================================
 

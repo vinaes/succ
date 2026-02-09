@@ -662,6 +662,30 @@ export async function getGraphStatsAsOf(asOfDate: Date): Promise<any> {
 }
 
 // ===========================================================================
+// Graph Enrichment
+// ===========================================================================
+
+export async function updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.updateMemoryTags(memoryId, tags);
+}
+
+export async function updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.updateMemoryLink(linkId, updates);
+}
+
+export async function upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.upsertCentralityScore(memoryId, degree, normalizedDegree);
+}
+
+export async function getCentralityScores(memoryIds: number[]): Promise<Map<number, number>> {
+  const d = await getStorageDispatcher();
+  return d.getCentralityScores(memoryIds);
+}
+
+// ===========================================================================
 // Token Frequency
 // ===========================================================================
 

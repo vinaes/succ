@@ -346,6 +346,12 @@ async function exportToObsidian(
       frontmatterLines.push(`last_accessed: ${memory.last_accessed}`);
     }
 
+    // Add community assignment from tags (community:N)
+    const communityTag = tags.find(t => t.startsWith('community:'));
+    if (communityTag) {
+      frontmatterLines.push(`community: ${communityTag.split(':')[1]}`);
+    }
+
     frontmatterLines.push('---');
 
     // Build content with status indicator in title
@@ -393,16 +399,48 @@ ${memory.content}
   const indexContent = await generateIndexContent(memories, brainDir);
   fs.writeFileSync(path.join(brainDir, 'Memories.md'), indexContent);
 
+  // Collect community IDs for graph coloring
+  const communityIds = new Set<number>();
+  for (const m of memories) {
+    const ct = m.tags.find(t => t.startsWith('community:'));
+    if (ct) communityIds.add(parseInt(ct.split(':')[1], 10));
+  }
+
   // Create/update Obsidian config for graph colors
-  ensureObsidianGraphConfig(brainDir);
+  ensureObsidianGraphConfig(brainDir, Array.from(communityIds).sort((a, b) => a - b));
 
   return { memoriesExported: exported, linksExported: totalLinks };
 }
 
 /**
- * Ensure Obsidian graph config exists with color groups for folders and tags
+ * Generate an HLS-based palette color as RGB integer for Obsidian graph config.
+ * Spreads hues evenly across the color wheel.
  */
-function ensureObsidianGraphConfig(brainDir: string): void {
+function communityColor(index: number, total: number): number {
+  const hue = (index / Math.max(total, 1)) * 360;
+  const s = 0.65;
+  const l = 0.55;
+  // HSL → RGB
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (hue < 60)       { r = c; g = x; }
+  else if (hue < 120) { r = x; g = c; }
+  else if (hue < 180) { g = c; b = x; }
+  else if (hue < 240) { g = x; b = c; }
+  else if (hue < 300) { r = x; b = c; }
+  else                 { r = c; b = x; }
+  const ri = Math.round((r + m) * 255);
+  const gi = Math.round((g + m) * 255);
+  const bi = Math.round((b + m) * 255);
+  return (ri << 16) | (gi << 8) | bi;
+}
+
+/**
+ * Ensure Obsidian graph config exists with color groups for folders, tags, and communities
+ */
+function ensureObsidianGraphConfig(brainDir: string, communityIds: number[] = []): void {
   const obsidianDir = path.join(brainDir, '.obsidian');
   const snippetsDir = path.join(obsidianDir, 'snippets');
 
@@ -441,6 +479,11 @@ function ensureObsidianGraphConfig(brainDir: string): void {
       { "query": "tag:#error", "color": { "a": 1, "rgb": 16711680 } },        // Red
       { "query": "tag:#architecture", "color": { "a": 1, "rgb": 3447003 } },  // Cyan
       { "query": "tag:#sprint", "color": { "a": 1, "rgb": 65535 } },          // Aqua
+      // Community color groups (auto-generated from detected communities)
+      ...communityIds.map(id => ({
+        "query": `tag:#community/${id}`,
+        "color": { "a": 1, "rgb": communityColor(id, communityIds.length) }
+      })),
     ],
     "collapse-display": false,
     "showArrow": true,
@@ -483,6 +526,7 @@ function ensureObsidianGraphConfig(brainDir: string): void {
 /* Frontmatter styling */
 .metadata-property[data-property-key="temporal_status"] .metadata-property-value { font-weight: bold; }
 .metadata-property[data-property-key="decay_score"] .metadata-property-value { font-family: monospace; }
+.metadata-property[data-property-key="community"] .metadata-property-value { font-weight: bold; color: #A020F0; }
 `;
 
   fs.writeFileSync(path.join(snippetsDir, 'succ-graph.css'), cssSnippet);
