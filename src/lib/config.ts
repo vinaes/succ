@@ -51,6 +51,7 @@ export interface SuccConfig {
   embedding_local_concurrency?: number;  // Concurrent batches for local embeddings (default: 4)
   embedding_worker_pool_enabled?: boolean;  // Use worker thread pool for local embeddings (default: true)
   embedding_worker_pool_size?: number;  // Worker pool size (default: auto based on CPU cores)
+  embedding_worker_pool_max?: number;  // Max worker pool size cap (default: 8)
   embedding_cache_size?: number;  // Embedding LRU cache size (default: 500)
   chunk_size: number;
   chunk_overlap: number;

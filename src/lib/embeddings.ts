@@ -266,8 +266,9 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
 
   try {
     if (!embeddingPool) {
-      const poolSize = config.embedding_worker_pool_size ?? Math.min(os.cpus().length - 1, 4);
-      embeddingPool = new EmbeddingPool({ poolSize, model: config.embedding_model });
+      const poolSize = config.embedding_worker_pool_size ?? undefined;
+      const maxWorkers = config.embedding_worker_pool_max ?? 8;
+      embeddingPool = new EmbeddingPool({ poolSize, maxWorkers, model: config.embedding_model });
       console.log(`Initializing embedding worker pool (${embeddingPool.size} workers)...`);
       await embeddingPool.init();
       console.log('Worker pool ready.');
