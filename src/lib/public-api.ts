@@ -100,3 +100,5 @@ export {
 
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './db/memories.js';
+export type { LinkRelation } from './storage/types.js';
+export type { MemoryType } from './db/schema.js';
