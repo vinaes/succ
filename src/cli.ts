@@ -12,6 +12,7 @@ import { watch } from './commands/watch.js';
 import { config } from './commands/config.js';
 import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
+import { reindex } from './commands/reindex.js';
 import { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } from './commands/benchmark.js';
 import { benchmarkQuality } from './commands/benchmark-quality.js';
 import { benchmarkSqliteVec } from './commands/benchmark-sqlite-vec.js';
@@ -83,6 +84,11 @@ program
   .command('status')
   .description('Show index statistics')
   .action(status);
+
+program
+  .command('reindex')
+  .description('Re-index stale files and clean up deleted entries')
+  .action(reindex);
 
 program
   .command('add <file>', { hidden: true })
