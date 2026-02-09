@@ -365,6 +365,8 @@ Controls detection and redaction of sensitive information.
 
 ## Knowledge Graph Settings
 
+### Core Settings
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `graph_auto_link` | boolean | true | Auto-link similar memories |
@@ -373,7 +375,106 @@ Controls detection and redaction of sensitive information.
 | `graph_export_format` | `"obsidian"` \| `"json"` | `"obsidian"` | Export format |
 | `graph_export_path` | string | `.succ/brain/graph` | Custom export path |
 
+### LLM Relation Enrichment
+
+Replace blind `similar_to` links with semantically accurate relation types via LLM.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `graph_llm_relations.enabled` | boolean | false | Enable LLM relation classification |
+| `graph_llm_relations.batch_size` | number | 5 | Pairs per LLM call |
+| `graph_llm_relations.auto_on_save` | boolean | false | Enrich links when saving memories |
+
+Available relations: `caused_by`, `leads_to`, `contradicts`, `implements`, `supersedes`, `references`, `related`, `similar_to`
+
+```json
+{
+  "graph_llm_relations": {
+    "enabled": true,
+    "batch_size": 5,
+    "auto_on_save": false
+  }
+}
+```
+
+**CLI:** `succ graph enrich-relations [--limit N] [--force]`
+**MCP:** `succ_link action="enrich"`
+
+### Contextual Proximity
+
+Create `related` links between memories that share the same source/session context.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `graph_contextual_proximity.enabled` | boolean | false | Enable proximity linking |
+| `graph_contextual_proximity.min_cooccurrence` | number | 2 | Min co-occurrences to link |
+| `graph_contextual_proximity.source_pattern` | string | - | Regex to normalize sources |
+
+```json
+{
+  "graph_contextual_proximity": {
+    "enabled": true,
+    "min_cooccurrence": 2
+  }
+}
+```
+
+**CLI:** `succ graph proximity [--min-count 2] [--dry-run]`
+**MCP:** `succ_link action="proximity"`
+
+### Community Detection
+
+Auto-group memories into thematic communities via Label Propagation algorithm. Results are stored as `community:N` tags.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `graph_community_detection.enabled` | boolean | false | Enable community detection |
+| `graph_community_detection.algorithm` | string | `"label-propagation"` | Detection algorithm |
+| `graph_community_detection.max_iterations` | number | 100 | Max LP iterations |
+| `graph_community_detection.tag_prefix` | string | `"community"` | Tag prefix for communities |
+
+```json
+{
+  "graph_community_detection": {
+    "enabled": true,
+    "max_iterations": 100
+  }
+}
+```
+
+**CLI:** `succ graph communities`
+**MCP:** `succ_link action="communities"`
+
+Communities are searchable via `succ_recall tags=["community:3"]`.
+
+### Centrality Scoring
+
+Degree centrality scoring with recall boost — well-connected memories rank higher in search results.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `graph_centrality.enabled` | boolean | false | Enable centrality boost |
+| `graph_centrality.algorithm` | string | `"degree"` | Centrality algorithm |
+| `graph_centrality.boost_weight` | number | 0.1 | Max recall boost (10%) |
+| `graph_centrality.cache_ttl_hours` | number | 24 | Cache TTL for scores |
+
+```json
+{
+  "graph_centrality": {
+    "enabled": true,
+    "boost_weight": 0.1
+  }
+}
+```
+
+**CLI:** `succ graph centrality`
+**MCP:** `succ_link action="centrality"`
+
+Recall scoring pipeline: `hybrid search → temporal decay → dead-end boost → centrality boost → re-sort`
+
 ### Example: Export to Obsidian
+
+Obsidian export includes community colors (HLS palette per community) and enriched relation types on wiki-links.
 
 ```json
 {
@@ -974,6 +1075,10 @@ LLM-powered skill discovery and suggestions.
 
   "graph_auto_link": true,
   "graph_link_threshold": 0.7,
+  "graph_centrality": {
+    "enabled": true,
+    "boost_weight": 0.1
+  },
 
   "remember_extract_default": true,
   "consolidation_llm_default": true,
