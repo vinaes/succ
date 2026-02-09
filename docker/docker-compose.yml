@@ -1,0 +1,54 @@
+# Docker Compose for succ storage backend testing and benchmarks
+#
+# Usage:
+#   docker compose up -d           # Start all services
+#   docker compose up postgres -d  # Start only PostgreSQL
+#   docker compose up qdrant -d    # Start only Qdrant
+#   docker compose down            # Stop all services
+#   docker compose down -v         # Stop and remove volumes
+#
+# Services:
+#   - PostgreSQL 16 with pgvector extension (port 5433)
+#   - Qdrant vector database (port 6333, 6334)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: succ-postgres
+    environment:
+      POSTGRES_USER: succ
+      POSTGRES_PASSWORD: succ_test_password
+      POSTGRES_DB: succ
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U succ -d succ"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: succ-qdrant
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c 'exec 3<>/dev/tcp/localhost/6333' && exit 0 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Named volumes for persistence (optional, using bind mounts above for visibility)
+volumes:
+  postgres_data:
+  qdrant_data:
