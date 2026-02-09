@@ -114,22 +114,20 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
     if (stat) {
       const label = type === 'search_code' ? 'search_code' : type;
 
-      // recall doesn't have meaningful "savings" - just show queries and returned
-      if (type === 'recall') {
-        console.log(
-          `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
-        );
-        ragTotal.queries += stat.query_count;
-        ragTotal.returned += stat.total_returned_tokens;
-      } else {
+      ragTotal.queries += stat.query_count;
+      ragTotal.returned += stat.total_returned_tokens;
+
+      if (stat.total_savings_tokens > 0) {
         const typeSavings = estimateSavings(stat.total_savings_tokens, pricingModel);
         console.log(
           `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved (~${formatCost(typeSavings)})`
         );
-        ragTotal.queries += stat.query_count;
-        ragTotal.returned += stat.total_returned_tokens;
         ragTotal.saved += stat.total_savings_tokens;
         ragTotal.cost += typeSavings;
+      } else {
+        console.log(
+          `  ${label.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
+        );
       }
     }
   }

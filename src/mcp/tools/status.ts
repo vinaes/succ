@@ -243,15 +243,14 @@ export function registerStatusTools(server: McpServer) {
             ragTotalQueries += stat.query_count;
             ragTotalReturned += stat.total_returned_tokens;
 
-            if (type === 'recall') {
-              // recall doesn't have meaningful "savings" — memories have no "full file" to compare
-              lines.push(
-                `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
-              );
-            } else {
+            if (stat.total_savings_tokens > 0) {
               ragTotalSaved += stat.total_savings_tokens;
               lines.push(
                 `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
+              );
+            } else {
+              lines.push(
+                `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
               );
             }
           }

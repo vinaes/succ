@@ -13,7 +13,7 @@
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, getStorageDispatcher, type TokenEventType } from '../lib/storage/index.js';
+import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, getStorageDispatcher, getMemoryStats, type TokenEventType } from '../lib/storage/index.js';
 import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
@@ -108,10 +108,24 @@ export async function trackTokenSavings(
     const uniqueFiles = [...new Set(results.map((r) => r.file_path))];
 
     // For documents/code: read full files and count tokens
-    // For memories: full_source = returned (no file to compare)
-    let fullSourceTokens = returnedTokens; // default for memories
+    // For memories (recall): full_source = total memory pool tokens
+    let fullSourceTokens = returnedTokens; // default fallback
 
-    if (eventType === 'search' || eventType === 'search_code') {
+    if (eventType === 'recall') {
+      // Recall savings: searched N memories, returned only top results
+      // Estimate total memory pool size from memory stats
+      try {
+        const memStats = await getMemoryStats();
+        const totalMemories = memStats?.total_memories || 0;
+        if (totalMemories > 0 && results.length < totalMemories) {
+          // Estimate: avg tokens per returned result × total memories
+          const avgTokensPerResult = returnedTokens / results.length;
+          fullSourceTokens = Math.round(avgTokensPerResult * totalMemories);
+        }
+      } catch {
+        // Fallback: no savings for recall
+      }
+    } else if (eventType === 'search' || eventType === 'search_code') {
       const projectRoot = getProjectRoot();
       const succDir = getSuccDir();
 
