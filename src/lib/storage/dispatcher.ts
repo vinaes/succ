@@ -1455,7 +1455,7 @@ export class StorageDispatcher {
       const params: any[] = [this.postgres.getProjectId()];
       let sql = `SELECT id, timestamp::text as timestamp, source, memories_before, memories_after,
                         new_memories, types_added, avg_quality, created_at::text as created_at
-                 FROM learning_deltas WHERE project_id = $1`;
+                 FROM learning_deltas WHERE LOWER(project_id) = $1`;
       if (options.since) {
         params.push(options.since);
         sql += ` AND timestamp >= $${params.length}`;
@@ -1487,7 +1487,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const { rows } = await pool.query(
-        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE project_id = $1 AND file_path LIKE 'code:%'`,
+        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'`,
         [this.postgres.getProjectId()]
       );
       return parseInt(rows[0]?.count ?? '0');
@@ -1502,7 +1502,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const { rows } = await pool.query(
-        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE project_id = $1 AND file_path NOT LIKE 'code:%'`,
+        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE LOWER(project_id) = $1 AND file_path NOT LIKE 'code:%'`,
         [this.postgres.getProjectId()]
       );
       return parseInt(rows[0]?.count ?? '0');
@@ -1517,7 +1517,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const { rows } = await pool.query(
-        `SELECT AVG(quality_score) as avg, COUNT(*) as count FROM memories WHERE project_id = $1 AND quality_score IS NOT NULL`,
+        `SELECT AVG(quality_score) as avg, COUNT(*) as count FROM memories WHERE LOWER(project_id) = $1 AND quality_score IS NOT NULL`,
         [this.postgres.getProjectId()]
       );
       return { avg: rows[0]?.avg ? parseFloat(rows[0].avg) : null, count: parseInt(rows[0]?.count ?? '0') };
@@ -1544,7 +1544,7 @@ export class StorageDispatcher {
       const { rows } = await pool.query(
         `SELECT id, content, type, tags, source, quality_score, created_at::text as created_at
          FROM memories
-         WHERE project_id = $1
+         WHERE LOWER(project_id) = $1
            AND invalidated_by IS NULL
            AND type IN (${typePlaceholders})
            AND (quality_score IS NULL OR quality_score >= $${options.types.length + 2})
@@ -1643,7 +1643,7 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const result = await pool.query(
-        'DELETE FROM memory_links WHERE (source_id = $1 OR target_id = $1) AND project_id = $2',
+        'DELETE FROM memory_links WHERE (source_id = $1 OR target_id = $1) AND LOWER(project_id) = $2',
         [memoryId, this.postgres.getProjectId()]
       );
       return result.rowCount ?? 0;
@@ -1707,11 +1707,11 @@ export class StorageDispatcher {
         await client.query('BEGIN');
 
         if (data.overwrite) {
-          await client.query('DELETE FROM memory_centrality WHERE memory_id IN (SELECT id FROM memories WHERE project_id = $1)', [projectId]);
-          await client.query('DELETE FROM memory_links WHERE project_id = $1', [projectId]);
-          await client.query('DELETE FROM memories WHERE project_id = $1', [projectId]);
+          await client.query('DELETE FROM memory_centrality WHERE memory_id IN (SELECT id FROM memories WHERE LOWER(project_id) = $1)', [projectId]);
+          await client.query('DELETE FROM memory_links WHERE LOWER(project_id) = $1', [projectId]);
+          await client.query('DELETE FROM memories WHERE LOWER(project_id) = $1', [projectId]);
           if (data.restoreDocuments) {
-            await client.query('DELETE FROM documents WHERE project_id = $1', [projectId]);
+            await client.query('DELETE FROM documents WHERE LOWER(project_id) = $1', [projectId]);
           }
         }
 
