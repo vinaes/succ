@@ -57,9 +57,9 @@ Or if running from source:
 | `succ_prd_status` | Show PRD details and task status |
 | `succ_prd_run` | Execute PRD tasks with quality gates |
 | `succ_prd_export` | Export PRD workflow to Obsidian |
-| `succ_quick_search` | Cheap web search via Perplexity Sonar |
-| `succ_web_search` | Quality web search via Perplexity Sonar Pro |
-| `succ_deep_research` | Deep multi-step web research |
+| `succ_quick_search` | Quick web search (default: Perplexity Sonar, configurable) |
+| `succ_web_search` | Quality web search (default: Perplexity Sonar Pro, configurable) |
+| `succ_deep_research` | Deep multi-step research (default: Perplexity Deep Research, configurable) |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 

@@ -1,10 +1,13 @@
 /**
- * MCP Web Search tools (Perplexity Sonar via OpenRouter)
+ * MCP Web Search tools via OpenRouter (Perplexity, Grok, and other search-capable models)
  *
- * - succ_quick_search: Fast, cheap search using Perplexity Sonar ($1/MTok)
- * - succ_web_search: Quality search using Perplexity Sonar Pro ($3/$15 MTok)
- * - succ_deep_research: Multi-step deep research using Perplexity Sonar Deep Research
+ * - succ_quick_search: Fast, cheap search (default: Perplexity Sonar)
+ * - succ_web_search: Quality search (default: Perplexity Sonar Pro)
+ * - succ_deep_research: Multi-step deep research (default: Perplexity Sonar Deep Research)
  * - succ_web_search_history: Browse and filter past web search history
+ *
+ * Models are configurable via web_search.* config keys. Any OpenRouter model
+ * with :online suffix supports web search (e.g., x-ai/grok-3:online).
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,14 +18,26 @@ import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
 import type { WebSearchToolName } from '../../lib/storage/types.js';
 
-// Approximate pricing per 1M tokens (USD) — OpenRouter Perplexity models
+// Approximate pricing per 1M tokens (USD) — OpenRouter models with web search
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Perplexity Sonar (native search)
   'perplexity/sonar': { input: 1, output: 1 },
   'perplexity/sonar-pro': { input: 3, output: 15 },
   'perplexity/sonar-pro-search': { input: 3, output: 15 },
   'perplexity/sonar-reasoning': { input: 1, output: 5 },
   'perplexity/sonar-reasoning-pro': { input: 2, output: 8 },
   'perplexity/sonar-deep-research': { input: 2, output: 8 },
+  // xAI Grok (native web + X/Twitter search)
+  'x-ai/grok-3': { input: 3, output: 15 },
+  'x-ai/grok-3-mini': { input: 0.3, output: 0.5 },
+  'x-ai/grok-3:online': { input: 5, output: 15 },
+  'x-ai/grok-3-mini:online': { input: 0.3, output: 0.5 },
+  // Google Gemini (:online via OpenRouter)
+  'google/gemini-2.0-flash-001:online': { input: 0.1, output: 0.4 },
+  'google/gemini-2.5-pro-preview:online': { input: 1.25, output: 10 },
+  // OpenAI (:online via OpenRouter)
+  'openai/gpt-4o:online': { input: 2.5, output: 10 },
+  'openai/gpt-4o-mini:online': { input: 0.15, output: 0.6 },
 };
 
 /**
@@ -161,7 +176,7 @@ export function registerWebSearchTools(server: McpServer) {
   // succ_quick_search — cheapest, fastest web search
   server.tool(
     'succ_quick_search',
-    'Quick, cheap web search using Perplexity Sonar ($1/MTok — ~10x cheaper than succ_web_search). Best for simple factual queries: version numbers, release dates, quick lookups. Use succ_web_search for complex queries needing higher quality. Requires OPENROUTER_API_KEY.',
+    'Quick, cheap web search via OpenRouter (default: Perplexity Sonar, ~$1/MTok). Best for simple factual queries: version numbers, release dates, quick lookups. Configure model with web_search.quick_search_model. Requires OPENROUTER_API_KEY.',
     {
       query: z.string().describe('Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'),
       system_prompt: z.string().optional().describe('Optional system prompt to guide response format'),
@@ -229,10 +244,10 @@ export function registerWebSearchTools(server: McpServer) {
   // succ_web_search — fast real-time web search
   server.tool(
     'succ_web_search',
-    'Search the web using Perplexity Sonar Pro via OpenRouter. Higher quality than succ_quick_search but ~10x more expensive ($3/$15 MTok). Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Requires OPENROUTER_API_KEY.',
+    'Web search via OpenRouter (default: Perplexity Sonar Pro). Higher quality than succ_quick_search. Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Alternatives: x-ai/grok-3:online, google/gemini-2.0-flash-001:online, or any model with :online suffix. Requires OPENROUTER_API_KEY.',
     {
       query: z.string().describe('The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'),
-      model: z.string().optional().describe('Override search model (default: perplexity/sonar-pro). Options: perplexity/sonar, perplexity/sonar-pro, perplexity/sonar-reasoning-pro'),
+      model: z.string().optional().describe('Override search model. Default from config (perplexity/sonar-pro). Perplexity: sonar, sonar-pro, sonar-reasoning-pro. Grok: x-ai/grok-3:online, x-ai/grok-3-mini:online. Any OpenRouter model with :online suffix supports web search.'),
       system_prompt: z.string().optional().describe('Optional system prompt to guide the response format or focus'),
       max_tokens: z.number().optional().describe('Max response tokens (default: 4000)'),
       save_to_memory: z.boolean().optional().describe('Save result to succ memory (default: from config)'),
@@ -299,7 +314,7 @@ export function registerWebSearchTools(server: McpServer) {
   // succ_deep_research — expensive multi-step research
   server.tool(
     'succ_deep_research',
-    'Conduct deep, multi-step web research using Perplexity Sonar Deep Research via OpenRouter. Autonomously searches, reads, and synthesizes multiple sources. WARNING: Significantly more expensive and slower than succ_web_search (30-120 seconds, runs 30+ searches). Requires OPENROUTER_API_KEY.',
+    'Deep multi-step web research via OpenRouter (default: Perplexity Sonar Deep Research). Autonomously searches, reads, and synthesizes multiple sources. WARNING: Significantly more expensive and slower than succ_web_search (30-120s, runs 30+ searches). Configure model with web_search.deep_research_model. Requires OPENROUTER_API_KEY.',
     {
       query: z.string().describe('The research question (e.g., "Compare React Server Components vs Astro Islands for e-commerce")'),
       system_prompt: z.string().optional().describe('Optional system prompt to guide research focus or output format'),

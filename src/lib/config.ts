@@ -345,11 +345,11 @@ export interface GraphCentralityConfig {
 
 export interface WebSearchConfig {
   enabled?: boolean;                  // Enable web search tools (default: true)
-  quick_search_model?: string;        // Model for succ_quick_search (default: 'perplexity/sonar')
+  quick_search_model?: string;        // Model for succ_quick_search (default: 'perplexity/sonar'). Alternatives: 'x-ai/grok-3-mini:online', 'openai/gpt-4o-mini:online', 'google/gemini-2.0-flash-001:online'
   quick_search_max_tokens?: number;   // Max tokens for quick search (default: 2000)
   quick_search_timeout_ms?: number;   // Timeout for quick search in ms (default: 15000)
-  model?: string;                     // Model for succ_web_search (default: 'perplexity/sonar-pro')
-  deep_research_model?: string;       // Model for succ_deep_research (default: 'perplexity/sonar-deep-research')
+  model?: string;                     // Model for succ_web_search (default: 'perplexity/sonar-pro'). Alternatives: 'x-ai/grok-3:online', 'google/gemini-2.5-pro-preview:online'. Any OpenRouter model with :online suffix works
+  deep_research_model?: string;       // Model for succ_deep_research (default: 'perplexity/sonar-deep-research'). Only Perplexity supports multi-step deep research natively
   max_tokens?: number;                // Max tokens for web search response (default: 4000)
   deep_research_max_tokens?: number;  // Max tokens for deep research (default: 8000)
   timeout_ms?: number;                // Timeout for web search in ms (default: 30000)
