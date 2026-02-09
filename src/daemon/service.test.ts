@@ -345,7 +345,7 @@ describe('Daemon Service', () => {
         limit: 5,
       });
 
-      expect(hybridSearchDocs).toHaveBeenCalledWith('test query', 5, 0.3);
+      expect(hybridSearchDocs).toHaveBeenCalledWith('test query', expect.any(Float32Array), 5, 0.3);
       expect(result.results).toHaveLength(1);
       expect(incrementMemoryAccessBatch).toHaveBeenCalled();
     });
@@ -362,7 +362,7 @@ describe('Daemon Service', () => {
         limit: 3,
       });
 
-      expect(hybridSearchCode).toHaveBeenCalledWith('function test', 3);
+      expect(hybridSearchCode).toHaveBeenCalledWith('function test', expect.any(Float32Array), 3, 0.3);
       expect(result.results).toHaveLength(1);
     });
 

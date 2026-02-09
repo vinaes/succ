@@ -450,7 +450,9 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const deleted = sqlite.deleteMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
-      try { await this.qdrant.deleteMemoryVector(id); } catch { /* non-fatal */ }
+      try { await this.qdrant.deleteMemoryVector(id); } catch (err) {
+        console.warn(`[storage] Qdrant vector delete failed for memory ${id}:`, err);
+      }
     }
     return deleted;
   }
@@ -1063,7 +1065,9 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const deleted = sqlite.deleteGlobalMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
-      try { await this.qdrant.deleteGlobalMemoryVector(id); } catch { /* non-fatal */ }
+      try { await this.qdrant.deleteGlobalMemoryVector(id); } catch (err) {
+        console.warn(`[storage] Qdrant global vector delete failed for memory ${id}:`, err);
+      }
     }
     return deleted;
   }

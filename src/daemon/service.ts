@@ -710,7 +710,8 @@ export async function routeRequest(method: string, pathname: string, searchParam
     if (!query) {
       throw new Error('query required');
     }
-    const results = await hybridSearchDocs(query, limit, threshold);
+    const queryEmbedding = await getEmbedding(query);
+    const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold);
 
     // Track access for returned memories
     const accesses = results
@@ -724,11 +725,12 @@ export async function routeRequest(method: string, pathname: string, searchParam
   }
 
   if (pathname === '/api/search-code' && method === 'POST') {
-    const { query, limit = 5 } = body;
+    const { query, limit = 5, threshold = 0.3 } = body;
     if (!query) {
       throw new Error('query required');
     }
-    const results = await hybridSearchCode(query, limit);
+    const queryEmbedding = await getEmbedding(query);
+    const results = await hybridSearchCode(query, queryEmbedding, limit, threshold);
     return { results };
   }
 
@@ -1223,7 +1225,7 @@ export function shutdownDaemon(): void {
   }
 
   // Stop watch service (async, but we're shutting down so fire-and-forget)
-  stopWatcher(log).catch(() => {});
+  stopWatcher(log).catch(err => log(`[shutdown] Watcher stop failed: ${err}`));
 
   // Stop analyze service
   stopAnalyzer(log);
@@ -1235,7 +1237,7 @@ export function shutdownDaemon(): void {
   }
 
   // Cleanup DB connections
-  closeStorageDispatcher().catch(() => {});
+  closeStorageDispatcher().catch(err => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
   cleanupQualityScoring();
   closeDb();
@@ -1244,10 +1246,14 @@ export function shutdownDaemon(): void {
   // Remove PID and port files
   try {
     fs.unlinkSync(getDaemonPidFile());
-  } catch {}
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') log(`[shutdown] PID file removal failed: ${err}`);
+  }
   try {
     fs.unlinkSync(getDaemonPortFile());
-  } catch {}
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') log(`[shutdown] Port file removal failed: ${err}`);
+  }
 
   log('[daemon] Shutdown complete');
   process.exit(0);

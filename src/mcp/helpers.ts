@@ -56,7 +56,9 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 
   // Reinit storage if we already had a different project OR this is first time
   if (_currentProject !== null) {
-    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-project-switch'); } catch (_) { /* ignore */ }
+    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-project-switch'); } catch (err) {
+      console.warn('[mcp] Session counter flush failed:', err);
+    }
     closeDb();
     closeGlobalDb();
     await closeStorageDispatcher();
@@ -71,7 +73,9 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 // Graceful shutdown handler
 export function setupGracefulShutdown() {
   const cleanup = async () => {
-    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-session'); } catch (_) { /* ignore */ }
+    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-session'); } catch (err) {
+      console.warn('[mcp] Session counter flush failed:', err);
+    }
     await closeStorageDispatcher();
     cleanupEmbeddings();
     cleanupQualityScoring();
@@ -157,8 +161,8 @@ export async function trackTokenSavings(
       model,
       estimated_cost: estimatedCost,
     });
-  } catch {
-    // Don't fail the search if tracking fails
+  } catch (err) {
+    console.warn('[mcp] Token savings tracking failed:', err);
   }
 }
 
@@ -191,8 +195,8 @@ export async function trackMemoryAccess(
     }
 
     await incrementMemoryAccessBatch(accesses);
-  } catch {
-    // Don't fail the search if tracking fails
+  } catch (err) {
+    console.warn('[mcp] Memory access tracking failed:', err);
   }
 }
 

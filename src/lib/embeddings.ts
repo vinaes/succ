@@ -53,7 +53,7 @@ export function cleanupEmbeddings(): void {
     }
   }
   if (embeddingPool) {
-    embeddingPool.shutdown().catch(() => {});
+    embeddingPool.shutdown().catch(err => console.warn('[embeddings] Pool shutdown failed:', err));
     embeddingPool = null;
   }
 }
@@ -279,7 +279,7 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
     console.warn(`Worker pool failed, falling back to single-thread: ${msg}`);
     poolInitFailed = true;
     if (embeddingPool) {
-      embeddingPool.shutdown().catch(() => {});
+      embeddingPool.shutdown().catch(err => console.warn('[embeddings] Pool cleanup failed:', err));
       embeddingPool = null;
     }
     return null;
