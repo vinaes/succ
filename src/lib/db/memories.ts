@@ -5,7 +5,7 @@ import { sqliteVecAvailable, MemoryType } from './schema.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
-import { getSuccDir } from '../config.js';
+import { getSuccDir, getConfig } from '../config.js';
 import { invalidateMemoriesBm25Index } from './bm25-indexes.js';
 
 /**
@@ -167,6 +167,18 @@ export function saveMemory(
   // Auto-link to similar existing memories
   if (autoLink) {
     linksCreated = autoLinkNewMemory(newId, embedding, linkThreshold);
+  }
+
+  // Async LLM enrichment of new links (fire-and-forget)
+  if (linksCreated > 0) {
+    try {
+      const conf = getConfig();
+      if (conf.graph_llm_relations?.enabled && conf.graph_llm_relations?.auto_on_save) {
+        import('../graph/llm-relations.js').then(m => m.enrichMemoryLinks(newId)).catch(() => {});
+      }
+    } catch {
+      // LLM enrichment module not available — skip
+    }
   }
 
   // Schedule auto-export if enabled (async, non-blocking)

@@ -83,15 +83,16 @@ export class PostgresBackend {
 
   constructor(config: PostgresBackendConfig, projectId?: string) {
     this.config = config;
-    this.projectId = projectId ?? null;
+    this.projectId = projectId?.toLowerCase() ?? null;
   }
 
   /**
    * Set the current project ID for scoping memories.
    * NULL = global memories (shared across all projects)
+   * Always normalized to lowercase for case-insensitive path matching (Windows).
    */
   setProjectId(projectId: string | null): void {
-    this.projectId = projectId;
+    this.projectId = projectId?.toLowerCase() ?? null;
   }
 
   getProjectId(): string | null {
@@ -275,6 +276,21 @@ export class PostgresBackend {
 
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id)');
+
+    // Migration: add llm_enriched column to memory_links
+    try {
+      await pool.query('ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0');
+    } catch { /* column already exists */ }
+
+    // Memory centrality cache table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS memory_centrality (
+        memory_id INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+        degree REAL DEFAULT 0,
+        normalized_degree REAL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
 
     // Token frequencies table
     await pool.query(`
@@ -546,7 +562,7 @@ export class PostgresBackend {
     }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
-      'DELETE FROM documents WHERE project_id = $1 AND file_path = $2 RETURNING id',
+      'DELETE FROM documents WHERE LOWER(project_id) = $1 AND file_path = $2 RETURNING id',
       [this.projectId, filePath]
     );
     return result.rows.map(r => r.id);
@@ -575,7 +591,7 @@ export class PostgresBackend {
       `SELECT file_path, content, start_line, end_line,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE project_id = $2 AND 1 - (embedding <=> $1) >= $3
+       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3
        ORDER BY embedding <=> $1
        LIMIT $4`,
       [toPgVector(queryEmbedding), this.projectId, threshold, limit]
@@ -681,15 +697,15 @@ export class PostgresBackend {
     // If project_id is set, get stats for that project; otherwise get global stats
     if (this.projectId) {
       const totalDocs = await pool.query<{ count: string }>(
-        'SELECT COUNT(*) as count FROM documents WHERE project_id = $1',
+        'SELECT COUNT(*) as count FROM documents WHERE LOWER(project_id) = $1',
         [this.projectId]
       );
       const totalFiles = await pool.query<{ count: string }>(
-        'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE project_id = $1',
+        'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE LOWER(project_id) = $1',
         [this.projectId]
       );
       const lastIndexed = await pool.query<{ last: string | null }>(
-        'SELECT MAX(updated_at) as last FROM documents WHERE project_id = $1',
+        'SELECT MAX(updated_at) as last FROM documents WHERE LOWER(project_id) = $1',
         [this.projectId]
       );
 
@@ -717,8 +733,8 @@ export class PostgresBackend {
 
     if (this.projectId) {
       // Clear only current project's documents
-      await pool.query('DELETE FROM documents WHERE project_id = $1', [this.projectId]);
-      await pool.query('DELETE FROM file_hashes WHERE project_id = $1', [this.projectId]);
+      await pool.query('DELETE FROM documents WHERE LOWER(project_id) = $1', [this.projectId]);
+      await pool.query('DELETE FROM file_hashes WHERE LOWER(project_id) = $1', [this.projectId]);
     } else {
       // No project set = clear ALL documents (dangerous!)
       await pool.query('DELETE FROM documents');
@@ -737,7 +753,7 @@ export class PostgresBackend {
     }
     const pool = await this.getPool();
     const result = await pool.query<{ content_hash: string }>(
-      'SELECT content_hash FROM file_hashes WHERE project_id = $1 AND file_path = $2',
+      'SELECT content_hash FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path = $2',
       [this.projectId, filePath]
     );
     return result.rows[0]?.content_hash ?? null;
@@ -763,7 +779,7 @@ export class PostgresBackend {
       throw new Error('Project ID must be set before deleting file hash');
     }
     const pool = await this.getPool();
-    await pool.query('DELETE FROM file_hashes WHERE project_id = $1 AND file_path = $2', [this.projectId, filePath]);
+    await pool.query('DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path = $2', [this.projectId, filePath]);
   }
 
   async getAllFileHashes(): Promise<Map<string, string>> {
@@ -772,7 +788,7 @@ export class PostgresBackend {
     }
     const pool = await this.getPool();
     const result = await pool.query<{ file_path: string; content_hash: string }>(
-      'SELECT file_path, content_hash FROM file_hashes WHERE project_id = $1',
+      'SELECT file_path, content_hash FROM file_hashes WHERE LOWER(project_id) = $1',
       [this.projectId]
     );
     return new Map(result.rows.map(r => [r.file_path, r.content_hash]));
@@ -784,7 +800,7 @@ export class PostgresBackend {
     }
     const pool = await this.getPool();
     const result = await pool.query<{ file_path: string; content_hash: string; indexed_at: string }>(
-      'SELECT file_path, content_hash, indexed_at::text FROM file_hashes WHERE project_id = $1',
+      'SELECT file_path, content_hash, indexed_at::text FROM file_hashes WHERE LOWER(project_id) = $1',
       [this.projectId]
     );
     return result.rows;
@@ -857,9 +873,9 @@ export class PostgresBackend {
     // Filter by project_id: include current project AND optionally global (NULL)
     if (this.projectId) {
       if (includeGlobal) {
-        query += ` AND (project_id = $${paramIndex} OR project_id IS NULL)`;
+        query += ` AND (LOWER(project_id) = $${paramIndex} OR project_id IS NULL)`;
       } else {
-        query += ` AND project_id = $${paramIndex}`;
+        query += ` AND LOWER(project_id) = $${paramIndex}`;
       }
       params.push(this.projectId);
       paramIndex++;
@@ -946,7 +962,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
     // Only delete memories belonging to current project or global memories
     const result = await pool.query(
-      'DELETE FROM memories WHERE id = $1 AND (project_id = $2 OR project_id IS NULL)',
+      'DELETE FROM memories WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)',
       [id, this.projectId]
     );
     return (result.rowCount ?? 0) > 0;
@@ -994,9 +1010,9 @@ export class PostgresBackend {
     // Filter by project_id and exclude soft-deleted
     if (this.projectId) {
       if (includeGlobal) {
-        query += ` WHERE (project_id = $${paramIndex} OR project_id IS NULL) AND invalidated_by IS NULL`;
+        query += ` WHERE (LOWER(project_id) = $${paramIndex} OR project_id IS NULL) AND invalidated_by IS NULL`;
       } else {
-        query += ` WHERE project_id = $${paramIndex} AND invalidated_by IS NULL`;
+        query += ` WHERE LOWER(project_id) = $${paramIndex} AND invalidated_by IS NULL`;
       }
       params.push(this.projectId);
       paramIndex++;
@@ -1050,10 +1066,10 @@ export class PostgresBackend {
   ): Promise<{ id: number; created: boolean }> {
     const pool = await this.getPool();
 
-    // Validate that both memories belong to current project
+    // Validate that both memories belong to current project (case-insensitive for Windows paths)
     const validation = await pool.query<{ count: string }>(
       `SELECT COUNT(*) as count FROM memories
-       WHERE id IN ($1, $2) AND (project_id = $3 OR project_id IS NULL)`,
+       WHERE id IN ($1, $2) AND (LOWER(project_id) = $3 OR project_id IS NULL)`,
       [sourceId, targetId, this.projectId]
     );
 
@@ -1091,8 +1107,8 @@ export class PostgresBackend {
          USING memories m1, memories m2
          WHERE ml.source_id = m1.id AND ml.target_id = m2.id
            AND ml.source_id = $1 AND ml.target_id = $2 AND ml.relation = $3
-           AND (m1.project_id = $4 OR m1.project_id IS NULL)
-           AND (m2.project_id = $4 OR m2.project_id IS NULL)`,
+           AND (LOWER(m1.project_id) = $4 OR m1.project_id IS NULL)
+           AND (LOWER(m2.project_id) = $4 OR m2.project_id IS NULL)`,
         [sourceId, targetId, relation, this.projectId]
       );
       return (result.rowCount ?? 0) > 0;
@@ -1102,8 +1118,8 @@ export class PostgresBackend {
          USING memories m1, memories m2
          WHERE ml.source_id = m1.id AND ml.target_id = m2.id
            AND ml.source_id = $1 AND ml.target_id = $2
-           AND (m1.project_id = $3 OR m1.project_id IS NULL)
-           AND (m2.project_id = $3 OR m2.project_id IS NULL)`,
+           AND (LOWER(m1.project_id) = $3 OR m1.project_id IS NULL)
+           AND (LOWER(m2.project_id) = $3 OR m2.project_id IS NULL)`,
         [sourceId, targetId, this.projectId]
       );
       return (result.rowCount ?? 0) > 0;
@@ -1117,14 +1133,14 @@ export class PostgresBackend {
     const outgoing = await pool.query<MemoryLink>(
       `SELECT ml.* FROM memory_links ml
        JOIN memories m ON ml.target_id = m.id
-       WHERE ml.source_id = $1 AND (m.project_id = $2 OR m.project_id IS NULL)`,
+       WHERE ml.source_id = $1 AND (LOWER(m.project_id) = $2 OR m.project_id IS NULL)`,
       [memoryId, this.projectId]
     );
 
     const incoming = await pool.query<MemoryLink>(
       `SELECT ml.* FROM memory_links ml
        JOIN memories m ON ml.source_id = m.id
-       WHERE ml.target_id = $1 AND (m.project_id = $2 OR m.project_id IS NULL)`,
+       WHERE ml.target_id = $1 AND (LOWER(m.project_id) = $2 OR m.project_id IS NULL)`,
       [memoryId, this.projectId]
     );
 
@@ -1139,7 +1155,7 @@ export class PostgresBackend {
 
     // Only count memories and links for current project
     const totalMemories = await pool.query<{ count: string }>(
-      'SELECT COUNT(*) as count FROM memories WHERE project_id = $1 OR project_id IS NULL',
+      'SELECT COUNT(*) as count FROM memories WHERE LOWER(project_id) = $1 OR project_id IS NULL',
       [this.projectId]
     );
 
@@ -1148,19 +1164,19 @@ export class PostgresBackend {
       `SELECT COUNT(*) as count FROM memory_links ml
        JOIN memories m1 ON ml.source_id = m1.id
        JOIN memories m2 ON ml.target_id = m2.id
-       WHERE (m1.project_id = $1 OR m1.project_id IS NULL)
-         AND (m2.project_id = $1 OR m2.project_id IS NULL)`,
+       WHERE (LOWER(m1.project_id) = $1 OR m1.project_id IS NULL)
+         AND (LOWER(m2.project_id) = $1 OR m2.project_id IS NULL)`,
       [this.projectId]
     );
 
     const isolated = await pool.query<{ count: string }>(
       `SELECT COUNT(*) as count FROM memories m
-       WHERE (m.project_id = $1 OR m.project_id IS NULL)
+       WHERE (LOWER(m.project_id) = $1 OR m.project_id IS NULL)
          AND NOT EXISTS (
            SELECT 1 FROM memory_links ml
            JOIN memories m2 ON (ml.source_id = m2.id OR ml.target_id = m2.id)
            WHERE (ml.source_id = m.id OR ml.target_id = m.id)
-             AND (m2.project_id = $1 OR m2.project_id IS NULL)
+             AND (LOWER(m2.project_id) = $1 OR m2.project_id IS NULL)
          )`,
       [this.projectId]
     );
@@ -1169,8 +1185,8 @@ export class PostgresBackend {
       `SELECT ml.relation, COUNT(*) as count FROM memory_links ml
        JOIN memories m1 ON ml.source_id = m1.id
        JOIN memories m2 ON ml.target_id = m2.id
-       WHERE (m1.project_id = $1 OR m1.project_id IS NULL)
-         AND (m2.project_id = $1 OR m2.project_id IS NULL)
+       WHERE (LOWER(m1.project_id) = $1 OR m1.project_id IS NULL)
+         AND (LOWER(m2.project_id) = $1 OR m2.project_id IS NULL)
        GROUP BY ml.relation`,
       [this.projectId]
     );
@@ -1227,7 +1243,7 @@ export class PostgresBackend {
 
     // If project_id is set, get stats for that project; otherwise get all stats
     const whereClause = this.projectId
-      ? 'WHERE project_id = $1'
+      ? 'WHERE LOWER(project_id) = $1'
       : '';
     const params = this.projectId ? [this.projectId] : [];
 
@@ -1525,7 +1541,7 @@ export class PostgresBackend {
     const result = await pool.query(
       `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
        FROM skills
-       WHERE project_id = $1 OR project_id IS NULL
+       WHERE LOWER(project_id) = $1 OR project_id IS NULL
        ORDER BY usage_count DESC, updated_at DESC`,
       [this.projectId]
     );
@@ -1557,7 +1573,7 @@ export class PostgresBackend {
     const result = await pool.query(
       `SELECT id, name, description, source, path, usage_count
        FROM skills
-       WHERE (project_id = $1 OR project_id IS NULL)
+       WHERE (LOWER(project_id) = $1 OR project_id IS NULL)
          AND (name ILIKE $2 OR description ILIKE $2)
        ORDER BY usage_count DESC, updated_at DESC
        LIMIT $3`,
@@ -1589,7 +1605,7 @@ export class PostgresBackend {
     const result = await pool.query(
       `SELECT id, name, description, source, path, content, skyll_id
        FROM skills
-       WHERE name = $1 AND (project_id = $2 OR project_id IS NULL)
+       WHERE name = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)
        LIMIT 1`,
       [name, this.projectId]
     );
@@ -1613,7 +1629,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
     await pool.query(
       `UPDATE skills SET usage_count = usage_count + 1, last_used = NOW()
-       WHERE name = $1 AND (project_id = $2 OR project_id IS NULL)`,
+       WHERE name = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
       [name, this.projectId]
     );
   }
@@ -1624,7 +1640,7 @@ export class PostgresBackend {
   async deleteSkill(name: string): Promise<boolean> {
     const pool = await this.getPool();
     const result = await pool.query(
-      'DELETE FROM skills WHERE name = $1 AND project_id = $2',
+      'DELETE FROM skills WHERE name = $1 AND LOWER(project_id) = $2',
       [name, this.projectId]
     );
     return (result.rowCount ?? 0) > 0;
@@ -1681,6 +1697,52 @@ export class PostgresBackend {
       `SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`
     );
     return { cachedSkills: parseInt(result.rows[0].count) };
+  }
+
+  // ============================================================================
+  // Graph Enrichment Operations
+  // ============================================================================
+
+  async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [JSON.stringify(tags), memoryId, this.projectId]);
+  }
+
+  async updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+    const pool = await this.getPool();
+    const sets: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (updates.relation !== undefined) { sets.push(`relation = $${idx++}`); params.push(updates.relation); }
+    if (updates.weight !== undefined) { sets.push(`weight = $${idx++}`); params.push(updates.weight); }
+    if (updates.llmEnriched !== undefined) { sets.push(`llm_enriched = $${idx++}`); params.push(updates.llmEnriched ? 1 : 0); }
+    if (sets.length > 0) {
+      params.push(linkId);
+      await pool.query(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+    }
+  }
+
+  async upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(
+      `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (memory_id) DO UPDATE SET degree = EXCLUDED.degree, normalized_degree = EXCLUDED.normalized_degree, updated_at = NOW()`,
+      [memoryId, degree, normalizedDegree]
+    );
+  }
+
+  async getCentralityScores(memoryIds: number[]): Promise<Map<number, number>> {
+    const map = new Map<number, number>();
+    if (memoryIds.length === 0) return map;
+    const pool = await this.getPool();
+    const placeholders = memoryIds.map((_, i) => `$${i + 1}`).join(',');
+    const { rows } = await pool.query<{ memory_id: number; normalized_degree: number }>(
+      `SELECT memory_id, normalized_degree FROM memory_centrality WHERE memory_id IN (${placeholders})`,
+      memoryIds
+    );
+    for (const row of rows) map.set(row.memory_id, row.normalized_degree);
+    return map;
   }
 
   // ============================================================================
@@ -1796,7 +1858,7 @@ export class PostgresBackend {
     total_estimated_cost: number;
   }>> {
     const pool = await this.getPool();
-    const whereClause = this.projectId ? 'WHERE project_id = $1' : '';
+    const whereClause = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query(`
@@ -1826,7 +1888,7 @@ export class PostgresBackend {
   async clearTokenStats(): Promise<void> {
     const pool = await this.getPool();
     if (this.projectId) {
-      await pool.query('DELETE FROM token_stats WHERE project_id = $1', [this.projectId]);
+      await pool.query('DELETE FROM token_stats WHERE LOWER(project_id) = $1', [this.projectId]);
     } else {
       await pool.query('DELETE FROM token_stats');
     }
@@ -1854,7 +1916,7 @@ export class PostgresBackend {
     }>(
       `SELECT file_path, content, start_line, end_line
        FROM documents
-       WHERE project_id = $1 AND file_path NOT LIKE 'code:%'
+       WHERE LOWER(project_id) = $1 AND file_path NOT LIKE 'code:%'
        ORDER BY id DESC
        LIMIT $2`,
       [this.projectId, limit]
@@ -1865,8 +1927,8 @@ export class PostgresBackend {
   async clearCodeDocuments(): Promise<void> {
     const pool = await this.getPool();
     if (this.projectId) {
-      await pool.query("DELETE FROM documents WHERE project_id = $1 AND file_path LIKE 'code:%'", [this.projectId]);
-      await pool.query("DELETE FROM file_hashes WHERE project_id = $1 AND file_path LIKE 'code:%'", [this.projectId]);
+      await pool.query("DELETE FROM documents WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'", [this.projectId]);
+      await pool.query("DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'", [this.projectId]);
     } else {
       await pool.query("DELETE FROM documents WHERE file_path LIKE 'code:%'");
       await pool.query("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'");
@@ -1899,7 +1961,7 @@ export class PostgresBackend {
     if (this.projectId) {
       query = `SELECT id, content, 1 - (embedding <=> $1) as similarity
                FROM memories
-               WHERE (project_id = $2 OR project_id IS NULL)
+               WHERE (LOWER(project_id) = $2 OR project_id IS NULL)
                  AND 1 - (embedding <=> $1) >= $3
                ORDER BY embedding <=> $1
                LIMIT 1`;
@@ -2002,7 +2064,7 @@ export class PostgresBackend {
           if (this.projectId) {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
                        FROM memories
-                       WHERE (project_id = $2 OR project_id IS NULL)
+                       WHERE (LOWER(project_id) = $2 OR project_id IS NULL)
                          AND 1 - (embedding <=> $1) >= $3
                        ORDER BY embedding <=> $1
                        LIMIT 1`;
@@ -2091,7 +2153,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     const scopeCond = this.projectId
-      ? '(project_id = $1 OR project_id IS NULL)'
+      ? '(LOWER(project_id) = $1 OR project_id IS NULL)'
       : 'project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
 
@@ -2188,7 +2250,7 @@ export class PostgresBackend {
 
     // Get memories that existed at that time, with temporal validity check
     const scopeCond = this.projectId
-      ? '(project_id = $4 OR project_id IS NULL)'
+      ? '(LOWER(project_id) = $4 OR project_id IS NULL)'
       : 'project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
 
@@ -2300,7 +2362,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     const scopeCond = this.projectId
-      ? 'WHERE (project_id = $1 OR project_id IS NULL)'
+      ? 'WHERE (LOWER(project_id) = $1 OR project_id IS NULL)'
       : 'WHERE project_id IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 
@@ -2336,7 +2398,7 @@ export class PostgresBackend {
   }>> {
     const pool = await this.getPool();
     const scopeCond = this.projectId
-      ? 'WHERE project_id = $1 AND invalidated_by IS NULL'
+      ? 'WHERE LOWER(project_id) = $1 AND invalidated_by IS NULL'
       : 'WHERE project_id IS NULL AND invalidated_by IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 
@@ -2375,7 +2437,7 @@ export class PostgresBackend {
     embedding: number[];
   }>> {
     const pool = await this.getPool();
-    const scopeCond = this.projectId ? 'WHERE project_id = $1' : '';
+    const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query(
@@ -2516,7 +2578,7 @@ export class PostgresBackend {
   ): Promise<Array<{ id: number; similarity: number }>> {
     const pool = await this.getPool();
 
-    // Use pgvector to find similar memories efficiently
+    // Use pgvector to find similar memories efficiently (scoped to current project)
     const source = await pool.query<{ embedding: string }>(
       'SELECT embedding FROM memories WHERE id = $1',
       [memoryId]
@@ -2527,10 +2589,11 @@ export class PostgresBackend {
       `SELECT id, 1 - (embedding <=> (SELECT embedding FROM memories WHERE id = $1)) as similarity
        FROM memories
        WHERE id != $1
+         AND (LOWER(project_id) = $4 OR project_id IS NULL)
          AND 1 - (embedding <=> (SELECT embedding FROM memories WHERE id = $1)) >= $2
        ORDER BY embedding <=> (SELECT embedding FROM memories WHERE id = $1)
        LIMIT $3`,
-      [memoryId, threshold, maxLinks]
+      [memoryId, threshold, maxLinks, this.projectId]
     );
 
     return result.rows.map(r => ({
@@ -2564,7 +2627,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     const scopeCond = this.projectId
-      ? 'WHERE (project_id = $1 OR project_id IS NULL)'
+      ? 'WHERE (LOWER(project_id) = $1 OR project_id IS NULL)'
       : 'WHERE project_id IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 

@@ -57,7 +57,7 @@ export async function initStorageDispatcher(): Promise<void> {
   _backend = config.backend ?? 'sqlite';
   _vectorBackend = config.vector ?? 'builtin';
 
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectRoot().replace(/\\/g, '/').toLowerCase();
 
   if (_backend === 'postgresql') {
     const { createPostgresBackend } = await import('./backends/postgresql.js');
@@ -657,6 +657,62 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.getGraphStatsAsOf(asOfDate);
     const sqlite = await this.getSqliteFns();
     return sqlite.getGraphStatsAsOf(asOfDate);
+  }
+
+  // ===========================================================================
+  // Graph Enrichment
+  // ===========================================================================
+
+  async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.updateMemoryTags(memoryId, tags);
+    }
+    const { getDb } = await import('../db/connection.js');
+    const db = getDb();
+    db.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(tags), memoryId);
+  }
+
+  async updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.updateMemoryLink(linkId, updates);
+    }
+    const { getDb } = await import('../db/connection.js');
+    const db = getDb();
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (updates.relation !== undefined) { sets.push('relation = ?'); params.push(updates.relation); }
+    if (updates.weight !== undefined) { sets.push('weight = ?'); params.push(updates.weight); }
+    if (updates.llmEnriched !== undefined) { sets.push('llm_enriched = ?'); params.push(updates.llmEnriched ? 1 : 0); }
+    if (sets.length > 0) {
+      params.push(linkId);
+      db.prepare(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+    }
+  }
+
+  async upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.upsertCentralityScore(memoryId, degree, normalizedDegree);
+    }
+    const { getDb } = await import('../db/connection.js');
+    const db = getDb();
+    db.prepare(`INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(memory_id) DO UPDATE SET degree = excluded.degree, normalized_degree = excluded.normalized_degree, updated_at = excluded.updated_at`
+    ).run(memoryId, degree, normalizedDegree);
+  }
+
+  async getCentralityScores(memoryIds: number[]): Promise<Map<number, number>> {
+    if (memoryIds.length === 0) return new Map();
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getCentralityScores(memoryIds);
+    }
+    const { getDb } = await import('../db/connection.js');
+    const db = getDb();
+    const placeholders = memoryIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT memory_id, normalized_degree FROM memory_centrality WHERE memory_id IN (${placeholders})`).all(...memoryIds) as Array<{ memory_id: number; normalized_degree: number }>;
+    const map = new Map<number, number>();
+    for (const row of rows) map.set(row.memory_id, row.normalized_degree);
+    return map;
   }
 
   // ===========================================================================

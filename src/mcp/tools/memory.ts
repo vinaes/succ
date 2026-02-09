@@ -786,6 +786,16 @@ export function registerMemoryTools(server: McpServer) {
           allResults.sort((a, b) => b.similarity - a.similarity);
         }
 
+        // Apply centrality boost: well-connected memories rank higher
+        if (config.graph_centrality?.enabled && allResults.length > 0) {
+          try {
+            const { applyCentralityBoost } = await import('../../lib/graph/centrality.js');
+            allResults = await applyCentralityBoost(allResults, config.graph_centrality);
+          } catch {
+            // Centrality module not available — skip
+          }
+        }
+
         if (allResults.length === 0) {
           // Try to show recent memories as fallback
           const recentLocal = await getRecentMemories(2);

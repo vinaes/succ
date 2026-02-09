@@ -26,8 +26,8 @@ export function registerGraphTools(server: McpServer) {
     'succ_link',
     'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.',
     {
-      action: z.enum(['create', 'delete', 'show', 'graph', 'auto']).describe(
-        'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar)'
+      action: z.enum(['create', 'delete', 'show', 'graph', 'auto', 'enrich', 'proximity', 'communities', 'centrality']).describe(
+        'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores)'
       ),
       source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
       target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
@@ -163,11 +163,56 @@ ${relationStats}`;
             };
           }
 
+          case 'enrich': {
+            const { enrichExistingLinks } = await import('../../lib/graph/llm-relations.js');
+            const result = await enrichExistingLinks({ batchSize: 5 });
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`,
+              }],
+            };
+          }
+
+          case 'proximity': {
+            const { createProximityLinks } = await import('../../lib/graph/contextual-proximity.js');
+            const result = await createProximityLinks({ minCooccurrence: 2 });
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`,
+              }],
+            };
+          }
+
+          case 'communities': {
+            const { detectCommunities } = await import('../../lib/graph/community-detection.js');
+            const result = await detectCommunities();
+            const summary = result.communities.map(c => `  Community ${c.id}: ${c.size} members`).join('\n');
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.\n${summary}`,
+              }],
+            };
+          }
+
+          case 'centrality': {
+            const { updateCentralityCache } = await import('../../lib/graph/centrality.js');
+            const result = await updateCentralityCache();
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Updated centrality scores for ${result.updated} memories.`,
+              }],
+            };
+          }
+
           default:
             return {
               content: [{
                 type: 'text' as const,
-                text: 'Unknown action. Use: create, delete, show, graph, or auto.',
+                text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, or centrality.',
               }],
             };
         }

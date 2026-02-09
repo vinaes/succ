@@ -254,6 +254,23 @@ export function initDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source);
   `);
 
+  // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
+  try {
+    database.prepare(`ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0`).run();
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: create memory_centrality cache table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_centrality (
+      memory_id INTEGER PRIMARY KEY,
+      degree REAL DEFAULT 0,
+      normalized_degree REAL DEFAULT 0,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 
