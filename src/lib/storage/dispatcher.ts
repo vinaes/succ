@@ -121,6 +121,7 @@ export class StorageDispatcher {
     codeSearchQueries: 0,
     webSearchQueries: 0,
     webSearchCostUsd: 0,
+    qdrantSyncFailures: 0,
     typesCreated: {} as Record<string, number>,
     startedAt: new Date().toISOString(),
   };
@@ -130,6 +131,13 @@ export class StorageDispatcher {
     this.vectorBackend = _vectorBackend;
     this.postgres = _postgresBackend;
     this.qdrant = _qdrantStore;
+  }
+
+  /** Log Qdrant failure and increment counter. Qdrant is optional — errors never throw. */
+  private _warnQdrantFailure(operation: string, error: unknown): void {
+    this._sessionCounters.qdrantSyncFailures++;
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[Qdrant] ${operation}: ${msg}`);
   }
 
   /** Get current session counters (non-destructive read) */
@@ -163,7 +171,7 @@ export class StorageDispatcher {
     this._sessionCounters = {
       memoriesCreated: 0, memoriesDuplicated: 0, globalMemoriesCreated: 0,
       recallQueries: 0, searchQueries: 0, codeSearchQueries: 0,
-      webSearchQueries: 0, webSearchCostUsd: 0,
+      webSearchQueries: 0, webSearchCostUsd: 0, qdrantSyncFailures: 0,
       typesCreated: {}, startedAt: new Date().toISOString(),
     };
   }
@@ -199,7 +207,7 @@ export class StorageDispatcher {
             await this.qdrant.upsertDocumentVector(id, embedding);
           }
         } catch (error) {
-          console.error(`[Qdrant] Failed to sync document vector ${id}:`, error);
+          this._warnQdrantFailure(`Failed to sync document vector ${id}`, error);
         }
       }
       return;
@@ -223,7 +231,7 @@ export class StorageDispatcher {
             await this.qdrant.upsertDocumentVectorsBatch(documents.map((doc, idx) => ({ id: ids[idx], embedding: doc.embedding })));
           }
         } catch (error) {
-          console.error(`[Qdrant] Failed to sync ${ids.length} document vectors:`, error);
+          this._warnQdrantFailure(`Failed to sync ${ids.length} document vectors`, error);
         }
       }
       return;
@@ -247,7 +255,7 @@ export class StorageDispatcher {
             await this.qdrant.upsertDocumentVectorsBatch(documents.map((doc, idx) => ({ id: ids[idx], embedding: doc.embedding })));
           }
         } catch (error) {
-          console.error(`[Qdrant] Failed to sync ${ids.length} document vectors:`, error);
+          this._warnQdrantFailure(`Failed to sync ${ids.length} document vectors`, error);
         }
       }
       return;
@@ -261,7 +269,7 @@ export class StorageDispatcher {
       const deletedIds = await this.postgres.deleteDocumentsByPath(filePath);
       if (this.vectorBackend === 'qdrant' && this.qdrant && deletedIds.length > 0) {
         try { await this.qdrant.deleteDocumentVectorsByIds(deletedIds); }
-        catch (error) { console.error(`[Qdrant] Failed to delete document vectors:`, error); }
+        catch (error) { this._warnQdrantFailure('Failed to delete document vectors', error); }
       }
       return;
     }
@@ -300,7 +308,7 @@ export class StorageDispatcher {
           }
         }
       } catch (error) {
-        console.error('[Qdrant] searchDocuments failed, falling back:', error);
+        this._warnQdrantFailure('searchDocuments failed, falling back', error);
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
@@ -373,7 +381,7 @@ export class StorageDispatcher {
           } else {
             await this.qdrant.upsertMemoryVector(id, embedding);
           }
-        } catch (error) { console.error(`[Qdrant] Failed to sync memory vector ${id}:`, error); }
+        } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${id}`, error); }
       }
       this._sessionCounters.memoriesCreated++;
       this._sessionCounters.typesCreated[type] = (this._sessionCounters.typesCreated[type] ?? 0) + 1;
@@ -398,7 +406,7 @@ export class StorageDispatcher {
         } else {
           await this.qdrant.upsertMemoryVector(result.id, embedding);
         }
-      } catch (error) { console.error(`[Qdrant] Failed to sync memory vector ${result.id}:`, error); }
+      } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${result.id}`, error); }
     }
 
     const created = !result.isDuplicate;
@@ -426,7 +434,7 @@ export class StorageDispatcher {
           { projectId: this.qdrant!.getProjectId(), tags, since, asOfDate: options?.asOfDate, includeExpired: options?.includeExpired }
         );
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] searchMemories hybrid failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('searchMemories hybrid failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.searchMemories(queryEmbedding, limit, threshold, tags, since, options);
@@ -482,7 +490,7 @@ export class StorageDispatcher {
             }
           }
         }
-      } catch (error) { console.error('[Qdrant] findSimilarMemory failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('findSimilarMemory failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.findSimilarMemory(embedding, threshold);
     const sqlite = await this.getSqliteFns();
@@ -523,7 +531,7 @@ export class StorageDispatcher {
           await this.qdrant.upsertMemoriesBatchWithPayload(items);
         }
       } catch (error) {
-        console.error(`[Qdrant] Failed to sync ${result.saved} batch memories:`, error);
+        this._warnQdrantFailure(`Failed to sync ${result.saved} batch memories`, error);
       }
     }
 
@@ -579,7 +587,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchMemories('', queryEmbedding, lim, thresh, { createdBefore: asOfDate, asOfDate, includeExpired: false });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] searchMemoriesAsOf failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('searchMemoriesAsOf failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchMemoriesAsOf(queryEmbedding, asOfDate, limit, threshold);
     const sqlite = await this.getSqliteFns();
@@ -907,7 +915,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { codeOnly: true });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] hybridSearchCode failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('hybridSearchCode failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
       return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh)).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
@@ -924,7 +932,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { docsOnly: true });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] hybridSearchDocs failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('hybridSearchDocs failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
       return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh)).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
@@ -941,7 +949,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchMemories(query, queryEmbedding, lim, thresh, { projectId: this.qdrant!.getProjectId() });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] hybridSearchMemories failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('hybridSearchMemories failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchMemories(queryEmbedding, lim, thresh);
     const sqlite = await this.getSqliteFns();
@@ -955,7 +963,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories(query, queryEmbedding, lim, thresh, { tags, since });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] hybridSearchGlobalMemories failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchGlobalMemories(queryEmbedding, lim, thresh, tags);
     const sqlite = await this.getSqliteFns();
@@ -989,7 +997,7 @@ export class StorageDispatcher {
           } else {
             await this.qdrant.upsertGlobalMemoryVector(id, embedding);
           }
-        } catch (error) { console.error(`[Qdrant] Failed to sync global memory vector ${id}:`, error); }
+        } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error); }
       }
       this._sessionCounters.globalMemoriesCreated++;
       return { id, created: true };
@@ -1005,7 +1013,7 @@ export class StorageDispatcher {
         } else {
           await this.qdrant.upsertGlobalMemoryVector(result.id, embedding);
         }
-      } catch (error) { console.error(`[Qdrant] Failed to sync global memory vector ${result.id}:`, error); }
+      } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error); }
     }
 
     if (!result.isDuplicate) {
@@ -1024,7 +1032,7 @@ export class StorageDispatcher {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories('', queryEmbedding, limit, threshold, { tags });
         if (results.length > 0) return results;
-      } catch (error) { console.error('[Qdrant] searchGlobalMemories failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('searchGlobalMemories failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
     const sqlite = await this.getSqliteFns();
@@ -1071,7 +1079,7 @@ export class StorageDispatcher {
             }
           }
         }
-      } catch (error) { console.error('[Qdrant] findSimilarGlobalMemory failed, falling back:', error); }
+      } catch (error) { this._warnQdrantFailure('findSimilarGlobalMemory failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.findSimilarGlobalMemory(embedding, threshold);
     const sqlite = await this.getSqliteFns();
@@ -1187,6 +1195,14 @@ export class StorageDispatcher {
   // Bulk Export (for checkpoint, graph-export)
   // ===========================================================================
 
+  /** Parse PG vector string '[1.0,2.0,3.0]' to number[]. Returns null for invalid input. */
+  private _parsePgVector(str: string | null): number[] | null {
+    if (!str || typeof str !== 'string') return null;
+    const inner = str.slice(1, -1);
+    if (!inner) return null;
+    return inner.split(',').map(s => parseFloat(s.trim()));
+  }
+
   async getAllMemoriesForExport(): Promise<Array<{
     id: number; content: string; tags: string[]; source: string | null;
     embedding: number[] | null; type: string | null;
@@ -1194,23 +1210,48 @@ export class StorageDispatcher {
     access_count: number; last_accessed: string | null; created_at: string;
     invalidated_by: number | null;
   }>> {
+    interface MemoryExportRow {
+      id: number; content: string; tags: string | null; source: string | null;
+      embedding: string | Buffer | null; type: string | null;
+      quality_score: number | null; quality_factors: string | null;
+      access_count: number; last_accessed: string | null;
+      created_at: string; invalidated_by: number | null;
+    }
     if (this.backend === 'postgresql' && this.postgres) {
-      const rows = await this.postgres.getAllMemoriesWithEmbeddings();
-      return rows.map((r: any) => ({
+      const pool = await this.postgres.getPool();
+      const scopeCond = this.postgres.getProjectId()
+        ? 'WHERE LOWER(project_id) = $1 AND invalidated_by IS NULL'
+        : 'WHERE project_id IS NULL AND invalidated_by IS NULL';
+      const params = this.postgres.getProjectId() ? [this.postgres.getProjectId()] : [];
+      const { rows } = await pool.query<MemoryExportRow>(
+        `SELECT id, content, tags, source, embedding::text as embedding, type,
+                quality_score, quality_factors, access_count,
+                last_accessed::text as last_accessed, created_at::text as created_at,
+                invalidated_by
+         FROM memories ${scopeCond}
+         ORDER BY id ASC`,
+        params
+      );
+      return rows.map((r) => ({
         id: r.id, content: r.content,
         tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : (r.tags ?? []),
-        source: r.source ?? null, embedding: r.embedding ?? null,
+        source: r.source ?? null,
+        embedding: typeof r.embedding === 'string' ? this._parsePgVector(r.embedding) : null,
         type: r.type ?? null,
-        quality_score: r.qualityScore ?? r.quality_score ?? null,
-        quality_factors: (() => {
-          const qf = r.qualityFactors ?? r.quality_factors;
-          return qf ? (typeof qf === 'string' ? JSON.parse(qf) : qf) : null;
-        })(),
-        access_count: r.accessCount ?? r.access_count ?? 0,
-        last_accessed: r.lastAccessed ?? r.last_accessed ?? null,
-        created_at: r.createdAt ?? r.created_at ?? new Date().toISOString(),
-        invalidated_by: r.invalidatedBy ?? r.invalidated_by ?? null,
+        quality_score: r.quality_score ?? null,
+        quality_factors: r.quality_factors ? (typeof r.quality_factors === 'string' ? JSON.parse(r.quality_factors) : r.quality_factors) : null,
+        access_count: r.access_count ?? 0,
+        last_accessed: r.last_accessed ?? null,
+        created_at: r.created_at ?? new Date().toISOString(),
+        invalidated_by: r.invalidated_by ?? null,
       }));
+    }
+    interface SqliteMemoryRow {
+      id: number; content: string; tags: string | null; source: string | null;
+      embedding: Buffer | null; type: string | null;
+      quality_score: number | null; quality_factors: string | null;
+      access_count: number; last_accessed: string | null; created_at: string;
+      invalidated_by: number | null;
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
@@ -1218,8 +1259,8 @@ export class StorageDispatcher {
       `SELECT id, content, tags, source, embedding, type,
               quality_score, quality_factors, access_count, last_accessed, created_at, invalidated_by
        FROM memories ORDER BY id ASC`
-    ).all() as any[];
-    return rows.map((row: any) => ({
+    ).all() as SqliteMemoryRow[];
+    return rows.map((row) => ({
       id: row.id, content: row.content,
       tags: row.tags ? JSON.parse(row.tags) : [],
       source: row.source, type: row.type,
@@ -1236,24 +1277,41 @@ export class StorageDispatcher {
     id: number; file_path: string; chunk_index: number; content: string;
     start_line: number; end_line: number; embedding: number[] | null; created_at: string;
   }>> {
+    interface DocumentExportRow {
+      id: number; file_path: string; chunk_index: number; content: string;
+      start_line: number; end_line: number; embedding: string | Buffer | null; created_at: string;
+    }
     if (this.backend === 'postgresql' && this.postgres) {
-      const rows = await this.postgres.getAllDocumentsWithEmbeddings();
-      return rows.map((r: any) => ({
-        id: r.id, file_path: r.filePath ?? r.file_path,
-        chunk_index: r.chunkIndex ?? r.chunk_index ?? 0,
-        content: r.content, start_line: r.startLine ?? r.start_line ?? 0,
-        end_line: r.endLine ?? r.end_line ?? 0,
-        embedding: r.embedding ?? null,
-        created_at: r.createdAt ?? r.created_at ?? new Date().toISOString(),
+      const pool = await this.postgres.getPool();
+      const scopeCond = this.postgres.getProjectId()
+        ? 'WHERE LOWER(project_id) = $1'
+        : 'WHERE project_id IS NULL';
+      const params = this.postgres.getProjectId() ? [this.postgres.getProjectId()] : [];
+      const { rows } = await pool.query<DocumentExportRow>(
+        `SELECT id, file_path, chunk_index, content, start_line, end_line,
+                embedding::text as embedding, created_at::text as created_at
+         FROM documents ${scopeCond}
+         ORDER BY id ASC`,
+        params
+      );
+      return rows.map((r) => ({
+        id: r.id, file_path: r.file_path, chunk_index: r.chunk_index ?? 0,
+        content: r.content, start_line: r.start_line ?? 0, end_line: r.end_line ?? 0,
+        embedding: typeof r.embedding === 'string' ? this._parsePgVector(r.embedding) : null,
+        created_at: r.created_at ?? new Date().toISOString(),
       }));
+    }
+    interface SqliteDocumentRow {
+      id: number; file_path: string; chunk_index: number; content: string;
+      start_line: number; end_line: number; embedding: Buffer | null; created_at: string;
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
     const rows = db.prepare(
       `SELECT id, file_path, chunk_index, content, start_line, end_line, embedding, created_at
        FROM documents ORDER BY id ASC`
-    ).all() as any[];
-    return rows.map((row: any) => ({
+    ).all() as SqliteDocumentRow[];
+    return rows.map((row) => ({
       id: row.id, file_path: row.file_path, chunk_index: row.chunk_index,
       content: row.content, start_line: row.start_line, end_line: row.end_line,
       embedding: row.embedding ? Array.from(new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4)) : null,
@@ -1266,18 +1324,27 @@ export class StorageDispatcher {
     relation: string; weight: number; created_at: string;
     llm_enriched: boolean;
   }>> {
+    interface LinkRow {
+      id: number; source_id: number; target_id: number;
+      relation: string; weight: number; created_at: string;
+      llm_enriched: number | boolean;
+    }
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
-      const { rows } = await pool.query(
+      const scopeCond = this.postgres.getProjectId()
+        ? 'WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL'
+        : 'WHERE m.project_id IS NULL';
+      const params = this.postgres.getProjectId() ? [this.postgres.getProjectId()] : [];
+      const { rows } = await pool.query<LinkRow>(
         `SELECT ml.id, ml.source_id, ml.target_id, ml.relation, ml.weight,
                 ml.created_at::text as created_at, COALESCE(ml.llm_enriched, 0) as llm_enriched
          FROM memory_links ml
          JOIN memories m ON ml.source_id = m.id
-         WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL
+         ${scopeCond}
          ORDER BY ml.id ASC`,
-        [this.postgres.getProjectId()]
+        params
       );
-      return rows.map((r: any) => ({ ...r, llm_enriched: !!r.llm_enriched }));
+      return rows.map((r) => ({ ...r, llm_enriched: !!r.llm_enriched }));
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
@@ -1285,22 +1352,29 @@ export class StorageDispatcher {
       `SELECT id, source_id, target_id, relation, weight, created_at,
               COALESCE(llm_enriched, 0) as llm_enriched
        FROM memory_links ORDER BY id ASC`
-    ).all() as any[];
-    return rows.map((r: any) => ({ ...r, llm_enriched: !!r.llm_enriched }));
+    ).all() as LinkRow[];
+    return rows.map((r) => ({ ...r, llm_enriched: !!r.llm_enriched }));
   }
 
   async getAllCentralityForExport(): Promise<Array<{
     memory_id: number; degree: number; normalized_degree: number; updated_at: string;
   }>> {
+    interface CentralityRow {
+      memory_id: number; degree: number; normalized_degree: number; updated_at: string;
+    }
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
-      const { rows } = await pool.query(
+      const scopeCond = this.postgres.getProjectId()
+        ? 'WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL'
+        : 'WHERE m.project_id IS NULL';
+      const params = this.postgres.getProjectId() ? [this.postgres.getProjectId()] : [];
+      const { rows } = await pool.query<CentralityRow>(
         `SELECT mc.memory_id, mc.degree, mc.normalized_degree, mc.updated_at::text as updated_at
          FROM memory_centrality mc
          JOIN memories m ON mc.memory_id = m.id
-         WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL
+         ${scopeCond}
          ORDER BY mc.memory_id ASC`,
-        [this.postgres.getProjectId()]
+        params
       );
       return rows;
     }
@@ -1309,7 +1383,7 @@ export class StorageDispatcher {
     return db.prepare(
       `SELECT memory_id, degree, normalized_degree, updated_at
        FROM memory_centrality ORDER BY memory_id ASC`
-    ).all() as any[];
+    ).all() as CentralityRow[];
   }
 
   // ===========================================================================
