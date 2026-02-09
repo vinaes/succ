@@ -38,8 +38,8 @@ export interface PostgresConfig {
   user?: string;
   /** Password */
   password?: string;
-  /** Enable SSL */
-  ssl?: boolean;
+  /** Enable SSL. true = SSL with cert validation, { rejectUnauthorized: false } to skip validation */
+  ssl?: boolean | { rejectUnauthorized?: boolean; ca?: string };
   /** Connection pool size (default: 10) */
   pool_size?: number;
 }
