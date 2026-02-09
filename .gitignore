@@ -12,4 +12,4 @@ dist/
 .mcp.json
 
 # Docker volumes (local data)
-docker/
+docker/data/
