@@ -425,12 +425,12 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Note: All hooks are now created in the earlier block using copyFileSync from hooks/ directory
 
   // Add MCP server to Claude Code config
-  const mcpAdded = addMcpServer(projectRoot);
+  const mcpResult = addMcpServer(projectRoot);
 
   // Stop spinner with success message
   spinner.succeed('succ initialized successfully!');
 
-  if (verbose && mcpAdded) {
+  if (verbose && mcpResult === 'added') {
     console.log('  MCP server added to Claude Code config.');
   }
 
@@ -445,7 +445,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     console.log('  1. Run `succ analyze` to generate brain documentation');
     console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
     console.log('  3. Run `succ search <query>` to find relevant content');
-    if (mcpAdded) {
+    if (mcpResult === 'added') {
       console.log('  4. Restart Claude Code to enable succ tools');
     }
   }
@@ -824,7 +824,7 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
  *
  * The old ~/.claude/mcp_servers.json format is deprecated.
  */
-function addMcpServer(projectRoot: string): boolean {
+function addMcpServer(projectRoot: string): 'added' | 'exists' | 'failed' {
   // Claude Code main config location
   const claudeConfigPath = path.join(os.homedir(), '.claude.json');
 
@@ -843,7 +843,7 @@ function addMcpServer(projectRoot: string): boolean {
 
     // Check if already configured
     if (claudeConfig.mcpServers.succ) {
-      return false; // Already exists
+      return 'exists';
     }
 
     // Add succ MCP server to global scope
@@ -856,10 +856,11 @@ function addMcpServer(projectRoot: string): boolean {
 
     // Write config
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));
-    return true;
-  } catch (error) {
-    // Failed to add MCP config, continue silently
-    return false;
+    return 'added';
+  } catch (error: any) {
+    console.warn(`  Warning: Failed to add MCP server to ${claudeConfigPath}: ${error.message}`);
+    console.warn('  You can add it manually: succ init --force');
+    return 'failed';
   }
 }
 
