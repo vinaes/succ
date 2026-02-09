@@ -129,6 +129,7 @@ export { enrichExistingLinks } from './graph/llm-relations.js';
 export { createProximityLinks } from './graph/contextual-proximity.js';
 export { detectCommunities } from './graph/community-detection.js';
 export { updateCentralityCache } from './graph/centrality.js';
+export { exportGraphSilent } from './graph-export.js';
 
 // --- PRD pipeline ---
 export { generatePrd } from './prd/generate.js';
