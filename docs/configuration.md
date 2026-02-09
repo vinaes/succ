@@ -317,7 +317,7 @@ succ automatically tries backends in order if one fails:
 
 ## Analyze Settings
 
-> **Note**: `succ analyze` now uses the unified `llm.*` configuration. Legacy `analyze_*` settings are deprecated.
+> **Note**: `succ analyze` now uses the unified `llm.*` configuration. Legacy `analyze_*` settings are deprecated but still functional.
 
 The `succ analyze` command uses the unified LLM backend configured in `llm.*`. To customize analysis behavior, configure your LLM settings:
 
@@ -330,6 +330,19 @@ The `succ analyze` command uses the unified LLM backend configured in `llm.*`. T
   }
 }
 ```
+
+### Legacy Keys (deprecated)
+
+These keys still work but will be removed in a future version. Use `llm.*` instead.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `analyze_mode` | `"claude"` \| `"openrouter"` \| `"local"` | Analysis LLM mode |
+| `analyze_api_url` | string | Local LLM API URL |
+| `analyze_api_key` | string | API key for local LLM |
+| `analyze_model` | string | Model name |
+| `analyze_temperature` | number | Temperature (default: 0.3) |
+| `analyze_max_tokens` | number | Max tokens (default: 4096) |
 
 ---
 
@@ -856,6 +869,7 @@ Controls the background daemon service.
 | `daemon.watch.debounce_ms` | number | 500 | Debounce interval |
 | `daemon.analyze.auto_start` | boolean | false | Auto-start analyzer |
 | `daemon.analyze.interval_minutes` | number | 30 | Analysis interval |
+| `daemon.analyze.mode` | `"claude"` \| `"openrouter"` \| `"local"` | `"claude"` | Analysis LLM mode (legacy, prefer `llm.*`) |
 
 ---
 
@@ -1181,6 +1195,11 @@ LLM-powered skill discovery and suggestions.
 |--------|------|---------|-------------|
 | `skills.auto_suggest.enabled` | boolean | **false** | Enable auto-suggestions |
 | `skills.auto_suggest.on_user_prompt` | boolean | true | Suggest on each prompt |
+| `skills.auto_suggest.llm_backend` | `"claude"` \| `"local"` \| `"openrouter"` | `"claude"` | LLM backend for keyword extraction |
+| `skills.auto_suggest.llm_model` | string | `"haiku"` | Model for Claude backend |
+| `skills.auto_suggest.local_endpoint` | string | `"http://localhost:11434/v1/chat/completions"` | Local LLM endpoint |
+| `skills.auto_suggest.local_model` | string | `"qwen2.5:7b"` | Model for local backend |
+| `skills.auto_suggest.openrouter_model` | string | `"anthropic/claude-3-haiku"` | Model for OpenRouter |
 | `skills.auto_suggest.min_confidence` | number | 0.7 | Minimum confidence (0-1) |
 | `skills.auto_suggest.max_suggestions` | number | 2 | Max suggestions per prompt |
 | `skills.auto_suggest.cooldown_prompts` | number | 3 | Prompts between suggestions |
@@ -1288,6 +1307,11 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
 
   "embedding_mode": "local",
   "embedding_model": "Xenova/all-MiniLM-L6-v2",
+  "embedding_batch_size": 32,
+  "embedding_local_batch_size": 16,
+  "embedding_local_concurrency": 4,
+  "embedding_worker_pool_enabled": true,
+  "embedding_cache_size": 500,
   "chunk_size": 500,
   "chunk_overlap": 50,
 
@@ -1298,6 +1322,11 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
     "model": "qwen2.5:7b",
     "local_endpoint": "http://localhost:11434/v1/chat/completions",
     "openrouter_model": "anthropic/claude-3-haiku"
+  },
+
+  "chat_llm": {
+    "backend": "claude",
+    "model": "sonnet"
   },
 
   "sleep_agent": {
@@ -1320,11 +1349,16 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
 
   "remember_extract_default": true,
   "consolidation_llm_default": true,
+  "dead_end_boost": 0.15,
 
   "includeCoAuthoredBy": true,
   "preCommitReview": false,
   "communicationAutoAdapt": true,
   "communicationTrackHistory": false,
+
+  "readiness_gate": {
+    "enabled": true
+  },
 
   "daemon": {
     "enabled": true,
@@ -1341,9 +1375,16 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
 
   "idle_reflection": {
     "enabled": true,
+    "agent_model": "haiku",
     "operations": {
       "memory_consolidation": true,
+      "graph_enrichment": true,
       "session_summary": true
+    },
+    "consolidation_guards": {
+      "min_memory_age_days": 7,
+      "min_corpus_size": 20,
+      "require_llm_merge": true
     }
   },
 
@@ -1364,6 +1405,12 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
       "enabled": true,
       "only_when_no_local": true
     }
+  },
+
+  "web_search": {
+    "enabled": true,
+    "model": "perplexity/sonar-pro",
+    "save_to_memory": false
   },
 
   "quality_gates": {

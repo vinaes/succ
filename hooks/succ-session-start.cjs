@@ -214,8 +214,10 @@ Without it, succ works in global-only mode and can't access project data.
 |------|------------|----------------------|
 | Codebase exploration | succ-explore | Explore agent |
 | Implementation planning | succ-plan | Plan agent |
+| Multi-step tasks, research | succ-general | general-purpose agent |
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
+| Web search | succ_quick_search / succ_web_search | WebSearch / Brave |
 
 succ agents have semantic search + memories + brain vault. Built-in agents don't.
 Direct file reads (Read/Grep) are fine when you know the exact path — but for discovery, always succ agents.
