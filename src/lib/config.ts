@@ -357,6 +357,7 @@ export interface IdleReflectionConfig {
   operations?: {
     memory_consolidation?: boolean;  // Merge similar memories, remove duplicates (default: true)
     graph_refinement?: boolean;  // Auto-link memories by similarity (default: true)
+    graph_enrichment?: boolean;  // LLM enrich + proximity + communities + centrality (default: true)
     session_summary?: boolean;  // Extract key facts from session transcript (default: true)
     precompute_context?: boolean;  // Prepare context for next session-start (default: false)
     write_reflection?: boolean;  // Write human-like reflection text (default: true)
@@ -462,6 +463,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG = {
   operations: {
     memory_consolidation: false,
     graph_refinement: true,
+    graph_enrichment: true,
     session_summary: true,
     precompute_context: true,
     write_reflection: true,
@@ -814,6 +816,7 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     operations: {
       memory_consolidation: consolidationEnabled,
       graph_refinement: userConfig.operations?.graph_refinement ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_refinement,
+      graph_enrichment: userConfig.operations?.graph_enrichment ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_enrichment,
       session_summary: userConfig.operations?.session_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
       precompute_context: userConfig.operations?.precompute_context ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,
       write_reflection: userConfig.operations?.write_reflection ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.write_reflection,
@@ -890,7 +893,7 @@ export function getReadinessGateConfig() {
  * Determine which agent handles each operation
  * Returns 'claude' or 'sleep' for each operation
  */
-export type IdleOperation = 'memory_consolidation' | 'graph_refinement' | 'session_summary' | 'precompute_context' | 'write_reflection';
+export type IdleOperation = 'memory_consolidation' | 'graph_refinement' | 'graph_enrichment' | 'session_summary' | 'precompute_context' | 'write_reflection';
 
 export interface OperationAssignment {
   operation: IdleOperation;
@@ -917,6 +920,12 @@ export function getOperationAssignments(): OperationAssignment[] {
       // Graph refinement always stays with Claude (needs succ CLI access)
       agent: 'claude',
       enabled: ops?.graph_refinement ?? true,
+    },
+    {
+      operation: 'graph_enrichment',
+      // Graph enrichment stays with Claude (needs DB access for LLM enrich + proximity + communities + centrality)
+      agent: 'claude',
+      enabled: ops?.graph_enrichment ?? true,
     },
     {
       operation: 'session_summary',
@@ -1025,6 +1034,7 @@ export interface ConfigDisplay {
     operations: {
       memory_consolidation: boolean;
       graph_refinement: boolean;
+      graph_enrichment: boolean;
       session_summary: boolean;
       precompute_context: boolean;
       write_reflection: boolean;
@@ -1144,6 +1154,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       operations: {
         memory_consolidation: idleReflection.operations.memory_consolidation ?? false,
         graph_refinement: idleReflection.operations.graph_refinement ?? true,
+        graph_enrichment: idleReflection.operations.graph_enrichment ?? true,
         session_summary: idleReflection.operations.session_summary ?? true,
         precompute_context: idleReflection.operations.precompute_context ?? false,
         write_reflection: idleReflection.operations.write_reflection ?? true,
@@ -1290,6 +1301,7 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   const ops = display.idle_reflection.operations;
   lines.push(`    - Memory consolidation: ${ops.memory_consolidation}`);
   lines.push(`    - Graph refinement: ${ops.graph_refinement}`);
+  lines.push(`    - Graph enrichment: ${ops.graph_enrichment}`);
   lines.push(`    - Session summary: ${ops.session_summary}`);
   lines.push(`    - Precompute context: ${ops.precompute_context}`);
   lines.push(`    - Write reflection: ${ops.write_reflection}`);

@@ -22,6 +22,10 @@ export interface SessionState {
   reflectionCount: number;
   isService?: boolean;
   hadUserPrompt?: boolean;  // True if session ever received user_prompt activity
+  // Change detection — skip redundant work during long AFK
+  lastTranscriptSize?: number;   // Transcript file size (bytes) at last briefing
+  lastMemoryCount?: number;      // Total memory count at last reflection
+  lastLinkCount?: number;        // Total link count at last graph enrichment
 }
 
 export type ActivityType = 'user_prompt' | 'stop';

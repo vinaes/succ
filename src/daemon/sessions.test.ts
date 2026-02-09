@@ -20,6 +20,10 @@ describe('SessionManager', () => {
       expect(session.isService).toBe(false);
       expect(session.hadUserPrompt).toBeUndefined();
       expect(session.lastActivityType).toBeNull();
+      // Change tracking fields start undefined (first reflection always runs)
+      expect(session.lastTranscriptSize).toBeUndefined();
+      expect(session.lastMemoryCount).toBeUndefined();
+      expect(session.lastLinkCount).toBeUndefined();
       expect(manager.count(true)).toBe(1);
     });
 
