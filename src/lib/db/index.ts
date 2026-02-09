@@ -160,5 +160,9 @@ export {
   invalidateMemoryLink,
   getMemoryLinksAsOf,
   findConnectedMemoriesAsOf,
-  getGraphStatsAsOf
+  getGraphStatsAsOf,
+  updateMemoryTags,
+  updateMemoryLink,
+  upsertCentralityScore,
+  getCentralityScores
 } from './graph.js';
