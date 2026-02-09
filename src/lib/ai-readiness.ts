@@ -6,12 +6,13 @@
  * Metrics (Total: 100%):
  * - Brain Vault: 20% - CLAUDE.md exists, folder structure
  * - Memory Coverage: 20% - Memories vs project size
- * - Code Index: 20% - % of source files indexed
+ * - Code Index: 15% - % of source files indexed
  * - Soul Document: 10% - soul.md exists and complete
  * - Hooks Active: 10% - session-start/end/user-prompt/post-tool/stop configured
  * - Agents Configured: 5% - Custom Claude Code agents in .claude/agents/
  * - Doc Index: 10% - Markdown docs indexed
  * - Quality Average: 5% - Average memory quality score
+ * - Index Freshness: 5% - How up-to-date the index is (stale/deleted files)
  */
 
 import fs from 'fs';
@@ -23,18 +24,20 @@ import {
   getCodeFileCount,
   getDocsFileCount,
   getAverageMemoryQuality,
+  getStaleFileCount,
 } from './storage/index.js';
 
 // Metric weights (must sum to 100)
 export const METRIC_WEIGHTS = {
   brain_vault: 20,
   memory_coverage: 20,
-  code_index: 20,
+  code_index: 15,
   soul_document: 10,
   hooks_active: 10,
   agents_configured: 5,
   doc_index: 10,
   quality_average: 5,
+  index_freshness: 5,
 } as const;
 
 export type MetricName = keyof typeof METRIC_WEIGHTS;
@@ -165,13 +168,13 @@ export async function calculateMemoryCoverageScore(): Promise<MetricResult> {
 }
 
 /**
- * Calculate code index score (20 points max)
+ * Calculate code index score (15 points max)
  * Based on % of source files indexed
  * - 0%: 0 points
- * - 1-25%: 5 points
- * - 26-50%: 10 points
- * - 51-75%: 15 points
- * - 76-100%: 20 points
+ * - 1-25%: 4 points
+ * - 26-50%: 7 points
+ * - 51-75%: 11 points
+ * - 76-100%: 15 points
  */
 export async function calculateCodeIndexScore(): Promise<MetricResult> {
   const maxScore = METRIC_WEIGHTS.code_index;
@@ -197,10 +200,10 @@ export async function calculateCodeIndexScore(): Promise<MetricResult> {
 
     const percentage = Math.round((indexedCount / totalSourceFiles) * 100);
     let score = 0;
-    if (percentage >= 76) score = 20;
-    else if (percentage >= 51) score = 15;
-    else if (percentage >= 26) score = 10;
-    else if (percentage >= 1) score = 5;
+    if (percentage >= 76) score = 15;
+    else if (percentage >= 51) score = 11;
+    else if (percentage >= 26) score = 7;
+    else if (percentage >= 1) score = 4;
 
     const suggestions: string[] = [];
     if (percentage < 50) {
@@ -533,6 +536,72 @@ export async function calculateQualityAverageScore(): Promise<MetricResult> {
 }
 
 /**
+ * Calculate index freshness score (5 points max)
+ * Based on % of indexed files that are still current (not stale/deleted)
+ * - 100% fresh (0 stale/deleted): 5 points
+ * - 90-99% fresh: 4 points
+ * - 70-89% fresh: 3 points
+ * - 50-69% fresh: 2 points
+ * - 1-49% fresh: 1 point
+ * - No files indexed: 5 points (nothing to be stale)
+ */
+export async function calculateIndexFreshnessScore(): Promise<MetricResult> {
+  const maxScore = METRIC_WEIGHTS.index_freshness;
+  const projectRoot = getProjectRoot();
+
+  try {
+    const freshness = await getStaleFileCount(projectRoot);
+
+    if (freshness.total === 0) {
+      return {
+        name: 'index_freshness',
+        label: 'Index Freshness',
+        score: maxScore,
+        maxScore,
+        details: 'No files indexed',
+      };
+    }
+
+    const outdated = freshness.stale + freshness.deleted;
+    const freshPercent = Math.round(((freshness.total - outdated) / freshness.total) * 100);
+
+    let score = 0;
+    if (freshPercent >= 100) score = 5;
+    else if (freshPercent >= 90) score = 4;
+    else if (freshPercent >= 70) score = 3;
+    else if (freshPercent >= 50) score = 2;
+    else score = 1;
+
+    const details: string[] = [`${freshPercent}% fresh`];
+    if (freshness.stale > 0) details.push(`${freshness.stale} stale`);
+    if (freshness.deleted > 0) details.push(`${freshness.deleted} deleted`);
+
+    const suggestions: string[] = [];
+    if (outdated > 0) {
+      suggestions.push('Run `succ reindex` to refresh stale/deleted entries');
+    }
+
+    return {
+      name: 'index_freshness',
+      label: 'Index Freshness',
+      score,
+      maxScore,
+      details: details.join(', '),
+      suggestions: suggestions.length > 0 ? suggestions : undefined,
+    };
+  } catch {
+    return {
+      name: 'index_freshness',
+      label: 'Index Freshness',
+      score: 0,
+      maxScore,
+      details: 'Not available',
+      suggestions: ['Run `succ reindex` to check index health'],
+    };
+  }
+}
+
+/**
  * Calculate full AI-Readiness Score
  */
 export async function calculateAIReadinessScore(): Promise<AIReadinessScore> {
@@ -545,6 +614,7 @@ export async function calculateAIReadinessScore(): Promise<AIReadinessScore> {
     calculateAgentsConfiguredScore(),
     await calculateDocIndexScore(),
     await calculateQualityAverageScore(),
+    await calculateIndexFreshnessScore(),
   ];
 
   const totalScore = metrics.reduce((sum, m) => sum + m.score, 0);
