@@ -63,8 +63,9 @@ process.stdin.on('end', async () => {
       process.exit(0);
     }
 
-    // Load config to check includeCoAuthoredBy
-    let includeCoAuthoredBy = true;  // default: true
+    // Load config settings
+    let includeCoAuthoredBy = true;   // default: true
+    let preCommitReview = false;      // default: false
     const configPaths = [
       path.join(succDir, 'config.json'),
       path.join(require('os').homedir(), '.succ', 'config.json'),
@@ -75,6 +76,9 @@ process.stdin.on('end', async () => {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
           if (config.includeCoAuthoredBy === false) {
             includeCoAuthoredBy = false;
+          }
+          if (config.preCommitReview === true) {
+            preCommitReview = true;
           }
           break;
         } catch {
@@ -216,6 +220,8 @@ Without it, succ works in global-only mode and can't access project data.
 | succ-context-optimizer | Optimize session start context — learns from usage patterns |
 | succ-quality-improvement-coach | Improve memory quality — analyzes and suggests better content/tags |
 | succ-readiness-improver | Improve AI-readiness score — actionable steps for each metric |
+| succ-code-reviewer | Full code review with OWASP Top 10 checklist — security vulnerabilities, bugs, quality issues |
+| succ-diff-reviewer | Fast pre-commit diff review — security, bugs, regressions in changed code only |
 </succ-agents>`);
 
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
@@ -231,6 +237,19 @@ Co-Authored-By order (succ always LAST):
 2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
 3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
 </commit-format>`);
+    }
+
+    // Pre-commit review — run diff-reviewer agent before git commit
+    if (preCommitReview) {
+      contextParts.push(`<pre-commit-review>
+Before ANY git commit, run the succ-diff-reviewer agent on the staged changes.
+Use: Task tool with subagent_type="succ-diff-reviewer"
+Prompt: "Review the staged git diff for bugs, security issues, and regressions before commit"
+
+If diff-reviewer finds CRITICAL issues — do NOT commit until fixed.
+If diff-reviewer finds HIGH issues — warn the user before committing.
+MEDIUM and below — commit is OK, mention findings in summary.
+</pre-commit-review>`);
     }
 
     // Soul Document
