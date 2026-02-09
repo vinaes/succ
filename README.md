@@ -102,7 +102,7 @@ succ analyze
 
 ## Claude Code Agents
 
-succ ships with 17 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
+succ ships with 18 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
 
 | Agent | What it does |
 |-------|-------------|
@@ -123,6 +123,7 @@ succ ships with 17 specialized agents in `.claude/agents/` that run as subagents
 | `succ-context-optimizer` | Optimize what gets preloaded at session start |
 | `succ-quality-improvement-coach` | Analyze memory quality, suggest improvements |
 | `succ-readiness-improver` | Actionable steps to improve AI-readiness score |
+| `succ-style-tracker` | Track communication style changes, update soul.md and brain vault |
 
 Agents are auto-discovered by Claude Code from `.claude/agents/` and can be launched via the Task tool with `subagent_type`.
 

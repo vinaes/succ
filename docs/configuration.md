@@ -536,6 +536,36 @@ Enable via CLI: `succ config_set preCommitReview true`
 
 ---
 
+## Communication Settings
+
+Controls how Claude adapts its communication style based on user patterns.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `communicationAutoAdapt` | boolean | `true` | Allow Claude to auto-update communication preferences in soul.md |
+| `communicationTrackHistory` | boolean | `false` | Log style changes to brain vault (`.succ/brain/05_Communication/`) for Obsidian graph |
+
+When `communicationAutoAdapt` is enabled, Claude detects communication patterns (language, formality, tone) and delegates updates to the `succ-style-tracker` agent. The agent updates the `## User Communication Preferences` section in soul.md.
+
+When `communicationTrackHistory` is also enabled, each style change creates a dated markdown file in `.succ/brain/05_Communication/` with wiki-links to previous entries — visible in Obsidian Graph View.
+
+```json
+{
+  "communicationAutoAdapt": true,
+  "communicationTrackHistory": true
+}
+```
+
+Disable auto-adaptation entirely:
+
+```json
+{
+  "communicationAutoAdapt": false
+}
+```
+
+---
+
 ## Quality Gates Settings
 
 Controls quality gates for the PRD pipeline (`succ prd`). Gates run after each task to verify code quality. By default, succ auto-detects gates from project files (TypeScript, Node.js, Python, Go, Rust). Use this config to add custom gates, disable auto-detected ones, or configure per-subdirectory gates for monorepos.
@@ -702,7 +732,28 @@ succ prd status [prd-id]                          # Show status + tasks
 succ prd status --verbose                         # Detailed task info
 succ prd status --json                            # JSON output
 succ prd archive [prd-id]                         # Archive PRD
+
+# Export to Obsidian
+succ prd export                                   # Export latest PRD
+succ prd export --all                             # Export all PRDs
+succ prd export prd_abc123                        # Export specific PRD
+succ prd export --output ./my-vault/PRD           # Custom output directory
 ```
+
+### Obsidian Export
+
+`succ prd export` generates Obsidian-compatible markdown with Mermaid diagrams:
+
+| File | Content |
+|------|---------|
+| `Overview.md` | PRD summary, stats, quality gates, embedded dependency graph |
+| `Timeline.md` | Mermaid Gantt chart — sequential bars (loop) or worker sections (team) |
+| `Dependencies.md` | Mermaid flowchart DAG — color-coded by status (green/red/gray) |
+| `Tasks/task_NNN.md` | Per-task detail: acceptance criteria, attempts, gate results, files modified |
+
+Output goes to `.succ/brain/04_PRD/{prd-title}/`. Open the `.succ/brain/` folder in Obsidian — Mermaid diagrams render natively, wiki-links connect all pages.
+
+For team mode PRDs, the Gantt chart reconstructs worker assignment from timestamps, showing which tasks ran in parallel.
 
 ### MCP Tools
 
@@ -714,6 +765,7 @@ The same operations are available via MCP:
 | `succ_prd_list` | List all PRDs |
 | `succ_prd_status` | Show PRD and task status |
 | `succ_prd_run` | Execute or resume a PRD |
+| `succ_prd_export` | Export PRD workflow to Obsidian (Mermaid diagrams) |
 
 ### Execution Modes
 
@@ -1110,6 +1162,8 @@ LLM-powered skill discovery and suggestions.
 
   "includeCoAuthoredBy": true,
   "preCommitReview": false,
+  "communicationAutoAdapt": true,
+  "communicationTrackHistory": false,
 
   "daemon": {
     "enabled": true,
