@@ -16,6 +16,7 @@ import {
   getAllMemoriesForExport,
   getAllDocumentsForExport,
   getAllMemoryLinksForExport,
+  getAllCentralityForExport,
   isPostgresBackend,
   getPostgresBackend,
 } from './storage/index.js';
@@ -57,6 +58,14 @@ export interface CheckpointMemoryLink {
   relation: string;
   weight: number;
   created_at: string;
+  llm_enriched?: boolean;
+}
+
+export interface CheckpointCentrality {
+  memory_id: number;
+  degree: number;
+  normalized_degree: number;
+  updated_at: string;
 }
 
 export interface CheckpointBrainFile {
@@ -73,6 +82,7 @@ export interface CheckpointData {
     memories: CheckpointMemory[];
     documents: CheckpointDocument[];
     memory_links: CheckpointMemoryLink[];
+    memory_centrality?: CheckpointCentrality[];
     config: Record<string, unknown>;
     brain_vault: CheckpointBrainFile[];
   };
@@ -80,6 +90,7 @@ export interface CheckpointData {
     memories_count: number;
     documents_count: number;
     links_count: number;
+    centrality_count?: number;
     brain_files_count: number;
   };
 }
@@ -194,6 +205,13 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
   const memoryLinks: CheckpointMemoryLink[] = linksRaw.map(l => ({
     id: l.id, source_id: l.source_id, target_id: l.target_id,
     relation: l.relation, weight: l.weight, created_at: l.created_at,
+    llm_enriched: l.llm_enriched,
+  }));
+
+  const centralityRaw = await getAllCentralityForExport();
+  const memoryCentrality: CheckpointCentrality[] = centralityRaw.map(c => ({
+    memory_id: c.memory_id, degree: c.degree,
+    normalized_degree: c.normalized_degree, updated_at: c.updated_at,
   }));
 
   const brainFiles = includeBrain ? getBrainVaultFiles() : [];
@@ -216,11 +234,12 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
     created_at: new Date().toISOString(),
     project_name: getProjectName(),
     succ_version: getSuccVersion(),
-    data: { memories, documents, memory_links: memoryLinks, config, brain_vault: brainFiles },
+    data: { memories, documents, memory_links: memoryLinks, memory_centrality: memoryCentrality, config, brain_vault: brainFiles },
     stats: {
       memories_count: memories.length,
       documents_count: documents.length,
       links_count: memoryLinks.length,
+      centrality_count: memoryCentrality.length,
       brain_files_count: brainFiles.length,
     },
   };
@@ -399,8 +418,8 @@ export async function restoreCheckpoint(
     restoreMemoriesTx(checkpoint.data.memories);
 
     const insertLink = database.prepare(`
-      INSERT INTO memory_links (source_id, target_id, relation, weight, created_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO memory_links (source_id, target_id, relation, weight, created_at, llm_enriched)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const restoreLinksTx = database.transaction((links: CheckpointMemoryLink[]) => {
@@ -409,13 +428,32 @@ export async function restoreCheckpoint(
         const newTargetId = memoryIdMap.get(link.target_id);
 
         if (newSourceId && newTargetId) {
-          insertLink.run(newSourceId, newTargetId, link.relation, link.weight, link.created_at);
+          insertLink.run(newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0);
           linksRestored++;
         }
       }
     });
 
     restoreLinksTx(checkpoint.data.memory_links);
+
+    // Restore centrality scores
+    if (checkpoint.data.memory_centrality && checkpoint.data.memory_centrality.length > 0) {
+      const insertCentrality = database.prepare(`
+        INSERT OR REPLACE INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+        VALUES (?, ?, ?, ?)
+      `);
+
+      const restoreCentralityTx = database.transaction((entries: CheckpointCentrality[]) => {
+        for (const entry of entries) {
+          const newMemoryId = memoryIdMap.get(entry.memory_id);
+          if (newMemoryId) {
+            insertCentrality.run(newMemoryId, entry.degree, entry.normalized_degree, entry.updated_at);
+          }
+        }
+      });
+
+      restoreCentralityTx(checkpoint.data.memory_centrality);
+    }
 
     if (restoreDocuments && checkpoint.data.documents.length > 0) {
       const insertDocument = database.prepare(`
