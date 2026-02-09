@@ -4,7 +4,7 @@ description: Reviews code for bugs, security vulnerabilities, code quality issue
 tools: Read, Glob, Grep, Bash
 mcpServers:
   - succ
-model: sonnet
+model: opus
 memory: project
 ---
 

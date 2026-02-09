@@ -4,7 +4,7 @@ description: Reviews staged/unstaged git diff for bugs, security issues, and reg
 tools: Read, Glob, Grep, Bash
 mcpServers:
   - succ
-model: sonnet
+model: opus
 memory: project
 ---
 
