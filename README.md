@@ -60,6 +60,7 @@ succ analyze
 | **MCP Native** | Claude uses succ tools directly |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
+| **Debug Sessions** | Structured debugging with hypothesis testing, 14-language instrumentation |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
 | **Team Mode** | Parallel task execution with git worktrees |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
@@ -102,7 +103,7 @@ succ analyze
 
 ## Claude Code Agents
 
-succ ships with 18 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
+succ ships with 19 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
 
 | Agent | What it does |
 |-------|-------------|
@@ -123,6 +124,7 @@ succ ships with 18 specialized agents in `.claude/agents/` that run as subagents
 | `succ-context-optimizer` | Optimize what gets preloaded at session start |
 | `succ-quality-improvement-coach` | Analyze memory quality, suggest improvements |
 | `succ-readiness-improver` | Actionable steps to improve AI-readiness score |
+| `succ-debug` | Structured debugging — hypothesize, instrument, reproduce, fix with dead-end tracking |
 | `succ-style-tracker` | Track communication style changes, update soul.md and brain vault |
 
 Agents are auto-discovered by Claude Code from `.claude/agents/` and can be launched via the Task tool with `subagent_type`.
