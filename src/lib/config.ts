@@ -84,6 +84,7 @@ export interface SuccConfig {
   compact_briefing?: CompactBriefingConfig;
   // Commit format settings
   includeCoAuthoredBy?: boolean;  // Include commit guidelines in session-start hook (default: true)
+  preCommitReview?: boolean;      // Run succ-diff-reviewer agent before git commit (default: false)
   // Skills discovery and suggestion settings
   skills?: SkillsConfig;
   // Unified LLM settings (used by all LLM-powered features)
