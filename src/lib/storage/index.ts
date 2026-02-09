@@ -901,6 +901,42 @@ export async function getAllCentralityForExport(): Promise<Array<{
 }
 
 // ===========================================================================
+// Bulk Restore (for checkpoint restore)
+// ===========================================================================
+
+export async function bulkRestore(data: {
+  memories: Array<{
+    id: number; content: string; tags: string[]; source: string | null;
+    embedding: number[] | null; type: string | null;
+    quality_score: number | null; quality_factors: Record<string, number> | null;
+    access_count: number; last_accessed: string | null; created_at: string;
+  }>;
+  memoryLinks: Array<{
+    source_id: number; target_id: number; relation: string;
+    weight: number; created_at: string; llm_enriched?: boolean;
+  }>;
+  centrality: Array<{
+    memory_id: number; degree: number;
+    normalized_degree: number; updated_at: string;
+  }>;
+  documents: Array<{
+    file_path: string; chunk_index: number; content: string;
+    start_line: number; end_line: number;
+    embedding: number[] | null; created_at: string;
+  }>;
+  overwrite: boolean;
+  restoreDocuments: boolean;
+}): Promise<{
+  memoriesRestored: number;
+  linksRestored: number;
+  documentsRestored: number;
+  memoryIdMap: Map<number, number>;
+}> {
+  const d = await getStorageDispatcher();
+  return d.bulkRestore(data);
+}
+
+// ===========================================================================
 // Learning Deltas
 // ===========================================================================
 

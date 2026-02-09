@@ -17,10 +17,8 @@ import {
   getAllDocumentsForExport,
   getAllMemoryLinksForExport,
   getAllCentralityForExport,
-  isPostgresBackend,
-  getPostgresBackend,
+  bulkRestore,
 } from './storage/index.js';
-import { getDb } from './db/connection.js';
 import { getSuccDir } from './config.js';
 
 // Checkpoint format version
@@ -315,169 +313,33 @@ export async function restoreCheckpoint(
     restoreConfig = false,
   } = options;
 
-  let memoriesRestored = 0;
-  let documentsRestored = 0;
-  let linksRestored = 0;
   let brainFilesRestored = 0;
 
-  if (isPostgresBackend()) {
-    const pg = getPostgresBackend();
-    if (!pg) throw new Error('PostgreSQL backend not initialized');
-    const pool = await pg.getPool();
-    const projectId = pg.getProjectId();
+  // Route all bulk DB operations through the storage dispatcher
+  const restoreResult = await bulkRestore({
+    memories: checkpoint.data.memories.map(m => ({
+      id: m.id, content: m.content, tags: m.tags, source: m.source,
+      embedding: m.embedding, type: m.type,
+      quality_score: m.quality_score, quality_factors: m.quality_factors,
+      access_count: m.access_count, last_accessed: m.last_accessed,
+      created_at: m.created_at,
+    })),
+    memoryLinks: checkpoint.data.memory_links.map(l => ({
+      source_id: l.source_id, target_id: l.target_id,
+      relation: l.relation, weight: l.weight,
+      created_at: l.created_at, llm_enriched: l.llm_enriched,
+    })),
+    centrality: checkpoint.data.memory_centrality ?? [],
+    documents: restoreDocuments ? checkpoint.data.documents.map(d => ({
+      file_path: d.file_path, chunk_index: d.chunk_index,
+      content: d.content, start_line: d.start_line, end_line: d.end_line,
+      embedding: d.embedding, created_at: d.created_at,
+    })) : [],
+    overwrite,
+    restoreDocuments,
+  });
 
-    if (overwrite) {
-      await pool.query('DELETE FROM memory_links WHERE project_id = $1', [projectId]);
-      await pool.query('DELETE FROM memories WHERE project_id = $1', [projectId]);
-      if (restoreDocuments) {
-        await pool.query('DELETE FROM documents WHERE project_id = $1', [projectId]);
-      }
-    }
-
-    // Restore memories
-    const memoryIdMap = new Map<number, number>();
-    for (const memory of checkpoint.data.memories) {
-      const embeddingStr = memory.embedding ? '[' + memory.embedding.join(',') + ']' : null;
-      const result = await pool.query<{ id: number }>(
-        `INSERT INTO memories (project_id, content, tags, source, embedding, type, quality_score, quality_factors, access_count, last_accessed, created_at)
-         VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11)
-         RETURNING id`,
-        [projectId, memory.content, JSON.stringify(memory.tags), memory.source,
-         embeddingStr, memory.type, memory.quality_score,
-         memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
-         memory.access_count, memory.last_accessed, memory.created_at]
-      );
-      memoryIdMap.set(memory.id, result.rows[0].id);
-      memoriesRestored++;
-    }
-
-    // Restore links
-    for (const link of checkpoint.data.memory_links) {
-      const newSourceId = memoryIdMap.get(link.source_id);
-      const newTargetId = memoryIdMap.get(link.target_id);
-      if (newSourceId && newTargetId) {
-        await pool.query(
-          `INSERT INTO memory_links (project_id, source_id, target_id, relation, weight, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [projectId, newSourceId, newTargetId, link.relation, link.weight, link.created_at]
-        );
-        linksRestored++;
-      }
-    }
-
-    // Restore documents
-    if (restoreDocuments) {
-      for (const doc of checkpoint.data.documents) {
-        const embeddingStr = doc.embedding ? '[' + doc.embedding.join(',') + ']' : null;
-        await pool.query(
-          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)`,
-          [projectId, doc.file_path, doc.chunk_index, doc.content,
-           doc.start_line, doc.end_line, embeddingStr, doc.created_at]
-        );
-        documentsRestored++;
-      }
-    }
-  } else {
-    // SQLite path
-    const database = getDb();
-
-    if (overwrite) {
-      database.exec('DELETE FROM memories');
-      database.exec('DELETE FROM memory_links');
-      if (restoreDocuments) {
-        database.exec('DELETE FROM documents');
-      }
-    }
-
-    const insertMemory = database.prepare(`
-      INSERT INTO memories (content, tags, source, embedding, type, quality_score, quality_factors, access_count, last_accessed, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const memoryIdMap = new Map<number, number>();
-
-    const restoreMemoriesTx = database.transaction((memories: CheckpointMemory[]) => {
-      for (const memory of memories) {
-        const embedding = memory.embedding
-          ? Buffer.from(new Float32Array(memory.embedding).buffer)
-          : null;
-
-        const result = insertMemory.run(
-          memory.content, JSON.stringify(memory.tags), memory.source,
-          embedding, memory.type, memory.quality_score,
-          memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
-          memory.access_count, memory.last_accessed, memory.created_at
-        );
-
-        memoryIdMap.set(memory.id, result.lastInsertRowid as number);
-        memoriesRestored++;
-      }
-    });
-
-    restoreMemoriesTx(checkpoint.data.memories);
-
-    const insertLink = database.prepare(`
-      INSERT INTO memory_links (source_id, target_id, relation, weight, created_at, llm_enriched)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const restoreLinksTx = database.transaction((links: CheckpointMemoryLink[]) => {
-      for (const link of links) {
-        const newSourceId = memoryIdMap.get(link.source_id);
-        const newTargetId = memoryIdMap.get(link.target_id);
-
-        if (newSourceId && newTargetId) {
-          insertLink.run(newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0);
-          linksRestored++;
-        }
-      }
-    });
-
-    restoreLinksTx(checkpoint.data.memory_links);
-
-    // Restore centrality scores
-    if (checkpoint.data.memory_centrality && checkpoint.data.memory_centrality.length > 0) {
-      const insertCentrality = database.prepare(`
-        INSERT OR REPLACE INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
-        VALUES (?, ?, ?, ?)
-      `);
-
-      const restoreCentralityTx = database.transaction((entries: CheckpointCentrality[]) => {
-        for (const entry of entries) {
-          const newMemoryId = memoryIdMap.get(entry.memory_id);
-          if (newMemoryId) {
-            insertCentrality.run(newMemoryId, entry.degree, entry.normalized_degree, entry.updated_at);
-          }
-        }
-      });
-
-      restoreCentralityTx(checkpoint.data.memory_centrality);
-    }
-
-    if (restoreDocuments && checkpoint.data.documents.length > 0) {
-      const insertDocument = database.prepare(`
-        INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const restoreDocsTx = database.transaction((docs: CheckpointDocument[]) => {
-        for (const doc of docs) {
-          const embedding = doc.embedding
-            ? Buffer.from(new Float32Array(doc.embedding).buffer)
-            : null;
-
-          insertDocument.run(
-            doc.file_path, doc.chunk_index, doc.content,
-            doc.start_line, doc.end_line, embedding, doc.created_at
-          );
-          documentsRestored++;
-        }
-      });
-
-      restoreDocsTx(checkpoint.data.documents);
-    }
-  }
+  const { memoriesRestored, linksRestored, documentsRestored } = restoreResult;
 
   // Restore brain vault files
   if (restoreBrain && checkpoint.data.brain_vault.length > 0) {

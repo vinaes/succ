@@ -1602,6 +1602,216 @@ export class StorageDispatcher {
   }
 
   // ===========================================================================
+  // Bulk Restore (for checkpoint restore)
+  // ===========================================================================
+
+  /**
+   * Bulk restore memories, links, centrality, and documents from checkpoint data.
+   * Used by checkpoint.ts to avoid direct SQLite/PG access.
+   */
+  async bulkRestore(data: {
+    memories: Array<{
+      id: number; content: string; tags: string[]; source: string | null;
+      embedding: number[] | null; type: string | null;
+      quality_score: number | null; quality_factors: Record<string, number> | null;
+      access_count: number; last_accessed: string | null; created_at: string;
+    }>;
+    memoryLinks: Array<{
+      source_id: number; target_id: number; relation: string;
+      weight: number; created_at: string; llm_enriched?: boolean;
+    }>;
+    centrality: Array<{
+      memory_id: number; degree: number;
+      normalized_degree: number; updated_at: string;
+    }>;
+    documents: Array<{
+      file_path: string; chunk_index: number; content: string;
+      start_line: number; end_line: number;
+      embedding: number[] | null; created_at: string;
+    }>;
+    overwrite: boolean;
+    restoreDocuments: boolean;
+  }): Promise<{
+    memoriesRestored: number;
+    linksRestored: number;
+    documentsRestored: number;
+    memoryIdMap: Map<number, number>;
+  }> {
+    let memoriesRestored = 0;
+    let linksRestored = 0;
+    let documentsRestored = 0;
+    const memoryIdMap = new Map<number, number>();
+
+    if (this.backend === 'postgresql' && this.postgres) {
+      const pool = await this.postgres.getPool();
+      const projectId = this.postgres.getProjectId();
+
+      if (data.overwrite) {
+        await pool.query('DELETE FROM memory_centrality WHERE memory_id IN (SELECT id FROM memories WHERE project_id = $1)', [projectId]);
+        await pool.query('DELETE FROM memory_links WHERE project_id = $1', [projectId]);
+        await pool.query('DELETE FROM memories WHERE project_id = $1', [projectId]);
+        if (data.restoreDocuments) {
+          await pool.query('DELETE FROM documents WHERE project_id = $1', [projectId]);
+        }
+      }
+
+      for (const memory of data.memories) {
+        const embeddingStr = memory.embedding ? '[' + memory.embedding.join(',') + ']' : null;
+        const result = await pool.query<{ id: number }>(
+          `INSERT INTO memories (project_id, content, tags, source, embedding, type, quality_score, quality_factors, access_count, last_accessed, created_at)
+           VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11)
+           RETURNING id`,
+          [projectId, memory.content, JSON.stringify(memory.tags), memory.source,
+           embeddingStr, memory.type, memory.quality_score,
+           memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
+           memory.access_count, memory.last_accessed, memory.created_at]
+        );
+        memoryIdMap.set(memory.id, result.rows[0].id);
+        memoriesRestored++;
+      }
+
+      for (const link of data.memoryLinks) {
+        const newSourceId = memoryIdMap.get(link.source_id);
+        const newTargetId = memoryIdMap.get(link.target_id);
+        if (newSourceId && newTargetId) {
+          await pool.query(
+            `INSERT INTO memory_links (project_id, source_id, target_id, relation, weight, created_at, llm_enriched)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [projectId, newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0]
+          );
+          linksRestored++;
+        }
+      }
+
+      // Restore centrality scores
+      if (data.centrality.length > 0) {
+        for (const entry of data.centrality) {
+          const newMemoryId = memoryIdMap.get(entry.memory_id);
+          if (newMemoryId) {
+            await pool.query(
+              `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (memory_id) DO UPDATE SET degree = $2, normalized_degree = $3, updated_at = $4`,
+              [newMemoryId, entry.degree, entry.normalized_degree, entry.updated_at]
+            );
+          }
+        }
+      }
+
+      if (data.restoreDocuments) {
+        for (const doc of data.documents) {
+          const embeddingStr = doc.embedding ? '[' + doc.embedding.join(',') + ']' : null;
+          await pool.query(
+            `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)`,
+            [projectId, doc.file_path, doc.chunk_index, doc.content,
+             doc.start_line, doc.end_line, embeddingStr, doc.created_at]
+          );
+          documentsRestored++;
+        }
+      }
+    } else {
+      const sqlite = await this.getSqliteFns();
+      const db = sqlite.getDb();
+
+      if (data.overwrite) {
+        db.exec('DELETE FROM memories');
+        db.exec('DELETE FROM memory_links');
+        if (data.restoreDocuments) {
+          db.exec('DELETE FROM documents');
+        }
+      }
+
+      const insertMemory = db.prepare(`
+        INSERT INTO memories (content, tags, source, embedding, type, quality_score, quality_factors, access_count, last_accessed, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const restoreMemoriesTx = db.transaction((memories: typeof data.memories) => {
+        for (const memory of memories) {
+          const embedding = memory.embedding
+            ? Buffer.from(new Float32Array(memory.embedding).buffer)
+            : null;
+
+          const result = insertMemory.run(
+            memory.content, JSON.stringify(memory.tags), memory.source,
+            embedding, memory.type, memory.quality_score,
+            memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
+            memory.access_count, memory.last_accessed, memory.created_at
+          );
+
+          memoryIdMap.set(memory.id, result.lastInsertRowid as number);
+          memoriesRestored++;
+        }
+      });
+
+      restoreMemoriesTx(data.memories);
+
+      const insertLink = db.prepare(`
+        INSERT INTO memory_links (source_id, target_id, relation, weight, created_at, llm_enriched)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+
+      const restoreLinksTx = db.transaction((links: typeof data.memoryLinks) => {
+        for (const link of links) {
+          const newSourceId = memoryIdMap.get(link.source_id);
+          const newTargetId = memoryIdMap.get(link.target_id);
+
+          if (newSourceId && newTargetId) {
+            insertLink.run(newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0);
+            linksRestored++;
+          }
+        }
+      });
+
+      restoreLinksTx(data.memoryLinks);
+
+      if (data.centrality.length > 0) {
+        const insertCentrality = db.prepare(`
+          INSERT OR REPLACE INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+          VALUES (?, ?, ?, ?)
+        `);
+
+        const restoreCentralityTx = db.transaction((entries: typeof data.centrality) => {
+          for (const entry of entries) {
+            const newMemoryId = memoryIdMap.get(entry.memory_id);
+            if (newMemoryId) {
+              insertCentrality.run(newMemoryId, entry.degree, entry.normalized_degree, entry.updated_at);
+            }
+          }
+        });
+
+        restoreCentralityTx(data.centrality);
+      }
+
+      if (data.restoreDocuments && data.documents.length > 0) {
+        const insertDocument = db.prepare(`
+          INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const restoreDocsTx = db.transaction((docs: typeof data.documents) => {
+          for (const doc of docs) {
+            const embedding = doc.embedding
+              ? Buffer.from(new Float32Array(doc.embedding).buffer)
+              : null;
+
+            insertDocument.run(
+              doc.file_path, doc.chunk_index, doc.content,
+              doc.start_line, doc.end_line, embedding, doc.created_at
+            );
+            documentsRestored++;
+          }
+        });
+
+        restoreDocsTx(data.documents);
+      }
+    }
+
+    return { memoriesRestored, linksRestored, documentsRestored, memoryIdMap };
+  }
+
+  // ===========================================================================
   // Backend Info
   // ===========================================================================
 
