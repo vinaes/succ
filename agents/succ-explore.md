@@ -4,7 +4,7 @@ description: Explore codebase using succ semantic search + standard tools. Prefe
 tools: Read, Glob, Grep, Bash, WebFetch, WebSearch
 mcpServers:
   - succ
-model: haiku
+model: opus
 memory: project
 ---
 
