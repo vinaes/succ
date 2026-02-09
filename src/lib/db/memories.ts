@@ -174,7 +174,9 @@ export function saveMemory(
     try {
       const conf = getConfig();
       if (conf.graph_llm_relations?.enabled && conf.graph_llm_relations?.auto_on_save) {
-        import('../graph/llm-relations.js').then(m => m.enrichMemoryLinks(newId)).catch(() => {});
+        import('../graph/llm-relations.js').then(m => m.enrichMemoryLinks(newId)).catch(err => {
+          console.warn(`[memories] LLM enrichment failed for memory ${newId}:`, err);
+        });
       }
     } catch {
       // LLM enrichment module not available — skip
@@ -183,7 +185,9 @@ export function saveMemory(
 
   // Schedule auto-export if enabled (async, non-blocking)
   if (linksCreated > 0) {
-    triggerAutoExport().catch(() => {});
+    triggerAutoExport().catch(err => {
+      console.warn('[memories] Auto-export failed:', err);
+    });
   }
 
   invalidateMemoriesBm25Index();

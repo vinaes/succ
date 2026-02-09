@@ -74,7 +74,9 @@ export function createMemoryLink(
       .run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
 
     // Schedule auto-export if enabled (async, non-blocking)
-    triggerAutoExport().catch(() => {});
+    triggerAutoExport().catch(err => {
+      console.warn('[graph] Auto-export failed:', err);
+    });
 
     return { id: result.lastInsertRowid as number, created: true };
   } catch (error: any) {
