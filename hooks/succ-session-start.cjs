@@ -290,34 +290,9 @@ MEDIUM and below — commit is OK, mention findings in summary.
           if (!communicationAutoAdapt) {
             soulContent = soulContent.replace(/### Adaptation[\s\S]*?(?=\n## |\n---|\s*$)/, '');
           }
-          // Inject brain vault tracking instructions if enabled
+          // Inject vault tracking hint if enabled (agent handles the actual work)
           if (communicationTrackHistory && communicationAutoAdapt) {
-            soulContent += `\n\n### Vault Tracking
-
-When you update User Communication Preferences, also create a brain vault entry:
-
-1. Write a file to \`.succ/brain/05_Communication/YYYY-MM-DD_short-description.md\`
-2. Use this template:
-
-\`\`\`markdown
----
-date: YYYY-MM-DD
-tags: [communication, preference-change]
----
-# Communication Style: [short label]
-
-| Preference | Value |
-|------------|-------|
-| Language | ... |
-| Tone | ... |
-| Response length | ... |
-
-**Trigger:** [why the change happened — user request or pattern detected]
-**Previous:** [[previous-file-name]]
-\`\`\`
-
-3. Link to the previous entry with \`[[...]]\` wiki-link (check existing files in the directory)
-4. Keep filenames: \`YYYY-MM-DD_language-tone.md\` (e.g. \`2026-02-09_russian-informal.md\`)`;
+            soulContent += `\n\n### Vault Tracking\n\ncommunicationTrackHistory is enabled. The succ-style-tracker agent will create brain vault entries in .succ/brain/05_Communication/ when updating preferences.`;
           }
           contextParts.push('<soul>\n' + soulContent + '\n</soul>');
         }

@@ -923,8 +923,9 @@ _Add your preferences here or run \`succ soul\` to auto-detect from project._
 
 ### Adaptation
 
-- User switched language/style for 3+ consecutive messages → silently update this section
-- User explicitly requested a change → update immediately, reply "Done"
+- User switched language/style for 3+ consecutive messages → delegate to \`succ-style-tracker\` agent
+- User explicitly requested a change → delegate to \`succ-style-tracker\` agent immediately
+- To delegate: use Task tool with subagent_type="succ-style-tracker", describe the new style and trigger
 - Never announce preference updates. Never ask "do you want to switch language?"
 
 ---
