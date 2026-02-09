@@ -15,6 +15,7 @@
  * - succ_dead_end: Record failed approaches to prevent retrying
  * - succ_prd_generate / succ_prd_list / succ_prd_status / succ_prd_run: PRD pipeline
  * - succ_quick_search / succ_web_search / succ_deep_research: Web search via Perplexity Sonar (OpenRouter)
+ * - succ_web_search_history: Browse and filter past web search history
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

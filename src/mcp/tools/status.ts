@@ -15,6 +15,7 @@ import {
   getStaleFileCount,
   getTokenStatsAggregated,
   getTokenStatsSummary,
+  getWebSearchSummary,
   getStorageDispatcher,
   closeDb,
   type TokenEventType,
@@ -141,8 +142,22 @@ export function registerStatusTools(server: McpServer) {
               `  Recall queries: ${sc.recallQueries}`,
               `  Search queries: ${sc.searchQueries}`,
               sc.codeSearchQueries > 0 ? `  Code search queries: ${sc.codeSearchQueries}` : '',
+              (sc as any).webSearchQueries > 0 ? `  Web searches: ${(sc as any).webSearchQueries} ($${((sc as any).webSearchCostUsd || 0).toFixed(4)})` : '',
               typesList ? `  Types: ${typesList}` : '',
               `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`,
+            );
+          }
+        } catch { /* ignore */ }
+
+        // Web search history
+        try {
+          const wsSummary = await getWebSearchSummary();
+          if (wsSummary.total_searches > 0) {
+            status.push(
+              '',
+              '## Web Searches',
+              `  Total: ${wsSummary.total_searches} ($${wsSummary.total_cost_usd.toFixed(4)})`,
+              `  Today: ${wsSummary.today_searches} ($${wsSummary.today_cost_usd.toFixed(4)})`,
             );
           }
         } catch { /* ignore */ }
@@ -233,6 +248,19 @@ export function registerStatusTools(server: McpServer) {
         if (!hasRagStats) {
           lines.push('  No RAG queries recorded yet.');
         }
+
+        // Web Searches
+        try {
+          const wsSummary = await getWebSearchSummary();
+          if (wsSummary.total_searches > 0) {
+            lines.push('\n### Web Searches');
+            for (const [tool, stats] of Object.entries(wsSummary.by_tool)) {
+              const shortName = tool.replace('succ_', '');
+              lines.push(`  ${shortName.padEnd(16)}: ${stats.count} queries, $${stats.cost.toFixed(4)}`);
+            }
+            lines.push(`  Today: ${wsSummary.today_searches} searches, $${wsSummary.today_cost_usd.toFixed(4)}`);
+          }
+        } catch { /* ignore */ }
 
         // Total
         lines.push('\n### Total');

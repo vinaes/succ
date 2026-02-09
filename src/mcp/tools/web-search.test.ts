@@ -3,8 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import fs from 'fs';
-import path from 'path';
 
 // ============================================================================
 // Mocks
@@ -75,6 +73,16 @@ vi.mock('../../lib/embeddings.js', () => ({
 
 vi.mock('../../lib/storage/index.js', () => ({
   saveMemory: vi.fn(async () => ({ id: 42, isDuplicate: false })),
+  recordWebSearch: vi.fn(async () => 1),
+  getTodayWebSearchSpend: vi.fn(async () => 0),
+  getWebSearchHistory: vi.fn(async () => []),
+  getWebSearchSummary: vi.fn(async () => ({
+    total_searches: 0,
+    total_cost_usd: 0,
+    by_tool: {},
+    today_searches: 0,
+    today_cost_usd: 0,
+  })),
 }));
 
 // ============================================================================
@@ -84,7 +92,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 import { registerWebSearchTools } from './web-search.js';
 import { isOpenRouterConfigured, callOpenRouterSearch } from '../../lib/llm.js';
 import { getWebSearchConfig } from '../../lib/config.js';
-import { saveMemory } from '../../lib/storage/index.js';
+import { saveMemory, recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
 
 // ============================================================================
 // Mock McpServer
@@ -132,10 +140,6 @@ describe('Web Search MCP Tools', () => {
     });
     vi.mocked(saveMemory).mockResolvedValue({ id: 42, isDuplicate: false });
 
-    // Reset fs mock state
-    vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT'); });
-    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
-
     const mock = createMockServer();
     toolHandlers = mock.toolHandlers;
     registerWebSearchTools(mock.server as any);
@@ -146,10 +150,11 @@ describe('Web Search MCP Tools', () => {
   // --------------------------------------------------------------------------
 
   describe('registration', () => {
-    it('should register all three tools', () => {
+    it('should register all four tools', () => {
       expect(toolHandlers.has('succ_quick_search')).toBe(true);
       expect(toolHandlers.has('succ_web_search')).toBe(true);
       expect(toolHandlers.has('succ_deep_research')).toBe(true);
+      expect(toolHandlers.has('succ_web_search_history')).toBe(true);
     });
   });
 
@@ -416,10 +421,8 @@ describe('Web Search MCP Tools', () => {
         daily_budget_usd: 0.01,
       });
 
-      // Simulate existing spend file with exceeded budget
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
-        JSON.stringify({ total_usd: 0.05, requests: [] }),
-      );
+      // Simulate exceeded budget via DB
+      vi.mocked(getTodayWebSearchSpend).mockResolvedValueOnce(0.05);
 
       const handler = toolHandlers.get('succ_web_search')!;
       const result = await handler({ query: 'test' });
@@ -445,22 +448,26 @@ describe('Web Search MCP Tools', () => {
         daily_budget_usd: 1.0,
       });
 
+      vi.mocked(getTodayWebSearchSpend).mockResolvedValue(0.05);
+
       const handler = toolHandlers.get('succ_web_search')!;
       const result = await handler({ query: 'test' });
 
       expect(result.content[0].text).toContain('Budget:');
     });
 
-    it('should record spend after successful search', async () => {
+    it('should record spend to DB after successful search', async () => {
       const handler = toolHandlers.get('succ_web_search')!;
       await handler({ query: 'test query' });
 
-      expect(fs.writeFileSync).toHaveBeenCalled();
-      const writeCall = vi.mocked(fs.writeFileSync).mock.calls[0];
-      const data = JSON.parse(writeCall[1] as string);
-      expect(data.total_usd).toBeGreaterThan(0);
-      expect(data.requests).toHaveLength(1);
-      expect(data.requests[0].query).toBe('test query');
+      expect(recordWebSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool_name: 'succ_web_search',
+          query: 'test query',
+          prompt_tokens: 100,
+          completion_tokens: 200,
+        }),
+      );
     });
 
     it('should allow unlimited when budget is 0', async () => {
@@ -554,6 +561,75 @@ describe('Web Search MCP Tools', () => {
       const result = await handler({ query: 'test', save_to_memory: true });
 
       expect(result.content[0].text).toContain('already in memory');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // succ_web_search_history
+  // --------------------------------------------------------------------------
+
+  describe('succ_web_search_history', () => {
+    it('should return summary and records', async () => {
+      vi.mocked(getWebSearchSummary).mockResolvedValueOnce({
+        total_searches: 5,
+        total_cost_usd: 0.0123,
+        by_tool: { succ_web_search: { count: 3, cost: 0.01 }, succ_quick_search: { count: 2, cost: 0.0023 } },
+        today_searches: 2,
+        today_cost_usd: 0.005,
+      });
+      vi.mocked(getWebSearchHistory).mockResolvedValueOnce([
+        {
+          id: 1,
+          tool_name: 'succ_web_search',
+          model: 'perplexity/sonar-pro',
+          query: 'test query',
+          prompt_tokens: 100,
+          completion_tokens: 200,
+          estimated_cost_usd: 0.003,
+          citations_count: 3,
+          has_reasoning: false,
+          response_length_chars: 500,
+          created_at: '2025-01-15T10:30:00',
+        },
+      ]);
+
+      const handler = toolHandlers.get('succ_web_search_history')!;
+      const result = await handler({});
+
+      expect(result.content[0].text).toContain('Web Search Summary');
+      expect(result.content[0].text).toContain('Total: 5 searches');
+      expect(result.content[0].text).toContain('Today: 2 searches');
+      expect(result.content[0].text).toContain('succ_web_search');
+      expect(result.content[0].text).toContain('test query');
+    });
+
+    it('should show message when no records match filters', async () => {
+      vi.mocked(getWebSearchSummary).mockResolvedValueOnce({
+        total_searches: 0,
+        total_cost_usd: 0,
+        by_tool: {},
+        today_searches: 0,
+        today_cost_usd: 0,
+      });
+      vi.mocked(getWebSearchHistory).mockResolvedValueOnce([]);
+
+      const handler = toolHandlers.get('succ_web_search_history')!;
+      const result = await handler({});
+
+      expect(result.content[0].text).toContain('No search records found');
+    });
+
+    it('should pass filters to getWebSearchHistory', async () => {
+      const handler = toolHandlers.get('succ_web_search_history')!;
+      await handler({ tool_name: 'succ_quick_search', date_from: '2025-01-01', limit: 5 });
+
+      expect(getWebSearchHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool_name: 'succ_quick_search',
+          date_from: '2025-01-01',
+          limit: 5,
+        }),
+      );
     });
   });
 });

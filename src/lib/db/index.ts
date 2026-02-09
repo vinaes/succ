@@ -39,6 +39,15 @@ export {
   clearTokenStats
 } from './token-stats.js';
 
+// Re-export web search history functions
+export {
+  recordWebSearch,
+  getWebSearchHistory,
+  getWebSearchSummary,
+  getTodayWebSearchSpend,
+  clearWebSearchHistory
+} from './web-search-history.js';
+
 // Re-export retention functions and types
 export type { MemoryForRetention } from './retention.js';
 export {

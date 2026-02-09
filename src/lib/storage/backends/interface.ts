@@ -31,6 +31,10 @@ import type {
   MemoryType,
   LinkRelation,
   QualityScoreData,
+  WebSearchHistoryInput,
+  WebSearchHistoryRecord,
+  WebSearchHistoryFilter,
+  WebSearchHistorySummary,
 } from '../types.js';
 
 /**
@@ -497,6 +501,16 @@ export interface StorageBackend {
     by_event_type: TokenStatsAggregated[];
   };
   clearTokenStats(): void;
+
+  // ============================================================================
+  // Web Search History
+  // ============================================================================
+
+  recordWebSearch(record: WebSearchHistoryInput): number;
+  getWebSearchHistory(filter: WebSearchHistoryFilter): WebSearchHistoryRecord[];
+  getWebSearchSummary(): WebSearchHistorySummary;
+  getTodayWebSearchSpend(): number;
+  clearWebSearchHistory(): void;
 
   // ============================================================================
   // BM25 Index Storage

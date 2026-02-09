@@ -13,7 +13,14 @@
 
 import { getConfig, getDbPath, getGlobalDbPath } from '../config.js';
 import { getStorageDispatcher } from './dispatcher.js';
-import type { MemoryType, LinkRelation } from './types.js';
+import type {
+  MemoryType,
+  LinkRelation,
+  WebSearchHistoryInput,
+  WebSearchHistoryRecord,
+  WebSearchHistoryFilter,
+  WebSearchHistorySummary,
+} from './types.js';
 
 // ===========================================================================
 // Types — canonical abstract types from storage/types.ts
@@ -748,6 +755,35 @@ export async function getTokenStatsSummary(): Promise<any> {
 export async function clearTokenStats(): Promise<void> {
   const d = await getStorageDispatcher();
   return d.clearTokenStats();
+}
+
+// ===========================================================================
+// Web Search History
+// ===========================================================================
+
+export async function recordWebSearch(record: WebSearchHistoryInput): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.recordWebSearch(record);
+}
+
+export async function getWebSearchHistory(filter?: WebSearchHistoryFilter): Promise<WebSearchHistoryRecord[]> {
+  const d = await getStorageDispatcher();
+  return d.getWebSearchHistory(filter ?? {});
+}
+
+export async function getWebSearchSummary(): Promise<WebSearchHistorySummary> {
+  const d = await getStorageDispatcher();
+  return d.getWebSearchSummary();
+}
+
+export async function getTodayWebSearchSpend(): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.getTodayWebSearchSpend();
+}
+
+export async function clearWebSearchHistory(): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.clearWebSearchHistory();
 }
 
 // ===========================================================================
