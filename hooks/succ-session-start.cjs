@@ -148,7 +148,11 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_index_file** file="doc.md" [force=true]
 **succ_index_code_file** file="src/auth.ts" [force=true]
 **succ_analyze_file** file="src/auth.ts" [mode="claude|local|openrouter"]
-**succ_link** action="create|delete|show|graph|auto" [source_id=1] [target_id=2]
+**succ_link** action="create|delete|show|graph|auto|enrich|proximity|communities|centrality" [source_id=1] [target_id=2]
+  enrich = LLM-classify similar_to → semantic relations
+  proximity = co-occurrence links from shared sources
+  communities = Label Propagation community detection → tags
+  centrality = degree centrality scores → recall boost
 **succ_explore** memory_id=42 [depth=2]
 </ops>
 
