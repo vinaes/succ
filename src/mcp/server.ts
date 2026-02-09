@@ -16,6 +16,7 @@
  * - succ_prd_generate / succ_prd_list / succ_prd_status / succ_prd_run: PRD pipeline
  * - succ_quick_search / succ_web_search / succ_deep_research: Web search via Perplexity Sonar (OpenRouter)
  * - succ_web_search_history: Browse and filter past web search history
+ * - succ_debug: Language-independent structured debugging with hypothesis testing
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -35,6 +36,7 @@ import { registerConfigTools } from './tools/config.js';
 import { registerDeadEndTools } from './tools/dead-end.js';
 import { registerPrdTools } from './tools/prd.js';
 import { registerWebSearchTools } from './tools/web-search.js';
+import { registerDebugTools } from './tools/debug.js';
 
 // Parse --project arg: succ-mcp --project /path/to/project
 const projectArgIdx = process.argv.indexOf('--project');
@@ -59,6 +61,7 @@ registerConfigTools(server);
 registerDeadEndTools(server);
 registerPrdTools(server);
 registerWebSearchTools(server);
+registerDebugTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {

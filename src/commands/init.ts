@@ -214,6 +214,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     'succ-plan.md',
     'succ-code-reviewer.md',
     'succ-diff-reviewer.md',
+    'succ-debug.md',
     'succ-style-tracker.md',
   ];
 
@@ -302,6 +303,18 @@ export async function init(options: InitOptions = {}): Promise<void> {
           ],
         },
       ],
+      PreToolUse: [
+        {
+          matcher: 'Bash',
+          hooks: [
+            {
+              type: 'command',
+              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-pre-tool.cjs"`,
+              timeout: 10,
+            },
+          ],
+        },
+      ],
     };
 
     let finalSettings: Record<string, any>;
@@ -344,6 +357,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
                 if (succCommand.includes('succ-stop-reflection.cjs') && existingCommand.includes('succ-stop-reflection.cjs')) return true;
                 if (succCommand.includes('succ-user-prompt.cjs') && existingCommand.includes('succ-user-prompt.cjs')) return true;
                 if (succCommand.includes('succ-post-tool.cjs') && existingCommand.includes('succ-post-tool.cjs')) return true;
+                if (succCommand.includes('succ-pre-tool.cjs') && existingCommand.includes('succ-pre-tool.cjs')) return true;
                 // For Notification hooks, check matcher
                 if (succMatcher && existing.matcher === succMatcher) return true;
 
