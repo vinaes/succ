@@ -579,3 +579,58 @@ export function getGraphStatsAsOf(asOfDate: Date): {
     relations,
   };
 }
+
+// ============================================================================
+// Graph Enrichment
+// ============================================================================
+
+/**
+ * Update tags for a memory.
+ */
+export function updateMemoryTags(memoryId: number, tags: string[]): void {
+  const database = getDb();
+  database.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(tags), memoryId);
+}
+
+/**
+ * Update a memory link's relation, weight, and/or enrichment flag.
+ */
+export function updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): void {
+  const database = getDb();
+  const sets: string[] = [];
+  const params: (string | number)[] = [];
+  if (updates.relation !== undefined) { sets.push('relation = ?'); params.push(updates.relation); }
+  if (updates.weight !== undefined) { sets.push('weight = ?'); params.push(updates.weight); }
+  if (updates.llmEnriched !== undefined) { sets.push('llm_enriched = ?'); params.push(updates.llmEnriched ? 1 : 0); }
+  if (sets.length > 0) {
+    params.push(linkId);
+    database.prepare(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  }
+}
+
+/**
+ * Upsert centrality score for a memory.
+ */
+export function upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): void {
+  const database = getDb();
+  database.prepare(
+    `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(memory_id) DO UPDATE SET degree = excluded.degree, normalized_degree = excluded.normalized_degree, updated_at = excluded.updated_at`
+  ).run(memoryId, degree, normalizedDegree);
+}
+
+/**
+ * Get centrality scores for a batch of memory IDs.
+ */
+export function getCentralityScores(memoryIds: number[]): Map<number, number> {
+  if (memoryIds.length === 0) return new Map();
+  const database = getDb();
+  const placeholders = memoryIds.map(() => '?').join(',');
+  const rows = database.prepare(
+    `SELECT memory_id, normalized_degree FROM memory_centrality WHERE memory_id IN (${placeholders})`
+  ).all(...memoryIds) as Array<{ memory_id: number; normalized_degree: number }>;
+  const map = new Map<number, number>();
+  for (const row of rows) map.set(row.memory_id, row.normalized_degree);
+  return map;
+}

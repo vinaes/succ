@@ -189,6 +189,7 @@ export interface StorageBackend {
   setFileHash(filePath: string, hash: string): void;
   deleteFileHash(filePath: string): void;
   getAllFileHashes(): Map<string, string>;
+  getAllFileHashesWithTimestamps(): Array<{ file_path: string; content_hash: string; indexed_at: string }>;
 
   // ============================================================================
   // Local Memories
