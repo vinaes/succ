@@ -26,8 +26,8 @@ export function registerGraphTools(server: McpServer) {
     'succ_link',
     'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.',
     {
-      action: z.enum(['create', 'delete', 'show', 'graph', 'auto', 'enrich', 'proximity', 'communities', 'centrality']).describe(
-        'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores)'
+      action: z.enum(['create', 'delete', 'show', 'graph', 'auto', 'enrich', 'proximity', 'communities', 'centrality', 'export']).describe(
+        'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export)'
       ),
       source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
       target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
@@ -208,11 +208,27 @@ ${relationStats}`;
             };
           }
 
+          case 'export': {
+            const { exportGraphSilent } = await import('../../lib/graph-export.js');
+            const result = await exportGraphSilent('obsidian');
+            if (result.memoriesExported === 0) {
+              return {
+                content: [{ type: 'text' as const, text: 'No memories to export.' }],
+              };
+            }
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Exported ${result.memoriesExported} memories and ${result.linksExported} links to Obsidian brain vault.`,
+              }],
+            };
+          }
+
           default:
             return {
               content: [{
                 type: 'text' as const,
-                text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, or centrality.',
+                text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, or export.',
               }],
             };
         }
