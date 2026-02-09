@@ -18,6 +18,7 @@ import {
   findLatestPrd,
   appendProgress,
 } from '../lib/prd/state.js';
+import { exportPrdToObsidian, exportAllPrds } from '../lib/prd/export.js';
 import { computeStats } from '../lib/prd/types.js';
 import type { ExecutionMode, Task } from '../lib/prd/types.js';
 
@@ -420,6 +421,40 @@ export async function prdArchive(
     console.log(`Archived PRD: ${prd.title} (${prdId})`);
   } catch (error) {
     console.error(`Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// Export
+// ============================================================================
+
+interface ExportOptions {
+  output?: string;
+  all?: boolean;
+}
+
+export async function prdExport(
+  prdIdArg?: string,
+  options: ExportOptions = {}
+): Promise<void> {
+  try {
+    if (options.all) {
+      const results = exportAllPrds(options.output);
+      if (results.length === 0) {
+        console.log('No PRDs to export.');
+        return;
+      }
+      for (const result of results) {
+        console.log(`Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}`);
+      }
+      console.log(`Total: ${results.length} PRDs exported.`);
+    } else {
+      const result = exportPrdToObsidian(prdIdArg, options.output);
+      console.log(`Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}`);
+    }
+  } catch (error) {
+    console.error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

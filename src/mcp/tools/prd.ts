@@ -5,6 +5,7 @@
  * succ_prd_list: List existing PRDs
  * succ_prd_status: Show PRD and task status
  * succ_prd_run: Execute or resume a PRD
+ * succ_prd_export: Export PRD workflow to Obsidian (Mermaid diagrams)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -12,6 +13,7 @@ import { z } from 'zod';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { generatePrd } from '../../lib/prd/generate.js';
 import { runPrd } from '../../lib/prd/runner.js';
+import { exportPrdToObsidian, exportAllPrds } from '../../lib/prd/export.js';
 import {
   loadPrd,
   loadTasks,
@@ -196,6 +198,44 @@ export function registerPrdTools(server: McpServer) {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return { content: [{ type: 'text' as const, text: `Error running PRD: ${msg}` }], isError: true };
+      }
+    }
+  );
+
+  // --------------------------------------------------------------------------
+  // succ_prd_export
+  // --------------------------------------------------------------------------
+  server.tool(
+    'succ_prd_export',
+    'Export PRD workflow to Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG, per-task detail pages). Opens in Obsidian for visual workflow review.',
+    {
+      prd_id: z.string().optional().describe('PRD ID. If omitted, exports latest PRD.'),
+      all: z.boolean().optional().default(false).describe('Export all PRDs'),
+      output: z.string().optional().describe('Output directory (default: .succ/brain/04_PRD)'),
+      project_path: projectPathParam,
+    },
+    async ({ prd_id, all, output, project_path }) => {
+      await applyProjectPath(project_path);
+      try {
+        if (all) {
+          const results = exportAllPrds(output);
+          if (results.length === 0) {
+            return { content: [{ type: 'text' as const, text: 'No PRDs found.' }] };
+          }
+          const lines = results.map(r => `${r.prdId}: ${r.filesCreated} files → ${r.outputDir}`);
+          return { content: [{ type: 'text' as const, text: `Exported ${results.length} PRDs:\n${lines.join('\n')}` }] };
+        }
+
+        const result = exportPrdToObsidian(prd_id, output);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}\n\nGenerated:\n- Overview.md (summary + embedded dependency graph)\n- Timeline.md (Mermaid Gantt chart)\n- Dependencies.md (Mermaid flowchart DAG)\n- Tasks/*.md (per-task detail pages)`,
+          }],
+        };
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text' as const, text: `Error exporting PRD: ${msg}` }], isError: true };
       }
     }
   );

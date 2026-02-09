@@ -409,6 +409,9 @@ The `.succ/prds/` directory should be in `.gitignore` — it's execution state, 
 | `succ prd status --verbose` | Detailed task info |
 | `succ prd status --json` | JSON output |
 | `succ prd archive [prd-id]` | Archive a PRD |
+| `succ prd export [prd-id]` | Export workflow to Obsidian (Mermaid diagrams) |
+| `succ prd export --all` | Export all PRDs |
+| `succ prd export --output <dir>` | Custom output directory |
 
 ### MCP Tools
 
@@ -418,6 +421,49 @@ The `.succ/prds/` directory should be in `.gitignore` — it's execution state, 
 | `succ_prd_list` | `all?` | List PRDs |
 | `succ_prd_status` | `prd_id?` | Show PRD status (defaults to latest) |
 | `succ_prd_run` | `prd_id?`, `resume?`, `task_id?`, `dry_run?`, `max_iterations?`, `no_branch?`, `model?`, `force?`, `mode?`, `concurrency?` | Execute or resume a PRD |
+| `succ_prd_export` | `prd_id?`, `all?`, `output?` | Export workflow to Obsidian (Mermaid diagrams) |
+
+---
+
+## Obsidian Export
+
+Export PRD execution data as Obsidian-compatible markdown with Mermaid diagrams.
+
+```bash
+succ prd export                     # Latest PRD
+succ prd export --all               # All PRDs
+succ prd export prd_abc123          # Specific PRD
+succ prd export --output ./vault    # Custom output dir
+```
+
+### Generated Files
+
+```
+.succ/brain/04_PRD/{prd-title}/
+├── Overview.md        # Summary, stats, gates, embedded dependency graph
+├── Timeline.md        # Mermaid Gantt chart (task execution timeline)
+├── Dependencies.md    # Mermaid flowchart DAG (task dependencies)
+└── Tasks/
+    ├── task_001.md    # Acceptance criteria, attempts, gate results
+    ├── task_002.md
+    └── ...
+```
+
+### Mermaid Diagrams
+
+**Gantt (Timeline.md)** — Shows when each task ran. In loop mode: a single "Tasks" section with sequential bars. In team mode: separate "Worker N" sections showing parallel execution.
+
+**Flowchart (Dependencies.md)** — DAG of task dependencies, color-coded by status:
+- Green (`done`) — completed
+- Red (`crit`) — failed
+- Gray (`skipped`) — skipped
+- Blue (`pending`) — not yet run
+
+Tasks with multiple attempts show each attempt as a separate bar in the Gantt chart.
+
+### Usage in Obsidian
+
+Open `.succ/brain/` as an Obsidian vault. Mermaid diagrams render natively (no plugins needed). Wiki-links (`[[Tasks/task_001]]`) connect Overview, Timeline, Dependencies, and task pages.
 
 ---
 
