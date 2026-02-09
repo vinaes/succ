@@ -94,7 +94,7 @@ export function registerStatusTools(server: McpServer) {
               `  Indexed files: ${freshness.total}`,
               freshness.stale > 0 ? `  Stale (modified since indexing): ${freshness.stale}` : '',
               freshness.deleted > 0 ? `  Missing (deleted since indexing): ${freshness.deleted}` : '',
-              '  Run `succ index` and `succ index-code` to refresh',
+              '  Run `succ reindex` to refresh',
             );
           }
         } catch {

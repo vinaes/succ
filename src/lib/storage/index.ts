@@ -220,18 +220,24 @@ export async function getAllFileHashesWithTimestamps(): Promise<Array<{ file_pat
   return d.getAllFileHashesWithTimestamps();
 }
 
+export interface IndexFreshnessResult {
+  stale: string[];     // DB file_path values (with code: prefix if applicable)
+  deleted: string[];   // DB file_path values
+  total: number;
+}
+
 /**
- * Check how many indexed files are stale (modified or deleted since indexing).
+ * Check which indexed files are stale (modified or deleted since indexing).
  * Uses mtime-first optimization: only reads+hashes files whose mtime > indexed_at.
  */
-export async function getStaleFileCount(projectRoot: string): Promise<{ stale: number; deleted: number; total: number }> {
+export async function getStaleFiles(projectRoot: string): Promise<IndexFreshnessResult> {
   const { createHash } = await import('crypto');
   const { readFileSync, statSync } = await import('fs');
   const { resolve, sep } = await import('path');
 
   const entries = await getAllFileHashesWithTimestamps();
-  let stale = 0;
-  let deleted = 0;
+  const stale: string[] = [];
+  const deleted: string[] = [];
 
   for (const entry of entries) {
     // Code-indexed files have "code:" prefix — strip it for disk path
@@ -251,16 +257,24 @@ export async function getStaleFileCount(projectRoot: string): Promise<{ stale: n
         const content = readFileSync(fullPath, 'utf-8');
         const currentHash = createHash('md5').update(content).digest('hex');
         if (currentHash !== entry.content_hash) {
-          stale++;
+          stale.push(entry.file_path);
         }
       }
     } catch {
       // File doesn't exist on disk
-      deleted++;
+      deleted.push(entry.file_path);
     }
   }
 
   return { stale, deleted, total: entries.length };
+}
+
+/**
+ * Convenience wrapper returning counts (used by status displays).
+ */
+export async function getStaleFileCount(projectRoot: string): Promise<{ stale: number; deleted: number; total: number }> {
+  const result = await getStaleFiles(projectRoot);
+  return { stale: result.stale.length, deleted: result.deleted.length, total: result.total };
 }
 
 // ===========================================================================

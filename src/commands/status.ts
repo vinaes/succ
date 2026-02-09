@@ -119,7 +119,7 @@ export async function status(): Promise<void> {
         if (freshness.deleted > 0) {
           console.log(`  Missing (deleted):  ${freshness.deleted}`);
         }
-        console.log('  Run `succ index` and `succ index-code` to refresh');
+        console.log('  Run `succ reindex` to refresh');
       }
     } catch {
       // Skip freshness check if it fails
