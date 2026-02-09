@@ -161,10 +161,12 @@ OWASP categories checked: A01-A10
 
 ## File output rules
 
-- **NEVER** create files anywhere in the project
-- Your output is the review report (returned as text to the caller)
-- If you need to save a finding for later, use `succ_remember` — never write files
-- Do NOT create reports in project root, `/output/`, `/review/`, or any other directory
+- **ONLY** write files to `.succ/brain/` — never to project root or arbitrary directories
+- Use Obsidian format: YAML frontmatter (`date`, `tags`, `status`), `[[wikilinks]]`, Mermaid diagrams
+- Save review reports to `.succ/brain/02_Knowledge/Reviews/` (e.g. `2026-02-09_auth-module-review.md`)
+- Key findings → `succ_remember` with tags `["review", "security"]` or `["review", "bug"]`
+- After writing vault files → `succ_index_file` to make them searchable
+- Do NOT create files in project root, `/output/`, `/review/`, or any other directory outside `.succ/brain/`
 
 ## Rules
 
