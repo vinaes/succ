@@ -4,6 +4,7 @@
  * - succ_index_file: Index a single documentation file
  * - succ_analyze_file: Analyze a source file and generate documentation
  * - succ_index_code_file: Index a single source code file
+ * - succ_reindex: Detect and fix stale/deleted index entries
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -174,6 +175,44 @@ export function registerIndexingTools(server: McpServer) {
               text: `Error indexing code file: ${error.message}`,
             },
           ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Tool: succ_reindex - Detect and fix stale/deleted index entries
+  server.tool(
+    'succ_reindex',
+    'Detect stale (modified) and deleted files in the index, then re-index stale files and clean up deleted entries. Uses mtime + hash comparison for efficient detection.',
+    {
+      project_path: projectPathParam,
+    },
+    async ({ project_path }) => {
+      await applyProjectPath(project_path);
+      try {
+        const { getProjectRoot } = await import('../../lib/config.js');
+        const { reindexFiles } = await import('../../commands/reindex.js');
+        const projectRoot = getProjectRoot();
+        const result = await reindexFiles(projectRoot);
+
+        if (result.reindexed === 0 && result.cleaned === 0 && result.errors === 0) {
+          return {
+            content: [{ type: 'text' as const, text: `All ${result.total} indexed files are up to date.` }],
+          };
+        }
+
+        const lines = [...result.details];
+        if (result.reindexed > 0) lines.push(`Reindexed: ${result.reindexed}`);
+        if (result.cleaned > 0) lines.push(`Cleaned: ${result.cleaned} deleted entries`);
+        if (result.errors > 0) lines.push(`Errors: ${result.errors}`);
+
+        return {
+          content: [{ type: 'text' as const, text: lines.join('\n') }],
+        };
+      } catch (error: any) {
+        return {
+          content: [{ type: 'text' as const, text: `Error during reindex: ${error.message}` }],
           isError: true,
         };
       }
