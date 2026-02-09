@@ -56,7 +56,7 @@ succ analyze
 | **Brain Vault** | Obsidian-compatible markdown knowledge base |
 | **Persistent Memory** | Decisions, learnings, patterns across sessions |
 | **Cross-Project** | Global memories shared between all projects |
-| **Knowledge Graph** | Link memories, auto-detect relationships |
+| **Knowledge Graph** | Link memories, LLM-enriched relations, community detection, centrality |
 | **MCP Native** | Claude uses succ tools directly |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
@@ -70,6 +70,7 @@ succ analyze
 - **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent
 - **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
 - **Quality Gates** — Auto-detected (TypeScript, Go, Python, Rust) or custom; run after each task to verify code quality
+- **Graph Enrichment** — LLM-classified relations (implements, leads_to, contradicts...), contextual proximity, Label Propagation communities, degree centrality with recall boost
 - **Dead-End Tracking** — Record failed approaches; auto-boosted in recall to prevent retrying
 - **AGENTS.md Auto-Export** — Auto-generate editor instructions from decisions, patterns, dead-ends
 - **Learning Delta** — Track knowledge growth per session (memories added, types, quality)
@@ -125,7 +126,7 @@ succ analyze
 | `succ chat <query>` | RAG chat with context |
 | `succ train-bpe` | Train BPE vocabulary from indexed code |
 | `succ forget` | Delete memories |
-| `succ graph <action>` | Knowledge graph operations |
+| `succ graph <action>` | Knowledge graph: stats, auto-link, enrich, proximity, communities, centrality |
 | `succ consolidate` | Merge duplicate memories (soft-delete with undo) |
 | `succ agents-md` | Generate .claude/AGENTS.md from memories |
 | `succ progress` | Show learning delta history |
