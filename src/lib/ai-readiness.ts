@@ -357,9 +357,10 @@ export function calculateHooksActiveScore(): MetricResult {
  * Calculate agents configured score (5 points max)
  * Checks for custom Claude Code agents in .claude/agents/
  * - 0 agents: 0 points
- * - 1-2 agents: 2 points
- * - 3-5 agents: 3 points
- * - 6+ agents: 5 points
+ * - 1-3 agents: 1 point
+ * - 4-6 agents: 2 points
+ * - 7-9 agents: 3 points
+ * - 10+ agents: 5 points
  */
 export function calculateAgentsConfiguredScore(): MetricResult {
   const projectRoot = getProjectRoot();
@@ -387,13 +388,14 @@ export function calculateAgentsConfiguredScore(): MetricResult {
   }
 
   let score = 0;
-  if (agentCount >= 6) score = 5;
-  else if (agentCount >= 3) score = 3;
-  else if (agentCount >= 1) score = 2;
+  if (agentCount >= 10) score = 5;
+  else if (agentCount >= 7) score = 3;
+  else if (agentCount >= 4) score = 2;
+  else if (agentCount >= 1) score = 1;
 
   const suggestions: string[] = [];
-  if (agentCount < 3) {
-    suggestions.push('Add more custom agents to .claude/agents/');
+  if (agentCount < 10) {
+    suggestions.push('Add more custom agents to .claude/agents/ (10+ for full score)');
   }
 
   return {

@@ -100,6 +100,30 @@ succ analyze
 
 </details>
 
+## Claude Code Agents
+
+succ ships with 15 specialized agents in `.claude/agents/` that run as subagents inside Claude Code:
+
+| Agent | What it does |
+|-------|-------------|
+| `succ-explore` | Codebase exploration powered by semantic search |
+| `succ-plan` | Implementation planning grounded in codebase patterns and past decisions |
+| `succ-deep-search` | Cross-search memories, brain vault, and code |
+| `succ-memory-curator` | Consolidate, deduplicate, and clean up memories |
+| `succ-memory-health-monitor` | Detect decayed, stale, or low-quality memories |
+| `succ-pattern-detective` | Surface recurring patterns and anti-patterns from sessions |
+| `succ-session-handoff-orchestrator` | Extract summary and briefing at session end |
+| `succ-session-reviewer` | Review past sessions, extract missed learnings |
+| `succ-decision-auditor` | Find contradictions and reversals in architectural decisions |
+| `succ-knowledge-indexer` | Index documentation and code into the knowledge base |
+| `succ-knowledge-mapper` | Maintain knowledge graph, find orphaned memories |
+| `succ-checkpoint-manager` | Create and manage state backups |
+| `succ-context-optimizer` | Optimize what gets preloaded at session start |
+| `succ-quality-improvement-coach` | Analyze memory quality, suggest improvements |
+| `succ-readiness-improver` | Actionable steps to improve AI-readiness score |
+
+Agents are auto-discovered by Claude Code from `.claude/agents/` and can be launched via the Task tool with `subagent_type`.
+
 ## Commands
 
 | Command | Description |
