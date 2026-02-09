@@ -459,6 +459,7 @@ your-project/
 ## Documentation
 
 - [Configuration Reference](docs/configuration.md) — All config options with examples
+- [PRD Pipeline](docs/prd.md) — Generate, execute, and verify tasks with quality gates
 - [Storage Backends](docs/storage.md) — SQLite, PostgreSQL, Qdrant setup and benchmarks
 - [Benchmarks](docs/benchmarks.md) — Performance and accuracy metrics
 - [Temporal Awareness](docs/temporal.md) — Time decay, validity periods
