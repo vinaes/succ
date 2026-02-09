@@ -174,6 +174,17 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [mode="team"] [concurrency=3]
 → Execute or resume a PRD. mode=team for parallel execution with git worktrees
 </prd>
+
+<web-search hint="Real-time web search via Perplexity Sonar (OpenRouter). Requires OPENROUTER_API_KEY.">
+**succ_quick_search** query="latest Node.js LTS" [system_prompt="..."] [max_tokens=2000] [save_to_memory=true]
+→ Cheap & fast ($1/MTok). Simple facts, version numbers, quick lookups.
+
+**succ_web_search** query="how to configure nginx" [model="perplexity/sonar-pro"] [system_prompt="..."] [save_to_memory=true]
+→ Quality search ($3/$15 MTok). Complex queries, docs, multi-faceted questions.
+
+**succ_deep_research** query="Compare React vs Vue for e-commerce" [include_reasoning=true] [save_to_memory=true]
+→ Deep multi-step research (~$1+/query, 30-120s). Synthesizes 30+ sources.
+</web-search>
 </succ-tools>`);
 
     // succ Agents Reference - reminds AI about available subagents
