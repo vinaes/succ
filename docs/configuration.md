@@ -537,7 +537,7 @@ Set to `false` to disable the `<commit-format>` block injection:
 |--------|------|---------|-------------|
 | `preCommitReview` | boolean | false | Run `succ-diff-reviewer` agent before every git commit |
 
-When enabled, the session-start hook injects a `<pre-commit-review>` instruction that tells the AI to run the `succ-diff-reviewer` agent on staged changes before committing. The agent checks for security issues (OWASP Top 10), bugs, regressions, and leftover debug code.
+When enabled, the `PreToolUse` hook injects a `<pre-commit-review>` instruction at the exact moment Claude attempts a `git commit`. This tells the AI to run the `succ-diff-reviewer` agent on staged changes before committing. The agent checks for security issues (OWASP Top 10), bugs, regressions, and leftover debug code.
 
 **Behavior on findings:**
 - **CRITICAL** — commit is blocked until fixed
@@ -552,7 +552,7 @@ When enabled, the session-start hook injects a `<pre-commit-review>` instruction
 
 Enable via CLI: `succ config_set preCommitReview true`
 
-> **Note**: This adds review time before each commit. The `succ-diff-reviewer` agent works with any programming language.
+> **Note**: This adds review time before each commit. The `succ-diff-reviewer` agent works with any programming language. Context is injected via `PreToolUse` hook, so it survives context compaction.
 
 ---
 
@@ -583,6 +583,93 @@ Disable auto-adaptation entirely:
   "communicationAutoAdapt": false
 }
 ```
+
+---
+
+## Command Safety Guard
+
+Blocks dangerous git, filesystem, database, and Docker commands before they execute. Runs as a `PreToolUse` hook on every Bash tool call.
+
+```json
+{
+  "commandSafetyGuard": {
+    "mode": "deny",
+    "allowlist": ["rm -rf node_modules"],
+    "customPatterns": [
+      { "pattern": "\\bkubectl\\s+delete\\s+namespace\\b", "reason": "Deletes entire Kubernetes namespace" },
+      { "pattern": "\\bredis-cli\\s+FLUSHALL\\b", "reason": "Wipes all Redis databases", "flags": "i" }
+    ]
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `commandSafetyGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | `deny` blocks the command, `ask` prompts the user for confirmation, `off` disables the guard |
+| `commandSafetyGuard.allowlist` | string[] | `[]` | Commands to always allow even if they match dangerous patterns |
+| `commandSafetyGuard.customPatterns` | object[] | `[]` | User-defined regex patterns to block (see below) |
+| `customPatterns[].pattern` | string | — | Regex pattern string to match against the command |
+| `customPatterns[].reason` | string | — | Why this command is blocked (shown to Claude) |
+| `customPatterns[].flags` | string | `""` | Regex flags (e.g. `"i"` for case-insensitive) |
+
+### Built-in blocked patterns
+
+**Git:**
+
+| Command | Why |
+|---------|-----|
+| `git reset --hard` / `--merge` | Destroys uncommitted changes |
+| `git checkout -- <file>` / `git checkout .` | Discards file modifications |
+| `git restore --staged --worktree` | Discards both staged and unstaged changes |
+| `git clean -f` | Permanently deletes untracked files |
+| `git push --force` / `-f` | Rewrites remote history (use `--force-with-lease`) |
+| `git branch -D` | Force-deletes without merge verification |
+| `git stash drop` / `clear` | Destroys stashed work |
+| `git rebase -i` | Requires interactive terminal |
+| `git reflog expire --expire=now` | Permanently removes recovery points |
+
+**Filesystem:**
+
+| Command | Why |
+|---------|-----|
+| `rm -rf` (unsafe paths) | Permanent file deletion |
+
+**Docker:**
+
+| Command | Why |
+|---------|-----|
+| `docker system prune` | Removes all unused containers, networks, images |
+| `docker volume prune` | Removes all unused volumes (data loss) |
+| `docker rm -f` | Force-removes running containers |
+| `docker rmi -f` | Force-removes images that may be in use |
+| `docker compose down -v` | Removes named volumes (database data loss) |
+
+**SQLite:**
+
+| Command | Why |
+|---------|-----|
+| `sqlite3 ... DROP TABLE` | Permanently deletes a table |
+| `sqlite3 ... DELETE FROM x;` | Deletes all rows (no WHERE clause) |
+| `sqlite3 ... TRUNCATE` | Removes all data from a table |
+
+**PostgreSQL:**
+
+| Command | Why |
+|---------|-----|
+| `psql ... DROP TABLE` / `DROP DATABASE` | Permanently deletes table/database |
+| `psql ... DELETE FROM x;` | Deletes all rows (no WHERE clause) |
+| `dropdb` / `dropuser` | Permanently deletes database/user |
+
+**Qdrant:**
+
+| Command | Why |
+|---------|-----|
+| `curl ... qdrant ... DELETE` | Removes collections or points permanently |
+| `curl ... :6333 ... DELETE` | DELETE on Qdrant REST port |
+
+### Smart detection
+
+Commands in data contexts (grep, echo, comments) are not blocked. `rm -rf` on safe paths (`node_modules`, `dist`, `build`, `.cache`, `.next`, `/tmp`, `coverage`) is allowed by default.
 
 ---
 
@@ -1355,6 +1442,11 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
   "preCommitReview": false,
   "communicationAutoAdapt": true,
   "communicationTrackHistory": false,
+
+  "commandSafetyGuard": {
+    "mode": "deny",
+    "allowlist": []
+  },
 
   "readiness_gate": {
     "enabled": true
