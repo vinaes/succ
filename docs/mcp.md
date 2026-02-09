@@ -50,6 +50,16 @@ Or if running from source:
 | `succ_status` | Get index, memory, and daemon statistics |
 | `succ_config` | Show current configuration with all effective values |
 | `succ_config_set` | Update config value (key=value). Saves to ~/.succ/config.json |
+| `succ_dead_end` | Record failed approach to prevent retrying |
+| `succ_debug` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
+| `succ_prd_generate` | Generate PRD from feature description |
+| `succ_prd_list` | List all PRDs |
+| `succ_prd_status` | Show PRD details and task status |
+| `succ_prd_run` | Execute PRD tasks with quality gates |
+| `succ_prd_export` | Export PRD workflow to Obsidian |
+| `succ_quick_search` | Cheap web search via Perplexity Sonar |
+| `succ_web_search` | Quality web search via Perplexity Sonar Pro |
+| `succ_deep_research` | Deep multi-step web research |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 

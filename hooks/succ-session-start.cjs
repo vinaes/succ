@@ -200,6 +200,20 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_deep_research** query="Compare React vs Vue for e-commerce" [include_reasoning=true] [save_to_memory=true]
 → Deep multi-step research (~$1+/query, 30-120s). Synthesizes 30+ sources.
 </web-search>
+
+<debug hint="Structured debugging with hypothesis testing. Sessions persist in .succ/debugs/.">
+**succ_debug** action="create" bug_description="..." [error_output="..."] [reproduction_command="..."] [language="typescript"]
+→ Create debug session. 12 actions: create, hypothesis, instrument, result, resolve, abandon, status, list, log, show_log, detect_lang, gen_log
+
+Actions:
+- **create** — start session with bug description
+- **hypothesis** — add hypothesis (description, confidence, evidence, test)
+- **instrument** — record instrumented file + lines
+- **result** — mark hypothesis confirmed/refuted (suggests succ_dead_end on refute)
+- **resolve** — mark session resolved with root_cause, fix_description, files_modified
+- **status** / **list** — view active session or all sessions
+- **detect_lang** / **gen_log** — language detection + log statement generation (14 languages)
+</debug>
 </succ-tools>`);
 
     // succ Agents Reference - reminds AI about available subagents
