@@ -33,6 +33,12 @@ When invoked:
    succ status
    ```
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the indexing report as text in your response
+- All indexing operations go through `succ index` / `succ index-code` CLI — never create files on disk
+
 Report:
 - Files indexed (new vs updated)
 - Total documents and code chunks now in index

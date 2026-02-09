@@ -210,6 +210,7 @@ When done, report:
 
 - **ONLY** modify source files for instrumentation (`[SUCC_DEBUG]` logs) and minimal fixes
 - **NEVER** create analysis files, reports, or notes in the project root or arbitrary directories
+- **NEVER** use Bash (echo/cat/tee redirect) to create files outside `.succ/brain/`
 - If you need to save debug findings beyond memory, write to `.succ/brain/` as Obsidian markdown
 - Debug session state is stored in `.succ/debugs/` (managed by succ core, not by you manually)
 

@@ -1762,7 +1762,37 @@ export class PostgresBackend {
     if (updates.llmEnriched !== undefined) { sets.push(`llm_enriched = $${idx++}`); params.push(updates.llmEnriched ? 1 : 0); }
     if (sets.length > 0) {
       params.push(linkId);
-      await pool.query(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+      try {
+        await pool.query(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+      } catch (err: any) {
+        // Duplicate key: a link with the target (source_id, target_id, relation) already exists.
+        // Delete this link and mark the existing one as enriched instead.
+        if (err.code === '23505' && updates.relation) {
+          const row = await pool.query(
+            'SELECT source_id, target_id FROM memory_links WHERE id = $1', [linkId]
+          );
+          if (row.rows.length > 0) {
+            const { source_id, target_id } = row.rows[0];
+            const client = await pool.connect();
+            try {
+              await client.query('BEGIN');
+              await client.query('DELETE FROM memory_links WHERE id = $1', [linkId]);
+              await client.query(
+                'UPDATE memory_links SET llm_enriched = 1, weight = GREATEST(weight, $1) WHERE source_id = $2 AND target_id = $3 AND relation = $4',
+                [updates.weight ?? 0.5, source_id, target_id, updates.relation]
+              );
+              await client.query('COMMIT');
+            } catch (txErr) {
+              await client.query('ROLLBACK');
+              throw txErr;
+            } finally {
+              client.release();
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
     }
   }
 

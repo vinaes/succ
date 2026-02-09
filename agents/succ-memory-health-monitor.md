@@ -47,3 +47,9 @@ Report should include:
   - "Run `succ retention --apply` to clean 8 expired memories"
 
 Be concise but actionable. Flag issues, don't just report numbers.
+
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the health report as text in your response
+- All operations go through `succ` CLI commands — never create files on disk

@@ -38,3 +38,9 @@ Focus on:
 - Gotchas and workarounds
 
 Skip generic conversation and confirmations.
+
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the session review as text in your response
+- Save insights via `succ remember` (as shown above) — never as files on disk

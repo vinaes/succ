@@ -35,3 +35,9 @@ When invoked:
    - How many new links created
 
 Be concise. Focus on actions taken and results.
+
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the curation report as text in your response
+- All memory operations go through `succ` CLI commands — never create files on disk
