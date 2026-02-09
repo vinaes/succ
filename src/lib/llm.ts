@@ -564,6 +564,74 @@ async function callOpenRouterChat(
   return data.choices[0].message.content;
 }
 
+/**
+ * Response from OpenRouter with Perplexity-specific fields (citations, search_results)
+ */
+export interface OpenRouterSearchResponse {
+  content: string;
+  citations?: string[];
+  search_results?: Array<{ title?: string; url: string; snippet?: string }>;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  reasoning?: string;
+}
+
+/**
+ * Call OpenRouter search models (Perplexity Sonar) and return full response with citations.
+ */
+export async function callOpenRouterSearch(
+  messages: ChatMessage[],
+  model: string,
+  timeout: number,
+  maxTokens: number,
+  temperature: number,
+): Promise<OpenRouterSearchResponse> {
+  const apiKey = getOpenRouterApiKey();
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY not set. Configure via environment variable or succ_config_set.');
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://succ.ai',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    }),
+    signal: AbortSignal.timeout(timeout),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error(`[llm] OpenRouter search error: ${errorBody}`);
+    throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string; reasoning?: string } }>;
+    citations?: string[];
+    search_results?: Array<{ title?: string; url: string; snippet?: string }>;
+    usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  };
+
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('OpenRouter returned no choices');
+  }
+
+  return {
+    content: data.choices[0].message.content,
+    citations: data.citations,
+    search_results: data.search_results,
+    usage: data.usage,
+    reasoning: data.choices[0].message.reasoning,
+  };
+}
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -586,7 +654,7 @@ export async function isLocalLLMAvailable(): Promise<boolean> {
 /**
  * Get OpenRouter API key from env or config
  */
-function getOpenRouterApiKey(): string | undefined {
+export function getOpenRouterApiKey(): string | undefined {
   if (process.env.OPENROUTER_API_KEY) {
     return process.env.OPENROUTER_API_KEY;
   }
