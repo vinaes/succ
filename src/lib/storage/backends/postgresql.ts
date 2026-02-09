@@ -289,9 +289,21 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id)');
 
     // Migration: add llm_enriched column to memory_links
-    try {
-      await pool.query('ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0');
-    } catch { /* column already exists */ }
+    await pool.query('ALTER TABLE memory_links ADD COLUMN IF NOT EXISTS llm_enriched INTEGER DEFAULT 0');
+
+    // Migration: add project_id column to memory_links (for multi-project PG)
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memory_links' AND column_name = 'project_id'
+        ) THEN
+          ALTER TABLE memory_links ADD COLUMN project_id TEXT;
+        END IF;
+      END $$;
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_project_id ON memory_links(project_id)');
 
     // Memory centrality cache table
     await pool.query(`
