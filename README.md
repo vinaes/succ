@@ -67,7 +67,7 @@ succ analyze
 <details>
 <summary>All features</summary>
 
-- **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent
+- **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent, export workflow to Obsidian (Mermaid Gantt + dependency DAG)
 - **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
 - **Quality Gates** — Auto-detected (TypeScript, Go, Python, Rust) or custom; run after each task to verify code quality
 - **Graph Enrichment** — LLM-classified relations (implements, leads_to, contradicts...), contextual proximity, Label Propagation communities, degree centrality with recall boost
@@ -166,6 +166,7 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ prd list` | List all PRDs |
 | `succ prd status [id]` | Show PRD status and tasks |
 | `succ prd archive [id]` | Archive a PRD |
+| `succ prd export [id]` | Export PRD workflow to Obsidian (Mermaid diagrams) |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 | `succ migrate` | Migrate data between storage backends |
@@ -237,9 +238,14 @@ succ prd run --resume                         # Resume interrupted run
 succ prd run --dry-run                        # Preview execution plan
 succ prd status                               # Show latest PRD status
 succ prd list                                 # List all PRDs
+succ prd export                               # Export latest PRD to Obsidian
+succ prd export --all                         # Export all PRDs
+succ prd export prd_abc123                    # Export specific PRD
 ```
 
 Team mode runs independent tasks in parallel using git worktrees for isolation. Each worker gets its own checkout; results merge via cherry-pick. Quality gates (typecheck, test, lint, build) run automatically after each task.
+
+Export generates Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG), per-task detail pages with gate results, and wiki-links between pages. Output goes to `.succ/brain/04_PRD/`.
 
 ## Configuration
 

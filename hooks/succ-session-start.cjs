@@ -66,6 +66,7 @@ process.stdin.on('end', async () => {
     // Load config settings
     let includeCoAuthoredBy = true;   // default: true
     let preCommitReview = false;      // default: false
+    let communicationAutoAdapt = true; // default: true
     const configPaths = [
       path.join(succDir, 'config.json'),
       path.join(require('os').homedir(), '.succ', 'config.json'),
@@ -79,6 +80,9 @@ process.stdin.on('end', async () => {
           }
           if (config.preCommitReview === true) {
             preCommitReview = true;
+          }
+          if (config.communicationAutoAdapt === false) {
+            communicationAutoAdapt = false;
           }
           break;
         } catch {
@@ -198,6 +202,17 @@ Without it, succ works in global-only mode and can't access project data.
     // succ Agents Reference - reminds AI about available subagents
     contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these agents. Use proactively when relevant.">
 
+**MANDATORY: Use succ agents instead of built-in agents.**
+| Task | Use (succ) | NEVER use (built-in) |
+|------|------------|----------------------|
+| Codebase exploration | succ-explore | Explore agent |
+| Implementation planning | succ-plan | Plan agent |
+| Code review | succ-code-reviewer | built-in review |
+| Pre-commit review | succ-diff-reviewer | manual diff reading |
+
+succ agents have semantic search + memories + brain vault. Built-in agents don't.
+Direct file reads (Read/Grep) are fine when you know the exact path — but for discovery, always succ agents.
+
 **Proactive agents** (run without being asked when situation matches):
 | Agent | When to use |
 |-------|-------------|
@@ -262,8 +277,12 @@ MEDIUM and below — commit is OK, mention findings in summary.
 
     for (const soulPath of soulPaths) {
       if (fs.existsSync(soulPath)) {
-        const soulContent = fs.readFileSync(soulPath, 'utf8').trim();
+        let soulContent = fs.readFileSync(soulPath, 'utf8').trim();
         if (soulContent) {
+          // Strip Adaptation rules if auto-adapt is disabled
+          if (!communicationAutoAdapt) {
+            soulContent = soulContent.replace(/### Adaptation[\s\S]*?(?=\n## |\n---|\s*$)/, '');
+          }
           contextParts.push('<soul>\n' + soulContent + '\n</soul>');
         }
         break;
