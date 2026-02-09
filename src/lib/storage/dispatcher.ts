@@ -1234,15 +1234,42 @@ export class StorageDispatcher {
   async getAllMemoryLinksForExport(): Promise<Array<{
     id: number; source_id: number; target_id: number;
     relation: string; weight: number; created_at: string;
+    llm_enriched: boolean;
   }>> {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const { rows } = await pool.query(
-        `SELECT ml.id, ml.source_id, ml.target_id, ml.relation, ml.weight, ml.created_at::text as created_at
+        `SELECT ml.id, ml.source_id, ml.target_id, ml.relation, ml.weight,
+                ml.created_at::text as created_at, COALESCE(ml.llm_enriched, 0) as llm_enriched
          FROM memory_links ml
          JOIN memories m ON ml.source_id = m.id
-         WHERE m.project_id = $1 OR m.project_id IS NULL
+         WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL
          ORDER BY ml.id ASC`,
+        [this.postgres.getProjectId()]
+      );
+      return rows.map((r: any) => ({ ...r, llm_enriched: !!r.llm_enriched }));
+    }
+    const sqlite = await this.getSqliteFns();
+    const db = sqlite.getDb();
+    const rows = db.prepare(
+      `SELECT id, source_id, target_id, relation, weight, created_at,
+              COALESCE(llm_enriched, 0) as llm_enriched
+       FROM memory_links ORDER BY id ASC`
+    ).all() as any[];
+    return rows.map((r: any) => ({ ...r, llm_enriched: !!r.llm_enriched }));
+  }
+
+  async getAllCentralityForExport(): Promise<Array<{
+    memory_id: number; degree: number; normalized_degree: number; updated_at: string;
+  }>> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const pool = await this.postgres.getPool();
+      const { rows } = await pool.query(
+        `SELECT mc.memory_id, mc.degree, mc.normalized_degree, mc.updated_at::text as updated_at
+         FROM memory_centrality mc
+         JOIN memories m ON mc.memory_id = m.id
+         WHERE LOWER(m.project_id) = $1 OR m.project_id IS NULL
+         ORDER BY mc.memory_id ASC`,
         [this.postgres.getProjectId()]
       );
       return rows;
@@ -1250,8 +1277,8 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
     return db.prepare(
-      `SELECT id, source_id, target_id, relation, weight, created_at
-       FROM memory_links ORDER BY id ASC`
+      `SELECT memory_id, degree, normalized_degree, updated_at
+       FROM memory_centrality ORDER BY memory_id ASC`
     ).all() as any[];
   }
 

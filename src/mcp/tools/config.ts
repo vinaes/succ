@@ -190,6 +190,7 @@ Contents:
   Memories: ${cp.stats.memories_count}
   Documents: ${cp.stats.documents_count}
   Memory links: ${cp.stats.links_count}
+  Centrality scores: ${cp.stats.centrality_count || 0}
   Brain files: ${cp.stats.brain_files_count}
 
 To restore: succ checkpoint restore "${outputPath}"`,

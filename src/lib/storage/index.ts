@@ -851,9 +851,17 @@ export async function getAllDocumentsForExport(): Promise<Array<{
 export async function getAllMemoryLinksForExport(): Promise<Array<{
   id: number; source_id: number; target_id: number;
   relation: string; weight: number; created_at: string;
+  llm_enriched: boolean;
 }>> {
   const d = await getStorageDispatcher();
   return d.getAllMemoryLinksForExport();
+}
+
+export async function getAllCentralityForExport(): Promise<Array<{
+  memory_id: number; degree: number; normalized_degree: number; updated_at: string;
+}>> {
+  const d = await getStorageDispatcher();
+  return d.getAllCentralityForExport();
 }
 
 // ===========================================================================
