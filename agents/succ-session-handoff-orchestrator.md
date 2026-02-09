@@ -41,6 +41,12 @@ When invoked (typically at session end):
    - Ensure critical context is captured
    - Verify memories are linked appropriately
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the handoff report as text in your response
+- Save undocumented decisions via `succ remember` — never as files on disk
+
 Report:
 - Summary of session (3-5 bullet points)
 - Memories captured this session

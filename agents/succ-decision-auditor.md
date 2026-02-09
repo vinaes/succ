@@ -62,6 +62,12 @@ Report:
 - Code alignment issues
 - Missing decisions (areas with code but no documented rationale)
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the audit report as text in your response
+- Save findings via `succ remember` (as shown below) — never as files on disk
+
 Save findings:
 ```bash
 succ remember "[AUDIT] Decision audit completed: <summary>" --type observation --tags "audit,architecture"

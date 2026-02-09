@@ -39,6 +39,12 @@ succ checkpoint --action info --file "<filename>"
 
 Always confirm before restore operations - they overwrite current data.
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- All checkpoint operations go through `succ checkpoint` CLI — never create files manually
+- Return the checkpoint report as text in your response
+
 Report:
 - Checkpoint file location and size
 - What's included (memories count, documents count)

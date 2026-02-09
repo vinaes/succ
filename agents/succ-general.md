@@ -66,9 +66,11 @@ For research reports, analysis documents, integration plans — write them to `.
 - Keep filenames descriptive: `OpenClaw-Integration-Plan.md`, not `research-1.md`
 
 ### 3. NEVER write outside brain vault
-- **NEVER** create files in project root (`/research/`, `/output/`, `/docs/tmp/`)
-- **NEVER** write to source tree unless it's actual code changes
-- Brain vault OR memory — no random directories
+- **NEVER** create files in project root (`/research/`, `/output/`, `/docs/tmp/`, `ANALYSIS_*.md`, `*_SUMMARY.md`)
+- **NEVER** write to source tree unless it's actual code changes requested by the user
+- **NEVER** use Bash (echo/cat/tee redirect) to create files outside `.succ/brain/`
+- Brain vault (`.succ/brain/`) OR memory (`succ_remember`) — no random directories
+- If in doubt: return text in your response instead of writing a file
 
 ### Examples
 

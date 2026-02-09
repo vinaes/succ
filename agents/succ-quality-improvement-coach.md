@@ -47,6 +47,12 @@ When invoked:
 
 6. **Create coaching summary**
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the coaching report as text in your response
+- Memory improvements go through `succ remember` / `succ forget` CLI — never create files on disk
+
 Report:
 - Quality score distribution (% high/medium/low)
 - Common issues found (top 3)

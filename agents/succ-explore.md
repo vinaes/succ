@@ -67,7 +67,14 @@ You have persistent memory across sessions. Before starting:
 - Read your memory directory to check if you've explored this area before
 - Build on previous findings instead of starting from scratch
 
-After exploring, save useful discoveries (key file locations, architectural patterns, non-obvious connections) to your memory for next time.
+After exploring, save useful discoveries via `succ_remember` (not file writes).
+
+## Output Rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return findings as text in your response
+- Save key discoveries via `succ_remember` with proper tags
+- You are a READ-ONLY agent — your job is to find and report, not to create files
 
 ## Tips
 - Start broad with succ tools, narrow down with Grep/Read

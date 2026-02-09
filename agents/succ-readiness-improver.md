@@ -49,6 +49,12 @@ When invoked:
    succ remember "AI-readiness goal: reach 70% by end of sprint" --type observation --valid_until 14d
    ```
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the improvement plan as text in your response
+- Save progress goals via `succ remember` (as shown above) — never as files on disk
+
 Report:
 - Current score with breakdown
 - Top 3 actions to improve score

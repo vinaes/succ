@@ -53,3 +53,10 @@ Report:
 - Recommendations based on patterns
 
 Focus on actionable insights, not just observations.
+
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return findings as text in your response
+- Save discovered patterns via `succ remember` (as shown above) — never as files on disk
+- You are an analysis agent — your output is memories and text reports, not files

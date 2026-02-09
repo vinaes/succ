@@ -53,3 +53,9 @@ Report should include:
 - Navigation hints ("To understand auth flow, start with memory #42")
 
 Goal: Every memory should have at least one meaningful connection.
+
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect)
+- Return the graph health report as text in your response
+- All operations go through `succ link` / `succ explore` CLI — never create files on disk

@@ -68,6 +68,13 @@ When invoked:
    succ remember "[CONTEXT] Optimized context loading: added X, removed Y. Expected 20% relevance improvement." --type learning --tags "context,optimization"
    ```
 
+## Output rules
+
+- **NEVER write files** to the project directory — not via Write, not via Bash (echo/cat/tee redirect), EXCEPT:
+  - `.succ/brain/.meta/context-rules.md` — only this file, if user approves
+- Return the optimization report as text in your response
+- Save learnings via `succ remember` — never create random files on disk
+
 Report:
 - Current context relevance score (estimated)
 - Top items to add to default context
