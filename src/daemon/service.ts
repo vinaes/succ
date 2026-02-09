@@ -404,51 +404,69 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
   }
 
   try {
-    // Generate briefing and append to progress file
-    // Read only tail of transcript to avoid OOM on 70MB+ files
-    // compact-briefing internally limits to ~6000 chars anyway
-    const transcriptContent = readTailTranscript(session.transcriptPath, 100 * 1024); // 100KB max
+    // ── Change detection: skip redundant work during long AFK ──
+    let transcriptChanged = true;
+    let memoriesChanged = true;
 
-    const briefingResult = await generateCompactBriefing(transcriptContent, {
-      format: 'structured',
-      include_memories: true,
-      max_memories: 3,
-    });
+    try {
+      const currentSize = fs.statSync(session.transcriptPath).size;
+      if (session.lastTranscriptSize !== undefined && currentSize === session.lastTranscriptSize) {
+        transcriptChanged = false;
+        log(`[reflection] Transcript unchanged (${currentSize}b), skipping briefing`);
+      }
+      session.lastTranscriptSize = currentSize;
+    } catch { /* transcript file gone — skip size check */ }
 
-    if (briefingResult.success && briefingResult.briefing) {
-      appendToProgressFile(sessionId, briefingResult.briefing);
-      log(`[reflection] Appended briefing to progress file (${briefingResult.briefing.length} chars)`);
-    } else {
-      log(`[reflection] Failed to generate briefing for ${sessionId}`);
+    // Check memory count for consolidation skip
+    const memStats = await getMemoryStats();
+    const currentMemCount = memStats.total;
+    if (session.lastMemoryCount !== undefined && currentMemCount === session.lastMemoryCount) {
+      memoriesChanged = false;
+    }
+    session.lastMemoryCount = currentMemCount;
+
+    // ── Generate briefing (skip if transcript unchanged) ──
+    let briefingResult: { success: boolean; briefing?: string } = { success: false };
+
+    if (transcriptChanged) {
+      const transcriptContent = readTailTranscript(session.transcriptPath, 100 * 1024); // 100KB max
+      briefingResult = await generateCompactBriefing(transcriptContent, {
+        format: 'structured',
+        include_memories: true,
+        max_memories: 3,
+      });
+
+      if (briefingResult.success && briefingResult.briefing) {
+        appendToProgressFile(sessionId, briefingResult.briefing);
+        log(`[reflection] Appended briefing to progress file (${briefingResult.briefing.length} chars)`);
+      } else {
+        log(`[reflection] Failed to generate briefing for ${sessionId}`);
+      }
     }
 
-    // Run independent operations in parallel for better performance
+    // ── Parallel operations ──
     const globalConfig = getConfig();
     const parallelOps: Promise<void>[] = [];
 
-    // NOTE: session_summary and precompute_context moved to processSessionEnd()
-    // They now run at session end using the progress file instead of parsing full transcript
-
-    // memory_consolidation - independent (disabled by default, opt-in only)
-    if (idleConfig.operations?.memory_consolidation === true) {
+    // memory_consolidation - skip if no new memories (disabled by default, opt-in only)
+    if (memoriesChanged && idleConfig.operations?.memory_consolidation === true) {
       parallelOps.push((async () => {
         const threshold = idleConfig.thresholds?.similarity_for_merge ?? 0.92;
         const limit = idleConfig.max_memories_to_process ?? 50;
 
-        // Always dry-run first and log what would happen
         log(`[reflection] Running memory consolidation (threshold=${threshold}, limit=${limit})`);
         const { consolidate } = await import('../commands/consolidate.js');
         await consolidate({
           threshold: String(threshold),
           limit: String(limit),
-          llm: true,  // Always use LLM merge to prevent data loss
+          llm: true,
           verbose: false,
         });
         log(`[reflection] Memory consolidation complete`);
       })());
     }
 
-    // retention_cleanup - independent
+    // retention_cleanup - independent (always runs if enabled)
     if (globalConfig.retention?.enabled && idleConfig.operations?.retention_cleanup !== false) {
       parallelOps.push((async () => {
         log(`[reflection] Running retention cleanup`);
@@ -458,23 +476,62 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
       })());
     }
 
-    // Wait for all parallel operations
     await Promise.all(parallelOps);
 
-    // graph_refinement - depends on consolidation completing first
+    // ── Graph refinement: auto-link (depends on consolidation completing first) ──
+    let newLinksCreated = 0;
     if (idleConfig.operations?.graph_refinement !== false) {
       log(`[reflection] Running graph auto-link`);
       const threshold = idleConfig.thresholds?.auto_link_threshold ?? 0.75;
-      const linksCreated = await autoLinkSimilarMemories(threshold);
-      log(`[reflection] Created ${linksCreated} new links`);
+      newLinksCreated = (await autoLinkSimilarMemories(threshold)) || 0;
+      log(`[reflection] Created ${newLinksCreated} new links`);
     }
 
-    // write_reflection - runs last (may use LLM)
-    // Note: uses briefing from progress file, not full transcript parsing
+    // ── Graph enrichment: enrich + proximity + communities + centrality ──
+    if (idleConfig.operations?.graph_enrichment !== false) {
+      const shouldEnrich = newLinksCreated > 0 || memoriesChanged || session.lastLinkCount === undefined;
+
+      if (shouldEnrich) {
+        log(`[reflection] Running graph enrichment`);
+
+        // 1. Enrich existing similar_to → semantic relations (LLM)
+        try {
+          const { enrichExistingLinks } = await import('../lib/graph/llm-relations.js');
+          const r = await enrichExistingLinks({ limit: 20, batchSize: 5 });
+          log(`[reflection] Enriched ${r.enriched} links (${r.skipped} skipped)`);
+        } catch (err) { log(`[reflection] Enrich failed: ${err}`); }
+
+        // 2. Proximity links from co-occurrence
+        try {
+          const { createProximityLinks } = await import('../lib/graph/contextual-proximity.js');
+          const r = await createProximityLinks({ minCooccurrence: 2 });
+          log(`[reflection] Created ${r.created} proximity links`);
+        } catch (err) { log(`[reflection] Proximity failed: ${err}`); }
+
+        // 3. Community detection
+        try {
+          const { detectCommunities } = await import('../lib/graph/community-detection.js');
+          const r = await detectCommunities({ minCommunitySize: 2 });
+          log(`[reflection] Found ${r.communities.length} communities`);
+        } catch (err) { log(`[reflection] Communities failed: ${err}`); }
+
+        // 4. Centrality cache
+        try {
+          const { updateCentralityCache } = await import('../lib/graph/centrality.js');
+          const r = await updateCentralityCache();
+          log(`[reflection] Updated centrality for ${r.updated} memories`);
+        } catch (err) { log(`[reflection] Centrality failed: ${err}`); }
+
+        session.lastLinkCount = (session.lastLinkCount ?? 0) + newLinksCreated;
+      } else {
+        log(`[reflection] Skipping graph enrichment (no changes)`);
+      }
+    }
+
+    // ── Write reflection (runs last, may use LLM) ──
     if (idleConfig.operations?.write_reflection !== false) {
       log(`[reflection] Writing reflection for ${sessionId}`);
       try {
-        // Read briefing from progress file for reflection
         const progressPath = getProgressFilePath(sessionId);
         const briefingContent = fs.existsSync(progressPath)
           ? fs.readFileSync(progressPath, 'utf-8')
