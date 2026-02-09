@@ -206,6 +206,13 @@ When done, report:
 - `src/auth.ts:42` — added null check for config.token
 ```
 
+## File output rules
+
+- **ONLY** modify source files for instrumentation (`[SUCC_DEBUG]` logs) and minimal fixes
+- **NEVER** create analysis files, reports, or notes in the project root or arbitrary directories
+- If you need to save debug findings beyond memory, write to `.succ/brain/` as Obsidian markdown
+- Debug session state is stored in `.succ/debugs/` (managed by succ core, not by you manually)
+
 ## Anti-patterns — do NOT do these
 
 - **Don't guess-and-check** — "let me try changing this and see if it works" without a hypothesis

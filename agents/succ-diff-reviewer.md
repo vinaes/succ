@@ -102,6 +102,13 @@ All changes look good. No issues found.
 End with one line:
 `X files reviewed, Y findings (Z critical)`
 
+## File output rules
+
+- **NEVER** create files anywhere in the project
+- Your output is the review report (returned as text to the caller)
+- If you need to save a finding for later, use `succ_remember` — never write files
+- Do NOT create reports in project root, `/output/`, `/review/`, or any other directory
+
 ## Rules
 
 - ONLY review changed lines and their immediate context

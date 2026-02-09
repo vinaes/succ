@@ -217,6 +217,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     'succ-diff-reviewer.md',
     'succ-debug.md',
     'succ-style-tracker.md',
+    'succ-general.md',
   ];
 
   for (const agentFile of agentFiles) {
