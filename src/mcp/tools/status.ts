@@ -14,7 +14,6 @@ import {
   getAllMemoriesForRetention,
   getStaleFileCount,
   getTokenStatsAggregated,
-  getTokenStatsSummary,
   getWebSearchSummary,
   getStorageDispatcher,
   closeDb,
@@ -208,7 +207,6 @@ export function registerStatusTools(server: McpServer) {
         const summaryEnabled = idleConfig.operations?.session_summary ?? true;
 
         const aggregated = await getTokenStatsAggregated();
-        const summary = await getTokenStatsSummary();
 
         const lines: string[] = ['## Token Savings\n'];
 
@@ -234,14 +232,28 @@ export function registerStatusTools(server: McpServer) {
 
         const ragTypes: TokenEventType[] = ['recall', 'search', 'search_code'];
         let hasRagStats = false;
+        let ragTotalQueries = 0;
+        let ragTotalReturned = 0;
+        let ragTotalSaved = 0;
 
         for (const type of ragTypes) {
           const stat = aggregated.find((s) => s.event_type === type);
           if (stat) {
             hasRagStats = true;
-            lines.push(
-              `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
-            );
+            ragTotalQueries += stat.query_count;
+            ragTotalReturned += stat.total_returned_tokens;
+
+            if (type === 'recall') {
+              // recall doesn't have meaningful "savings" — memories have no "full file" to compare
+              lines.push(
+                `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned`
+              );
+            } else {
+              ragTotalSaved += stat.total_savings_tokens;
+              lines.push(
+                `  ${type.padEnd(12)}: ${stat.query_count} queries, ${formatTokens(stat.total_returned_tokens)} returned, ${formatTokens(stat.total_savings_tokens)} saved`
+              );
+            }
           }
         }
 
@@ -262,12 +274,16 @@ export function registerStatusTools(server: McpServer) {
           }
         } catch { /* ignore */ }
 
-        // Total
+        // Total — compute from aggregated data (same logic as CLI stats.ts)
+        const sessionSaved = sessionStats?.total_savings_tokens || 0;
+        const totalSaved = sessionSaved + ragTotalSaved;
+
         lines.push('\n### Total');
-        if (summary.total_queries > 0) {
-          lines.push(`  Queries: ${summary.total_queries}`);
-          lines.push(`  Tokens returned: ${formatTokens(summary.total_returned_tokens)}`);
-          lines.push(`  Tokens saved: ${formatTokens(summary.total_savings_tokens)}`);
+        if (totalSaved > 0) {
+          lines.push(`  Total saved: ${formatTokens(totalSaved)} tokens`);
+        } else if (ragTotalQueries > 0) {
+          lines.push(`  Queries: ${ragTotalQueries}, ${formatTokens(ragTotalReturned)} returned`);
+          lines.push('  No token savings yet (recall-only queries don\'t compute savings).');
         } else {
           lines.push('  No stats recorded yet.');
         }

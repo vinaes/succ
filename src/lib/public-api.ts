@@ -98,6 +98,46 @@ export {
   updateMemoriesBm25Index,
 } from './storage/index.js';
 
+// --- Token stats ---
+export {
+  getTokenStatsAggregated,
+  getTokenStatsSummary,
+} from './storage/index.js';
+
+// --- Web search ---
+export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './db/web-search-history.js';
+export { callOpenRouterSearch } from './llm.js';
+
+// --- AI readiness ---
+export { calculateAIReadinessScore, formatAIReadinessScore } from './ai-readiness.js';
+
+// --- Retention ---
+export { analyzeRetention } from './retention.js';
+
+// --- Indexing commands ---
+export { indexDocFile } from '../commands/index.js';
+export { analyzeFile } from '../commands/analyze.js';
+export { indexCodeFile } from '../commands/index-code.js';
+export { reindexFiles } from '../commands/reindex.js';
+
+// --- Checkpoints ---
+export { createCheckpoint, listCheckpoints } from './checkpoint.js';
+
+// --- Graph: advanced operations ---
+export { enrichExistingLinks } from './graph/llm-relations.js';
+export { createProximityLinks } from './graph/contextual-proximity.js';
+export { detectCommunities } from './graph/community-detection.js';
+export { updateCentralityCache } from './graph/centrality.js';
+
+// --- PRD pipeline ---
+export { generatePrd } from './prd/generate.js';
+export { loadPrd, loadTasks, listPrds, findLatestPrd } from './prd/state.js';
+export { runPrd } from './prd/runner.js';
+export { exportPrdToObsidian, exportAllPrds } from './prd/export.js';
+
+// --- Config (write) ---
+export { getConfigDisplay, formatConfigDisplay } from './config.js';
+
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './db/memories.js';
 export type { LinkRelation } from './storage/types.js';
