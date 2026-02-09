@@ -98,6 +98,16 @@ export interface SuccConfig {
   quality_gates?: QualityGatesConfig;
   // Readiness gate: confidence assessment for search results
   readiness_gate?: ReadinessGateConfig;
+  // Graph enrichment: LLM relation extraction
+  graph_llm_relations?: GraphLLMRelationsConfig;
+  // Graph enrichment: contextual proximity linking
+  graph_contextual_proximity?: GraphContextualProximityConfig;
+  // Graph enrichment: community detection
+  graph_community_detection?: GraphCommunityDetectionConfig;
+  // Graph enrichment: centrality scoring
+  graph_centrality?: GraphCentralityConfig;
+  // Web search settings (Perplexity Sonar via OpenRouter)
+  web_search?: WebSearchConfig;
 }
 
 /**
@@ -285,6 +295,42 @@ export interface ReadinessGateConfig {
     warn?: number;     // Confidence threshold for "warn" (default: 0.4)
   };
   expected_results?: number;  // Expected result count for coverage calc (default: 5)
+}
+
+export interface GraphLLMRelationsConfig {
+  enabled?: boolean;  // Enable LLM relation extraction (default: false)
+  auto_on_save?: boolean;  // Auto-enrich links after memory save (default: false)
+  batch_size?: number;  // Batch size for LLM calls (default: 5)
+}
+
+export interface GraphContextualProximityConfig {
+  enabled?: boolean;  // Enable contextual proximity (default: false)
+  min_cooccurrence?: number;  // Min shared sources to create link (default: 2)
+}
+
+export interface GraphCommunityDetectionConfig {
+  enabled?: boolean;  // Enable community detection (default: false)
+  max_iterations?: number;  // Label propagation max iterations (default: 100)
+  min_community_size?: number;  // Min members to form a community (default: 2)
+}
+
+export interface GraphCentralityConfig {
+  enabled?: boolean;  // Enable centrality boost in recall (default: false)
+  boost_weight?: number;  // Weight of centrality boost (default: 0.1)
+  cache_ttl_hours?: number;  // Centrality cache TTL in hours (default: 24)
+}
+
+export interface WebSearchConfig {
+  enabled?: boolean;                  // Enable web search tools (default: true)
+  model?: string;                     // Model for succ_web_search (default: 'perplexity/sonar-pro')
+  deep_research_model?: string;       // Model for succ_deep_research (default: 'perplexity/sonar-deep-research')
+  max_tokens?: number;                // Max tokens for web search response (default: 4000)
+  deep_research_max_tokens?: number;  // Max tokens for deep research (default: 8000)
+  timeout_ms?: number;                // Timeout for web search in ms (default: 30000)
+  deep_research_timeout_ms?: number;  // Timeout for deep research in ms (default: 120000)
+  temperature?: number;               // Temperature (default: 0.1 — low for factual search)
+  save_to_memory?: boolean;           // Auto-save search results to memory (default: false)
+  daily_budget_usd?: number;          // Daily spending limit in USD (default: 0 = unlimited)
 }
 
 export interface BPETokenizerConfig {
@@ -708,8 +754,25 @@ export function getRetentionConfig(): Required<RetentionPolicyConfig> {
 }
 
 /**
- * Get idle reflection configuration with defaults
+ * Get web search configuration with defaults
  */
+export function getWebSearchConfig(): Required<WebSearchConfig> {
+  const config = getConfig();
+  const userConfig = config.web_search || {};
+  return {
+    enabled: userConfig.enabled ?? true,
+    model: userConfig.model ?? 'perplexity/sonar-pro',
+    deep_research_model: userConfig.deep_research_model ?? 'perplexity/sonar-deep-research',
+    max_tokens: userConfig.max_tokens ?? 4000,
+    deep_research_max_tokens: userConfig.deep_research_max_tokens ?? 8000,
+    timeout_ms: userConfig.timeout_ms ?? 30000,
+    deep_research_timeout_ms: userConfig.deep_research_timeout_ms ?? 120000,
+    temperature: userConfig.temperature ?? 0.1,
+    save_to_memory: userConfig.save_to_memory ?? false,
+    daily_budget_usd: userConfig.daily_budget_usd ?? 0,
+  };
+}
+
 export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   const config = getConfig();
   const userConfig = config.idle_reflection || {};
@@ -982,6 +1045,17 @@ export interface ConfigDisplay {
     check_interval: number;
     min_conversation_length: number;
   };
+  // Web search settings
+  web_search: {
+    enabled: boolean;
+    model: string;
+    deep_research_model: string;
+    max_tokens: number;
+    deep_research_timeout_ms: number;
+    temperature: number;
+    save_to_memory: boolean;
+    daily_budget_usd: number;
+  };
 }
 
 export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
@@ -1088,6 +1162,19 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       check_interval: idleWatcher.check_interval,
       min_conversation_length: idleWatcher.min_conversation_length,
     },
+    web_search: (() => {
+      const ws = getWebSearchConfig();
+      return {
+        enabled: ws.enabled,
+        model: ws.model,
+        deep_research_model: ws.deep_research_model,
+        max_tokens: ws.max_tokens,
+        deep_research_timeout_ms: ws.deep_research_timeout_ms,
+        temperature: ws.temperature,
+        save_to_memory: ws.save_to_memory,
+        daily_budget_usd: ws.daily_budget_usd,
+      };
+    })(),
   };
 }
 
@@ -1216,6 +1303,18 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`  Idle minutes: ${display.idle_watcher.idle_minutes}`);
   lines.push(`  Check interval: ${display.idle_watcher.check_interval}s`);
   lines.push(`  Min conversation length: ${display.idle_watcher.min_conversation_length}`);
+  lines.push('');
+
+  // Web Search
+  lines.push('## Web Search (Perplexity Sonar via OpenRouter)');
+  lines.push(`  Enabled: ${display.web_search.enabled}`);
+  lines.push(`  Model: ${display.web_search.model}`);
+  lines.push(`  Deep Research Model: ${display.web_search.deep_research_model}`);
+  lines.push(`  Max tokens: ${display.web_search.max_tokens}`);
+  lines.push(`  Deep Research timeout: ${display.web_search.deep_research_timeout_ms}ms`);
+  lines.push(`  Temperature: ${display.web_search.temperature}`);
+  lines.push(`  Save to memory: ${display.web_search.save_to_memory}`);
+  lines.push(`  Daily budget: ${display.web_search.daily_budget_usd > 0 ? `$${display.web_search.daily_budget_usd}` : 'unlimited'}`);
 
   return lines.join('\n');
 }
