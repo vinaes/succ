@@ -1715,8 +1715,9 @@ export class StorageDispatcher {
       const db = sqlite.getDb();
 
       if (data.overwrite) {
-        db.exec('DELETE FROM memories');
+        db.exec('DELETE FROM memory_centrality');
         db.exec('DELETE FROM memory_links');
+        db.exec('DELETE FROM memories');
         if (data.restoreDocuments) {
           db.exec('DELETE FROM documents');
         }
