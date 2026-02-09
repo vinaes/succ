@@ -299,18 +299,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
           ],
         },
       ],
-      Notification: [
-        {
-          matcher: 'idle_prompt',
-          hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-idle-reflection.cjs"`,
-              timeout: 30,
-            },
-          ],
-        },
-      ],
     };
 
     let finalSettings: Record<string, any>;
@@ -353,8 +341,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
                 if (succCommand.includes('succ-stop-reflection.cjs') && existingCommand.includes('succ-stop-reflection.cjs')) return true;
                 if (succCommand.includes('succ-user-prompt.cjs') && existingCommand.includes('succ-user-prompt.cjs')) return true;
                 if (succCommand.includes('succ-post-tool.cjs') && existingCommand.includes('succ-post-tool.cjs')) return true;
-                if (succCommand.includes('succ-idle-reflection.cjs') && existingCommand.includes('succ-idle-reflection.cjs')) return true;
-
                 // For Notification hooks, check matcher
                 if (succMatcher && existing.matcher === succMatcher) return true;
 
