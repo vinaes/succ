@@ -139,6 +139,35 @@ export { exportPrdToObsidian, exportAllPrds } from './prd/export.js';
 // --- Config (write) ---
 export { getConfigDisplay, formatConfigDisplay } from './config.js';
 
+// --- Debug sessions ---
+export {
+  generateSessionId,
+  ensureDebugsDir,
+  saveSession,
+  loadSession,
+  deleteSession,
+  listSessions,
+  findActiveSession,
+  appendSessionLog,
+  loadSessionLog,
+} from './debug/state.js';
+export {
+  detectLanguage,
+  generateLogStatement,
+  sessionToIndexEntry,
+  LOG_TEMPLATES,
+  EXTENSION_MAP,
+} from './debug/types.js';
+export type {
+  DebugSession,
+  DebugSessionStatus,
+  DebugLanguage,
+  Hypothesis,
+  HypothesisResult,
+  InstrumentedFile,
+  DebugSessionIndexEntry,
+} from './debug/types.js';
+
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
 export type { LinkRelation, MemoryType } from './storage/types.js';
