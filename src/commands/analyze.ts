@@ -26,6 +26,40 @@ interface Agent {
   prompt: string;
 }
 
+interface ProjectProfile {
+  languages: string[];
+  sourceExtensions: string[];
+  testPatterns: string[];
+  ignoreDirectories: string[];
+  projectFiles: string[];
+  entryPoints: string[];
+  keyFiles: string[];
+  systems: Array<{ name: string; keyFile: string; description: string }>;
+  features: Array<{ name: string; keyFile: string; description: string }>;
+}
+
+interface ProfileItem {
+  name: string;
+  keyFile: string;
+  description: string;
+}
+
+interface MultiPassOptions {
+  type: 'systems' | 'features';
+  projectName: string;
+  items: ProfileItem[];
+  callLLM: (prompt: string, context: string) => Promise<string>;
+  concurrency: number;
+  broadContext: string;
+  projectRoot: string;
+  onProgress: (completed: number, total: number, current: string) => void;
+}
+
+interface MultiPassResult {
+  succeeded: Array<{ name: string; content: string }>;
+  failed: Array<{ name: string; error: string }>;
+}
+
 /**
  * Analyze project and generate brain vault using Claude Code agents
  */
@@ -102,9 +136,23 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   // Ensure brain structure exists
   await ensureBrainStructure(brainDir, projectRoot);
 
-  // Define agents
+  // Pass 0: LLM project profiling
+  const profileSpinner = ora('Profiling project with LLM...').start();
+  let profile: ProjectProfile;
+  try {
+    profile = await profileProjectWithLLM(projectRoot, mode, fast);
+    profileSpinner.succeed(
+      `Profiled: ${profile.languages.join(', ')} — ${profile.systems.length} systems, ${profile.features.length} features`
+    );
+  } catch {
+    profile = getDefaultProfile();
+    profileSpinner.warn('LLM profiling failed, using fallback profile');
+  }
+  console.log('');
+
+  // Define agents (with profile for enriched prompts)
   const projectName = path.basename(projectRoot);
-  let agents = getAgents(brainDir, projectName, fast);
+  let agents = getAgents(brainDir, projectName);
 
   // Incremental analyze: skip agents whose outputs are still fresh
   const currentHead = getGitHead(projectRoot);
@@ -128,69 +176,141 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     }
   }
 
-  // Gather project context (used by all modes now)
+  // Pass 1: Gather context using profile
   writeProgress('gathering_context', 0, agents.length, 'Gathering project context');
-  const context = await gatherProjectContext(projectRoot, fast);
+  const context = await gatherProjectContext(projectRoot, profile, fast);
 
-  // Helper to save incremental state after successful run
-  const saveState = () => {
-    const newState: AnalyzeState = {
-      lastRun: new Date().toISOString(),
-      gitCommit: currentHead,
-      fileCount: 0,
-      agents: {},
-    };
-    // Merge with previous state for agents we skipped
-    if (prevState) {
-      Object.assign(newState.agents, prevState.agents);
-    }
-    // Update state for agents we just ran
-    for (const agent of agents) {
-      newState.agents[agent.name] = {
-        lastRun: new Date().toISOString(),
-        outputHash: hashFile(agent.outputPath),
-      };
-    }
-    saveAnalyzeState(succDir, newState);
-  };
-
-  // Run agents based on mode
+  // Run single-file agents based on mode
   if (mode === 'openrouter') {
     await runAgentsOpenRouter(agents, context, writeProgress, fast);
-    await generateIndexFiles(brainDir, projectName);
-    saveState();
-    writeProgress('completed', agents.length, agents.length);
-    console.log('\n✅ Brain vault generated!');
-    console.log(`\nNext steps:`);
-    console.log(`  1. Review generated docs in .succ/brain/`);
-    console.log(`  2. Run \`succ index\` to create embeddings`);
-    console.log(`  3. Open in Obsidian for graph view`);
-    return;
-  }
-
-  if (mode === 'local') {
+  } else if (mode === 'local') {
     await runAgentsLocal(agents, context, writeProgress, fast);
-    await generateIndexFiles(brainDir, projectName);
-    saveState();
-    writeProgress('completed', agents.length, agents.length);
-    console.log('\n✅ Brain vault generated!');
-    console.log(`\nNext steps:`);
-    console.log(`  1. Review generated docs in .succ/brain/`);
-    console.log(`  2. Run \`succ index\` to create embeddings`);
-    console.log(`  3. Open in Obsidian for graph view`);
-    return;
-  }
-
-  // Default: Use Claude Code CLI (with tools disabled, context passed in prompt)
-  if (parallel) {
-    await runAgentsParallel(agents, context);
   } else {
-    await runAgentsSequential(agents, context);
+    // Default: Claude Code CLI
+    if (parallel) {
+      await runAgentsParallel(agents, context);
+    } else {
+      await runAgentsSequential(agents, context);
+    }
   }
 
-  // Generate index files
+  // Multi-pass: individual API calls per system/feature (skipped in fast mode)
+  if (!fast && mode !== 'claude' && (profile.systems.length > 0 || profile.features.length > 0)) {
+    const concurrency = config.analyze_concurrency ?? 3;
+    const multiPassMaxTokens = config.analyze_max_tokens ?? 8192;
+    const callLLM = createLLMCaller(mode, multiPassMaxTokens);
+    // Reuse the LLM-guided context already gathered (profile-aware file tree + key files)
+    const broadContext = context;
+    const projectDir = path.join(brainDir, '01_Projects', projectName);
+
+    // Systems multi-pass
+    if (profile.systems.length > 0) {
+      const systemsDir = path.join(projectDir, 'Systems');
+      const systemsOverviewPath = path.join(systemsDir, 'Systems Overview.md');
+      fs.mkdirSync(systemsDir, { recursive: true });
+      cleanAgentSubfiles(systemsDir, systemsOverviewPath);
+
+      console.log(`\nSystems documentation (${profile.systems.length} systems, concurrency ${concurrency})...`);
+      const sysResults = await runMultiPassItems({
+        type: 'systems',
+        projectName,
+        items: profile.systems,
+        callLLM,
+        concurrency,
+        broadContext,
+        projectRoot,
+        onProgress: (done, total, name) => {
+          writeProgress('running', done, total, `system: ${name}`);
+          console.log(`  [${done}/${total}] ${name}`);
+        },
+      });
+
+      // Write individual system files
+      for (const item of sysResults.succeeded) {
+        const filePath = path.join(systemsDir, `${item.name}.md`);
+        fs.writeFileSync(filePath, item.content, 'utf-8');
+      }
+      // Write programmatic MOC
+      const mocItems = sysResults.succeeded.map(s => {
+        const orig = profile.systems.find(p => sanitizeFilename(p.name) === s.name);
+        return { name: s.name, description: orig?.description || '', keyFile: orig?.keyFile || '' };
+      });
+      fs.writeFileSync(systemsOverviewPath, buildMocContent('systems', projectName, mocItems), 'utf-8');
+
+      if (sysResults.failed.length > 0) {
+        console.log(`  ⚠ ${sysResults.failed.length} system(s) failed: ${sysResults.failed.map(f => f.name).join(', ')}`);
+      }
+      console.log(`  ${sysResults.succeeded.length}/${profile.systems.length} systems documented`);
+    }
+
+    // Features multi-pass
+    if (profile.features.length > 0) {
+      const featuresDir = path.join(projectDir, 'Features');
+      const featuresOverviewPath = path.join(featuresDir, 'Features Overview.md');
+      fs.mkdirSync(featuresDir, { recursive: true });
+      cleanAgentSubfiles(featuresDir, featuresOverviewPath);
+
+      console.log(`\nFeatures documentation (${profile.features.length} features, concurrency ${concurrency})...`);
+      const featResults = await runMultiPassItems({
+        type: 'features',
+        projectName,
+        items: profile.features,
+        callLLM,
+        concurrency,
+        broadContext,
+        projectRoot,
+        onProgress: (done, total, name) => {
+          writeProgress('running', done, total, `feature: ${name}`);
+          console.log(`  [${done}/${total}] ${name}`);
+        },
+      });
+
+      // Write individual feature files
+      for (const item of featResults.succeeded) {
+        const filePath = path.join(featuresDir, `${item.name}.md`);
+        fs.writeFileSync(filePath, item.content, 'utf-8');
+      }
+      // Write programmatic MOC
+      const mocItems = featResults.succeeded.map(f => {
+        const orig = profile.features.find(p => sanitizeFilename(p.name) === f.name);
+        return { name: f.name, description: orig?.description || '', keyFile: orig?.keyFile || '' };
+      });
+      fs.writeFileSync(featuresOverviewPath, buildMocContent('features', projectName, mocItems), 'utf-8');
+
+      if (featResults.failed.length > 0) {
+        console.log(`  ⚠ ${featResults.failed.length} feature(s) failed: ${featResults.failed.map(f => f.name).join(', ')}`);
+      }
+      console.log(`  ${featResults.succeeded.length}/${profile.features.length} features documented`);
+    }
+  }
+
+  // Update incremental state with multi-pass markers
+  const addMultiPassState = (state: AnalyzeState) => {
+    if (!fast && (profile.systems.length > 0 || profile.features.length > 0)) {
+      state.agents['systems-overview'] = { lastRun: new Date().toISOString(), outputHash: '' };
+      state.agents['features'] = { lastRun: new Date().toISOString(), outputHash: '' };
+    }
+  };
+
+  // Generate index files and save state
   await generateIndexFiles(brainDir, projectName);
-  saveState();
+  const newState: AnalyzeState = {
+    lastRun: new Date().toISOString(),
+    gitCommit: currentHead,
+    fileCount: 0,
+    agents: {},
+  };
+  if (prevState) {
+    Object.assign(newState.agents, prevState.agents);
+  }
+  for (const agent of agents) {
+    newState.agents[agent.name] = {
+      lastRun: new Date().toISOString(),
+      outputHash: hashFile(agent.outputPath),
+    };
+  }
+  addMultiPassState(newState);
+  saveAnalyzeState(succDir, newState);
 
   console.log('\n✅ Brain vault generated!');
   console.log(`\nNext steps:`);
@@ -199,12 +319,35 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   console.log(`  3. Open in Obsidian for graph view`);
 }
 
-function getAgents(brainDir: string, projectName: string, fast = false): Agent[] {
+function getAgents(brainDir: string, projectName: string): Agent[] {
   const projectDir = path.join(brainDir, '01_Projects', projectName);
 
-  // Helper for frontmatter
+  // Obsidian formatting guide — injected into every agent prompt
+  const obsidianGuide = [
+    'OUTPUT FORMAT: Obsidian-compatible markdown for a knowledge vault.',
+    '',
+    'Use these freely:',
+    '- **[[wikilinks]]** to link between docs (e.g. [[Architecture Overview]], [[Memory System]])',
+    '- **Mermaid diagrams** for architecture, data flows, sequences, class relations:',
+    '  ```mermaid',
+    '  graph TD',
+    '    A[CLI] --> B[MCP Server]',
+    '    B --> C[Storage]',
+    '  ```',
+    '- **ASCII art** for quick diagrams when Mermaid is overkill',
+    '- **Tables** for structured data (deps, configs, API params, comparisons)',
+    '- **Code blocks** with language tags (```typescript, ```bash)',
+    '- **Callouts**: > [!note], > [!warning], > [!tip]',
+    '- **Bold** for key terms, `inline code` for file paths and identifiers',
+    '',
+    'Be thorough and visual. Prefer diagrams over walls of text.',
+    'Reference REAL file paths from the codebase — never guess or hallucinate paths.',
+    '',
+  ].join('\n');
+
+  // Helper for frontmatter + obsidian guide
   const frontmatter = (desc: string, type: string = 'technical', rel: string = 'high') =>
-    `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: ${type}\nrelevance: ${rel}\n---\n\n`;
+    `Start with this YAML frontmatter:\n---\ndescription: "${desc}"\nproject: ${projectName}\ntype: ${type}\nrelevance: ${rel}\n---\n\n${obsidianGuide}`;
 
   const agents: Agent[] = [
     // Technical documentation
@@ -253,84 +396,6 @@ List important dependencies with: name, purpose, where used. Group by category.
 Output ONLY markdown.`,
     },
 
-    // Systems documentation - creates individual files for each detected system
-    {
-      name: 'systems-overview',
-      outputPath: path.join(projectDir, 'Systems', 'Systems Overview.md'),
-      prompt: `${frontmatter('Core systems and their interactions', 'systems')}Analyze this codebase and identify DISTINCT SYSTEMS/MODULES.
-
-Your task has TWO parts:
-
-## PART 1: Create Systems Overview (MOC)
-Create "# Systems Overview" as a Map of Content linking to individual system files.
-
-Format:
-\`\`\`
-# Systems Overview
-
-**Parent:** [[${projectName}]]
-
-## Core Systems
-
-| System | Description | Key Files |
-|--------|-------------|-----------|
-| [[Embedding System]] | Handles vector embeddings | embeddings.ts |
-| [[Database System]] | SQLite storage layer | db.js |
-...
-
-## System Interactions
-
-[Describe how systems interact with each other]
-\`\`\`
-
-## PART 2: Create Individual System Files
-After the MOC, output EACH system as a separate document using this delimiter:
-
-===FILE: {System Name}.md===
-
-Each system file should have:
-- YAML frontmatter with description, project: ${projectName}, type: system
-- Title matching filename
-- **Parent:** [[Systems Overview]]
-- Sections: Purpose, Key Components, Key Files, Dependencies, API/Interface
-
-Example output structure:
-\`\`\`
----
-description: "Core systems and their interactions"
-...
----
-
-# Systems Overview
-...table with [[wikilinks]]...
-
-===FILE: Embedding System.md===
----
-description: "Vector embedding generation and management"
-project: ${projectName}
-type: system
----
-
-# Embedding System
-
-**Parent:** [[Systems Overview]]
-
-## Purpose
-...
-
-===FILE: Database System.md===
----
-description: "SQLite storage layer"
-...
-\`\`\`
-
-IMPORTANT:
-- Only create files for systems that ACTUALLY EXIST in this codebase
-- Use [[wikilinks]] to link between systems
-- Each system file must start with ===FILE: {name}.md===
-- Output ONLY markdown, no explanations`,
-    },
-
     // Strategy (if business logic exists)
     {
       name: 'strategy',
@@ -349,95 +414,325 @@ Based on the codebase, describe:
 If this is a library/tool, focus on its use cases. Output ONLY markdown.`,
     },
 
-    // Features (from actual code) - creates individual files for major features
-    {
-      name: 'features',
-      outputPath: path.join(projectDir, 'Features', 'Features Overview.md'),
-      prompt: `${frontmatter('Implemented features and capabilities', 'features')}Analyze this codebase and identify MAJOR FEATURES.
-
-Your task has TWO parts:
-
-## PART 1: Create Features Overview (MOC)
-Create "# Features Overview" as a Map of Content linking to individual feature files.
-
-Format:
-\`\`\`
-# Features Overview
-
-**Parent:** [[${projectName}]]
-
-## Core Features
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| [[Memory System]] | Persistent semantic memory | Implemented |
-| [[Search]] | Vector similarity search | Implemented |
-...
-
-## Feature Categories
-
-- **Core**: Main functionality
-- **Integration**: External integrations
-- **CLI**: Command-line interface
-\`\`\`
-
-## PART 2: Create Individual Feature Files
-After the MOC, output MAJOR features as separate documents using this delimiter:
-
-===FILE: {Feature Name}.md===
-
-Each feature file should have:
-- YAML frontmatter with description, project: ${projectName}, type: feature
-- Title matching filename
-- **Parent:** [[Features Overview]]
-- Sections: Overview, Capabilities, Key Files, Usage Examples, Related Features
-
-Example:
-\`\`\`
----
-description: "Implemented features and capabilities"
-...
----
-
-# Features Overview
-...table with [[wikilinks]]...
-
-===FILE: Memory System.md===
----
-description: "Persistent semantic memory storage"
-project: ${projectName}
-type: feature
----
-
-# Memory System
-
-**Parent:** [[Features Overview]]
-
-## Overview
-...
-
-## Capabilities
-- Save observations, decisions, learnings
-- Semantic search across memories
-...
-\`\`\`
-
-IMPORTANT:
-- Only create files for MAJOR features (not every small function)
-- Group related small features into one file
-- Use [[wikilinks]] to link between features and systems
-- Each feature file must start with ===FILE: {name}.md===
-- Output ONLY markdown, no explanations`,
-    },
   ];
 
-  // Fast mode: skip the slowest multi-file agents
-  if (fast) {
-    const skipAgents = ['systems-overview', 'features'];
-    return agents.filter(a => !skipAgents.includes(a.name));
+  return agents;
+}
+
+// ─── Multi-pass helpers ─────────────────────────────────────────────
+
+/**
+ * Sanitize a profile item name into a safe filename.
+ * Replaces /\:*?"<>| with dashes, collapses runs, trims.
+ */
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[/\\:*?"<>|]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '')
+    .trim();
+}
+
+/**
+ * Programmatic MOC (Map of Content) for Systems Overview or Features Overview.
+ * No LLM call — deterministic, zero-cost.
+ */
+function buildMocContent(
+  type: 'systems' | 'features',
+  projectName: string,
+  items: Array<{ name: string; description: string; keyFile: string }>,
+): string {
+  const typeLabel = type === 'systems' ? 'Systems' : 'Features';
+  const typeSingular = type === 'systems' ? 'system' : 'feature';
+  const parentLink = type === 'systems'
+    ? `[[Architecture Overview]]`
+    : `[[${projectName}]]`;
+
+  const lines: string[] = [
+    '---',
+    `description: "${typeLabel} overview and map of content"`,
+    `project: ${projectName}`,
+    `type: ${type === 'systems' ? 'systems' : 'features'}`,
+    'relevance: high',
+    '---',
+    '',
+    `# ${typeLabel} Overview`,
+    '',
+    `**Parent:** ${parentLink}`,
+    '',
+  ];
+
+  if (items.length === 0) {
+    lines.push(`No ${type} documented yet.`);
+  } else {
+    lines.push(`| ${typeSingular[0].toUpperCase() + typeSingular.slice(1)} | Description | Key File |`);
+    lines.push('|--------|-------------|----------|');
+    for (const item of items) {
+      lines.push(`| [[${item.name}]] | ${item.description} | \`${item.keyFile}\` |`);
+    }
+    lines.push('');
+    if (type === 'systems') {
+      lines.push('See [[Architecture Overview]] for system interactions.');
+    } else {
+      lines.push(`See [[${projectName}]] for project overview.`);
+    }
   }
 
-  return agents;
+  lines.push('');
+  lines.push('---');
+  return lines.join('\n');
+}
+
+/**
+ * Build a focused LLM prompt for ONE system or feature.
+ * Each item gets its own API call with full token budget.
+ */
+function buildItemPrompt(
+  type: 'systems' | 'features',
+  projectName: string,
+  item: ProfileItem,
+): string {
+  const parentLink = type === 'systems'
+    ? '[[Systems Overview]]'
+    : '[[Features Overview]]';
+
+  const frontmatter = [
+    '---',
+    `description: "${item.description}"`,
+    `project: ${projectName}`,
+    `type: ${type === 'systems' ? 'system' : 'feature'}`,
+    'relevance: high',
+    '---',
+  ].join('\n');
+
+  const obsidianGuide = [
+    'OUTPUT FORMAT: Obsidian-compatible markdown.',
+    'Use [[wikilinks]] to link to other docs. Use ```mermaid for diagrams.',
+    'Use > [!note], > [!warning] for callouts.',
+  ].join('\n');
+
+  if (type === 'systems') {
+    return `You are documenting ONE system of a software project called "${projectName}".
+
+Write a detailed document for the "${item.name}" system.
+Key file: \`${item.keyFile}\`
+Description: ${item.description}
+
+Your output MUST start with this exact YAML frontmatter:
+${frontmatter}
+
+Then write:
+# ${item.name}
+
+**Parent:** ${parentLink}
+
+## Purpose
+What this system does and why it exists. 2-3 sentences minimum.
+
+## Key Components
+Bullet list of major modules/classes/files with brief descriptions.
+
+## Architecture
+A \`\`\`mermaid diagram (flowchart, sequence, or class) showing how components interact.
+
+## API / Interface
+Real function signatures or types from the key file. Use \`\`\`typescript code blocks.
+Show the ACTUAL exports and public API — do not invent signatures.
+
+## Dependencies
+Which other systems this depends on, using [[wikilinks]].
+
+DEPTH REQUIREMENT: 300-500 words minimum. Reference REAL file paths from the codebase.
+${obsidianGuide}
+
+Output ONLY the markdown document. No preamble, no explanations.`;
+  } else {
+    return `You are documenting ONE feature of a software project called "${projectName}".
+
+Write a detailed document for the "${item.name}" feature.
+Key file: \`${item.keyFile}\`
+Description: ${item.description}
+
+Your output MUST start with this exact YAML frontmatter:
+${frontmatter}
+
+Then write:
+# ${item.name}
+
+**Parent:** ${parentLink}
+
+## Overview
+What this feature does from the USER's perspective. 2-3 sentences minimum.
+
+## Capabilities
+Bullet list of what users can do with this feature.
+
+## Key Files
+Real file paths with brief descriptions of each file's role.
+
+## Usage Examples
+Real CLI commands, MCP tool calls, or API examples showing how to use this feature.
+Use \`\`\`bash or \`\`\`typescript code blocks.
+
+## Data Flow
+A \`\`\`mermaid diagram (flowchart or sequence) showing the processing pipeline.
+
+## Related Features
+Links to related features using [[wikilinks]].
+
+## Configuration
+Any config options, environment variables, or settings that affect this feature.
+
+DEPTH REQUIREMENT: 300-500 words minimum. Reference REAL file paths from the codebase.
+${obsidianGuide}
+
+Output ONLY the markdown document. No preamble, no explanations.`;
+  }
+}
+
+/**
+ * Targeted context for one system/feature: broad header + keyFile + siblings.
+ */
+function gatherItemContext(
+  projectRoot: string,
+  item: ProfileItem,
+  broadHeader: string,
+): string {
+  const parts: string[] = [broadHeader];
+
+  // Full keyFile content (up to 8000 chars)
+  if (item.keyFile) {
+    const keyFilePath = path.join(projectRoot, item.keyFile);
+    if (fs.existsSync(keyFilePath)) {
+      try {
+        const content = fs.readFileSync(keyFilePath, 'utf-8').slice(0, 8000);
+        parts.push(`## Key File: ${item.keyFile}\n\`\`\`\n${content}\n\`\`\`\n`);
+      } catch { /* skip unreadable */ }
+    }
+  }
+
+  // Up to 3 sibling files from the same directory (3000 chars each)
+  if (item.keyFile) {
+    const keyDir = path.dirname(path.join(projectRoot, item.keyFile));
+    if (fs.existsSync(keyDir)) {
+      try {
+        const siblings = fs.readdirSync(keyDir)
+          .filter(f => f !== path.basename(item.keyFile) && /\.(ts|js|py|rs|go|java|rb)$/i.test(f))
+          .slice(0, 3);
+        for (const sibling of siblings) {
+          const siblingPath = path.join(keyDir, sibling);
+          try {
+            const content = fs.readFileSync(siblingPath, 'utf-8').slice(0, 3000);
+            const relPath = path.relative(projectRoot, siblingPath).replace(/\\/g, '/');
+            parts.push(`## ${relPath}\n\`\`\`\n${content}\n\`\`\`\n`);
+          } catch { /* skip */ }
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Run multi-pass: individual API calls per system/feature with concurrency control.
+ */
+async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPassResult> {
+  const { type, projectName, items, callLLM, concurrency, broadContext, projectRoot, onProgress } = opts;
+  const succeeded: Array<{ name: string; content: string }> = [];
+  const failed: Array<{ name: string; error: string }> = [];
+
+  // Manual semaphore for concurrency control (queue of waiters)
+  let running = 0;
+  const waiters: Array<() => void> = [];
+
+  const acquireSlot = async () => {
+    if (running < concurrency) {
+      running++;
+      return;
+    }
+    await new Promise<void>(resolve => { waiters.push(resolve); });
+    running++;
+  };
+
+  const releaseSlot = () => {
+    running--;
+    if (waiters.length > 0) {
+      const next = waiters.shift()!;
+      next();
+    }
+  };
+
+  let completed = 0;
+  const total = items.length;
+
+  const processItem = async (item: ProfileItem) => {
+    await acquireSlot();
+
+    // 200ms stagger to avoid rate limiting bursts
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const safeName = sanitizeFilename(item.name);
+    const prompt = buildItemPrompt(type, projectName, item);
+    const context = gatherItemContext(projectRoot, item, broadContext);
+
+    let lastError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const raw = await callLLM(prompt, context);
+        if (!raw || raw.trim().length < 50) {
+          lastError = 'Empty or too-short response';
+          if (attempt === 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          continue;
+        }
+        const content = cleanMarkdownOutput(raw);
+        succeeded.push({ name: safeName, content });
+        completed++;
+        onProgress(completed, total, item.name);
+        releaseSlot();
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        if (attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    // Both attempts failed
+    failed.push({ name: safeName, error: lastError });
+    completed++;
+    onProgress(completed, total, `${item.name} (FAILED)`);
+    releaseSlot();
+  };
+
+  // Launch all items concurrently (semaphore controls actual parallelism)
+  await Promise.all(items.map(processItem));
+
+  return { succeeded, failed };
+}
+
+/**
+ * Factory: returns a callLLM function for the given mode.
+ */
+function createLLMCaller(
+  mode: 'openrouter' | 'local' | 'claude',
+  maxTokens: number,
+): (prompt: string, context: string) => Promise<string> {
+  return async (prompt: string, context: string) => {
+    const fullPrompt = `You are analyzing a software project. Here is the project context:\n\n${context}\n\n---\n\n${prompt}`;
+
+    if (mode === 'openrouter') {
+      return callOpenRouterRaw(fullPrompt, maxTokens);
+    } else if (mode === 'local') {
+      return callLocalRaw(fullPrompt, maxTokens);
+    } else {
+      // Claude CLI mode — use spawnClaudeCLI
+      return spawnClaudeCLI(fullPrompt);
+    }
+  };
 }
 
 async function runAgentsParallel(agents: Agent[], context: string): Promise<void> {
@@ -533,6 +828,42 @@ function parseMultiFileOutput(content: string, baseDir: string): Array<{ path: s
 }
 
 /**
+ * Clean old sub-files from a directory before writing new multi-file output.
+ * Prevents duplicates when different models produce different filenames.
+ * Keeps the overview file (agent's main outputPath) and non-analyze files.
+ */
+function cleanAgentSubfiles(outputDir: string, overviewPath: string): void {
+  if (!fs.existsSync(outputDir)) return;
+
+  const overviewName = path.basename(overviewPath).toLowerCase();
+  const entries = fs.readdirSync(outputDir);
+
+  for (const entry of entries) {
+    if (!entry.endsWith('.md')) continue;
+
+    // Skip the overview file itself — it gets overwritten
+    if (entry.toLowerCase() === overviewName) continue;
+
+    // Skip non-analyze files (decision exports, session logs, MOC stubs, manual docs)
+    const lowerEntry = entry.toLowerCase();
+    if (lowerEntry.startsWith('2026-') || lowerEntry.startsWith('2025-') ||
+        lowerEntry === 'sessions.md' || lowerEntry === 'decisions.md' ||
+        lowerEntry === 'technical.md' || lowerEntry === 'strategy.md') continue;
+
+    const filePath = path.join(outputDir, entry);
+    try {
+      // Only delete files with analyze-generated frontmatter (project + type fields)
+      const head = fs.readFileSync(filePath, 'utf-8').slice(0, 300);
+      if (head.startsWith('---') && /^project:\s/m.test(head) && /^type:\s/m.test(head)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // Skip files that can't be read
+    }
+  }
+}
+
+/**
  * Write agent output, handling multi-file outputs
  * Note: File writes are atomic (fs.writeFileSync), but we use lock
  * to prevent daemon from writing while CLI might be reading
@@ -544,6 +875,9 @@ async function writeAgentOutput(agent: Agent, content: string): Promise<void> {
 
     // Check if this is multi-file output
     if (content.includes('===FILE:')) {
+      // Clean old sub-files to prevent duplicates across model runs
+      cleanAgentSubfiles(outputDir, agent.outputPath);
+
       const files = parseMultiFileOutput(content, outputDir);
 
       for (const file of files) {
@@ -659,24 +993,29 @@ async function runAgentsOpenRouter(
     const spinner = ora(`${agent.name}`).start();
     const agentStart = Date.now();
 
+    // Multi-file agents (systems-overview, features) need more output tokens
+    const isMultiFile = agent.prompt.includes('===FILE:');
+    const agentMaxTokens = config.analyze_max_tokens
+      ?? (isMultiFile ? (fast ? 4096 : 32768) : (fast ? 2048 : 8192));
+
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${config.openrouter_api_key}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/cpz/succ',
+          'HTTP-Referer': 'https://github.com/vinaes/succ',
           'X-Title': 'succ',
         },
         body: JSON.stringify({
-          model: fast ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3.5-haiku',
+          model: config.analyze_model || (fast ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3.5-haiku'),
           messages: [
             {
               role: 'user',
               content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
             },
           ],
-          max_tokens: fast ? 2048 : 4096,
+          max_tokens: agentMaxTokens,
         }),
       });
 
@@ -688,7 +1027,7 @@ async function runAgentsOpenRouter(
       const data = (await response.json()) as {
         choices: Array<{ message: { content: string } }>;
       };
-      const content = data.choices[0]?.message?.content;
+      const content = data.choices?.[0]?.message?.content;
 
       if (content) {
         // Write output (handles both single and multi-file)
@@ -726,8 +1065,6 @@ async function runAgentsLocal(
   const apiUrl = config.analyze_api_url;
   const model = config.analyze_model;
   const temperature = config.analyze_temperature ?? 0.3;
-  const defaultMaxTokens = fast ? 2048 : 4096;
-  const maxTokens = config.analyze_max_tokens ?? defaultMaxTokens;
 
   if (!apiUrl) {
     console.error('Error: analyze_api_url not configured');
@@ -756,6 +1093,11 @@ async function runAgentsLocal(
     writeProgress('running', completed, agents.length, agent.name);
     const spinner = ora(`${agent.name}`).start();
     const agentStart = Date.now();
+
+    // Multi-file agents (systems-overview, features) need more output tokens
+    const isMultiFile = agent.prompt.includes('===FILE:');
+    const agentMaxTokens = config.analyze_max_tokens
+      ?? (isMultiFile ? (fast ? 4096 : 32768) : (fast ? 2048 : 8192));
 
     try {
       const headers: Record<string, string> = {
@@ -790,7 +1132,7 @@ async function runAgentsLocal(
             },
           ],
           temperature,
-          max_tokens: maxTokens,
+          max_tokens: agentMaxTokens,
           stream: false,
         }),
       });
@@ -803,7 +1145,7 @@ async function runAgentsLocal(
       const data = (await response.json()) as {
         choices: Array<{ message: { content: string } }>;
       };
-      const content = data.choices[0]?.message?.content;
+      const content = data.choices?.[0]?.message?.content;
 
       if (content) {
         // Write output (handles both single and multi-file)
@@ -828,42 +1170,372 @@ async function runAgentsLocal(
 }
 
 /**
- * Gather project context for OpenRouter analysis
+ * LLM-based project profiling (Pass 0).
+ * Sends the file tree to the LLM and gets back a structured profile:
+ * languages, extensions, entry points, systems, features.
  */
-async function gatherProjectContext(projectRoot: string, fast = false): Promise<string> {
-  const parts: string[] = [];
-
-  // Get file tree
-  const files = await glob('**/*.{ts,js,go,py,md,json}', {
+async function profileProjectWithLLM(
+  projectRoot: string,
+  mode: 'claude' | 'openrouter' | 'local',
+  fast: boolean,
+): Promise<ProjectProfile> {
+  // 1. Gather raw file tree (lightweight — only paths, no content)
+  const allFiles = await glob('**/*', {
     cwd: projectRoot,
-    ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/vendor/**'],
+    ignore: [
+      '**/node_modules/**', '**/.git/**', '**/dist/**', '**/.succ/**',
+      '**/vendor/**', '**/coverage/**', '**/__pycache__/**',
+      '**/target/**', '**/.next/**', '**/.cache/**',
+    ],
     nodir: true,
   });
 
-  const fileLimit = fast ? 20 : 50;
+  const treeLimit = fast ? 200 : 300;
+  const fileTree = allFiles.slice(0, treeLimit).join('\n');
+  const truncMsg = allFiles.length > treeLimit
+    ? `\n... and ${allFiles.length - treeLimit} more files` : '';
+
+  // 2. Build profiling prompt
+  const prompt = `Analyze this project's file tree and respond with ONLY valid JSON (no markdown, no explanation).
+
+## File Tree
+\`\`\`
+${fileTree}${truncMsg}
+\`\`\`
+
+Respond with this exact JSON structure:
+{
+  "languages": ["typescript", "javascript"],
+  "sourceExtensions": [".ts", ".js"],
+  "testPatterns": ["**/*.test.ts", "**/*.spec.ts", "**/*_test.go"],
+  "ignoreDirectories": ["node_modules", "dist", ".succ", "coverage"],
+  "projectFiles": ["package.json", "tsconfig.json", "README.md"],
+  "entryPoints": ["src/cli.ts", "src/index.ts"],
+  "keyFiles": ["src/lib/storage.ts", "src/mcp/server.ts"],
+  "systems": [
+    {"name": "Storage System", "keyFile": "src/lib/storage.ts", "description": "SQLite persistence layer"},
+    {"name": "Embedding System", "keyFile": "src/lib/embeddings.ts", "description": "Vector embeddings"}
+  ],
+  "features": [
+    {"name": "Memory System", "keyFile": "src/commands/memories.ts", "description": "Persistent semantic memory"},
+    {"name": "Hybrid Search", "keyFile": "src/lib/search.ts", "description": "BM25 + vector search"}
+  ]
+}
+
+Rules:
+- Be EXHAUSTIVE — identify EVERY distinct system/module and EVERY user-facing feature
+- Systems = internal modules/subsystems (storage, search, config, embedding, CLI, etc.)
+- Features = user-facing capabilities (commands, API endpoints, integrations)
+- keyFile = the most representative source file for that system/feature
+- testPatterns should use glob patterns with ** prefix
+- Do NOT include test files, build artifacts, or documentation in keyFiles
+- Respond ONLY with valid JSON — no markdown fences, no explanation
+- Use COMPACT JSON format (minimize whitespace) to save tokens`;
+
+  // 3. Call LLM based on mode (with retry for flaky free models)
+  let responseText = '';
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (mode === 'openrouter') {
+        responseText = await callOpenRouterRaw(prompt, 4096);
+      } else if (mode === 'local') {
+        responseText = await callLocalRaw(prompt, 4096);
+      } else {
+        responseText = await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 60000 });
+      }
+    } catch (err) {
+      if (attempt === maxRetries) console.warn(`⚠ LLM profiling call failed: ${err}`);
+    }
+    if (responseText) break;
+    if (attempt < maxRetries) {
+      await new Promise(r => setTimeout(r, 1000)); // brief pause before retry
+    }
+  }
+
+  if (!responseText) {
+    console.warn('⚠ LLM profiling returned empty response after retries');
+    return getDefaultProfile();
+  }
+
+  // 4. Parse JSON (robust extraction)
+  let jsonStr = '';
+
+  // Strategy 1: Extract from markdown fenced code block
+  const fenceMatch = responseText.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+  if (fenceMatch) {
+    jsonStr = fenceMatch[1].trim();
+  }
+
+  // Strategy 2: Find first { to last } (raw JSON object)
+  if (!jsonStr) {
+    const firstBrace = responseText.indexOf('{');
+    const lastBrace = responseText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      jsonStr = responseText.slice(firstBrace, lastBrace + 1);
+    }
+  }
+
+  // Strategy 3: Use cleaned response as-is
+  if (!jsonStr) {
+    jsonStr = responseText
+      .replace(/^```json?\s*\n?/i, '')
+      .replace(/\n?```\s*$/, '')
+      .trim();
+  }
+
+  // Try parse, then try repair if truncated
+  let parsed: ProjectProfile | null = null;
+  try {
+    parsed = JSON.parse(jsonStr) as ProjectProfile;
+  } catch {
+    // Attempt to repair truncated JSON by closing open brackets
+    const repaired = repairTruncatedJSON(jsonStr);
+    if (repaired) {
+      try {
+        parsed = JSON.parse(repaired) as ProjectProfile;
+        console.log('  (repaired truncated JSON)');
+      } catch { /* still broken */ }
+    }
+  }
+
+  if (parsed) {
+    // Validate required arrays exist
+    if (!Array.isArray(parsed.languages)) parsed.languages = ['unknown'];
+    if (!Array.isArray(parsed.sourceExtensions)) parsed.sourceExtensions = [];
+    if (!Array.isArray(parsed.testPatterns)) parsed.testPatterns = [];
+    if (!Array.isArray(parsed.ignoreDirectories)) parsed.ignoreDirectories = [];
+    if (!Array.isArray(parsed.projectFiles)) parsed.projectFiles = [];
+    if (!Array.isArray(parsed.entryPoints)) parsed.entryPoints = [];
+    if (!Array.isArray(parsed.keyFiles)) parsed.keyFiles = [];
+    if (!Array.isArray(parsed.systems)) parsed.systems = [];
+    if (!Array.isArray(parsed.features)) parsed.features = [];
+    return parsed;
+  }
+
+  console.warn('⚠ Could not parse LLM profile response, using fallback');
+  return getDefaultProfile();
+}
+
+function getDefaultProfile(): ProjectProfile {
+  return {
+    languages: ['unknown'],
+    sourceExtensions: ['.ts', '.js', '.py', '.go', '.rs', '.java', '.rb', '.php'],
+    testPatterns: ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**'],
+    ignoreDirectories: ['node_modules', 'dist', '.git', '.succ', 'vendor', 'coverage'],
+    projectFiles: ['package.json', 'README.md', 'go.mod', 'pyproject.toml', 'Cargo.toml'],
+    entryPoints: [],
+    keyFiles: [],
+    systems: [],
+    features: [],
+  };
+}
+
+/**
+ * Attempt to repair truncated JSON by closing open strings, arrays, and objects.
+ * Returns repaired string or null if beyond repair.
+ */
+function repairTruncatedJSON(json: string): string | null {
+  if (!json || !json.startsWith('{')) return null;
+
+  // Trim to last complete value boundary (after a comma, colon, or bracket)
+  let trimmed = json.replace(/,\s*$/, ''); // trailing comma
+  // Remove incomplete string value at the end (e.g., ..."descr)
+  trimmed = trimmed.replace(/,\s*"[^"]*$/, '');         // trailing incomplete key
+  trimmed = trimmed.replace(/:\s*"[^"]*$/, ': ""');      // truncated string value — close it
+  trimmed = trimmed.replace(/:\s*$/, ': null');           // colon with no value
+
+  // Count open brackets/braces and close them
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of trimmed) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') openBraces++;
+    if (ch === '}') openBraces--;
+    if (ch === '[') openBrackets++;
+    if (ch === ']') openBrackets--;
+  }
+
+  // Close unclosed brackets/braces
+  for (let i = 0; i < openBrackets; i++) trimmed += ']';
+  for (let i = 0; i < openBraces; i++) trimmed += '}';
+
+  return trimmed;
+}
+
+/**
+ * Raw OpenRouter API call (shared by profiling and agents)
+ */
+async function callOpenRouterRaw(prompt: string, maxTokens: number): Promise<string> {
+  const config = getConfig();
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.openrouter_api_key}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/vinaes/succ',
+      'X-Title': 'succ',
+    },
+    body: JSON.stringify({
+      model: config.analyze_model || 'anthropic/claude-3.5-haiku',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+  }
+  const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * Raw local LLM API call (shared by profiling and agents)
+ */
+async function callLocalRaw(prompt: string, maxTokens: number): Promise<string> {
+  const config = getConfig();
+  const apiUrl = config.analyze_api_url || 'http://localhost:11434/v1';
+  const completionUrl = apiUrl.endsWith('/v1')
+    ? `${apiUrl}/chat/completions`
+    : apiUrl.endsWith('/')
+      ? `${apiUrl}v1/chat/completions`
+      : `${apiUrl}/v1/chat/completions`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.analyze_api_key) {
+    headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+  }
+
+  const response = await fetch(completionUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: config.analyze_model || 'llama3',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Local LLM API error: ${response.status} - ${error}`);
+  }
+  const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * Gather project context using LLM-generated profile.
+ * Reads entry points, key files, and per-directory samples.
+ */
+async function gatherProjectContext(
+  projectRoot: string,
+  profile: ProjectProfile,
+  fast = false,
+): Promise<string> {
+  const parts: string[] = [];
+
+  // Header with detected info
+  parts.push(`## Project: ${path.basename(projectRoot)}`);
+  parts.push(`Languages: ${profile.languages.join(', ')}`);
+  if (profile.systems.length > 0) {
+    parts.push(`Identified systems: ${profile.systems.map(s => s.name).join(', ')}`);
+  }
+  if (profile.features.length > 0) {
+    parts.push(`Identified features: ${profile.features.map(f => f.name).join(', ')}`);
+  }
+  parts.push('');
+
+  // Build glob from detected extensions
+  const sourceGlobs = profile.sourceExtensions.map(ext => `**/*${ext}`);
+  const allGlobs = [...sourceGlobs, '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.toml'];
+
+  const ignorePatterns = [
+    ...profile.ignoreDirectories.map(d => `**/${d}/**`),
+    ...profile.testPatterns.map(p => p.startsWith('**/') ? p : `**/${p}`),
+    '**/*.d.ts',
+  ];
+
+  const files = await glob(allGlobs, {
+    cwd: projectRoot,
+    ignore: ignorePatterns,
+    nodir: true,
+  });
+
+  // Full file tree
+  const treeLimit = fast ? 100 : 500;
   parts.push('## File Structure\n```');
-  parts.push(files.slice(0, fileLimit).join('\n'));
-  if (files.length > fileLimit) parts.push(`... and ${files.length - fileLimit} more files`);
+  parts.push(files.slice(0, treeLimit).join('\n'));
+  if (files.length > treeLimit) parts.push(`... and ${files.length - treeLimit} more files`);
   parts.push('```\n');
 
-  // Read key files
-  const keyFiles = ['package.json', 'go.mod', 'pyproject.toml', 'Cargo.toml', 'README.md'];
-  for (const keyFile of keyFiles) {
+  // Read project files (package.json, README.md, etc.)
+  for (const keyFile of profile.projectFiles) {
     const filePath = path.join(projectRoot, keyFile);
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8').slice(0, 2000);
+      const content = fs.readFileSync(filePath, 'utf-8').slice(0, 3000);
       parts.push(`## ${keyFile}\n\`\`\`\n${content}\n\`\`\`\n`);
     }
   }
 
-  // Read a few source files
-  const sourceFileLimit = fast ? 3 : 5;
-  const truncateLimit = fast ? 1000 : 1500;
-  const sourceFiles = files.filter(f => f.endsWith('.ts') || f.endsWith('.go') || f.endsWith('.py')).slice(0, sourceFileLimit);
-  for (const sourceFile of sourceFiles) {
+  // Read LLM-identified entry points and key files first
+  const priorityFiles = [...new Set([...profile.entryPoints, ...profile.keyFiles])];
+  const selectedFiles: string[] = [];
+
+  for (const f of priorityFiles) {
+    const filePath = path.join(projectRoot, f);
+    if (fs.existsSync(filePath) && !selectedFiles.includes(f)) {
+      selectedFiles.push(f);
+    }
+  }
+
+  // Also read key files from identified systems/features
+  for (const sys of profile.systems) {
+    if (sys.keyFile && !selectedFiles.includes(sys.keyFile)) {
+      const filePath = path.join(projectRoot, sys.keyFile);
+      if (fs.existsSync(filePath)) selectedFiles.push(sys.keyFile);
+    }
+  }
+  for (const feat of profile.features) {
+    if (feat.keyFile && !selectedFiles.includes(feat.keyFile)) {
+      const filePath = path.join(projectRoot, feat.keyFile);
+      if (fs.existsSync(filePath)) selectedFiles.push(feat.keyFile);
+    }
+  }
+
+  // Fill remaining slots with broad directory coverage
+  const extSet = new Set(profile.sourceExtensions);
+  const sourceFiles = files.filter(f => extSet.has(path.extname(f)));
+  const dirMap = new Map<string, string[]>();
+  for (const f of sourceFiles) {
+    const dir = path.dirname(f);
+    if (!dirMap.has(dir)) dirMap.set(dir, []);
+    dirMap.get(dir)!.push(f);
+  }
+
+  const maxPerDir = fast ? 1 : 2;
+  const maxTotal = fast ? 15 : 40;
+  for (const [, dirFiles] of dirMap) {
+    for (const f of dirFiles.slice(0, maxPerDir)) {
+      if (!selectedFiles.includes(f) && selectedFiles.length < maxTotal) {
+        selectedFiles.push(f);
+      }
+    }
+  }
+
+  // Read selected source files
+  const charLimit = fast ? 1500 : 3000;
+  for (const sourceFile of selectedFiles) {
     const filePath = path.join(projectRoot, sourceFile);
-    const content = fs.readFileSync(filePath, 'utf-8').slice(0, truncateLimit);
-    parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8').slice(0, charLimit);
+      parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
+    } catch { /* skip unreadable */ }
   }
 
   return parts.join('\n');
@@ -1287,7 +1959,7 @@ CRITICAL FORMATTING RULES:
       const data = (await response.json()) as {
         choices: Array<{ message: { content: string } }>;
       };
-      content = data.choices[0]?.message?.content || null;
+      content = data.choices?.[0]?.message?.content || null;
     } else if (mode === 'openrouter') {
       const apiKey = config.openrouter_api_key;
       if (!apiKey) {
@@ -1323,7 +1995,7 @@ CRITICAL FORMATTING RULES:
       const data = (await response.json()) as {
         choices: Array<{ message: { content: string } }>;
       };
-      content = data.choices[0]?.message?.content || null;
+      content = data.choices?.[0]?.message?.content || null;
     } else {
       // Claude CLI mode (async — supports both process and ws transport)
       try {

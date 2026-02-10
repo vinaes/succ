@@ -140,7 +140,7 @@ async function generateViaOpenRouter(context: string, prompt: string): Promise<s
       headers: {
         Authorization: `Bearer ${config.openrouter_api_key}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/cpz/succ',
+        'HTTP-Referer': 'https://github.com/vinaes/succ',
         'X-Title': 'succ',
       },
       body: JSON.stringify({
