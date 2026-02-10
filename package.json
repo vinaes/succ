@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.2.20",
+  "version": "1.2.21",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "exports": {
@@ -67,6 +67,7 @@
     "is-installed-globally": "^1.0.0",
     "ora": "^9.1.0",
     "sqlite-vec": "^0.1.7-alpha.2",
+    "ws": "^8.19.0",
     "zod": "^3.25.76"
   },
   "optionalDependencies": {
@@ -78,6 +79,7 @@
     "@types/inquirer": "^9.0.9",
     "@types/node": "^20.0.0",
     "@types/pg": "^8.11.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",

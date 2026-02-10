@@ -57,7 +57,7 @@ export interface SuccConfig {
   chunk_overlap: number;
   // GPU acceleration settings
   gpu_enabled?: boolean;  // Enable GPU acceleration (auto-detect by default)
-  gpu_device?: 'cuda' | 'directml' | 'webgpu' | 'cpu';  // Preferred GPU backend
+  gpu_device?: 'cuda' | 'directml' | 'coreml' | 'webgpu' | 'cpu';  // Preferred GPU backend
   // Knowledge graph settings
   graph_auto_link?: boolean;  // Auto-link new memories to similar ones (default: true)
   graph_link_threshold?: number;  // Similarity threshold for auto-linking (default: 0.7)
@@ -202,6 +202,7 @@ export interface ChatLLMConfig {
 
 export interface LLMConfig {
   backend?: 'claude' | 'local' | 'openrouter';  // Default: 'local' (to avoid Claude CLI ToS issues)
+  claude_mode?: 'process' | 'ws';  // Claude transport: 'process' (spawn per call) or 'ws' (persistent WebSocket). Default: 'process'
   model?: string;  // Model name: 'haiku' for claude, 'qwen2.5:7b' for local, etc.
   local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
   openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')

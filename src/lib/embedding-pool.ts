@@ -1,8 +1,9 @@
 /**
  * Worker thread pool for parallel embedding generation.
  *
- * Each worker loads its own transformers.js pipeline,
+ * Each worker loads its own native ORT session (CPU, single-threaded),
  * enabling true CPU parallelism for embedding generation.
+ * Native ORT workers are ~80MB each (vs ~200MB for WASM pipeline).
  *
  * Usage:
  *   const pool = new EmbeddingPool({ poolSize: 4, model: 'Xenova/all-MiniLM-L6-v2' });
@@ -49,10 +50,10 @@ export class EmbeddingPool {
 
   constructor(config: EmbeddingPoolConfig) {
     this.model = config.model;
-    // Auto-tune: ~200MB per worker (model + inference buffers)
+    // Auto-tune: ~80MB per native ORT worker (model + inference buffers)
     const maxWorkers = config.maxWorkers ?? 8;
     const maxByCpu = Math.min(os.cpus().length - 1, maxWorkers);
-    const maxByMem = Math.min(maxWorkers, Math.max(1, Math.floor(os.freemem() / (200 * 1024 * 1024))));
+    const maxByMem = Math.min(maxWorkers, Math.max(1, Math.floor(os.freemem() / (80 * 1024 * 1024))));
     this.poolSize = config.poolSize ?? Math.min(maxByCpu, maxByMem);
     if (this.poolSize < 1) this.poolSize = 1;
 
