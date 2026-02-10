@@ -68,31 +68,86 @@ const DEFAULT_LLM_CONFIG: LLMConfig = {
 
 /**
  * Get Claude transport mode from config.
- * 'process' = spawn per call (default), 'ws' = persistent WebSocket.
+ * Reads: llm.transport → llm.claude.transport → 'process'
  */
 export function getClaudeMode(): 'process' | 'ws' {
   const config = getConfig();
-  return (config.llm?.claude_mode as 'process' | 'ws') || 'process';
+  const llm = config.llm;
+  if (!llm) return 'process';
+
+  // Top-level transport (when type=claude, transport applies directly)
+  if (llm.transport === 'ws' || llm.transport === 'process') return llm.transport;
+
+  // Per-backend override
+  if (llm.claude?.transport) return llm.claude.transport;
+
+  return 'process';
 }
 
 // ============================================================================
 // Config Loading
 // ============================================================================
 
+// Default models per backend type
+const DEFAULT_MODELS: Record<LLMBackend, string> = {
+  claude: 'haiku',
+  local: 'qwen2.5:7b',
+  openrouter: 'anthropic/claude-3-haiku',
+};
+
 /**
- * Get LLM config from succ config, with defaults
+ * Resolve model for a given backend type.
+ * Priority: llm.{type}.model → llm.model → hardcoded default per type
+ */
+function resolveModel(llmConfig: Record<string, unknown>, backendType: LLMBackend): string {
+  // Per-backend override (e.g., llm.claude.model, llm.local.model)
+  const perBackend = llmConfig[backendType] as { model?: string } | undefined;
+  if (perBackend?.model) return perBackend.model;
+
+  // Top-level model
+  if (llmConfig.model && typeof llmConfig.model === 'string') return llmConfig.model;
+
+  // Hardcoded default
+  return DEFAULT_MODELS[backendType];
+}
+
+/**
+ * Resolve local endpoint.
+ * Priority: llm.local.endpoint → default
+ */
+function resolveLocalEndpoint(llmConfig: Record<string, unknown>): string {
+  const localBlock = llmConfig.local as { endpoint?: string } | undefined;
+  if (localBlock?.endpoint) return localBlock.endpoint;
+  return DEFAULT_LLM_CONFIG.localEndpoint!;
+}
+
+/**
+ * Resolve openrouter model.
+ * Priority: llm.openrouter.model → resolveModel fallback
+ */
+function resolveOpenRouterModel(llmConfig: Record<string, unknown>): string {
+  const orBlock = llmConfig.openrouter as { model?: string } | undefined;
+  if (orBlock?.model) return orBlock.model;
+  return resolveModel(llmConfig, 'openrouter');
+}
+
+/**
+ * Get LLM config from succ config, with defaults.
  */
 export function getLLMConfig(): LLMConfig {
   const config = getConfig();
-  const llmConfig = config.llm || {};
+  const llmConfig = (config.llm || {}) as Record<string, unknown>;
+
+  // Resolve backend type: llm.type → default
+  const backendType = (llmConfig.type as LLMBackend) || DEFAULT_LLM_CONFIG.backend;
 
   return {
-    backend: (llmConfig.backend as LLMBackend) || DEFAULT_LLM_CONFIG.backend,
-    model: llmConfig.model || DEFAULT_LLM_CONFIG.model,
-    localEndpoint: llmConfig.local_endpoint || DEFAULT_LLM_CONFIG.localEndpoint,
-    openrouterModel: llmConfig.openrouter_model || DEFAULT_LLM_CONFIG.openrouterModel,
-    maxTokens: llmConfig.max_tokens || DEFAULT_LLM_CONFIG.maxTokens,
-    temperature: llmConfig.temperature || DEFAULT_LLM_CONFIG.temperature,
+    backend: backendType,
+    model: resolveModel(llmConfig, backendType),
+    localEndpoint: resolveLocalEndpoint(llmConfig),
+    openrouterModel: resolveOpenRouterModel(llmConfig),
+    maxTokens: (llmConfig.max_tokens as number) || DEFAULT_LLM_CONFIG.maxTokens,
+    temperature: (llmConfig.temperature as number) || DEFAULT_LLM_CONFIG.temperature,
   };
 }
 
@@ -225,8 +280,19 @@ export async function callLLM(
 }
 
 /**
+ * Resolve model for a specific backend during fallback.
+ * Uses per-backend config blocks: llm.local.model, llm.openrouter.model, llm.claude.model
+ */
+function resolveModelForBackend(backend: LLMBackend): string {
+  const config = getConfig();
+  const llmConfig = (config.llm || {}) as Record<string, unknown>;
+  return resolveModel(llmConfig, backend);
+}
+
+/**
  * Call LLM with fallback chain
- * Tries backends in order until one succeeds
+ * Tries backends in order until one succeeds.
+ * Each backend uses its own model from per-backend config blocks.
  */
 export async function callLLMWithFallback(
   prompt: string,
@@ -244,7 +310,9 @@ export async function callLLMWithFallback(
 
   for (const backend of orderedBackends) {
     try {
-      return await callLLM(prompt, options, { backend });
+      // Use per-backend model for fallback (e.g., llm.openrouter.model when falling back to openrouter)
+      const model = backend === preferred ? config.model : resolveModelForBackend(backend);
+      return await callLLM(prompt, options, { backend, model });
     } catch (err) {
       lastError = err as Error;
       console.warn(`[llm] ${backend} failed: ${lastError.message}`);
@@ -337,7 +405,7 @@ const CLAUDE_SPAWN_OPTIONS = {
 /**
  * Spawn Claude CLI asynchronously and return stdout.
  * Single source of truth for all async Claude CLI calls.
- * When claude_mode is 'ws', routes through persistent WebSocket transport.
+ * When transport is 'ws', routes through persistent WebSocket transport.
  */
 export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions): Promise<string> {
   // WebSocket mode — route through persistent connection

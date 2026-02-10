@@ -292,10 +292,11 @@ export class ClaudeWSTransport {
       '-p', '',
     ];
 
-    // WS mode always uses Claude API — use claude_ws_model or default to haiku.
-    // config.llm.model may be a local model (e.g. qwen) — not valid for Claude CLI.
+    // WS mode always uses Claude API — resolve model from config.
+    // Priority: llm.claude.model → llm.model → 'haiku'
     const config = getConfig();
-    const model = config.llm?.claude_ws_model || 'haiku';
+    const llm = config.llm || {};
+    const model = llm.claude?.model || llm.model || 'haiku';
     args.push('--model', model);
 
     this.cliProcess = spawn('claude', args, {
