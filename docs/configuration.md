@@ -42,9 +42,11 @@ No config needed! succ works out of the box with local embeddings.
   "embedding_api_url": "http://localhost:11434/v1/embeddings",
   "embedding_model": "nomic-embed-text",
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5-coder:14b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions"
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    }
   }
 }
 ```
@@ -79,6 +81,7 @@ Controls how text is converted to vectors for semantic search.
 | `embedding_local_concurrency` | number | 4 | Concurrent batches for local embeddings |
 | `embedding_worker_pool_enabled` | boolean | true | Use worker thread pool for local embeddings |
 | `embedding_worker_pool_size` | number | auto | Worker pool size (auto = based on CPU cores) |
+| `embedding_worker_pool_max` | number | 8 | Maximum worker pool size cap |
 | `embedding_cache_size` | number | 500 | Embedding LRU cache size |
 
 ### Default Models by Mode
@@ -262,10 +265,19 @@ Controls how documents are split for indexing.
 
 ## GPU Settings
 
+Native ONNX Runtime with automatic GPU detection. No manual setup needed — the best available backend is auto-detected per platform:
+
+| Platform | Backend | GPUs |
+|----------|---------|------|
+| Windows | DirectML | AMD, Intel, NVIDIA |
+| Linux | CUDA | NVIDIA |
+| macOS | CoreML | Apple Silicon |
+| Fallback | CPU | Any |
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `gpu_enabled` | boolean | true | Enable GPU acceleration |
-| `gpu_device` | `"cuda"` \| `"directml"` \| `"webgpu"` \| `"cpu"` | auto | Preferred backend |
+| `gpu_device` | `"cuda"` \| `"directml"` \| `"coreml"` \| `"cpu"` | auto | Override auto-detected backend |
 
 ---
 
@@ -278,24 +290,58 @@ Unified LLM configuration for all succ operations (analyze, idle reflection, ski
 ```json
 {
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5:7b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions",
-    "openrouter_model": "anthropic/claude-3-haiku",
-    "max_tokens": 2000,
-    "temperature": 0.3
+    "transport": "http",
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    },
+    "openrouter": {
+      "model": "anthropic/claude-3-haiku"
+    }
   }
 }
 ```
 
+### Core Options
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `llm.backend` | `"local"` \| `"openrouter"` \| `"claude"` | `"local"` | LLM provider |
-| `llm.model` | string | `"qwen2.5:7b"` | Model for local backend |
-| `llm.local_endpoint` | string | `"http://localhost:11434/v1/chat/completions"` | Ollama/local API URL |
-| `llm.openrouter_model` | string | `"anthropic/claude-3-haiku"` | Model for OpenRouter |
+| `llm.type` | `"local"` \| `"openrouter"` \| `"claude"` | `"local"` | LLM provider |
+| `llm.model` | string | per-type | Model for the active type |
+| `llm.transport` | `"process"` \| `"ws"` \| `"http"` | auto | Communication transport |
 | `llm.max_tokens` | number | 2000 | Max tokens per response |
 | `llm.temperature` | number | 0.3 | Generation temperature |
+
+### Per-Backend Overrides
+
+Used for the fallback chain and backend-specific settings:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `llm.local.endpoint` | string | `"http://localhost:11434/v1/chat/completions"` | Local LLM API URL |
+| `llm.local.model` | string | `"qwen2.5:7b"` | Model when falling back to local |
+| `llm.openrouter.model` | string | `"anthropic/claude-3-haiku"` | Model when falling back to OpenRouter |
+| `llm.claude.model` | string | `"haiku"` | Model when falling back to Claude |
+| `llm.claude.transport` | `"process"` \| `"ws"` | `"process"` | Transport override for Claude |
+
+### Default Models
+
+| Type | Default Model |
+|------|---------------|
+| `local` | `qwen2.5:7b` |
+| `openrouter` | `anthropic/claude-3-haiku` |
+| `claude` | `haiku` |
+
+Model resolution: `llm.{type}.model` → `llm.model` → default per type.
+
+### Transport Options
+
+| Transport | Auto-selected for | Description |
+|-----------|-------------------|-------------|
+| `http` | `local`, `openrouter` | Standard HTTP API calls |
+| `process` | `claude` (default) | Spawns Claude CLI process per request |
+| `ws` | `claude` (opt-in) | Persistent WebSocket to Claude CLI — faster for repeated calls |
 
 ### Backend Comparison
 
@@ -324,9 +370,11 @@ The `succ analyze` command uses the unified LLM backend configured in `llm.*`. T
 ```json
 {
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5:7b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions"
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    }
   }
 }
 ```
@@ -1091,7 +1139,7 @@ Use a separate LLM for background operations (idle reflection, memory consolidat
 ```json
 {
   "llm": {
-    "backend": "claude",
+    "type": "claude",
     "model": "sonnet"
   },
   "sleep_agent": {
@@ -1405,10 +1453,14 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
   "gpu_enabled": true,
 
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5:7b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions",
-    "openrouter_model": "anthropic/claude-3-haiku"
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    },
+    "openrouter": {
+      "model": "anthropic/claude-3-haiku"
+    }
   },
 
   "chat_llm": {

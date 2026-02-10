@@ -37,9 +37,11 @@ Add to `~/.succ/config.json`:
   "embedding_dimensions": 768,
 
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5:7b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions"
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    }
   },
 
   "analyze_mode": "local",
