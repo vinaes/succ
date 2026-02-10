@@ -1,6 +1,8 @@
 import { getConfig, getConfigWithOverride } from './config.js';
 import { createHash } from 'crypto';
 import os from 'os';
+import { NativeOrtSession } from './ort-session.js';
+import { detectExecutionProvider } from './ort-provider.js';
 
 // Track which GPU backend is being used
 let gpuBackend: string | null = null;
@@ -33,19 +35,20 @@ const API_TIMEOUT_MS = 30000;
 
 import { EmbeddingPool } from './embedding-pool.js';
 
-// Lazy-loaded local embedding pipeline
-let localPipeline: any = null;
+// Lazy-loaded native ORT session (replaces transformers.js WASM pipeline)
+let nativeSession: NativeOrtSession | null = null;
 
 // Worker pool for parallel local embeddings (lazy init)
 let embeddingPool: EmbeddingPool | null = null;
 let poolInitFailed = false; // Don't retry if pool init failed
 
 /**
- * Cleanup embedding pipeline and worker pool to free memory
+ * Cleanup embedding session and worker pool to free memory
  */
 export function cleanupEmbeddings(): void {
-  if (localPipeline) {
-    localPipeline = null;
+  if (nativeSession) {
+    nativeSession.dispose().catch(err => console.warn('[embeddings] Session dispose failed:', err));
+    nativeSession = null;
     embeddingCache.clear();
     // Hint GC if available
     if (global.gc) {
@@ -180,62 +183,41 @@ async function withRetry<T>(
 }
 
 /**
- * Get local embedding pipeline (lazy loaded)
- * Uses CPU by default. GPU can be enabled via config (webgpu only for now).
+ * Get native ORT session (lazy loaded)
+ * Auto-detects GPU provider per platform: DirectML (Windows), CoreML (macOS arm64),
+ * CUDA (Linux), CPU (all). Uses onnxruntime-node for 4-17x speedup over WASM.
  */
-async function getLocalPipeline() {
-  if (!localPipeline) {
-    const { pipeline } = await import('@huggingface/transformers');
+async function getNativeSession(): Promise<NativeOrtSession> {
+  if (!nativeSession) {
     const config = getConfigWithOverride();
 
-    // Use WebGPU only if explicitly requested in config
-    let device: 'webgpu' | 'cpu' = 'cpu';
-    if (config.gpu_enabled && config.gpu_device === 'webgpu') {
-      try {
-        if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-          const gpu = (navigator as any).gpu;
-          if (gpu) {
-            const adapter = await gpu.requestAdapter();
-            if (adapter) {
-              device = 'webgpu';
-            }
-          }
-        }
-      } catch {
-        // WebGPU not available
-      }
+    const providerResult = detectExecutionProvider(process.platform, {
+      gpu_enabled: config.gpu_enabled,
+      gpu_device: config.gpu_device,
+      arch: process.arch,
+    });
+
+    if (providerResult.warning) {
+      console.warn(`[embeddings] ${providerResult.warning}`);
     }
 
-    gpuBackend = device;
-    console.log(`Loading local embedding model: ${config.embedding_model} (${device.toUpperCase()})...`);
+    gpuBackend = providerResult.provider;
+    console.log(
+      `Loading native ORT session: ${config.embedding_model} ` +
+      `(${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})...`
+    );
+
+    nativeSession = new NativeOrtSession({
+      model: config.embedding_model,
+      providers: providerResult.fallbackChain,
+    });
 
     try {
-      localPipeline = await pipeline('feature-extraction', config.embedding_model, {
-        device,
-        dtype: device === 'webgpu' ? 'fp16' : 'fp32',
-      });
-      console.log('Model loaded.');
+      await nativeSession.init();
+      gpuBackend = nativeSession.provider;
+      console.log(`Model loaded (${nativeSession.provider}).`);
     } catch (error: unknown) {
-      // If WebGPU failed, retry with CPU
-      if (device === 'webgpu') {
-        console.log('WebGPU initialization failed, falling back to CPU...');
-        gpuBackend = 'cpu';
-        try {
-          localPipeline = await pipeline('feature-extraction', config.embedding_model, {
-            device: 'cpu',
-            dtype: 'fp32',
-          });
-          console.log('Model loaded (CPU fallback).');
-          return localPipeline;
-        } catch (cpuError: unknown) {
-          const message = cpuError instanceof Error ? cpuError.message : String(cpuError);
-          throw new Error(
-            `Failed to load embedding model '${config.embedding_model}'. ` +
-              `This may be due to network issues, disk space, or invalid model name. ` +
-              `Error: ${message}`
-          );
-        }
-      }
+      nativeSession = null;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to load embedding model '${config.embedding_model}'. ` +
@@ -244,7 +226,7 @@ async function getLocalPipeline() {
       );
     }
   }
-  return localPipeline;
+  return nativeSession;
 }
 
 /**
@@ -288,9 +270,10 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
 }
 
 /**
- * Get embeddings using local model (batch optimized)
+ * Get embeddings using local native ORT model (batch optimized)
  * For large batches (32+), uses worker thread pool for true CPU parallelism.
- * Falls back to single-thread processing for small batches or if pool unavailable.
+ * Native ORT workers are single-threaded — pool provides real parallel scaling.
+ * Falls back to main session for small batches or if pool unavailable.
  */
 async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
   const config = getConfigWithOverride();
@@ -304,63 +287,19 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
     return poolResult;
   }
 
-  const pipe = await getLocalPipeline();
+  const session = await getNativeSession();
 
-  // For single text, process directly
-  if (texts.length === 1) {
-    const output = await pipe(texts[0], { pooling: 'mean', normalize: true });
-    const embedding = Array.from(output.data as Float32Array);
-    validateEmbedding(embedding, config.embedding_model);
-    return [embedding];
-  }
-
-  // Batch processing - transformers.js supports arrays natively
-  // Process in smaller batches to avoid memory issues
-  // Use concurrent batch processing for better performance
-  const BATCH_SIZE = config.embedding_local_batch_size ?? 16;
-  const CONCURRENT_BATCHES = config.embedding_local_concurrency ?? 4;
-
-  // Split texts into batches
-  const batches: string[][] = [];
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    batches.push(texts.slice(i, i + BATCH_SIZE));
-  }
-
-  // Process batch helper
-  const processBatch = async (batch: string[], startIndex: number): Promise<number[][]> => {
-    const batchResults = await Promise.allSettled(
-      batch.map(async (text) => {
-        const output = await pipe(text, { pooling: 'mean', normalize: true });
-        return Array.from(output.data as Float32Array);
-      })
-    );
-
-    return batchResults.map((result, idx) => {
-      if (result.status === 'rejected') {
-        console.warn(`Failed to embed text at index ${startIndex + idx}: ${result.reason}`);
-        const expectedDim = getModelDimension(config.embedding_model) || 384;
-        return new Array(expectedDim).fill(0);
-      }
-      return result.value;
-    });
-  };
-
-  // Process batches concurrently
+  // Native ORT session handles batching internally
+  const BATCH_SIZE = config.embedding_local_batch_size ?? 64;
   const results: number[][] = [];
-  for (let i = 0; i < batches.length; i += CONCURRENT_BATCHES) {
-    const concurrentBatches = batches.slice(i, i + CONCURRENT_BATCHES);
-    const startIndices = concurrentBatches.map((_, idx) => (i + idx) * BATCH_SIZE);
 
-    const batchResults = await Promise.all(
-      concurrentBatches.map((batch, idx) => processBatch(batch, startIndices[idx]))
-    );
-
-    for (const batchResult of batchResults) {
-      results.push(...batchResult);
-    }
+  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+    const batch = texts.slice(i, i + BATCH_SIZE);
+    const embeddings = await session.embed(batch);
+    results.push(...embeddings);
   }
 
-  // Validate all embeddings (not just first)
+  // Validate all embeddings
   for (const embedding of results) {
     validateEmbedding(embedding, config.embedding_model);
   }

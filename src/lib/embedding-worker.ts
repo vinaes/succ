@@ -1,12 +1,13 @@
 /**
  * Worker thread for embedding generation.
- * Each worker loads its own transformers.js pipeline instance
- * for true CPU parallelism across OS threads.
+ * Each worker loads its own native ORT session instance
+ * with single-threaded CPU for true parallelism across OS threads.
  */
 
 import { parentPort } from 'worker_threads';
+import { NativeOrtSession } from './ort-session.js';
 
-let localPipeline: any = null;
+let session: NativeOrtSession | null = null;
 
 interface WorkerRequest {
   type: 'init' | 'embed' | 'shutdown';
@@ -20,36 +21,13 @@ interface WorkerResponse {
   error?: string;
 }
 
-async function initPipeline(model: string): Promise<void> {
-  const { pipeline } = await import('@huggingface/transformers');
-  localPipeline = await pipeline('feature-extraction', model, {
-    device: 'cpu',
-    dtype: 'fp32',
+async function initSession(model: string): Promise<void> {
+  session = new NativeOrtSession({
+    model,
+    providers: ['cpu'],
+    numThreads: 1, // Single-threaded per worker for true parallelism
   });
-}
-
-async function embedTexts(texts: string[]): Promise<number[][]> {
-  if (!localPipeline) throw new Error('Pipeline not initialized');
-  if (texts.length === 0) return [];
-
-  // Batch inference: pass array to pipeline for GPU/CPU-optimized processing
-  const output = await localPipeline(texts, { pooling: 'mean', normalize: true });
-
-  // Extract individual embeddings from batched output
-  const results: number[][] = [];
-  if (texts.length === 1) {
-    // Single text: output.data is the embedding directly
-    results.push(Array.from(output.data as Float32Array));
-  } else {
-    // Batch: output is a Tensor with shape [batchSize, embedDim]
-    const data = output.data as Float32Array;
-    const embedDim = output.dims[output.dims.length - 1];
-    for (let i = 0; i < texts.length; i++) {
-      const start = i * embedDim;
-      results.push(Array.from(data.slice(start, start + embedDim)));
-    }
-  }
-  return results;
+  await session.init();
 }
 
 if (parentPort) {
@@ -59,17 +37,21 @@ if (parentPort) {
     try {
       switch (msg.type) {
         case 'init':
-          await initPipeline(msg.model!);
+          await initSession(msg.model!);
           port.postMessage({ type: 'ready' } as WorkerResponse);
           break;
 
         case 'embed':
-          const embeddings = await embedTexts(msg.texts!);
+          if (!session) throw new Error('Session not initialized');
+          const embeddings = await session.embed(msg.texts || []);
           port.postMessage({ type: 'result', embeddings } as WorkerResponse);
           break;
 
         case 'shutdown':
-          localPipeline = null;
+          if (session) {
+            await session.dispose();
+            session = null;
+          }
           process.exit(0);
           break;
       }
