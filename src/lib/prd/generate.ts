@@ -8,7 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { callLLM } from '../llm.js';
+import { callLLMWithFallback } from '../llm.js';
 import { getProjectRoot, getConfig } from '../config.js';
 import type { QualityGatesConfig } from '../config.js';
 import { PRD_GENERATE_PROMPT } from '../../prompts/prd.js';
@@ -313,7 +313,7 @@ export async function generatePrd(
     .replace('{description}', description);
 
   // 3. Call LLM to generate PRD markdown
-  const markdown = await callLLM(prompt, {
+  const markdown = await callLLMWithFallback(prompt, {
     maxTokens: 6000,
     temperature: 0.5,
     timeout: 120_000,  // PRD generation needs more time than default 30s

@@ -5,7 +5,7 @@
  * Enriches the LLM prompt with real codebase context before parsing.
  */
 
-import { callLLM } from '../llm.js';
+import { callLLM, callLLMWithFallback, getLLMConfig } from '../llm.js';
 import { PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
@@ -64,17 +64,50 @@ export async function parsePrd(
     .replace('{codebase_context}', contextStr)
     .replace('{prd_content}', prdContent);
 
-  // 3. Call LLM
-  const response = await callLLM(prompt, {
+  const llmOpts = {
     maxTokens: 8000,
     temperature: 0.2,  // Low temperature for structured output
     timeout: 120_000,  // Parsing needs more time than default 30s
-  });
+  };
+
+  // 3. Call LLM (with backend fallback on transport errors)
+  let response = await callLLMWithFallback(prompt, llmOpts);
 
   // 4. Extract JSON from response
-  const rawTasks = extractJson(response);
+  let rawTasks = extractJson(response);
+
+  // 4b. Retry once with corrective prompt if extraction failed
   if (!rawTasks) {
-    throw new Error('Failed to parse LLM response as JSON task array. Response:\n' + response.slice(0, 500));
+    console.warn('[prd-parse] JSON extraction failed, retrying with corrective prompt...');
+    const retryPrompt = `Your previous response was not valid JSON. Here is what you returned:
+
+${response.slice(0, 1000)}
+
+Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, no explanation, no prose. Each element must have: sequence, title, description, priority, depends_on, acceptance_criteria, files_to_modify, relevant_files.`;
+
+    response = await callLLMWithFallback(retryPrompt, llmOpts);
+    rawTasks = extractJson(response);
+  }
+
+  // 4c. If local LLM can't produce JSON, escalate to a stronger backend
+  if (!rawTasks) {
+    const currentBackend = getLLMConfig().backend;
+    const escalateBackends = ['openrouter', 'claude'].filter(b => b !== currentBackend) as Array<'openrouter' | 'claude'>;
+
+    for (const backend of escalateBackends) {
+      try {
+        console.warn(`[prd-parse] Escalating to ${backend} backend for JSON parsing...`);
+        response = await callLLM(prompt, llmOpts, { backend });
+        rawTasks = extractJson(response);
+        if (rawTasks) break;
+      } catch {
+        // Backend unavailable — try next
+      }
+    }
+  }
+
+  if (!rawTasks) {
+    throw new Error('Failed to parse LLM response as JSON task array after retry. Response:\n' + response.slice(0, 500));
   }
 
   // 5. Validate and normalize
@@ -91,38 +124,85 @@ export async function parsePrd(
 // ============================================================================
 
 /**
+ * Try to parse a value as a RawTask array.
+ * Handles both direct arrays and object wrappers like {"tasks": [...]}.
+ */
+function asTaskArray(parsed: unknown): RawTask[] | null {
+  if (Array.isArray(parsed)) return parsed;
+  // Object wrapper — find the first array value
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const values = Object.values(parsed as Record<string, unknown>);
+    const arr = values.find(v => Array.isArray(v));
+    if (arr) return arr as RawTask[];
+  }
+  return null;
+}
+
+/**
+ * Fix common JSON malformations from local LLMs:
+ * - Trailing commas before ] or }
+ * - Single-line // comments
+ */
+function fixMalformedJson(text: string): string {
+  // Remove single-line // comments that appear outside of JSON strings.
+  // Only strip // that follows whitespace, comma, or line start — avoids breaking URLs.
+  let fixed = text.replace(/^(\s*)\/\/[^\n]*/gm, '');  // Line-start comments
+  fixed = fixed.replace(/,(\s*)\/\/[^\n]*/g, ',');      // After-comma comments
+  // Remove trailing commas before ] or }
+  fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+  return fixed;
+}
+
+/**
+ * Try to JSON.parse text, with malformation fix as fallback.
+ */
+function tryParse(text: string): unknown | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Try with malformation fixes
+    try {
+      return JSON.parse(fixMalformedJson(text));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Extract a JSON array from LLM response.
- * Handles responses wrapped in markdown code blocks.
+ * Handles: direct JSON, markdown code blocks, object wrappers,
+ * trailing commas, and embedded arrays in prose.
  */
 function extractJson(response: string): RawTask[] | null {
-  // Try direct parse first
-  try {
-    const parsed = JSON.parse(response.trim());
-    if (Array.isArray(parsed)) return parsed;
-  } catch {
-    // Continue to fallback
+  const trimmed = response.trim();
+
+  // Strategy 1: Direct parse
+  const direct = tryParse(trimmed);
+  if (direct) {
+    const arr = asTaskArray(direct);
+    if (arr) return arr;
   }
 
-  // Try extracting from markdown code block
-  const codeBlockMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  // Strategy 2: Extract from markdown code block
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
-    try {
-      const parsed = JSON.parse(codeBlockMatch[1].trim());
-      if (Array.isArray(parsed)) return parsed;
-    } catch {
-      // Continue to next fallback
+    const blockContent = tryParse(codeBlockMatch[1].trim());
+    if (blockContent) {
+      const arr = asTaskArray(blockContent);
+      if (arr) return arr;
     }
   }
 
-  // Try finding array in response (first [ to last ])
-  const firstBracket = response.indexOf('[');
-  const lastBracket = response.lastIndexOf(']');
+  // Strategy 3: Find array in response (first [ to last ])
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
   if (firstBracket >= 0 && lastBracket > firstBracket) {
-    try {
-      const parsed = JSON.parse(response.slice(firstBracket, lastBracket + 1));
-      if (Array.isArray(parsed)) return parsed;
-    } catch {
-      // Give up
+    const slice = trimmed.slice(firstBracket, lastBracket + 1);
+    const sliceContent = tryParse(slice);
+    if (sliceContent) {
+      const arr = asTaskArray(sliceContent);
+      if (arr) return arr;
     }
   }
 
