@@ -296,6 +296,31 @@ No API key required. Uses local embeddings by default.
 </details>
 
 <details>
+<summary>GPU acceleration</summary>
+
+succ uses native ONNX Runtime for embedding inference with automatic GPU detection:
+
+| Platform | Backend | GPUs |
+|----------|---------|------|
+| Windows | DirectML | AMD, Intel, NVIDIA |
+| Linux | CUDA | NVIDIA |
+| macOS | CoreML | Apple Silicon |
+| Fallback | CPU | Any |
+
+GPU is enabled by default. No manual configuration needed — the best available backend is auto-detected.
+
+```json
+{
+  "gpu_enabled": true,
+  "gpu_device": "directml"
+}
+```
+
+Set `gpu_device` to override auto-detection: `cuda`, `directml`, `coreml`, or `cpu`.
+
+</details>
+
+<details>
 <summary>Idle watcher</summary>
 
 ```json
@@ -396,19 +421,51 @@ succ supports multiple LLM backends for operations like analyze, idle reflection
 ```json
 {
   "llm": {
-    "backend": "local",
+    "type": "local",
     "model": "qwen2.5:7b",
-    "local_endpoint": "http://localhost:11434/v1/chat/completions",
-    "openrouter_model": "anthropic/claude-3-haiku"
+    "local": {
+      "endpoint": "http://localhost:11434/v1/chat/completions"
+    },
+    "openrouter": {
+      "model": "anthropic/claude-3-haiku"
+    }
   }
 }
 ```
 
-| Backend | Description | Requirements |
-|---------|-------------|--------------|
-| `local` | Ollama or OpenAI-compatible server (default) | Local server running |
-| `openrouter` | OpenRouter API | `OPENROUTER_API_KEY` env var |
-| `claude` | Claude Code CLI | Active Claude Code session |
+| Key | Values | Default | Description |
+|-----|--------|---------|-------------|
+| `llm.type` | `local` / `openrouter` / `claude` | `local` | LLM provider |
+| `llm.model` | string | per-type | Model name for the active type |
+| `llm.transport` | `process` / `ws` / `http` | auto | How to talk to the backend |
+
+**Transport** auto-selects based on type: `claude` uses `process` (or `ws` for persistent WebSocket), `local`/`openrouter` use `http`.
+
+**WebSocket transport** (`transport: "ws"`) keeps a persistent connection to Claude CLI, avoiding process spawn overhead on repeated calls:
+
+```json
+{
+  "llm": {
+    "type": "claude",
+    "model": "sonnet",
+    "transport": "ws"
+  }
+}
+```
+
+**Per-backend model overrides** for the fallback chain:
+
+```json
+{
+  "llm": {
+    "type": "claude",
+    "model": "sonnet",
+    "transport": "ws",
+    "local": { "endpoint": "http://localhost:11434/v1/chat/completions", "model": "qwen2.5:7b" },
+    "openrouter": { "model": "anthropic/claude-3-haiku" }
+  }
+}
+```
 
 > Claude backend usage
 
