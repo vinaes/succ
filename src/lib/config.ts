@@ -203,6 +203,7 @@ export interface ChatLLMConfig {
 export interface LLMConfig {
   backend?: 'claude' | 'local' | 'openrouter';  // Default: 'local' (to avoid Claude CLI ToS issues)
   claude_mode?: 'process' | 'ws';  // Claude transport: 'process' (spawn per call) or 'ws' (persistent WebSocket). Default: 'process'
+  claude_ws_model?: string;  // Model for WS mode Claude CLI (default: 'haiku'). Separate from llm.model which may be a local model.
   model?: string;  // Model name: 'haiku' for claude, 'qwen2.5:7b' for local, etc.
   local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
   openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')

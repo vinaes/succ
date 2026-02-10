@@ -150,3 +150,44 @@ export class LoopExecutor implements AgentExecutor {
     }
   }
 }
+
+// ============================================================================
+// WebSocket Executor (claude --sdk-url, persistent connection)
+// ============================================================================
+
+/**
+ * Executes tasks via WebSocket transport to Claude CLI.
+ * Uses the persistent ClaudeWSTransport singleton — no process-per-call overhead.
+ *
+ * Protocol based on reverse-engineering by The-Vibe-Company/companion:
+ * https://github.com/The-Vibe-Company/companion
+ */
+export class WSExecutor implements AgentExecutor {
+  async execute(prompt: string, options: ExecuteOptions): Promise<ExecuteResult> {
+    const start = Date.now();
+    try {
+      const { ClaudeWSTransport } = await import('../claude-ws-transport.js');
+      const transport = await ClaudeWSTransport.getInstance();
+      const output = await transport.send(prompt, {
+        timeout: options.timeout_ms,
+      });
+      return {
+        success: true,
+        output,
+        duration_ms: Date.now() - start,
+        exit_code: 0,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        output: err instanceof Error ? err.message : String(err),
+        duration_ms: Date.now() - start,
+        exit_code: 1,
+      };
+    }
+  }
+
+  abort(): void {
+    // Future: send interrupt control_request via ClaudeWSTransport
+  }
+}
