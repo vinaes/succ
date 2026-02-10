@@ -136,7 +136,6 @@ export interface IndexDocFileResult {
 export async function indexDocFile(filePath: string, options: { force?: boolean } = {}): Promise<IndexDocFileResult> {
   const { force = false } = options;
   const projectRoot = getProjectRoot();
-  const claudeDir = getClaudeDir();
   const absolutePath = path.resolve(filePath);
 
   // Check file exists
@@ -159,14 +158,9 @@ export async function indexDocFile(filePath: string, options: { force?: boolean 
   const content = fs.readFileSync(absolutePath, 'utf-8');
   const contentHash = computeHash(content);
 
-  // Get relative path for storage (relative to brain dir if inside, else project root)
-  const brainDir = path.join(claudeDir, 'brain');
-  let relativePath: string;
-  if (absolutePath.startsWith(brainDir)) {
-    relativePath = path.relative(brainDir, absolutePath);
-  } else {
-    relativePath = path.relative(projectRoot, absolutePath);
-  }
+  // Get relative path for storage — always relative to project root
+  // (must match runIndexer and getStaleFiles which resolve from projectRoot)
+  const relativePath = path.relative(projectRoot, absolutePath);
 
   // Check if file already indexed with same hash
   if (!force) {
