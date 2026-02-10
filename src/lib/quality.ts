@@ -324,7 +324,7 @@ export async function scoreWithOpenRouter(
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://github.com/anthropics/succ',
+        'HTTP-Referer': 'https://github.com/vinaes/succ',
         'X-Title': 'succ - Memory Quality Scoring',
       },
       body: JSON.stringify({

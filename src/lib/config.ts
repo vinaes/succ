@@ -71,6 +71,7 @@ export interface SuccConfig {
   analyze_model?: string;  // Model name for local/openrouter (e.g., qwen2.5-coder:32b, deepseek-coder-v2)
   analyze_temperature?: number;  // Temperature for generation (default: 0.3)
   analyze_max_tokens?: number;  // Max tokens per response (default: 4096)
+  analyze_concurrency?: number;  // Concurrent API calls for multi-pass systems/features (default: 3)
   // Quality scoring settings
   quality_scoring_enabled?: boolean;  // Enable quality scoring for memories (default: true)
   quality_scoring_mode?: 'local' | 'custom' | 'openrouter';  // local = ONNX, custom = Ollama/LM Studio, openrouter = API

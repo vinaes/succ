@@ -322,7 +322,7 @@ async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
       headers: {
         Authorization: `Bearer ${config.openrouter_api_key}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/cpz/succ',
+        'HTTP-Referer': 'https://github.com/vinaes/succ',
         'X-Title': 'succ',
       },
       body: JSON.stringify({
