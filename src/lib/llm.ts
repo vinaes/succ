@@ -4,6 +4,8 @@
  * Provides a consistent interface for calling LLMs across succ.
  * Supports three backends:
  * - claude: Claude Code CLI (requires Claude Code subscription)
+ *   - process mode (default): spawns a new CLI process per call
+ *   - ws mode: persistent WebSocket connection via --sdk-url (no process-per-call overhead)
  * - local: Ollama or any OpenAI-compatible local server
  * - openrouter: OpenRouter API (requires OPENROUTER_API_KEY)
  *
@@ -15,6 +17,7 @@ import spawn from 'cross-spawn';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
 import { getConfig } from './config.js';
+import { ClaudeWSTransport } from './claude-ws-transport.js';
 
 // ============================================================================
 // Types
@@ -58,6 +61,19 @@ const DEFAULT_LLM_CONFIG: LLMConfig = {
   maxTokens: 2000,
   temperature: 0.3,
 };
+
+// ============================================================================
+// Claude Mode (process vs ws)
+// ============================================================================
+
+/**
+ * Get Claude transport mode from config.
+ * 'process' = spawn per call (default), 'ws' = persistent WebSocket.
+ */
+export function getClaudeMode(): 'process' | 'ws' {
+  const config = getConfig();
+  return (config.llm?.claude_mode as 'process' | 'ws') || 'process';
+}
 
 // ============================================================================
 // Config Loading
@@ -270,7 +286,12 @@ export async function callLLMChat(
 
   switch (config.backend) {
     case 'claude':
-      // Claude CLI doesn't support multi-turn, concatenate messages
+      if (getClaudeMode() === 'ws') {
+        // WebSocket mode — native multi-turn, no message concatenation
+        const transport = await ClaudeWSTransport.getInstance();
+        return transport.sendChat(messages, { model: config.model, timeout });
+      }
+      // Process mode — CLI doesn't support multi-turn, concatenate messages
       const prompt = messages
         .map((m) => (m.role === 'system' ? `System: ${m.content}` : m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
         .join('\n\n');
@@ -316,8 +337,19 @@ const CLAUDE_SPAWN_OPTIONS = {
 /**
  * Spawn Claude CLI asynchronously and return stdout.
  * Single source of truth for all async Claude CLI calls.
+ * When claude_mode is 'ws', routes through persistent WebSocket transport.
  */
-export function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions): Promise<string> {
+export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions): Promise<string> {
+  // WebSocket mode — route through persistent connection
+  if (getClaudeMode() === 'ws') {
+    const transport = await ClaudeWSTransport.getInstance();
+    return transport.send(prompt, {
+      model: options?.model,
+      timeout: options?.timeout,
+    });
+  }
+
+  // Process mode — spawn per call (default)
   const timeout = options?.timeout ?? 60000;
   const args = buildClaudeArgs(options);
 

@@ -13,8 +13,9 @@
 
 import { execSync } from 'child_process';
 import { getProjectRoot } from '../config.js';
-import { LoopExecutor } from './executor.js';
+import { LoopExecutor, WSExecutor } from './executor.js';
 import type { ExecuteOptions } from './executor.js';
+import { getClaudeMode } from '../llm.js';
 import { topologicalSort, allDependenciesMet, validateTaskGraph } from './scheduler.js';
 import { runAllGates, allRequiredPassed, formatGateResults } from './gates.js';
 import { gatherTaskContext } from './context.js';
@@ -308,7 +309,7 @@ export async function runPrd(
       });
     } else {
     // Sequential execution (loop mode)
-    const executor = new LoopExecutor();
+    const executor = getClaudeMode() === 'ws' ? new WSExecutor() : new LoopExecutor();
     for (let iteration = 1; iteration <= execution.max_iterations; iteration++) {
       execution.iteration = iteration;
       saveExecution(execution);
@@ -438,7 +439,7 @@ async function executeTask(
   prd: Prd,
   allTasks: Task[],
   execution: PrdExecution,
-  executor: LoopExecutor,
+  executor: LoopExecutor | WSExecutor,
   model: string,
   root: string,
   prdId: string,

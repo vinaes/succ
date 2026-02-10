@@ -9,8 +9,9 @@
  * - Deadlock detection and critical task abort
  */
 
-import { LoopExecutor } from './executor.js';
+import { LoopExecutor, WSExecutor } from './executor.js';
 import type { ExecuteOptions, ExecuteResult } from './executor.js';
+import { getClaudeMode } from '../llm.js';
 import { allDependenciesMet } from './scheduler.js';
 import { runAllGates, allRequiredPassed, formatGateResults } from './gates.js';
 import { gatherTaskContext } from './context.js';
@@ -48,7 +49,7 @@ export interface TeamRunOptions {
 
 export interface RunningTask {
   task: Task;
-  executor: LoopExecutor;
+  executor: LoopExecutor | WSExecutor;
   promise: Promise<WorkerResult>;
   worktreePath: string;
 }
@@ -241,7 +242,7 @@ function dispatchTask(
   task.attempts.push(taskAttempt);
 
   // Spawn executor — context gathering happens synchronously before spawn
-  const executor = new LoopExecutor();
+  const executor = getClaudeMode() === 'ws' ? new WSExecutor() : new LoopExecutor();
 
   // Build a promise that gathers context, builds prompt, then executes
   const promise = (async (): Promise<WorkerResult> => {

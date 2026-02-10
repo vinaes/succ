@@ -1325,10 +1325,10 @@ CRITICAL FORMATTING RULES:
       };
       content = data.choices[0]?.message?.content || null;
     } else {
-      // Claude CLI mode
+      // Claude CLI mode (async — supports both process and ws transport)
       try {
-        const { spawnClaudeCLISync } = await import('../lib/llm.js');
-        content = spawnClaudeCLISync(prompt, { tools: '', model: 'haiku', timeout: 120000 }) || null;
+        const { spawnClaudeCLI } = await import('../lib/llm.js');
+        content = await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 120000 }) || null;
       } catch (err: any) {
         return { success: false, error: err.message };
       }
