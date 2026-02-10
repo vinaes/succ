@@ -13,3 +13,7 @@ dist/
 
 # Docker volumes (local data)
 docker/data/
+
+# Build/tool caches
+.cache/
+nul
