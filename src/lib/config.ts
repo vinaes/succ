@@ -201,14 +201,31 @@ export interface ChatLLMConfig {
 }
 
 export interface LLMConfig {
-  backend?: 'claude' | 'local' | 'openrouter';  // Default: 'local' (to avoid Claude CLI ToS issues)
-  claude_mode?: 'process' | 'ws';  // Claude transport: 'process' (spawn per call) or 'ws' (persistent WebSocket). Default: 'process'
-  claude_ws_model?: string;  // Model for WS mode Claude CLI (default: 'haiku'). Separate from llm.model which may be a local model.
-  model?: string;  // Model name: 'haiku' for claude, 'qwen2.5:7b' for local, etc.
-  local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
-  openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')
+  type?: 'claude' | 'local' | 'openrouter';  // Default: 'local'
+  model?: string;  // Model for the chosen type (e.g., 'sonnet', 'qwen2.5:7b', 'anthropic/claude-3-haiku')
+  transport?: 'process' | 'ws' | 'http';  // Default: depends on type (claude→process, local/openrouter→http)
   max_tokens?: number;  // Max tokens per response (default: 2000)
   temperature?: number;  // Temperature for generation (default: 0.3)
+
+  // Per-backend overrides (used for fallback chain + backend-specific settings)
+  local?: {
+    endpoint?: string;  // Default: 'http://localhost:11434/v1/chat/completions'
+    model?: string;  // Override model when falling back to local
+  };
+  openrouter?: {
+    model?: string;  // Override model when falling back to openrouter
+  };
+  claude?: {
+    model?: string;  // Override model when falling back to claude
+    transport?: 'process' | 'ws';  // Override transport for claude
+  };
+
+  // Deprecated aliases (still read for back-compat)
+  backend?: 'claude' | 'local' | 'openrouter';  // Use type instead
+  claude_mode?: 'process' | 'ws';  // Use transport or claude.transport instead
+  claude_ws_model?: string;  // Use claude.model or model instead
+  local_endpoint?: string;  // Use local.endpoint instead
+  openrouter_model?: string;  // Use openrouter.model instead
 }
 
 /**
@@ -1023,6 +1040,16 @@ export interface ConfigDisplay {
     enabled: boolean;
     device?: string;
   };
+  // LLM settings
+  llm: {
+    type: string;
+    model: string;
+    transport: string;
+    local_endpoint: string;
+    openrouter_model: string;
+    max_tokens: number;
+    temperature: number;
+  };
   // Analyze settings
   analyze: {
     mode: 'claude' | 'openrouter' | 'local';
@@ -1148,6 +1175,24 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       enabled: config.gpu_enabled ?? true,
       device: config.gpu_device,
     },
+    llm: (() => {
+      const llm = config.llm || {};
+      const type = llm.type || 'local';
+      const transport = llm.transport || llm.claude?.transport || (type === 'claude' ? 'process' : 'http');
+      // Resolve model for the active type: llm.{type}.model → llm.model → default
+      const typeBlock = type === 'claude' ? llm.claude : type === 'local' ? llm.local : llm.openrouter;
+      const defaultModel = type === 'claude' ? 'haiku' : type === 'openrouter' ? 'anthropic/claude-3-haiku' : 'qwen2.5:7b';
+      const model = (typeBlock as { model?: string } | undefined)?.model || llm.model || defaultModel;
+      return {
+        type,
+        model,
+        transport,
+        local_endpoint: llm.local?.endpoint || 'http://localhost:11434/v1/chat/completions',
+        openrouter_model: llm.openrouter?.model || 'anthropic/claude-3-haiku',
+        max_tokens: llm.max_tokens ?? 2000,
+        temperature: llm.temperature ?? 0.3,
+      };
+    })(),
     analyze: {
       mode: config.analyze_mode ?? 'claude',
       model: config.analyze_model,
@@ -1271,6 +1316,21 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   if (display.gpu.device) {
     lines.push(`  Device: ${display.gpu.device}`);
   }
+  lines.push('');
+
+  // LLM
+  lines.push('## LLM');
+  lines.push(`  Type: ${display.llm.type}`);
+  lines.push(`  Model: ${display.llm.model}`);
+  lines.push(`  Transport: ${display.llm.transport}`);
+  if (display.llm.type === 'local' || display.llm.local_endpoint !== 'http://localhost:11434/v1/chat/completions') {
+    lines.push(`  Local endpoint: ${display.llm.local_endpoint}`);
+  }
+  if (display.llm.type === 'openrouter' || display.llm.openrouter_model !== 'anthropic/claude-3-haiku') {
+    lines.push(`  OpenRouter model: ${display.llm.openrouter_model}`);
+  }
+  lines.push(`  Max tokens: ${display.llm.max_tokens}`);
+  lines.push(`  Temperature: ${display.llm.temperature}`);
   lines.push('');
 
   // Analyze
