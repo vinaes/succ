@@ -1,4 +1,4 @@
-import { getDb, getGlobalDb } from './connection.js';
+import { getDb, getGlobalDb, onDbChange } from './connection.js';
 import * as bm25 from '../bm25.js';
 
 // ============================================================================
@@ -317,3 +317,6 @@ export function invalidateBM25Index(): void {
   invalidateMemoriesBm25Index();
   invalidateGlobalMemoriesBm25Index();
 }
+
+// Auto-flush BM25 caches when DB is swapped via setDb()
+onDbChange(invalidateBM25Index);

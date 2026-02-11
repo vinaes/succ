@@ -4,11 +4,22 @@ import { initDb, initGlobalDb, loadSqliteVec } from './schema.js';
 
 let db: Database.Database | null = null;
 let globalDb: Database.Database | null = null;
+
+// Callbacks invoked when DB is swapped via setDb(). Avoids circular imports.
+const onDbChangeCallbacks: Array<() => void> = [];
+
+/**
+ * Register a callback to run when setDb() swaps the database.
+ * Used by bm25-indexes.ts to flush cached indexes.
+ */
+export function onDbChange(callback: () => void): void {
+  onDbChangeCallbacks.push(callback);
+}
 /**
  * Apply SQLite performance tuning PRAGMAs.
  * Safe with WAL mode; optimizes for read-heavy workloads.
  */
-function applySqliteTuning(database: Database.Database): void {
+export function applySqliteTuning(database: Database.Database): void {
   database.pragma('busy_timeout = 5000');
   database.pragma('cache_size = -16000');    // 16MB cache (default ~2MB)
   database.pragma('mmap_size = 67108864');   // 64MB memory-mapped I/O
@@ -43,6 +54,17 @@ export function getGlobalDb(): Database.Database {
     initGlobalDb(globalDb);
   }
   return globalDb;
+}
+
+/**
+ * Override the local database singleton with an external instance.
+ * Used by benchmarks, tests, and any code that needs an isolated DB.
+ * Flushes cached BM25 indexes since they reference the old DB.
+ * Call closeDb() to revert to default lazy-init behavior.
+ */
+export function setDb(database: Database.Database): void {
+  db = database;
+  for (const cb of onDbChangeCallbacks) cb();
 }
 
 /**
