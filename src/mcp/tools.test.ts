@@ -111,6 +111,12 @@ vi.mock('../lib/config.js', () => ({
     thresholds: { proceed: 0.7, warn: 0.4 },
     expected_results: 5,
   })),
+  getRetrievalConfig: vi.fn(() => ({
+    bm25_alpha: 0.4,
+    default_top_k: 10,
+    temporal_auto_skip: true,
+    preference_quality_boost: true,
+  })),
 }));
 
 vi.mock('../lib/quality.js', () => ({
