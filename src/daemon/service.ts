@@ -49,6 +49,8 @@ import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import { callLLM, isSleepAgentEnabled } from '../lib/llm.js';
 import { extractSessionSummary } from '../lib/session-summary.js';
+import { recordTranscriptTokens, recordExtraction, resetTranscriptCounter, loadBudgets, flushBudgets, removeBudget } from '../lib/token-budget.js';
+import { appendObservations, removeObservations, cleanupStaleObservations, type Observation } from '../lib/session-observations.js';
 import { REFLECTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -435,26 +437,50 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
         const lastObsTime = session.lastObservation ?? session.registeredAt;
         const now = Date.now();
 
-        // ~4 chars per token, so min_tokens * 4 = byte threshold
-        const byteThreshold = observerConfig.min_tokens * 4;
+        // Read new content and track real token count via budget
+        const newBytes = currentSize - lastObsSize;
         const timeThresholdMs = observerConfig.max_minutes * 60 * 1000;
-
-        const enoughNewContent = (currentSize - lastObsSize) >= byteThreshold;
         const enoughTime = (now - lastObsTime) >= timeThresholdMs;
 
-        if (enoughNewContent || enoughTime) {
-          log(`[observer] Triggering mid-session extraction (bytes: +${currentSize - lastObsSize}, time: ${Math.round((now - lastObsTime) / 60000)}min)`);
+        // Use byte-estimated token check first (cheap), then verify with real count
+        const estimatedTokens = Math.ceil(newBytes / 3.5);
+        const enoughNewContent = estimatedTokens >= observerConfig.min_tokens;
 
-          // Read only the new portion of transcript since last observation
-          const newContent = readTailTranscript(session.transcriptPath, currentSize - lastObsSize);
+        if (enoughNewContent || enoughTime) {
+          const newContent = readTailTranscript(session.transcriptPath, newBytes);
+
+          // Track real tokens in budget
+          const realTokens = recordTranscriptTokens(sessionId, newContent);
+          log(`[observer] Triggering extraction (tokens: ~${realTokens}, time: ${Math.round((now - lastObsTime) / 60000)}min)`);
 
           if (newContent.length > 200) {
             const result = await extractSessionSummary(newContent, { verbose: false });
+            recordExtraction(sessionId,
+              result.transcriptTokens ?? 0,
+              result.summaryTokens ?? 0,
+              result.factsExtracted,
+              result.factsSaved
+            );
+            resetTranscriptCounter(sessionId);
+
+            // Persist extraction metadata to session observations (append-only)
+            if (result.factsSaved > 0) {
+              appendObservations(sessionId, [{
+                content: `Extracted ${result.factsExtracted} facts, saved ${result.factsSaved}`,
+                type: 'observation',
+                tags: ['mid-session'],
+                extractedAt: new Date().toISOString(),
+                source: 'mid-session-observer',
+                transcriptOffset: currentSize,
+                memoryId: null,
+              }]);
+            }
             log(`[observer] Extracted ${result.factsExtracted} facts, saved ${result.factsSaved} (skipped ${result.factsSkipped})`);
           }
 
           session.lastObservation = now;
           session.lastObservationSize = currentSize;
+          flushBudgets();
         }
       } catch (err) {
         log(`[observer] Mid-session extraction failed: ${err}`);
@@ -693,6 +719,9 @@ export async function routeRequest(method: string, pathname: string, searchParam
     // Unregister the session immediately (don't block on processing)
     const removed = sessionManager!.unregister(session_id);
     clearBriefingCache(session_id);  // Clean up any cached briefing
+    removeBudget(session_id);  // Clean up token budget
+    removeObservations(session_id);  // Clean up observation JSONL
+    flushBudgets();
     log(`[session] Unregistered: ${session_id} (removed=${removed})`);
 
     // Process session asynchronously (summarize transcript, extract learnings, save to memory)
@@ -1134,6 +1163,12 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   // Initialize session manager
   sessionManager = createSessionManager();
+
+  // Load token budgets from previous daemon run
+  loadBudgets();
+
+  // Clean up stale observation files (>48h)
+  cleanupStaleObservations();
 
   // Create HTTP server
   const server = http.createServer((req, res) => {
