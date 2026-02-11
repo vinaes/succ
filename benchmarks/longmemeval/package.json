@@ -1,0 +1,17 @@
+{
+  "name": "@succ/longmemeval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LongMemEval benchmark runner for succ memory system",
+  "scripts": {
+    "bench": "tsx src/cli.ts run",
+    "bench:quick": "tsx src/cli.ts run --subset 5",
+    "results": "tsx src/cli.ts results",
+    "download": "tsx src/cli.ts download"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "tsx": "^4.19.2"
+  }
+}
