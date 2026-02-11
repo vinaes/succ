@@ -133,6 +133,10 @@ export interface SuccConfig {
   graph_centrality?: GraphCentralityConfig;
   // Web search settings (Perplexity Sonar via OpenRouter)
   web_search?: WebSearchConfig;
+  // Retrieval tuning (hybrid search parameters)
+  retrieval?: RetrievalConfig;
+  // Mid-conversation observer settings
+  observer?: ObserverConfig;
 }
 
 /**
@@ -378,6 +382,19 @@ export interface WebSearchConfig {
   temperature?: number;               // Temperature (default: 0.1 — low for factual search)
   save_to_memory?: boolean;           // Auto-save search results to memory (default: false)
   daily_budget_usd?: number;          // Daily spending limit in USD (default: 0 = unlimited)
+}
+
+export interface RetrievalConfig {
+  bm25_alpha?: number;  // BM25/vector balance: 0=pure BM25, 1=pure vector (default: 0.4)
+  default_top_k?: number;  // Default number of results for recall (default: 10)
+  temporal_auto_skip?: boolean;  // Auto-disable decay when all results <24h old (default: true)
+  preference_quality_boost?: boolean;  // Lower quality threshold for preference facts (default: true)
+}
+
+export interface ObserverConfig {
+  enabled?: boolean;  // Enable mid-conversation observer (default: true)
+  min_tokens?: number;  // Extract after N new tokens (default: 15000)
+  max_minutes?: number;  // Or after N minutes, whichever first (default: 10)
 }
 
 export interface BPETokenizerConfig {
@@ -1594,4 +1611,33 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
   }
 
   return statuses;
+}
+
+/**
+ * Get retrieval config with defaults.
+ * Used by hybrid search and recall tools.
+ */
+export function getRetrievalConfig(): Required<RetrievalConfig> {
+  const config = getConfig();
+  const userConfig = config.retrieval || {};
+  return {
+    bm25_alpha: userConfig.bm25_alpha ?? 0.4,
+    default_top_k: userConfig.default_top_k ?? 10,
+    temporal_auto_skip: userConfig.temporal_auto_skip ?? true,
+    preference_quality_boost: userConfig.preference_quality_boost ?? true,
+  };
+}
+
+/**
+ * Get observer config with defaults.
+ * Used by daemon mid-conversation extraction.
+ */
+export function getObserverConfig(): Required<ObserverConfig> {
+  const config = getConfig();
+  const userConfig = config.observer || {};
+  return {
+    enabled: userConfig.enabled ?? true,
+    min_tokens: userConfig.min_tokens ?? 15000,
+    max_minutes: userConfig.max_minutes ?? 10,
+  };
 }

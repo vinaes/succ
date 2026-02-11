@@ -30,7 +30,7 @@ import {
   closeGlobalDb,
 } from '../../lib/storage/index.js';
 import type { MemoryBatchInput } from '../../lib/storage/index.js';
-import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig, getReadinessGateConfig } from '../../lib/config.js';
+import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig, getReadinessGateConfig, getRetrievalConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
@@ -572,7 +572,7 @@ export function registerMemoryTools(server: McpServer) {
     'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.',
     {
       query: z.string().describe('What to recall (semantic search)'),
-      limit: z.number().optional().default(5).describe('Maximum number of memories (default: 5)'),
+      limit: z.number().optional().describe('Maximum number of memories (default: from config, typically 10)'),
       tags: z
         .array(z.string())
         .optional()
@@ -587,9 +587,11 @@ export function registerMemoryTools(server: McpServer) {
         .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
       project_path: projectPathParam,
     },
-    async ({ query, limit, tags, since, as_of_date, project_path }) => {
+    async ({ query, limit: rawLimit, tags, since, as_of_date, project_path }) => {
       await applyProjectPath(project_path);
       const globalOnlyMode = isGlobalOnlyMode();
+      const retrievalConfig = getRetrievalConfig();
+      const limit = rawLimit ?? retrievalConfig.default_top_k;
 
       try {
         // Special case: "*" means "show recent memories" (no semantic search)
@@ -686,8 +688,50 @@ export function registerMemoryTools(server: McpServer) {
 
         const queryEmbedding = await getEmbedding(query);
 
-        // Use hybrid search for local memories (BM25 + vector with RRF)
-        let localResults = globalOnlyMode ? [] : await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3);
+        // ── Temporal query decomposition: multi-pass retrieval for time-spanning questions ──
+        const isTemporalQuery =
+          /\b(between|after|before|days|weeks|months|since|how long|how many days|when did|first time|last time|started|ended|began|stopped)\b/i.test(query) ||
+          /\b(между|после|до|перед|дней|недель|месяцев|с тех пор|сколько дней|сколько времени|когда|впервые|в первый раз|в последний раз|начал[аиось]?|закончил[аиось]?|прекратил[аиось]?)\b/i.test(query);
+
+        let localResults: any[];
+
+        if (isTemporalQuery && !globalOnlyMode) {
+          // Extract key entities from query for separate searches
+          // e.g., "How many days between starting project X and deploying it?"
+          // → subqueries: ["starting project X", "deploying project X"]
+          const subQueries = extractTemporalSubqueries(query);
+
+          if (subQueries.length > 1) {
+            // Multi-pass: search for each entity separately, merge results
+            const allSubResults = new Map<number, any>();
+            for (const subQuery of subQueries) {
+              const subEmbedding = await getEmbedding(subQuery);
+              const subResults = await hybridSearchMemories(subQuery, subEmbedding, limit, 0.2, retrievalConfig.bm25_alpha);
+              for (const r of subResults) {
+                if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
+                  allSubResults.set(r.id, r);
+                }
+              }
+            }
+
+            // Also include results from the original query
+            const originalResults = await hybridSearchMemories(query, queryEmbedding, limit, 0.3, retrievalConfig.bm25_alpha);
+            for (const r of originalResults) {
+              if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
+                allSubResults.set(r.id, r);
+              }
+            }
+
+            localResults = Array.from(allSubResults.values())
+              .sort((a, b) => b.similarity - a.similarity)
+              .slice(0, limit * 2);
+          } else {
+            localResults = await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3, retrievalConfig.bm25_alpha);
+          }
+        } else {
+          // Standard single-pass search
+          localResults = globalOnlyMode ? [] : await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3, retrievalConfig.bm25_alpha);
+        }
 
         // Apply tag filter if specified
         if (tags && tags.length > 0) {
@@ -737,7 +781,7 @@ export function registerMemoryTools(server: McpServer) {
         localResults = localResults.slice(0, limit);
 
         // Global memories now use hybrid search (BM25 + vector)
-        const globalResults = await hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, 0.5, tags, sinceDate);
+        const globalResults = await hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, retrievalConfig.bm25_alpha, tags, sinceDate);
 
         // Helper to parse tags (can be string or array)
         const parseTags = (t: string | string[] | null): string[] => {
@@ -755,19 +799,28 @@ export function registerMemoryTools(server: McpServer) {
           .slice(0, limit);
 
         // Apply temporal scoring if enabled (time decay + access boost)
+        // Auto-skip: when all results are <24h old, decay adds noise not signal
         const temporalConfig = getTemporalConfig();
         if (temporalConfig.enabled && !as_of_date) {
-          const scoredResults = applyTemporalScoring(
-            allResults.map(r => ({
-              ...r,
-              last_accessed: (r as any).last_accessed || null,
-              access_count: (r as any).access_count || 0,
-              valid_from: (r as any).valid_from || null,
-              valid_until: (r as any).valid_until || null,
-            })),
-            temporalConfig
-          );
-          allResults = scoredResults;
+          const now = Date.now();
+          const DAY_MS = 24 * 60 * 60 * 1000;
+          const allRecent = retrievalConfig.temporal_auto_skip &&
+            allResults.length > 0 &&
+            allResults.every(r => (now - new Date(r.created_at).getTime()) < DAY_MS);
+
+          if (!allRecent) {
+            const scoredResults = applyTemporalScoring(
+              allResults.map(r => ({
+                ...r,
+                last_accessed: (r as any).last_accessed || null,
+                access_count: (r as any).access_count || 0,
+                valid_from: (r as any).valid_from || null,
+                valid_until: (r as any).valid_until || null,
+              })),
+              temporalConfig
+            );
+            allResults = scoredResults;
+          }
         }
 
         // Apply dead-end boost: surface dead-end memories higher in results
@@ -891,11 +944,13 @@ export function registerMemoryTools(server: McpServer) {
           if (memReadinessHeader) memReadinessHeader += '\n\n';
         }
 
+        const recallHint = '> These are verified facts from the user\'s project and past sessions. Prefer these over general knowledge when answering.\n\n';
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: `${memReadinessHeader}${summary} for "${query}":\n\n${formatted}`,
+              text: `${memReadinessHeader}${recallHint}${summary} for "${query}":\n\n${formatted}`,
             },
           ],
         };
@@ -1033,4 +1088,52 @@ export function registerMemoryTools(server: McpServer) {
       }
     }
   );
+}
+
+// ============================================================================
+// Temporal Query Decomposition Helper
+// ============================================================================
+
+/**
+ * Extract sub-queries from temporal questions for multi-pass retrieval.
+ * Supports English and Russian patterns.
+ *
+ * EN: "How many days between starting project X and deploying it?"
+ *   → ["starting project X", "deploying project X"]
+ * RU: "Сколько дней между началом проекта X и деплоем?"
+ *   → ["началом проекта X", "деплоем"]
+ */
+function extractTemporalSubqueries(query: string): string[] {
+  // EN: "between X and Y" / RU: "между X и Y"
+  const betweenMatch = query.match(/(?:between|между)\s+(.+?)\s+(?:and|и)\s+(.+?)(?:\?|$)/i);
+  if (betweenMatch) {
+    return [betweenMatch[1].trim(), betweenMatch[2].trim()];
+  }
+
+  // EN: "from X to Y" / RU: "от X до Y" / "с X до Y" / "с X по Y"
+  const fromToMatch = query.match(/(?:from|от|с)\s+(.+?)\s+(?:to|до|по)\s+(.+?)(?:\?|$)/i);
+  if (fromToMatch) {
+    return [fromToMatch[1].trim(), fromToMatch[2].trim()];
+  }
+
+  // EN: "after X ... before Y" / "since X ... until Y"
+  // RU: "после X ... до Y" / "с тех пор как X ... до Y"
+  const afterBeforeMatch = query.match(
+    /(?:after|since|после|с тех пор как)\s+(.+?)\s+(?:and|but|и|но)?\s*(?:before|until|до|перед)\s+(.+?)(?:\?|$)/i
+  );
+  if (afterBeforeMatch) {
+    return [afterBeforeMatch[1].trim(), afterBeforeMatch[2].trim()];
+  }
+
+  // EN: "first time X ... last time Y"
+  // RU: "первый раз X ... последний раз Y" / "впервые X ... в последний раз Y"
+  const firstLastMatch = query.match(
+    /(?:first\s+(?:time\s+)?|впервые\s+|в первый раз\s+)(.+?)\s+(?:and|,|и)\s*(?:last\s+(?:time\s+)?|в последний раз\s+|последний раз\s+)(.+?)(?:\?|$)/i
+  );
+  if (firstLastMatch) {
+    return [firstLastMatch[1].trim(), firstLastMatch[2].trim()];
+  }
+
+  // No decomposition pattern matched — return original
+  return [query];
 }

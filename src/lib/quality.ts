@@ -96,6 +96,10 @@ function calculateSpecificity(content: string): number {
   // Actionable verbs - Russian
   const hasRussianActionableVerbs = /\b(реализовать|создать|добавить|удалить|исправить|обновить|рефакторить|мигрировать|настроить|задеплоить|тестировать|решить|оптимизировать|интегрировать|изменить|установить|собрать|запустить|выполнить|дебажить|отладить|логировать|обработать|валидировать|парсить|сериализовать|отправить|получить|подключить)\b/i.test(content);
 
+  // Preference/personal facts — short but high-value for recall
+  const isPreferenceFact = /\b(user|i|he|she|they|we)\s+(use[sd]?|like[sd]?|prefer[sd]?|has|have|had|want[sd]?|chose|always|never|switch)/i.test(content) ||
+    /\b(пользователь|юзер|я|он|она|мы)\s+(использу[еюёт]|предпочита[еюёт]|любит|хоч[еу]т|выбрал|всегда|никогда)/i.test(content);
+
   if (hasNumbers) score += 0.1;
   if (hasCodeReference) score += 0.2;
   if (hasFilePath) score += 0.15;
@@ -103,6 +107,7 @@ function calculateSpecificity(content: string): number {
   if (hasEnglishTechnicalTerms || hasRussianTechnicalTerms) score += 0.1;
   if (hasProperNouns || hasSnakeCase) score += 0.05;
   if (hasEnglishActionableVerbs || hasRussianActionableVerbs) score += 0.1;
+  if (isPreferenceFact) score += 0.2;
 
   // === NEGATIVE SIGNALS (multilingual) ===
 
@@ -131,11 +136,17 @@ function calculateSpecificity(content: string): number {
   const lacksSubstance = wordCount < 8 && !hasCodeReference && !hasFilePath && !hasNumbers;
 
   if (isVagueEnglish || isVagueRussian) score -= 0.2;
-  if (isVeryShort) score -= 0.35;
-  else if (isTooShort) score -= 0.2;
+  // Reduce short-content penalties for preference facts (short but high-value)
+  if (isPreferenceFact) {
+    if (isVeryShort) score -= 0.15;
+    else if (isTooShort) score -= 0.05;
+  } else {
+    if (isVeryShort) score -= 0.35;
+    else if (isTooShort) score -= 0.2;
+  }
   if (isGenericEnglish || isGenericRussian) score -= 0.15;
   if (isOnlyGenericPraiseEnglish || isOnlyGenericPraiseRussian) score -= 0.25;
-  if (lacksSubstance) score -= 0.15;
+  if (lacksSubstance && !isPreferenceFact) score -= 0.15;
 
   return Math.max(0, Math.min(1, score));
 }

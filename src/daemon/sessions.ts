@@ -26,6 +26,9 @@ export interface SessionState {
   lastTranscriptSize?: number;   // Transcript file size (bytes) at last briefing
   lastMemoryCount?: number;      // Total memory count at last reflection
   lastLinkCount?: number;        // Total link count at last graph enrichment
+  // Mid-conversation observer state
+  lastObservation?: number;      // Timestamp of last mid-session observation
+  lastObservationSize?: number;  // Transcript size (bytes) at last observation
 }
 
 export type ActivityType = 'user_prompt' | 'stop';

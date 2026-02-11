@@ -23,7 +23,7 @@ import { createSessionManager, createIdleWatcher, type SessionState } from './se
 import { processSessionEnd } from './session-processor.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
 import { startAnalyzer, stopAnalyzer, getAnalyzerStatus, triggerAnalysis } from './analyzer.js';
-import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConfig, getConfig } from '../lib/config.js';
+import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConfig, getConfig, getObserverConfig } from '../lib/config.js';
 import {
   hybridSearchDocs,
   hybridSearchCode,
@@ -48,6 +48,7 @@ import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../l
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import { callLLM, isSleepAgentEnabled } from '../lib/llm.js';
+import { extractSessionSummary } from '../lib/session-summary.js';
 import { REFLECTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -425,6 +426,41 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
     }
     session.lastMemoryCount = currentMemCount;
 
+    // ── Mid-conversation observer: extract facts when enough new content ──
+    const observerConfig = getObserverConfig();
+    if (observerConfig.enabled && transcriptChanged) {
+      try {
+        const currentSize = session.lastTranscriptSize ?? 0;
+        const lastObsSize = session.lastObservationSize ?? 0;
+        const lastObsTime = session.lastObservation ?? session.registeredAt;
+        const now = Date.now();
+
+        // ~4 chars per token, so min_tokens * 4 = byte threshold
+        const byteThreshold = observerConfig.min_tokens * 4;
+        const timeThresholdMs = observerConfig.max_minutes * 60 * 1000;
+
+        const enoughNewContent = (currentSize - lastObsSize) >= byteThreshold;
+        const enoughTime = (now - lastObsTime) >= timeThresholdMs;
+
+        if (enoughNewContent || enoughTime) {
+          log(`[observer] Triggering mid-session extraction (bytes: +${currentSize - lastObsSize}, time: ${Math.round((now - lastObsTime) / 60000)}min)`);
+
+          // Read only the new portion of transcript since last observation
+          const newContent = readTailTranscript(session.transcriptPath, currentSize - lastObsSize);
+
+          if (newContent.length > 200) {
+            const result = await extractSessionSummary(newContent, { verbose: false });
+            log(`[observer] Extracted ${result.factsExtracted} facts, saved ${result.factsSaved} (skipped ${result.factsSkipped})`);
+          }
+
+          session.lastObservation = now;
+          session.lastObservationSize = currentSize;
+        }
+      } catch (err) {
+        log(`[observer] Mid-session extraction failed: ${err}`);
+      }
+    }
+
     // ── Generate briefing (skip if transcript unchanged) ──
     let briefingResult: { success: boolean; briefing?: string } = { success: false };
 
@@ -508,11 +544,22 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
           log(`[reflection] Created ${r.created} proximity links`);
         } catch (err) { log(`[reflection] Proximity failed: ${err}`); }
 
-        // 3. Community detection
+        // 3. Community detection + reflection synthesis
         try {
           const { detectCommunities } = await import('../lib/graph/community-detection.js');
           const r = await detectCommunities({ minCommunitySize: 2 });
           log(`[reflection] Found ${r.communities.length} communities`);
+
+          // 3b. Synthesize patterns from community clusters
+          if (r.communities.length > 0) {
+            try {
+              const { synthesizeFromCommunities } = await import('../lib/reflection-synthesizer.js');
+              const synthResult = await synthesizeFromCommunities(r, { log });
+              if (synthResult.patternsCreated > 0) {
+                log(`[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters`);
+              }
+            } catch (err) { log(`[reflection] Synthesis failed: ${err}`); }
+          }
         } catch (err) { log(`[reflection] Communities failed: ${err}`); }
 
         // 4. Centrality cache
