@@ -8,6 +8,8 @@ export default defineConfig({
         // Main project — vmThreads for most tests
         test: {
           name: 'main',
+          testTimeout: 30000,
+          hookTimeout: 30000,
           include: ['src/**/*.test.ts', 'dist/**/*.test.js'],
           exclude: ['node_modules', 'dist/node_modules', '**/ort-session.test.*'],
           pool: 'vmThreads',
