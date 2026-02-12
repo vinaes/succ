@@ -3,6 +3,7 @@ import path from 'path';
 import { getDbPath, getClaudeDir, getProjectRoot, getConfig, getDaemonStatuses } from '../lib/config.js';
 import { getStats, getStaleFileCount, closeDb } from '../lib/storage/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 export async function status(): Promise<void> {
   const projectRoot = getProjectRoot();
@@ -139,6 +140,8 @@ export async function status(): Promise<void> {
       // Skip daemon status if it fails
     }
   } catch (error) {
+    logError('status', 'Error reading database:', error instanceof Error ? error : new Error(String(error)));
+
     console.error('Error reading database:', error);
   } finally {
     closeDb();

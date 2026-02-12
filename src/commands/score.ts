@@ -6,6 +6,7 @@
 
 import { calculateAIReadinessScore, formatAIReadinessScore } from '../lib/ai-readiness.js';
 import { closeDb } from '../lib/storage/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface ScoreOptions {
   json?: boolean;
@@ -21,6 +22,8 @@ export async function score(options: ScoreOptions = {}): Promise<void> {
       console.log(formatAIReadinessScore(result));
     }
   } catch (error: any) {
+    logError('score', `Error calculating score:: ${error.message}`, error instanceof Error ? error : undefined);
+
     console.error('Error calculating score:', error.message);
     process.exit(1);
   } finally {

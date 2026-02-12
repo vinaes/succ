@@ -23,6 +23,7 @@
  */
 
 import { getConfig, getProjectRoot } from '../config.js';
+import { logError, logWarn } from '../fault-logger.js';
 import type { PostgresBackend } from './backends/postgresql.js';
 import type { QdrantVectorStore } from './vector/qdrant.js';
 import type {
@@ -77,7 +78,7 @@ export async function initStorageDispatcher(): Promise<void> {
       _qdrantStore.setProjectId(projectId);
       await _qdrantStore.init(384);
     } catch (error) {
-      console.error('[Qdrant] Failed to initialize, falling back to builtin:', (error as Error).message);
+      logError('storage', `Qdrant init failed, falling back to builtin: ${(error as Error).message}`, error as Error);
       _qdrantStore = null;
     }
   }
@@ -137,7 +138,7 @@ export class StorageDispatcher {
   private _warnQdrantFailure(operation: string, error: unknown): void {
     this._sessionCounters.qdrantSyncFailures++;
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[Qdrant] ${operation}: ${msg}`);
+    logError('storage', `Qdrant ${operation} failed: ${msg}`);
   }
 
   /** Get current session counters (non-destructive read) */
@@ -165,7 +166,7 @@ export class StorageDispatcher {
       });
     } catch (error) {
       // Don't let flush errors break shutdown
-      console.error('[StorageDispatcher] Failed to flush session counters:', error);
+      logError('storage', 'Failed to flush session counters', error instanceof Error ? error : new Error(String(error)));
     }
 
     this._sessionCounters = {
@@ -459,7 +460,7 @@ export class StorageDispatcher {
     const deleted = sqlite.deleteMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
       try { await this.qdrant.deleteMemoryVector(id); } catch (err) {
-        console.warn(`[storage] Qdrant vector delete failed for memory ${id}:`, err);
+        logWarn('storage', `Qdrant vector delete failed for memory ${id}`, { error: String(err) });
       }
     }
     return deleted;
@@ -1055,7 +1056,7 @@ export class StorageDispatcher {
     const deleted = sqlite.deleteGlobalMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
       try { await this.qdrant.deleteGlobalMemoryVector(id); } catch (err) {
-        console.warn(`[storage] Qdrant global vector delete failed for memory ${id}:`, err);
+        logWarn('storage', `Qdrant global vector delete failed for memory ${id}`, { error: String(err) });
       }
     }
     return deleted;

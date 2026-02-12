@@ -2,6 +2,7 @@ import { searchDocuments, closeDb } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { callLLMChat, ChatMessage } from '../lib/llm.js';
 import { CHAT_SYSTEM_PROMPT } from '../prompts/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface ChatOptions {
   limit?: number;
@@ -61,6 +62,8 @@ export async function chat(
       }
     }
   } catch (error) {
+    logError('chat', 'Error searching:', error instanceof Error ? error : new Error(String(error)));
+
     console.error('Error searching:', error);
   } finally {
     closeDb();

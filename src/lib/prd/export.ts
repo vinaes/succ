@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
+import { logError } from '../fault-logger.js';
 import {
   loadPrd,
   loadTasks,
@@ -92,7 +93,7 @@ export function exportAllPrds(
     try {
       results.push(exportPrdToObsidian(entry.id, outputDir));
     } catch (err) {
-      console.error(`Skipped ${entry.id}: ${err instanceof Error ? err.message : String(err)}`);
+      logError('prd', `Skipped ${entry.id}: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? err : undefined);
     }
   }
   return results;

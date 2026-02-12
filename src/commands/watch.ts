@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { createDaemonClient, ensureDaemonRunning } from '../daemon/client.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface WatchOptions {
   pattern?: string;
@@ -21,6 +22,7 @@ export async function startWatchDaemon(
   // Ensure daemon is running
   const started = await ensureDaemonRunning();
   if (!started) {
+    logError('watch', 'Failed to start daemon');
     console.error('Failed to start daemon');
     process.exit(1);
   }
@@ -30,6 +32,7 @@ export async function startWatchDaemon(
   const port = client.getPort();
 
   if (!port) {
+    logError('watch', 'Could not get daemon port');
     console.error('Could not get daemon port');
     process.exit(1);
   }
@@ -55,6 +58,7 @@ export async function startWatchDaemon(
       console.error('Failed to start watch service');
     }
   } catch (error) {
+    logError('watch', 'Error starting watch service:', error instanceof Error ? error : new Error(String(error)));
     console.error('Error starting watch service:', error);
     process.exit(1);
   }
@@ -157,6 +161,7 @@ export async function watch(
 
   const started = await ensureDaemonRunning();
   if (!started) {
+    logError('watch', 'Failed to start daemon for watch');
     console.error('Failed to start daemon');
     process.exit(1);
   }

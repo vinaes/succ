@@ -14,6 +14,7 @@ import {
 } from '../lib/consolidate.js';
 import { getConsolidationHistory } from '../lib/storage/index.js';
 import { getConfig } from '../lib/config.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface ConsolidateOptions {
   dryRun?: boolean;
@@ -32,6 +33,7 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
   if (options.undo) {
     const mergedId = parseInt(options.undo, 10);
     if (isNaN(mergedId)) {
+      logError('consolidate', '--undo requires a valid memory ID');
       console.error('Error: --undo requires a valid memory ID');
       return;
     }

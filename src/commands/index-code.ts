@@ -10,6 +10,7 @@ import { tokenizeCode } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';
 import { DEFAULT_CODE_PATTERNS, DEFAULT_IGNORE_PATTERNS } from '../lib/patterns.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 // Alias for backwards compatibility
 const DEFAULT_IGNORE = DEFAULT_IGNORE_PATTERNS;
@@ -38,6 +39,8 @@ export async function indexCode(
   const searchPath = targetPath ? path.resolve(targetPath) : projectRoot;
 
   if (!fs.existsSync(searchPath)) {
+    logError('index-code', `Path not found: ${searchPath}`);
+
     console.error(`Path not found: ${searchPath}`);
     process.exit(1);
   }
@@ -79,8 +82,11 @@ export async function indexCode(
       } else {
         // Non-interactive without explicit auto-reindex (MCP, daemon, scripts)
         // DO NOT auto-clear — this destroys data silently
+        logWarn('index-code', 'Dimension mismatch detected in non-interactive mode');
         console.warn('Dimension mismatch detected in non-interactive mode.');
+        logWarn('index-code', 'Skipping auto-clear to prevent data loss');
         console.warn('Skipping auto-clear to prevent data loss.');
+        logWarn('index-code', 'Run "succ index-code --force" interactively to reindex');
         console.warn('Run "succ index-code --force" interactively to reindex.');
         return;
       }

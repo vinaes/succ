@@ -7,6 +7,7 @@ import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
 import { getProjectRoot, getSuccDir, LOCAL_MODEL, isOnboardingCompleted, markOnboardingCompleted } from '../lib/config.js';
 import { runStaticWizard, runAiOnboarding } from '../lib/onboarding/index.js';
+import { logWarn } from '../lib/fault-logger.js';
 
 // Get the directory where succ is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -878,7 +879,9 @@ function addMcpServer(projectRoot: string): 'added' | 'exists' | 'failed' {
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));
     return 'added';
   } catch (error: any) {
+    logWarn('init', `Failed to add MCP server to ${claudeConfigPath}`, { error: String(error) });
     console.warn(`  Warning: Failed to add MCP server to ${claudeConfigPath}: ${error.message}`);
+    logWarn('init', 'You can add it manually: succ init --force');
     console.warn('  You can add it manually: succ init --force');
     return 'failed';
   }

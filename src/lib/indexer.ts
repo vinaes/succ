@@ -12,6 +12,7 @@ import {
   updateTokenFrequencies,
 } from './storage/index.js';
 import { tokenizeCode } from './bm25.js';
+import { logError } from './fault-logger.js';
 
 export interface Chunk {
   content: string;
@@ -260,7 +261,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         totalChunks += documents.length;
       }
     } catch (error) {
-      console.error(`\n  Error processing batch ${batchNum}:`, error);
+      logError('indexer', `Error processing batch ${batchNum}`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 

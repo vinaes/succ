@@ -6,6 +6,7 @@
  */
 
 import { callLLM, callLLMWithFallback, getLLMConfig } from '../llm.js';
+import { logWarn } from '../fault-logger.js';
 import { PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
@@ -78,7 +79,7 @@ export async function parsePrd(
 
   // 4b. Retry once with corrective prompt if extraction failed
   if (!rawTasks) {
-    console.warn('[prd-parse] JSON extraction failed, retrying with corrective prompt...');
+    logWarn('prd', 'JSON extraction failed, retrying with corrective prompt...');
     const retryPrompt = `Your previous response was not valid JSON. Here is what you returned:
 
 ${response.slice(0, 1000)}
@@ -96,7 +97,7 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
 
     for (const backend of escalateBackends) {
       try {
-        console.warn(`[prd-parse] Escalating to ${backend} backend for JSON parsing...`);
+        logWarn('prd', `Escalating PRD parse to '${backend}' backend after local LLM failed to produce valid JSON`);
         response = await callLLM(prompt, llmOpts, { backend });
         rawTasks = extractJson(response);
         if (rawTasks) break;

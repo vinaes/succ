@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { getProjectRoot, getClaudeDir, getConfig } from '../lib/config.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface SoulOptions {
   openrouter?: boolean;
@@ -72,6 +73,7 @@ Keep each line concise. If uncertain about communication language, default to En
   }
 
   if (!generatedSection) {
+    logError('soul', 'Failed to generate soul.md content');
     console.error('Failed to generate soul.md content');
     process.exit(1);
   }
@@ -119,6 +121,8 @@ async function generateViaClaude(context: string, prompt: string): Promise<strin
   try {
     return await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 30000 });
   } catch (err: any) {
+    logError('soul', `Claude CLI error:: ${err.message}`, err instanceof Error ? err : undefined);
+
     console.error('Claude CLI error:', err.message);
     return '';
   }
@@ -128,7 +132,8 @@ async function generateViaOpenRouter(context: string, prompt: string): Promise<s
   let config;
   try {
     config = getConfig();
-  } catch {
+  } catch (err) {
+    logError('soul', 'OPENROUTER_API_KEY not set', err instanceof Error ? err : undefined);
     console.error('Error: OPENROUTER_API_KEY not set');
     console.error('Set it via env var or run `succ config`');
     return '';
@@ -157,6 +162,7 @@ async function generateViaOpenRouter(context: string, prompt: string): Promise<s
 
     if (!response.ok) {
       const error = await response.text();
+      logError('soul', `OpenRouter API error: ${response.status}`, new Error(error));
       console.error(`OpenRouter API error: ${response.status} - ${error}`);
       return '';
     }
@@ -166,6 +172,8 @@ async function generateViaOpenRouter(context: string, prompt: string): Promise<s
     };
     return data.choices[0]?.message?.content || '';
   } catch (error) {
+    logError('soul', 'OpenRouter API error:', error instanceof Error ? error : new Error(String(error)));
+
     console.error('OpenRouter API error:', error);
     return '';
   }

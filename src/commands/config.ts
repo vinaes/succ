@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import inquirer from 'inquirer';
-import { LOCAL_MODEL, OPENROUTER_MODEL, getConfigDisplay, formatConfigDisplay } from '../lib/config.js';
+import { LOCAL_MODEL, OPENROUTER_MODEL, getConfigDisplay, formatConfigDisplay, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 
 interface ConfigData {
   embedding_mode: 'local' | 'openrouter' | 'custom';
@@ -17,6 +17,10 @@ interface ConfigData {
 export interface ConfigOptions {
   show?: boolean;
   json?: boolean;
+}
+
+export interface ConfigSetOptions {
+  project?: boolean;
 }
 
 /**
@@ -206,4 +210,77 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
   console.log(`\nConfiguration saved to ${globalConfigPath}`);
   console.log('\nCurrent configuration:');
   console.log(JSON.stringify(finalConfig, null, 2));
+}
+
+/**
+ * Set a single config key (non-interactive)
+ *
+ * Usage:
+ *   succ config set <key> <value>
+ *   succ config set <key> <value> --project
+ */
+export async function configSet(key: string, value: string, options: ConfigSetOptions = {}): Promise<void> {
+  // Determine config path
+  let configDir: string;
+  let configPath: string;
+
+  if (options.project) {
+    const succDir = getSuccDir();
+    if (!fs.existsSync(succDir)) {
+      console.error('Project not initialized. Run `succ init` first or omit --project for global config.');
+      process.exitCode = 1;
+      return;
+    }
+    configDir = succDir;
+    configPath = path.join(succDir, 'config.json');
+  } else {
+    configDir = path.join(os.homedir(), '.succ');
+    configPath = path.join(configDir, 'config.json');
+  }
+
+  // Load existing config
+  let config: Record<string, unknown> = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch {
+      // Start fresh if corrupted
+    }
+  }
+
+  // Parse value (handle booleans and numbers)
+  let parsedValue: unknown = value;
+  if (value === 'true') parsedValue = true;
+  else if (value === 'false') parsedValue = false;
+  else if (!isNaN(Number(value)) && value.trim() !== '') parsedValue = Number(value);
+
+  // Handle nested keys (e.g., "error_reporting.enabled")
+  const keys = key.split('.');
+  if (keys.length === 1) {
+    config[key] = parsedValue;
+  } else {
+    let current: Record<string, unknown> = config;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]] || typeof current[keys[i]] !== 'object') {
+        current[keys[i]] = {};
+      }
+      current = current[keys[i]] as Record<string, unknown>;
+    }
+    current[keys[keys.length - 1]] = parsedValue;
+  }
+
+  // Ensure config directory exists
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  // Save config
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+  // Invalidate cached config so subsequent reads see the new value
+  invalidateConfigCache();
+
+  const scope = options.project ? 'project' : 'global';
+  console.log(`Config updated (${scope}): ${key} = ${JSON.stringify(parsedValue)}`);
+  console.log(`Saved to: ${configPath}`);
 }

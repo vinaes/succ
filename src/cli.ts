@@ -9,7 +9,7 @@ import { status } from './commands/status.js';
 import { analyze } from './commands/analyze.js';
 import { chat } from './commands/chat.js';
 import { watch } from './commands/watch.js';
-import { config } from './commands/config.js';
+import { config, configSet } from './commands/config.js';
 import { memories, remember, forget } from './commands/memories.js';
 import { indexCode } from './commands/index-code.js';
 import { reindex } from './commands/reindex.js';
@@ -34,6 +34,7 @@ import { agentsMd } from './commands/agents-md.js';
 import { progress } from './commands/progress.js';
 import { backfill } from './commands/backfill.js';
 import { prdGenerate, prdParse, prdRun, prdList, prdStatus, prdArchive, prdExport } from './commands/prd.js';
+import { logError } from './lib/fault-logger.js';
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -160,7 +161,7 @@ program
     });
   });
 
-program
+const configCmd = program
   .command('config')
   .description('Show or edit succ configuration')
   .option('-s, --show', 'Show current configuration (non-interactive)')
@@ -170,6 +171,14 @@ program
       show: options.show,
       json: options.json,
     });
+  });
+
+configCmd
+  .command('set <key> <value>')
+  .description('Set a configuration value (supports dot notation, e.g. error_reporting.level)')
+  .option('-p, --project', 'Save to project config (.succ/config.json) instead of global')
+  .action((key: string, value: string, options) => {
+    configSet(key, value, { project: options.project });
   });
 
 program
@@ -252,6 +261,7 @@ program
           console.log(`Indexed ${result.chunks} chunks from ${options.file}`);
         }
       } else {
+        logError('cli', `Index error: ${result.error}`);
         console.error(`Error: ${result.error}`);
         process.exit(1);
       }

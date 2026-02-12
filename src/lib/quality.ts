@@ -9,6 +9,7 @@
 
 import { getConfig, SuccConfig } from './config.js';
 import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
+import { logWarn } from './fault-logger.js';
 
 // Lazy-loaded zero-shot classification pipeline for local scoring
 let classifierPipeline: any = null;
@@ -271,7 +272,7 @@ export async function scoreWithLocal(content: string, existingSimilarity?: numbe
     };
   } catch (error) {
     // Fall back to heuristics if model fails
-    console.warn('Local ONNX scoring failed, falling back to heuristics:', error);
+    logWarn('quality', 'Local ONNX scoring failed, falling back to heuristics', { error: String(error) });
     return scoreWithHeuristics(content, existingSimilarity);
   }
 }
@@ -314,7 +315,7 @@ export async function scoreWithCustom(
     return { ...result, mode: 'custom' };
   } catch (error) {
     // Fall back to heuristics on error
-    console.warn('Custom LLM scoring failed, falling back to heuristics:', error);
+    logWarn('quality', 'Custom LLM scoring failed, falling back to heuristics', { error: String(error) });
     return scoreWithHeuristics(content);
   }
 }
@@ -357,7 +358,7 @@ export async function scoreWithOpenRouter(
     const result = parseScoreResponse(data.choices[0]?.message?.content || '');
     return { ...result, mode: 'openrouter' };
   } catch (error) {
-    console.warn('OpenRouter scoring failed, falling back to heuristics:', error);
+    logWarn('quality', 'OpenRouter scoring failed, falling back to heuristics', { error: String(error) });
     return scoreWithHeuristics(content);
   }
 }
@@ -461,7 +462,7 @@ export async function scoreMemory(
 
     case 'custom':
       if (!config.quality_scoring_api_url || !config.quality_scoring_model) {
-        console.warn('Custom scoring requires quality_scoring_api_url and quality_scoring_model');
+        logWarn('quality', 'Custom scoring requires quality_scoring_api_url and quality_scoring_model');
         return scoreWithHeuristics(content, existingSimilarity);
       }
       return scoreWithCustom(
@@ -473,7 +474,7 @@ export async function scoreMemory(
 
     case 'openrouter':
       if (!config.openrouter_api_key) {
-        console.warn('OpenRouter scoring requires openrouter_api_key');
+        logWarn('quality', 'OpenRouter scoring requires openrouter_api_key');
         return scoreWithHeuristics(content, existingSimilarity);
       }
       return scoreWithOpenRouter(

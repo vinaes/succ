@@ -22,6 +22,8 @@ import type { VectorSearchResult, VectorItem, StorageConfig, Memory, MemoryType 
 // Lazy-load qdrant client
 let QdrantClient: any = null;
 
+import { logWarn } from '../../fault-logger.js';
+
 async function loadQdrant(): Promise<any> {
   if (QdrantClient) return QdrantClient;
   try {
@@ -213,10 +215,7 @@ export class QdrantVectorStore implements VectorStore {
         this.hasMultiVectorSchema[key] = true;
       } else {
         // Old unnamed-vector schema — needs migration
-        console.warn(
-          `[Qdrant] Collection "${name}" uses old single-vector schema. ` +
-          `Deleting and recreating with multi-vector schema. Re-indexing required.`
-        );
+        logWarn('qdrant', `Collection "${name}" uses old single-vector schema. Deleting and recreating with multi-vector schema. Re-indexing required.`);
         await client.deleteCollection(name);
         await this.createMultiVectorCollection(name, type);
         this.hasMultiVectorSchema[key] = true;

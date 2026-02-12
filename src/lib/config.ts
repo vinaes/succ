@@ -137,6 +137,8 @@ export interface SuccConfig {
   retrieval?: RetrievalConfig;
   // Mid-conversation observer settings
   observer?: ObserverConfig;
+  // Error reporting (brain-faults.log + webhook + sentry)
+  error_reporting?: ErrorReportingConfig;
 }
 
 /**
@@ -403,6 +405,17 @@ export interface ObserverConfig {
   max_minutes?: number;  // Or after N minutes, whichever first (default: 10)
 }
 
+export interface ErrorReportingConfig {
+  enabled?: boolean;              // Enable fault logging (default: true)
+  level?: 'error' | 'warn' | 'info' | 'debug';  // Minimum level to log (default: 'warn')
+  max_file_size_mb?: number;      // Rotation threshold in MB (default: 5)
+  webhook_url?: string;           // POST errors to this URL
+  webhook_headers?: Record<string, string>;  // Custom headers for webhook
+  sentry_dsn?: string;            // Sentry-compatible DSN (GlitchTip, self-hosted Sentry, etc.)
+  sentry_environment?: string;    // Sentry environment tag (default: 'production')
+  sentry_sample_rate?: number;    // Sentry sample rate 0-1 (default: 1.0)
+}
+
 export interface BPETokenizerConfig {
   enabled?: boolean;  // Enable BPE tokenizer (default: false)
   vocab_size?: number;  // Target vocabulary size (default: 5000)
@@ -522,6 +535,18 @@ export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = 
   include_memories: true,
   max_memories: 3,
   timeout_ms: 15000,  // 15s default timeout
+};
+
+// Default error reporting config
+export const DEFAULT_ERROR_REPORTING_CONFIG = {
+  enabled: true,
+  level: 'warn' as const,
+  max_file_size_mb: 5,
+  webhook_url: '',
+  webhook_headers: {} as Record<string, string>,
+  sentry_dsn: '',
+  sentry_environment: 'production',
+  sentry_sample_rate: 1.0,
 };
 
 // Default idle reflection config
@@ -1162,6 +1187,14 @@ export interface ConfigDisplay {
     save_to_memory: boolean;
     daily_budget_usd: number;
   };
+  // Error reporting settings
+  error_reporting: {
+    enabled: boolean;
+    level: string;
+    max_file_size_mb: number;
+    webhook_url: string;
+    sentry_dsn: string;
+  };
 }
 
 export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
@@ -1313,6 +1346,16 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         temperature: ws.temperature,
         save_to_memory: ws.save_to_memory,
         daily_budget_usd: ws.daily_budget_usd,
+      };
+    })(),
+    error_reporting: (() => {
+      const er = getErrorReportingConfig();
+      return {
+        enabled: er.enabled,
+        level: er.level,
+        max_file_size_mb: er.max_file_size_mb,
+        webhook_url: er.webhook_url,
+        sentry_dsn: er.sentry_dsn,
       };
     })(),
   };
@@ -1482,6 +1525,19 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`  Temperature: ${display.web_search.temperature}`);
   lines.push(`  Save to memory: ${display.web_search.save_to_memory}`);
   lines.push(`  Daily budget: ${display.web_search.daily_budget_usd > 0 ? `$${display.web_search.daily_budget_usd}` : 'unlimited'}`);
+  lines.push('');
+
+  // Error Reporting
+  lines.push('## Error Reporting');
+  lines.push(`  Enabled: ${display.error_reporting.enabled}`);
+  lines.push(`  Level: ${display.error_reporting.level}`);
+  lines.push(`  Max file size: ${display.error_reporting.max_file_size_mb}MB`);
+  if (display.error_reporting.webhook_url) {
+    lines.push(`  Webhook URL: ${display.error_reporting.webhook_url}`);
+  }
+  if (display.error_reporting.sentry_dsn) {
+    lines.push(`  Sentry DSN: ${display.error_reporting.sentry_dsn}`);
+  }
 
   return lines.join('\n');
 }
@@ -1687,5 +1743,24 @@ export function getObserverConfig(): Required<ObserverConfig> {
     enabled: userConfig.enabled ?? true,
     min_tokens: userConfig.min_tokens ?? 15000,
     max_minutes: userConfig.max_minutes ?? 10,
+  };
+}
+
+/**
+ * Get error reporting config with defaults.
+ * Used by fault-logger for local file, webhook, and sentry channels.
+ */
+export function getErrorReportingConfig() {
+  const config = getConfig();
+  const user = config.error_reporting || {};
+  return {
+    enabled: user.enabled ?? DEFAULT_ERROR_REPORTING_CONFIG.enabled,
+    level: user.level ?? DEFAULT_ERROR_REPORTING_CONFIG.level,
+    max_file_size_mb: user.max_file_size_mb ?? DEFAULT_ERROR_REPORTING_CONFIG.max_file_size_mb,
+    webhook_url: user.webhook_url ?? DEFAULT_ERROR_REPORTING_CONFIG.webhook_url,
+    webhook_headers: user.webhook_headers ?? DEFAULT_ERROR_REPORTING_CONFIG.webhook_headers,
+    sentry_dsn: user.sentry_dsn ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_dsn,
+    sentry_environment: user.sentry_environment ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_environment,
+    sentry_sample_rate: user.sentry_sample_rate ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_sample_rate,
   };
 }

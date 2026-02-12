@@ -3,6 +3,7 @@ import { cosineSimilarity } from '../embeddings.js';
 import { bufferToFloatArray } from './helpers.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
 import { Memory, getMemoryById } from './memories.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Knowledge Graph Types
@@ -75,7 +76,7 @@ export function createMemoryLink(
 
     // Schedule auto-export if enabled (async, non-blocking)
     triggerAutoExport().catch(err => {
-      console.warn('[graph] Auto-export failed:', err);
+      logWarn('graph', err instanceof Error ? err.message : 'Auto-export failed');
     });
 
     return { id: result.lastInsertRowid as number, created: true };

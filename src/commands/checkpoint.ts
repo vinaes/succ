@@ -20,6 +20,7 @@ import {
   formatSize,
   type CheckpointData,
 } from '../lib/checkpoint.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface CheckpointOptions {
   action: 'create' | 'restore' | 'list' | 'info';
@@ -50,6 +51,8 @@ export async function checkpoint(options: CheckpointOptions): Promise<void> {
       await doInfo(options);
       break;
     default:
+      logError('checkpoint', `Unknown action: ${options.action}`);
+
       console.error(`Unknown action: ${options.action}`);
       console.log('Usage: succ checkpoint <create|restore|list|info>');
   }
@@ -85,6 +88,7 @@ async function doCreate(options: CheckpointOptions): Promise<void> {
     console.log(`  Size: ${formatSize(stat.size)}`);
 
   } catch (error) {
+    logError('checkpoint', 'Failed to create checkpoint', error instanceof Error ? error : new Error(String(error)));
     console.error('Failed to create checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
@@ -92,6 +96,7 @@ async function doCreate(options: CheckpointOptions): Promise<void> {
 
 async function doRestore(options: CheckpointOptions): Promise<void> {
   if (!options.file) {
+    logError('checkpoint', 'No checkpoint file specified');
     console.error('Error: No checkpoint file specified');
     console.log('Usage: succ checkpoint restore <file>');
     process.exit(1);
@@ -139,6 +144,7 @@ async function doRestore(options: CheckpointOptions): Promise<void> {
     console.log(`  Brain files: ${result.brainFilesRestored}`);
 
   } catch (error) {
+    logError('checkpoint', 'Failed to restore checkpoint', error instanceof Error ? error : new Error(String(error)));
     console.error('Failed to restore checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
@@ -169,6 +175,7 @@ async function doList(): Promise<void> {
 
 async function doInfo(options: CheckpointOptions): Promise<void> {
   if (!options.file) {
+    logError('checkpoint', 'No checkpoint file specified for info command');
     console.error('Error: No checkpoint file specified');
     console.log('Usage: succ checkpoint info <file>');
     process.exit(1);
@@ -215,6 +222,7 @@ async function doInfo(options: CheckpointOptions): Promise<void> {
     }
 
   } catch (error) {
+    logError('checkpoint', 'Failed to read checkpoint', error instanceof Error ? error : new Error(String(error)));
     console.error('Failed to read checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }

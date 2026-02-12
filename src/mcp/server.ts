@@ -25,6 +25,7 @@ import { closeDb, closeGlobalDb, initStorageDispatcher, closeStorageDispatcher }
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { getProjectRoot } from '../lib/config.js';
+import { logError, logInfo } from '../lib/fault-logger.js';
 import { setupGracefulShutdown, setCurrentProject } from './helpers.js';
 import { registerResources } from './resources.js';
 import { registerSearchTools } from './tools/search.js';
@@ -65,7 +66,7 @@ registerDebugTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
-  console.error('Unhandled promise rejection:', error);
+  logError('mcp', 'Unhandled promise rejection', error instanceof Error ? error : new Error(String(error)));
   cleanupEmbeddings();
   closeDb();
   closeGlobalDb();
@@ -79,7 +80,7 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null;
 function resetIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    console.error('succ MCP server shutting down (idle timeout)');
+    logInfo('mcp', 'Shutting down (idle timeout)');
     process.exit(0);
   }, IDLE_TIMEOUT_MS);
   // Don't keep process alive just for the timer
@@ -92,7 +93,7 @@ async function main() {
 
   // Stdin close detection: when parent process dies, stdin closes
   process.stdin.on('end', () => {
-    console.error('succ MCP server shutting down (stdin closed)');
+    logInfo('mcp', 'Shutting down (stdin closed)');
     process.exit(0);
   });
   process.stdin.on('error', () => {
@@ -109,11 +110,11 @@ async function main() {
   resetIdleTimer();
 
   // Use stderr for logging (stdout is for MCP protocol)
-  console.error(`succ MCP server started (project: ${getProjectRoot()}, cwd: ${process.cwd()})`);
+  logInfo('mcp', `Server started (project: ${getProjectRoot()}, cwd: ${process.cwd()})`);
 }
 
 main().catch(async (error) => {
-  console.error('Failed to start MCP server:', error);
+  logError('mcp', 'Failed to start MCP server', error instanceof Error ? error : new Error(String(error)));
   await closeStorageDispatcher();
   cleanupEmbeddings();
   cleanupQualityScoring();

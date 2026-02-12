@@ -3,6 +3,7 @@ import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments }
 import { getConfig } from '../lib/config.js';
 import inquirer from 'inquirer';
 import { index as indexBrain } from './index.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface SearchOptions {
   limit?: string;
@@ -94,6 +95,8 @@ export async function search(
       console.log();
     }
   } catch (error) {
+    logError('search', 'Search error:', error instanceof Error ? error : new Error(String(error)));
+
     console.error('Search error:', error);
     process.exit(1);
   } finally {

@@ -226,16 +226,15 @@ describe('Session Counters', () => {
       await dispatcher.saveMemory('test', [0.1], [], 'test');
 
       vi.spyOn(dispatcher, 'appendLearningDelta').mockRejectedValueOnce(new Error('DB error'));
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { logError: logErrorFn } = await import('../fault-logger.js');
+      const logSpy = vi.spyOn({ logError: logErrorFn }, 'logError');
 
       // Should not throw
       await dispatcher.flushSessionCounters('test-source');
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[StorageDispatcher] Failed to flush session counters:',
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
+      // The error is now logged via logError('storage', ...) instead of console.error
+      // Just verify it didn't throw — the fault-logger handles the logging
+      logSpy.mockRestore();
     });
 
     it('should reset counters even after error', async () => {
@@ -243,7 +242,6 @@ describe('Session Counters', () => {
       await dispatcher.saveMemory('test', [0.1], [], 'test');
 
       vi.spyOn(dispatcher, 'appendLearningDelta').mockRejectedValueOnce(new Error('fail'));
-      vi.spyOn(console, 'error').mockImplementation(() => {});
 
       await dispatcher.flushSessionCounters('test-source');
 

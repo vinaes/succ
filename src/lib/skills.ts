@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { logError, logWarn } from './fault-logger.js';
 import {
   getAllSkills as getAllSkillsDb,
   searchSkillsDb,
@@ -206,7 +207,7 @@ export async function extractKeywords(
     console.log(`[skills] Extracted keywords: ${JSON.stringify(keywords)}`);
     return keywords;
   } catch (err) {
-    console.error(`[skills] extractKeywords failed:`, err);
+    logError('skills', 'Failed to extract keywords', err instanceof Error ? err : new Error(String(err)));
     return [];
   }
 }
@@ -338,7 +339,7 @@ export async function rankSkillsWithLLM(
     console.log(`[skills] Final suggestions: ${mapped.length}`);
     return mapped;
   } catch (err) {
-    console.error(`[skills] rankSkillsWithLLM failed:`, err);
+    logError('skills', 'Failed to suggest skills', err instanceof Error ? err : new Error(String(err)));
     return [];
   }
 }
@@ -411,7 +412,7 @@ export async function suggestSkills(
             candidates = [...candidates, ...newSkills].slice(0, 15);
           }
         } catch (err) {
-          console.error('[skills] Skyll search failed:', err);
+          logError('skills', 'Skyll search failed', err instanceof Error ? err : new Error(String(err)));
         }
       }
 
@@ -445,7 +446,7 @@ export async function suggestSkills(
       cacheSuggestions(userPrompt, ranked);
       return ranked;
     } catch (err) {
-      console.error(`[skills] ${backend} failed:`, err);
+      logError('skills', 'Backend suggestion failed', err instanceof Error ? err : new Error(String(err)));
       // Try next backend
     }
   }
@@ -550,7 +551,7 @@ export async function indexLocalSkills(projectDir: string): Promise<number> {
       });
       indexed++;
     } catch (err) {
-      console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to index skill');
+      logWarn('skills', err instanceof Error ? err.message : 'Failed to index skill');
     }
   }
 
@@ -567,7 +568,7 @@ export async function trackSkillUsage(skillName: string): Promise<void> {
   try {
     await trackSkillUsageDb(skillName);
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to track skill usage');
+    logWarn('skills', err instanceof Error ? err.message : 'Failed to track skill usage');
   }
 }
 

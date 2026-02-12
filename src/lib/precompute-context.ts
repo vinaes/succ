@@ -13,6 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
 import { SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
+import { logError, logWarn } from './fault-logger.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -130,7 +131,7 @@ async function generateBriefingWithLLM(
     const result = await callLLM(prompt, { timeout: 45000, maxTokens: 1000, useSleepAgent: true }, configOverride);
     return result?.trim() || null;
   } catch (error) {
-    console.warn(`[precompute-context] LLM briefing failed:`, error);
+    logWarn('precompute', 'LLM briefing failed', { error: String(error) });
     return null;
   }
 }
@@ -261,7 +262,7 @@ export async function precomputeContextCLI(
   } = {}
 ): Promise<void> {
   if (!fs.existsSync(transcriptPath)) {
-    console.error(`Transcript file not found: ${transcriptPath}`);
+    logError('precompute', `Transcript file not found: ${transcriptPath}`);
     process.exit(1);
   }
 

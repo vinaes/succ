@@ -11,6 +11,7 @@
 
 import { readProgressLog } from '../lib/progress-log.js';
 import { closeDb } from '../lib/storage/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface ProgressOptions {
   limit?: number;
@@ -36,6 +37,8 @@ export async function progress(options: ProgressOptions = {}): Promise<void> {
 
     console.log(`\n  Showing ${entries.length} entries (most recent first)`);
   } catch (error: any) {
+    logError('progress', `Error reading progress log: ${error.message}`);
+
     console.error(`Error reading progress log: ${error.message}`);
     process.exitCode = 1;
   } finally {

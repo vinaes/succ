@@ -1434,6 +1434,117 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
 
 ---
 
+## Error Reporting Settings
+
+Centralized fault logging with three channels: local file (always on), HTTP webhook (optional), and Sentry-compatible DSN (optional).
+
+All errors and warnings across the codebase are logged to `.succ/brain-faults.log` in JSON lines format with automatic rotation.
+
+```json
+{
+  "error_reporting": {
+    "enabled": true,
+    "level": "warn",
+    "max_file_size_mb": 5,
+    "webhook_url": "https://my-server.com/errors",
+    "webhook_headers": {
+      "Authorization": "Bearer my-token"
+    },
+    "sentry_dsn": "https://key@glitchtip.example.com/1",
+    "sentry_environment": "production",
+    "sentry_sample_rate": 1.0
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `error_reporting.enabled` | boolean | `true` | Enable fault logging |
+| `error_reporting.level` | `"error"` \| `"warn"` \| `"info"` \| `"debug"` | `"warn"` | Minimum level to log |
+| `error_reporting.max_file_size_mb` | number | `5` | Max log file size before rotation |
+| `error_reporting.webhook_url` | string | - | HTTP POST URL for remote logging |
+| `error_reporting.webhook_headers` | object | `{}` | Custom headers for webhook requests |
+| `error_reporting.sentry_dsn` | string | - | Sentry-compatible DSN (Sentry, GlitchTip, etc.) |
+| `error_reporting.sentry_environment` | string | `"production"` | Sentry environment tag |
+| `error_reporting.sentry_sample_rate` | number | `1.0` | Sentry event sample rate (0-1) |
+
+### Channels
+
+**Local file** (always active when `enabled: true`):
+- Path: `.succ/brain-faults.log`
+- Format: JSON lines (one JSON object per line)
+- Rotation: when file exceeds `max_file_size_mb`, renames to `.log.1` (1 backup, max ~10MB total)
+
+**Webhook** (when `webhook_url` is set):
+- Fire-and-forget HTTP POST with JSON body
+- Never blocks the caller, silently ignores failures
+- Works with any endpoint: GlitchTip, Telegram bots, Discord webhooks, custom servers
+
+**Sentry** (when `sentry_dsn` is set):
+- Lazy-loads `@sentry/node` — optional peer dependency, not bundled
+- Compatible with: Sentry SaaS, self-hosted Sentry, GlitchTip
+- Install SDK: `npm install @sentry/node` (only needed if using this channel)
+
+### Examples
+
+**Local-only (default, no setup needed):**
+```json
+{
+  "error_reporting": {
+    "enabled": true,
+    "level": "warn"
+  }
+}
+```
+
+**With GlitchTip (self-hosted Sentry alternative):**
+```json
+{
+  "error_reporting": {
+    "sentry_dsn": "https://key@glitchtip.my-server.com/1",
+    "sentry_environment": "dev"
+  }
+}
+```
+
+**With Discord/Telegram webhook:**
+```json
+{
+  "error_reporting": {
+    "webhook_url": "https://discord.com/api/webhooks/123/abc"
+  }
+}
+```
+
+**Errors only (skip warnings):**
+```json
+{
+  "error_reporting": {
+    "level": "error"
+  }
+}
+```
+
+### CLI
+
+```bash
+succ config set error_reporting.enabled true
+succ config set error_reporting.level error
+succ config set error_reporting.webhook_url "https://my-server.com/errors" --project
+succ config set error_reporting.sentry_dsn "https://key@glitchtip.my.com/1" --project
+succ config set error_reporting.max_file_size_mb 10
+```
+
+### MCP
+
+```
+succ_config_set key="error_reporting.webhook_url" value="https://my-server.com/errors" scope="project"
+succ_config_set key="error_reporting.sentry_dsn" value="https://key@glitchtip.my.com/1" scope="project"
+succ_config_set key="error_reporting.level" value="error"
+```
+
+---
+
 ## Full Example Configuration
 
 ```json
@@ -1572,6 +1683,12 @@ Separate LLM configuration for interactive chats (`succ chat`, onboarding). Defa
     "enabled": true,
     "semantic_weight": 0.8,
     "recency_weight": 0.2
+  },
+
+  "error_reporting": {
+    "enabled": true,
+    "level": "warn",
+    "max_file_size_mb": 5
   }
 }
 ```

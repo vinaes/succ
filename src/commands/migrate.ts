@@ -14,6 +14,7 @@ import { getConfig, getDbPath } from '../lib/config.js';
 import { getStorageInfo } from '../lib/storage/index.js';
 import { exportData, importData, exportToFile, importFromFile, getExportStats } from '../lib/storage/migration/export-import.js';
 import type { ExportData } from '../lib/storage/migration/export-import.js';
+import { logError } from '../lib/fault-logger.js';
 
 interface MigrateOptions {
   to?: 'sqlite' | 'postgresql';
@@ -61,6 +62,7 @@ export async function migrate(options: MigrateOptions): Promise<void> {
   // Import from file
   if (options.import) {
     if (!fs.existsSync(options.import)) {
+      logError('migrate', `Error: File not found: ${options.import}`);
       console.error(`Error: File not found: ${options.import}`);
       process.exit(1);
     }

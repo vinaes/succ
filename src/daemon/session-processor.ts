@@ -23,6 +23,7 @@ import { countTokens } from '../lib/token-counter.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
+import { logError } from '../lib/fault-logger.js';
 import { SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -239,7 +240,7 @@ Output a bullet-point summary (5-15 bullets).`;
   try {
     return await runLLM(prompt, 45000);
   } catch (err) {
-    console.error(`[session-processor] Failed to summarize chunk ${chunkIndex + 1}: ${err}`);
+    logError('daemon', 'Failed to summarize session chunk', err instanceof Error ? err : undefined);
     return '';
   }
 }
@@ -283,7 +284,7 @@ ${validSummaries.map((s, i) => `### Part ${i + 1}\n${s}`).join('\n\n')}`;
   try {
     return await runLLM(prompt, 60000);
   } catch (err) {
-    console.error(`[session-processor] Failed to combine summaries: ${err}`);
+    logError('daemon', 'Failed to combine session summaries', err instanceof Error ? err : undefined);
     // Fallback: just concatenate
     return validSummaries.join('\n\n---\n\n');
   }
@@ -331,7 +332,7 @@ ${summary}
 
     return learnings;
   } catch (err) {
-    console.error(`[session-processor] Failed to extract learnings: ${err}`);
+    logError('daemon', 'Failed to extract learnings from summary', err instanceof Error ? err : undefined);
     return [];
   }
 }

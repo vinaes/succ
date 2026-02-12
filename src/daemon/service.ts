@@ -20,6 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
+import { logError } from '../lib/fault-logger.js';
 import { processSessionEnd } from './session-processor.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
 import { startAnalyzer, stopAnalyzer, getAnalyzerStatus, triggerAnalysis } from './analyzer.js';
@@ -1371,6 +1372,7 @@ if (process.argv[1]?.endsWith('service.js') || process.argv[1]?.endsWith('servic
       console.log(`Daemon started on port ${port} (pid=${pid})`);
     })
     .catch((err) => {
+      logError('daemon', `Failed to start daemon: ${err.message}`, err);
       console.error('Failed to start daemon:', err.message);
       process.exit(1);
     });

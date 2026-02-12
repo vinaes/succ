@@ -14,6 +14,7 @@
  */
 
 import { getStorageDispatcher } from '../lib/storage/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface BackfillOptions {
   memories?: boolean;
@@ -33,6 +34,8 @@ export async function backfill(options: BackfillOptions = {}): Promise<void> {
 
   if (info.vector !== 'qdrant') {
     console.error('Qdrant is not configured. Set storage.vector = "qdrant" in your config.');
+    logError('backfill', `Current vector backend: ${info.vectorName}`);
+
     console.error(`Current vector backend: ${info.vectorName}`);
     process.exit(1);
   }

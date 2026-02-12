@@ -1,5 +1,6 @@
 import { getConfig, getConfigWithOverride } from './config.js';
 import { createHash } from 'crypto';
+import { logWarn } from './fault-logger.js';
 import os from 'os';
 import { NativeOrtSession } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
@@ -47,7 +48,7 @@ let poolInitFailed = false; // Don't retry if pool init failed
  */
 export function cleanupEmbeddings(): void {
   if (nativeSession) {
-    nativeSession.dispose().catch(err => console.warn('[embeddings] Session dispose failed:', err));
+    nativeSession.dispose().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Session dispose failed'));
     nativeSession = null;
     embeddingCache.clear();
     // Hint GC if available
@@ -56,7 +57,7 @@ export function cleanupEmbeddings(): void {
     }
   }
   if (embeddingPool) {
-    embeddingPool.shutdown().catch(err => console.warn('[embeddings] Pool shutdown failed:', err));
+    embeddingPool.shutdown().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Pool shutdown failed'));
     embeddingPool = null;
   }
 }
@@ -173,7 +174,7 @@ async function withRetry<T>(
 
       if (attempt < retries) {
         const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-        console.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+        logWarn('embeddings', `Retry attempt ${attempt + 1}/${retries} after ${delay}ms delay`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
@@ -198,7 +199,7 @@ async function getNativeSession(): Promise<NativeOrtSession> {
     });
 
     if (providerResult.warning) {
-      console.warn(`[embeddings] ${providerResult.warning}`);
+      logWarn('embeddings', providerResult.warning);
     }
 
     gpuBackend = providerResult.provider;
@@ -259,10 +260,10 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
     return await embeddingPool.getEmbeddings(texts);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`Worker pool failed, falling back to single-thread: ${msg}`);
+    logWarn('embeddings', `Worker pool failed, falling back to single-threaded: ${msg}`);
     poolInitFailed = true;
     if (embeddingPool) {
-      embeddingPool.shutdown().catch(err => console.warn('[embeddings] Pool cleanup failed:', err));
+      embeddingPool.shutdown().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Pool cleanup failed'));
       embeddingPool = null;
     }
     return null;

@@ -7,6 +7,7 @@ import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/storage/index.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 interface IndexOptions {
   recursive?: boolean;
@@ -29,6 +30,8 @@ export async function index(
     : path.join(claudeDir, 'brain');
 
   if (!fs.existsSync(searchPath)) {
+    logError('index', `Path not found: ${searchPath}`);
+
     console.error(`Path not found: ${searchPath}`);
     process.exit(1);
   }
@@ -70,8 +73,11 @@ export async function index(
       } else {
         // Non-interactive without explicit auto-reindex (MCP, daemon, scripts)
         // DO NOT auto-clear — this destroys data silently
+        logWarn('index', 'Dimension mismatch detected in non-interactive mode');
         console.warn('Dimension mismatch detected in non-interactive mode.');
+        logWarn('index', 'Skipping auto-clear to prevent data loss');
         console.warn('Skipping auto-clear to prevent data loss.');
+        logWarn('index', 'Run "succ index --force" interactively to reindex');
         console.warn('Run "succ index --force" interactively to reindex.');
         return;
       }

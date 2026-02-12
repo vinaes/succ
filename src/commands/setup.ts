@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
+import { logError } from '../lib/fault-logger.js';
 
 interface EditorConfig {
   name: string;
@@ -216,6 +217,8 @@ export async function setup(options: SetupOptions): Promise<void> {
 
   const editor = EDITOR_CONFIGS[editorKey];
   if (!editor) {
+    logError('setup', `Unknown editor: ${editorKey}`);
+
     console.error(`Unknown editor: ${editorKey}`);
     console.error('Available editors: ' + Object.keys(EDITOR_CONFIGS).join(', '));
     process.exitCode = 1;

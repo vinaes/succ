@@ -23,6 +23,7 @@ import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
 import { parseDuration } from '../lib/temporal.js';
 import { extractFactsWithLLM, ExtractedFact } from '../lib/session-summary.js';
 import path from 'path';
+import { logError } from '../lib/fault-logger.js';
 
 /**
  * Format quality score briefly for list display
@@ -178,6 +179,8 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
       }
     }
   } catch (error: any) {
+    logError('memories', `Error:: ${error.message}`, error instanceof Error ? error : undefined);
+
     console.error('Error:', error.message);
     closeDb();
     closeGlobalDb();
@@ -232,6 +235,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
       try {
         validFromDate = parseDuration(validFrom);
       } catch (e: any) {
+        logError('memories', `Invalid --valid-from: ${e.message}`, e instanceof Error ? e : undefined);
         console.error(`Invalid --valid-from: ${e.message}`);
         process.exit(1);
       }
@@ -241,6 +245,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
       try {
         validUntilDate = parseDuration(validUntil);
       } catch (e: any) {
+        logError('memories', `Invalid --valid-until: ${e.message}`, e instanceof Error ? e : undefined);
         console.error(`Invalid --valid-until: ${e.message}`);
         process.exit(1);
       }
@@ -331,6 +336,8 @@ export async function remember(content: string, options: RememberOptions = {}): 
       }
     }
   } catch (error: any) {
+    logError('memories', `Error saving memory:: ${error.message}`, error instanceof Error ? error : undefined);
+
     console.error('Error saving memory:', error.message);
     console.error(error.stack);
     closeDb();
@@ -564,6 +571,8 @@ export async function memoryStats(): Promise<void> {
       console.log(`  Newest: ${new Date(stats.newest_memory).toLocaleDateString()}`);
     }
   } catch (error: any) {
+    logError('memories', `Error getting stats:: ${error.message}`, error instanceof Error ? error : undefined);
+
     console.error('Error getting stats:', error.message);
     closeDb();
     process.exit(1);
@@ -609,6 +618,7 @@ export async function forget(options: ForgetOptions): Promise<void> {
     if (olderThan) {
       const date = parseRelativeDate(olderThan);
       if (!date) {
+        logError('memories', `Invalid date: ${olderThan}`);
         console.error(`Invalid date: ${olderThan}`);
         console.log('Use: "30d" (30 days), "1w" (1 week), "3m" (3 months), or ISO date');
         closeDb();
@@ -658,6 +668,8 @@ export async function forget(options: ForgetOptions): Promise<void> {
     console.log('  --all             Delete ALL memories');
     closeDb();
   } catch (error: any) {
+    logError('memories', `Error:: ${error.message}`, error instanceof Error ? error : undefined);
+
     console.error('Error:', error.message);
     closeDb();
     process.exit(1);

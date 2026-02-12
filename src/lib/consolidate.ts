@@ -8,6 +8,7 @@
  */
 
 import { Worker } from 'worker_threads';
+import { logWarn } from './fault-logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -546,7 +547,7 @@ export async function llmMergeContent(
     );
     return result?.trim() || null;
   } catch (error) {
-    console.warn(`[consolidate] LLM merge failed (${backend}):`, error);
+    logWarn('consolidate', `LLM merge failed (${backend})`, { error: String(error) });
     return null;
   }
 }

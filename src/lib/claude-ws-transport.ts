@@ -12,6 +12,7 @@
 import { WebSocketServer } from 'ws';
 import type { WebSocket as WSType } from 'ws';
 import spawn from 'cross-spawn';
+import { logError, logWarn, logInfo } from './fault-logger.js';
 import type { ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import type { ChatMessage } from './llm.js';
@@ -140,7 +141,7 @@ export class ClaudeWSTransport {
    */
   static warmup(): void {
     ClaudeWSTransport.getInstance().catch((err) => {
-      console.error('[claude-ws] Warmup failed:', err.message);
+      logWarn('ws-transport', `Warmup failed: ${err.message}`);
     });
   }
 
@@ -213,7 +214,7 @@ export class ClaudeWSTransport {
     await this.readyPromise;
     clearTimeout(initTimeout);
 
-    console.error(`[claude-ws] Ready (port=${this.port}, session=${this.sessionId})`);
+    logInfo('ws-transport', `Ready (port=${this.port}, session=${this.sessionId})`);
 
     // Cleanup on process exit
     const cleanup = () => { ClaudeWSTransport.shutdown(); };
@@ -241,7 +242,7 @@ export class ClaudeWSTransport {
 
       this.wss.on('connection', (socket) => {
         if (this.ws) {
-          console.error('[claude-ws] Rejecting second connection');
+          logWarn('ws-transport', 'Rejecting second connection');
           socket.close();
           return;
         }
@@ -259,13 +260,13 @@ export class ClaudeWSTransport {
               const msg = JSON.parse(line) as NDJSONMessage;
               this.handleMessage(msg);
             } catch {
-              console.error('[claude-ws] Failed to parse NDJSON line:', line.substring(0, 200));
+              logWarn('ws-transport', `Failed to parse NDJSON line: ${line.substring(0, 200)}`);
             }
           }
         });
 
         socket.on('close', () => {
-          console.error('[claude-ws] CLI disconnected');
+          logInfo('ws-transport', 'CLI disconnected');
           this.ws = null;
           this.rejectPending(new Error('[claude-ws] CLI disconnected'));
           // Reset singleton so next call restarts
@@ -274,7 +275,7 @@ export class ClaudeWSTransport {
         });
 
         socket.on('error', (err) => {
-          console.error('[claude-ws] Socket error:', err.message);
+          logError('ws-transport', `Socket error: ${err.message}`, err instanceof Error ? err : new Error(String(err)));
         });
       });
     });
@@ -309,7 +310,7 @@ export class ClaudeWSTransport {
     this.cliProcess.stderr?.on('data', (data: Buffer) => {
       const text = data.toString().trim();
       if (text) {
-        console.error(`[claude-ws:cli] ${text}`);
+        logInfo('ws-transport', `CLI stderr: ${text}`);
       }
     });
 
@@ -317,18 +318,18 @@ export class ClaudeWSTransport {
     this.cliProcess.stdout?.on('data', (data: Buffer) => {
       const text = data.toString().trim();
       if (text) {
-        console.error(`[claude-ws:stdout] ${text}`);
+        logInfo('ws-transport', `CLI stdout: ${text}`);
       }
     });
 
     this.cliProcess.on('close', (code) => {
-      console.error(`[claude-ws] CLI process exited (code=${code})`);
+      logInfo('ws-transport', `CLI process exited (code=${code})`);
       this.cliProcess = null;
       this.rejectPending(new Error(`[claude-ws] CLI exited with code ${code}`));
     });
 
     this.cliProcess.on('error', (err) => {
-      console.error(`[claude-ws] CLI spawn error: ${err.message}`);
+      logError('ws-transport', `CLI spawn error: ${err.message}`, err);
       this.cliProcess = null;
       this.readyReject?.(err);
       this.rejectPending(err);
