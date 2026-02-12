@@ -1639,6 +1639,44 @@ export class StorageDispatcher {
     }));
   }
 
+  async getMemoryEmbeddingsByIds(ids: number[]): Promise<Map<number, number[]>> {
+    if (ids.length === 0) return new Map();
+
+    if (this.backend === 'postgresql' && this.postgres) {
+      const pool = await this.postgres.getPool();
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      const { rows } = await pool.query(
+        `SELECT id, embedding::text FROM memories WHERE id IN (${placeholders})`,
+        ids
+      );
+      const map = new Map<number, number[]>();
+      for (const row of rows) {
+        if (row.embedding) {
+          // pgvector returns embedding as string "[0.1,0.2,...]"
+          const vec = JSON.parse(row.embedding.replace(/^\[/, '[').replace(/\]$/, ']'));
+          map.set(row.id, vec);
+        }
+      }
+      return map;
+    }
+
+    const sqlite = await this.getSqliteFns();
+    const db = sqlite.getDb();
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT id, embedding FROM memories WHERE id IN (${placeholders})`
+    ).all(...ids) as Array<{ id: number; embedding: Buffer | null }>;
+    const map = new Map<number, number[]>();
+    for (const row of rows) {
+      if (row.embedding) {
+        map.set(row.id, Array.from(new Float32Array(
+          row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4
+        )));
+      }
+    }
+    return map;
+  }
+
   async deleteMemoryLinksForMemory(memoryId: number): Promise<number> {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
