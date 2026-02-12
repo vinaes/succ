@@ -13,6 +13,7 @@
  */
 
 import spawn from 'cross-spawn';
+import { logError, logWarn } from './fault-logger.js';
 // cross-spawn exposes .sync at runtime but not in types
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
@@ -169,7 +170,7 @@ export function getSleepAgentConfig(): LLMConfig | null {
   // Sleep agent only supports local and openrouter (not claude - ToS issues)
   const backend = sleepAgent.backend || 'local';
   if (backend !== 'local' && backend !== 'openrouter') {
-    console.warn(`[llm] Sleep agent backend '${backend}' not supported, using 'local'`);
+    logWarn('llm', `Sleep agent backend '${backend}' not supported, only 'local' and 'openrouter' are allowed`);
   }
 
   // Determine model based on backend
@@ -315,7 +316,7 @@ export async function callLLMWithFallback(
       return await callLLM(prompt, options, { backend, model });
     } catch (err) {
       lastError = err as Error;
-      console.warn(`[llm] ${backend} failed: ${lastError.message}`);
+      logWarn('llm', `Backend '${backend}' failed: ${lastError.message}`);
       // Continue to next backend
     }
   }
@@ -563,7 +564,7 @@ async function callOpenRouter(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error(`[llm] OpenRouter error body: ${errorBody}`);
+    logError('llm', `OpenRouter API error ${response.status}: ${errorBody}`);
     throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
   }
 
@@ -649,7 +650,7 @@ async function callOpenRouterChat(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error(`[llm] OpenRouter error body: ${errorBody}`);
+    logError('llm', `OpenRouter chat API error ${response.status}: ${errorBody}`);
     throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
   }
 
@@ -708,7 +709,7 @@ export async function callOpenRouterSearch(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error(`[llm] OpenRouter search error: ${errorBody}`);
+    logError('llm', `OpenRouter search API error ${response.status}: ${errorBody}`);
     throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
   }
 

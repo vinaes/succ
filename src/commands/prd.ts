@@ -21,6 +21,7 @@ import {
 import { exportPrdToObsidian, exportAllPrds } from '../lib/prd/export.js';
 import { computeStats } from '../lib/prd/types.js';
 import type { ExecutionMode, Task } from '../lib/prd/types.js';
+import { logError } from '../lib/fault-logger.js';
 
 // ============================================================================
 // Options interfaces
@@ -100,6 +101,8 @@ export async function prdGenerate(
     }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
+    logError('prd', `Error generating PRD: ${msg}`);
+
     console.error(`Error generating PRD: ${msg}`);
     process.exit(1);
   }
@@ -124,11 +127,15 @@ export async function prdParse(
       prdId = fileOrId;
       const prd = loadPrd(prdId);
       if (!prd) {
+        logError('prd', `PRD not found: ${prdId}`);
+
         console.error(`PRD not found: ${prdId}`);
         process.exit(1);
       }
       prdContent = loadPrdMarkdown(prdId) ?? '';
       if (!prdContent) {
+        logError('prd', `PRD markdown not found for: ${prdId}`);
+
         console.error(`PRD markdown not found for: ${prdId}`);
         process.exit(1);
       }
@@ -152,6 +159,8 @@ export async function prdParse(
         console.log(`Created PRD ${prdId} from file: ${fileOrId}`);
       }
     } else {
+      logError('prd', `Not found: ${fileOrId} (expected PRD ID or file path)`);
+
       console.error(`Not found: ${fileOrId} (expected PRD ID or file path)`);
       process.exit(1);
     }
@@ -201,6 +210,8 @@ export async function prdParse(
     }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
+    logError('prd', `Error parsing PRD: ${msg}`);
+
     console.error(`Error parsing PRD: ${msg}`);
     process.exit(1);
   }
@@ -245,6 +256,8 @@ export async function prdRun(
     }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
+    logError('prd', `Error running PRD: ${msg}`);
+
     console.error(`Error running PRD: ${msg}`);
     process.exit(1);
   }
@@ -293,6 +306,8 @@ export async function prdStatus(
 
   const prd = loadPrd(prdId);
   if (!prd) {
+    logError('prd', `PRD not found: ${prdId}`);
+
     console.error(`PRD not found: ${prdId}`);
     process.exit(1);
   }
@@ -411,6 +426,8 @@ export async function prdArchive(
 
   const prd = loadPrd(prdId);
   if (!prd) {
+    logError('prd', `PRD not found: ${prdId}`);
+
     console.error(`PRD not found: ${prdId}`);
     process.exit(1);
   }
@@ -420,6 +437,8 @@ export async function prdArchive(
     savePrd(prd);
     console.log(`Archived PRD: ${prd.title} (${prdId})`);
   } catch (error) {
+    logError('prd', `Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
+
     console.error(`Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
@@ -454,6 +473,8 @@ export async function prdExport(
       console.log(`Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}`);
     }
   } catch (error) {
+    logError('prd', `Export failed: ${error instanceof Error ? error.message : String(error)}`);
+
     console.error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }

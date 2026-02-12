@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { createDaemonClient, getDaemonPort, getDaemonPid, getDaemonStatus, ensureDaemonRunning } from '../daemon/client.js';
 import { getSuccDir } from '../lib/config.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface DaemonOptions {
   json?: boolean;
@@ -109,6 +110,7 @@ export async function daemonStart(options: DaemonOptions = {}): Promise<void> {
     const health = await client.getHealth();
     console.log(`Daemon started on port ${getDaemonPort()} (pid=${health?.pid})`);
   } else {
+    logError('daemon-cmd', 'Failed to start daemon');
     console.error('Failed to start daemon');
     process.exit(1);
   }

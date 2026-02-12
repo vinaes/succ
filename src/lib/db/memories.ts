@@ -3,6 +3,7 @@ import path from 'path';
 import { getDb } from './connection.js';
 import { sqliteVecAvailable, MemoryType } from './schema.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
+import { logWarn } from '../fault-logger.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
 import { getSuccDir, getConfig } from '../config.js';
@@ -175,7 +176,7 @@ export function saveMemory(
       const conf = getConfig();
       if (conf.graph_llm_relations?.enabled && conf.graph_llm_relations?.auto_on_save) {
         import('../graph/llm-relations.js').then(m => m.enrichMemoryLinks(newId)).catch(err => {
-          console.warn(`[memories] LLM enrichment failed for memory ${newId}:`, err);
+          logWarn('memories', `LLM enrichment failed for memory ${newId}`, { error: String(err) });
         });
       }
     } catch {
@@ -186,7 +187,7 @@ export function saveMemory(
   // Schedule auto-export if enabled (async, non-blocking)
   if (linksCreated > 0) {
     triggerAutoExport().catch(err => {
-      console.warn('[memories] Auto-export failed:', err);
+      logWarn('memories', err instanceof Error ? err.message : 'Auto-export failed');
     });
   }
 

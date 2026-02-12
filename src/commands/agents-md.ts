@@ -11,6 +11,7 @@
 
 import { generateAgentsMd, writeAgentsMd } from '../lib/agents-md-generator.js';
 import { closeDb } from '../lib/storage/index.js';
+import { logError } from '../lib/fault-logger.js';
 
 export interface AgentsMdOptions {
   preview?: boolean;
@@ -28,6 +29,8 @@ export async function agentsMd(options: AgentsMdOptions = {}): Promise<void> {
     const result = await writeAgentsMd(options.path ? { output_path: options.path } : undefined);
     console.log(`Generated ${result.path} (${result.entries} entries)`);
   } catch (error: any) {
+    logError('agents-md', `Error generating AGENTS.md: ${error.message}`);
+
     console.error(`Error generating AGENTS.md: ${error.message}`);
     process.exitCode = 1;
   } finally {

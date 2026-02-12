@@ -9,6 +9,7 @@ import * as readline from 'readline';
 import { ONBOARDING_SYSTEM_PROMPT } from '../../prompts/index.js';
 import { callLLMChat, ChatMessage } from '../llm.js';
 import { markOnboardingCompleted } from '../config.js';
+import { logError } from '../fault-logger.js';
 
 function createReadline(): readline.Interface {
   return readline.createInterface({
@@ -47,7 +48,7 @@ export async function runAiOnboarding(): Promise<void> {
       console.log(`succ: ${greeting}\n`);
       messages.push({ role: 'assistant', content: greeting });
     } catch (error) {
-      console.error('\nFailed to connect to LLM. Falling back to static wizard.\n');
+      logError('onboarding', 'Failed to connect to LLM, falling back to static wizard', error instanceof Error ? error : undefined);
       rl.close();
       // Import dynamically to avoid circular dependency
       const { runStaticWizard } = await import('./wizard.js');
@@ -80,7 +81,7 @@ export async function runAiOnboarding(): Promise<void> {
         console.log(`\nsucc: ${response}\n`);
         messages.push({ role: 'assistant', content: response });
       } catch (error) {
-        console.error('\nError getting response. Please try again or type "done" to continue.\n');
+        logError('onboarding', 'Error getting response', error instanceof Error ? error : undefined);
       }
 
       turnCount++;

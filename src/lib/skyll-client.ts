@@ -19,6 +19,7 @@ import {
   searchSkillsDb,
 } from './storage/index.js';
 import { getConfig } from './config.js';
+import { logError, logWarn } from './fault-logger.js';
 import type { Skill } from './skills.js';
 
 // ============================================================================
@@ -120,7 +121,7 @@ async function getCachedSkills(query: string): Promise<Skill[] | null> {
       }));
     return skyllRows.length > 0 ? skyllRows : null;
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skills');
+    logWarn('skyll', err instanceof Error ? err.message : 'Failed to get cached skills');
     return null;
   }
 }
@@ -139,7 +140,7 @@ async function cacheSkills(skills: SkyllSkill[], ttlSeconds: number): Promise<vo
         cacheExpires: expires,
       });
     } catch (err) {
-      console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to cache skill');
+      logWarn('skyll', err instanceof Error ? err.message : 'Failed to cache skill');
     }
   }
 }
@@ -191,7 +192,7 @@ export async function searchSkyll(
 
   // Check rate limit
   if (!checkRateLimit(config.rateLimit)) {
-    console.warn('[skyll] Rate limit reached, using cache only');
+    logWarn('skyll', 'Rate limit reached, using cache only');
     return (await getCachedSkills(query)) || [];
   }
 
@@ -216,7 +217,7 @@ export async function searchSkyll(
 
     if (!response.ok) {
       if (response.status === 429) {
-        console.warn('[skyll] Rate limited by API');
+        logWarn('skyll', 'Rate limited by API');
       }
       return (await getCachedSkills(query)) || [];
     }
@@ -238,7 +239,7 @@ export async function searchSkyll(
       content: s.content,
     }));
   } catch (err) {
-    console.error('[skyll] Search failed:', err);
+    logError('skyll', 'Search failed', err instanceof Error ? err : new Error(String(err)));
     return (await getCachedSkills(query)) || [];
   }
 }
@@ -266,7 +267,7 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
       };
     }
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to get cached skill');
+    logWarn('skyll', err instanceof Error ? err.message : 'Failed to get cached skill');
   }
 
   // Check rate limit
@@ -308,7 +309,7 @@ export async function getSkyllSkill(skillId: string): Promise<Skill | null> {
       content: skill.content,
     };
   } catch (err) {
-    console.error('[skyll] Get skill failed:', err);
+    logError('skyll', 'Get skill failed', err instanceof Error ? err : new Error(String(err)));
     return null;
   }
 }
@@ -320,7 +321,7 @@ export async function clearExpiredCache(): Promise<number> {
   try {
     return await clearExpiredSkyllCacheDb();
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to clear expired cache');
+    logWarn('skyll', err instanceof Error ? err.message : 'Failed to clear expired cache');
     return 0;
   }
 }
@@ -342,7 +343,7 @@ export async function getSkyllStatus(): Promise<{
     const stats = await getSkyllCacheStatsDb();
     cachedSkills = stats.cachedSkills;
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'Failed to count cached skills');
+    logWarn('skyll', err instanceof Error ? err.message : 'Failed to count cached skills');
   }
 
   return {

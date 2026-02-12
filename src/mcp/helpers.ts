@@ -15,6 +15,7 @@ import fs from 'fs';
 import { z } from 'zod';
 import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, getStorageDispatcher, getMemoryStats, type TokenEventType } from '../lib/storage/index.js';
 import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
+import { logFault, logWarn } from '../lib/fault-logger.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { countTokens, countTokensArray } from '../lib/token-counter.js';
@@ -57,7 +58,7 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
   // Reinit storage if we already had a different project OR this is first time
   if (_currentProject !== null) {
     try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-project-switch'); } catch (err) {
-      console.warn('[mcp] Session counter flush failed:', err);
+      logWarn('mcp', 'Session counter flush failed', { error: String(err) });
     }
     closeDb();
     closeGlobalDb();
@@ -74,7 +75,7 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 export function setupGracefulShutdown() {
   const cleanup = async () => {
     try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-session'); } catch (err) {
-      console.warn('[mcp] Session counter flush failed:', err);
+      logWarn('mcp', 'Session counter flush failed', { error: String(err) });
     }
     await closeStorageDispatcher();
     cleanupEmbeddings();
@@ -176,7 +177,7 @@ export async function trackTokenSavings(
       estimated_cost: estimatedCost,
     });
   } catch (err) {
-    console.warn('[mcp] Token savings tracking failed:', err);
+    logWarn('mcp', 'Token savings tracking failed', { error: String(err) });
   }
 }
 
@@ -210,7 +211,7 @@ export async function trackMemoryAccess(
 
     await incrementMemoryAccessBatch(accesses);
   } catch (err) {
-    console.warn('[mcp] Memory access tracking failed:', err);
+    logWarn('mcp', 'Memory access tracking failed', { error: String(err) });
   }
 }
 
@@ -257,7 +258,10 @@ export function createToolResponse(text: string): ToolResponse {
   };
 }
 
-export function createErrorResponse(text: string): ToolResponse {
+export function createErrorResponse(text: string, component?: string, error?: Error): ToolResponse {
+  if (component) {
+    logFault('error', component, text, { error });
+  }
   return {
     content: [{ type: 'text' as const, text }],
     isError: true,

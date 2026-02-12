@@ -10,6 +10,7 @@ import {
   loadAnalyzeState, saveAnalyzeState, getGitHead, getChangedFiles,
   hashFile, shouldRerunAgent, type AnalyzeState
 } from '../lib/analyze-state.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
@@ -144,7 +145,8 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     profileSpinner.succeed(
       `Profiled: ${profile.languages.join(', ')} — ${profile.systems.length} systems, ${profile.features.length} features`
     );
-  } catch {
+  } catch (err) {
+    logError('analyze', 'LLM profiling failed', err instanceof Error ? err : undefined);
     profile = getDefaultProfile();
     profileSpinner.warn('LLM profiling failed, using fallback profile');
   }
@@ -907,6 +909,7 @@ async function runAgentsSequential(agents: Agent[], context: string): Promise<vo
       spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
       timings.push({ name: agent.name, durationMs: elapsed, success: true });
     } catch (error) {
+      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
       const elapsed = Date.now() - agentStart;
       spinner.fail(`${agent.name}: ${error}`);
       timings.push({ name: agent.name, durationMs: elapsed, success: false });
@@ -979,7 +982,8 @@ async function runAgentsOpenRouter(
   let config;
   try {
     config = getConfig();
-  } catch {
+  } catch (err) {
+    logError('analyze', 'OPENROUTER_API_KEY not set', err instanceof Error ? err : undefined);
     console.error('Error: OPENROUTER_API_KEY not set');
     console.error('Set it via env var or ~/.succ/config.json');
     process.exit(1);
@@ -1042,6 +1046,7 @@ async function runAgentsOpenRouter(
         timings.push({ name: agent.name, durationMs: elapsed, success: false });
       }
     } catch (error) {
+      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
       const elapsed = Date.now() - agentStart;
       spinner.fail(`${agent.name}: ${error}`);
       timings.push({ name: agent.name, durationMs: elapsed, success: false });
@@ -1067,6 +1072,7 @@ async function runAgentsLocal(
   const temperature = config.analyze_temperature ?? 0.3;
 
   if (!apiUrl) {
+    logError('analyze', 'analyze_api_url not configured');
     console.error('Error: analyze_api_url not configured');
     console.error('Set it in ~/.succ/config.json:');
     console.error('  "analyze_api_url": "http://localhost:11434/v1"  // Ollama');
@@ -1075,6 +1081,7 @@ async function runAgentsLocal(
   }
 
   if (!model) {
+    logError('analyze', 'analyze_model not configured');
     console.error('Error: analyze_model not configured');
     console.error('Set it in ~/.succ/config.json:');
     console.error('  "analyze_model": "qwen2.5-coder:32b"  // Ollama');
@@ -1160,6 +1167,7 @@ async function runAgentsLocal(
         timings.push({ name: agent.name, durationMs: elapsed, success: false });
       }
     } catch (error) {
+      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
       const elapsed = Date.now() - agentStart;
       spinner.fail(`${agent.name}: ${error}`);
       timings.push({ name: agent.name, durationMs: elapsed, success: false });
@@ -1245,6 +1253,7 @@ Rules:
         responseText = await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 60000 });
       }
     } catch (err) {
+      logWarn('analyze', `LLM profiling call attempt ${attempt + 1} failed`, { error: String(err) });
       if (attempt === maxRetries) console.warn(`⚠ LLM profiling call failed: ${err}`);
     }
     if (responseText) break;
@@ -1254,6 +1263,7 @@ Rules:
   }
 
   if (!responseText) {
+    logWarn('analyze', 'LLM profiling returned empty response after retries');
     console.warn('⚠ LLM profiling returned empty response after retries');
     return getDefaultProfile();
   }
@@ -1313,6 +1323,7 @@ Rules:
     return parsed;
   }
 
+  logWarn('analyze', 'Could not parse LLM profile response, using fallback');
   console.warn('⚠ Could not parse LLM profile response, using fallback');
   return getDefaultProfile();
 }

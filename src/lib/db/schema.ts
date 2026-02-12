@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { getConfig } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 import { getModelDimension } from '../embeddings.js';
 import { bufferToFloatArray } from './helpers.js';
 
@@ -317,13 +318,13 @@ function checkModelCompatibility(database: Database.Database): void {
 
     // Different dimensions = incompatible, must reindex
     if (currentDim && storedDim && currentDim !== storedDim) {
-      console.warn(`\n⚠️  Embedding model changed: ${stored.value} → ${currentModel}`);
-      console.warn(`   Dimensions: ${storedDim} → ${currentDim} (incompatible)`);
-      console.warn(`   Run 'succ index -f' to reindex all documents.\n`);
+      logWarn('db-schema', `Embedding model changed: ${stored.value} (dim=${storedDim}) -> ${currentModel} (dim=${currentDim})`);
+      logWarn('db-schema', 'Dimensions are incompatible — existing embeddings will not work correctly');
+      logWarn('db-schema', 'Run "succ reindex" to regenerate all embeddings with the new model');
     } else if (stored.value !== currentModel) {
       // Same dimension but different model - still should reindex for accuracy
-      console.warn(`\n⚠️  Embedding model changed: ${stored.value} → ${currentModel}`);
-      console.warn(`   Consider running 'succ index -f' to reindex for best results.\n`);
+      logWarn('db-schema', `Embedding model changed: ${stored.value} -> ${currentModel} (same dimension=${currentDim})`);
+      logWarn('db-schema', 'Run "succ reindex" to regenerate embeddings for best accuracy');
     }
   }
 

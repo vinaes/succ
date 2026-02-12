@@ -13,6 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
+import { logError, logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
@@ -85,7 +86,7 @@ export async function extractFactsWithLLM(
     const result = await callLLM(prompt, { timeout: 30000, maxTokens: 2000, useSleepAgent: true }, configOverride);
     return parseFactsResponse(result);
   } catch (error) {
-    console.warn(`[session-summary] LLM extraction failed (${backend}):`, error);
+    logWarn('session-summary', `LLM extraction failed (${backend})`, { error: String(error) });
     return [];
   }
 }
@@ -346,7 +347,7 @@ export async function sessionSummary(
   const fs = await import('fs');
 
   if (!fs.existsSync(transcriptPath)) {
-    console.error(`Transcript file not found: ${transcriptPath}`);
+    logError('session-summary', `Transcript file not found: ${transcriptPath}`);
     process.exit(1);
   }
 

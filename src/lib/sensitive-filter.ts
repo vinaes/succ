@@ -8,6 +8,7 @@
  */
 
 import { Redactor } from '@redactpii/node';
+import { logWarn } from './fault-logger.js';
 
 export interface SensitiveMatch {
   type: string;
@@ -187,7 +188,7 @@ export function scanSensitive(text: string): FilterResult {
       }
     }
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii failed');
+    logWarn('sensitive-filter', err instanceof Error ? err.message : 'redactpii failed');
   }
 
   // 3. Find high-entropy strings
@@ -237,7 +238,7 @@ export function scanSensitive(text: string): FilterResult {
     try {
       redactedText = redactPiiRedactor.redact(redactedText);
     } catch (err) {
-      console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii redaction failed');
+      logWarn('sensitive-filter', err instanceof Error ? err.message : 'redactpii redaction failed');
     }
   }
 
@@ -326,7 +327,7 @@ export function hasSensitiveInfo(text: string): boolean {
       return true;
     }
   } catch (err) {
-    console.warn('[skyll]', err instanceof Error ? err.message : 'redactpii check failed');
+    logWarn('sensitive-filter', err instanceof Error ? err.message : 'redactpii check failed');
   }
 
   return false;
