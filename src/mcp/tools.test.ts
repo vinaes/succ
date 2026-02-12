@@ -116,6 +116,12 @@ vi.mock('../lib/config.js', () => ({
     default_top_k: 10,
     temporal_auto_skip: true,
     preference_quality_boost: true,
+    quality_boost_enabled: false,
+    quality_boost_weight: 0.15,
+    mmr_enabled: false,
+    mmr_lambda: 0.8,
+    query_expansion_enabled: false,
+    query_expansion_mode: 'local',
   })),
 }));
 
