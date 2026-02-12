@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { MEMORY_TYPES } from './db/schema.js';
-import type { MemoryType } from './db/schema.js';
+import { MEMORY_TYPES } from './storage/index.js';
+import type { MemoryType } from './storage/index.js';
 import { FACT_EXTRACTION_PROMPT, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/extraction.js';
 
 describe('Dead-End Tracking', () => {

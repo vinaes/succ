@@ -5,7 +5,7 @@
 import fs from 'fs';
 import { readFile, writeFile, appendFile, access, mkdir, readdir } from 'fs/promises';
 import { join } from 'path';
-import { closeDb } from '../../../src/lib/db/connection.js';
+import { closeDb, resetStorageDispatcher } from '../../../src/lib/storage/index.js';
 import { callLLMChat, type ChatMessage } from '../../../src/lib/llm.js';
 import { setConfigOverride } from '../../../src/lib/config.js';
 import { loadDataset } from './loader.js';
@@ -155,6 +155,7 @@ async function processQuestion(
 
   // 4. Clean up DB before evaluation (frees memory)
   closeDb();
+  resetStorageDispatcher();
 
   // 5. Evaluate answer (with retry for transient API errors)
   const isCorrect = await retryWithBackoff(
@@ -314,7 +315,7 @@ export async function run(options: RunOptions): Promise<BenchmarkMetrics> {
       // Retry the entire question pipeline (ingestion + retrieval + answer + eval)
       const result = await retryWithBackoff(
         async () => {
-          try { closeDb(); } catch {} // Clean slate for retries
+          try { closeDb(); resetStorageDispatcher(); } catch {} // Clean slate for retries
           return processQuestion(question, options);
         },
         `question:${question.question_id}`,
@@ -337,7 +338,7 @@ export async function run(options: RunOptions): Promise<BenchmarkMetrics> {
       }
     } catch (err: any) {
       console.error(`  SKIP ${question.question_id} after ${MAX_RETRIES} retries:`, err?.message || err);
-      try { closeDb(); } catch {}
+      try { closeDb(); resetStorageDispatcher(); } catch {}
     }
   }
 

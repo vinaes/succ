@@ -9,13 +9,14 @@
 import Database from 'better-sqlite3';
 import { setDb, closeDb, applySqliteTuning } from '../../../src/lib/db/connection.js';
 import { initDb, loadSqliteVec } from '../../../src/lib/db/schema.js';
-import { saveMemory } from '../../../src/lib/db/memories.js';
+import { saveMemory, resetStorageDispatcher } from '../../../src/lib/storage/index.js';
 import { getEmbedding, getEmbeddings } from '../../../src/lib/embeddings.js';
 import { extractFactsWithLLM } from '../../../src/lib/session-summary.js';
 import type { LongMemEvalQuestion, ConversationTurn, RunOptions } from './types.js';
 
 /**
- * Create an isolated in-memory SQLite DB for one benchmark question
+ * Create an isolated in-memory SQLite DB for one benchmark question.
+ * Resets the storage dispatcher so it picks up the new DB singleton.
  */
 export function createIsolatedDb(): Database.Database {
   const db = new Database(':memory:');
@@ -50,6 +51,7 @@ export async function ingestQuestion(
 ): Promise<{ db: Database.Database; memoriesCount: number }> {
   const db = createIsolatedDb();
   setDb(db);
+  resetStorageDispatcher(); // Ensure dispatcher uses the fresh in-memory DB
 
   let memoriesCount = 0;
 
@@ -67,9 +69,8 @@ export async function ingestQuestion(
         if (content.length < 20) continue;
 
         const embedding = await getEmbedding(content);
-        saveMemory(content, embedding, ['benchmark'], 'longmemeval', {
+        await saveMemory(content, embedding, ['benchmark'], 'longmemeval', {
           deduplicate: false,
-          autoLink: false,
           type: 'observation',
         });
         memoriesCount++;
@@ -87,9 +88,8 @@ export async function ingestQuestion(
       if (facts.length === 0) {
         // Fallback: save raw text if LLM extraction yields nothing
         const embedding = await getEmbedding(text);
-        saveMemory(text, embedding, ['benchmark'], 'longmemeval', {
+        await saveMemory(text, embedding, ['benchmark'], 'longmemeval', {
           deduplicate: false,
-          autoLink: false,
           type: 'observation',
         });
         memoriesCount++;
@@ -101,9 +101,8 @@ export async function ingestQuestion(
 
       for (let j = 0; j < facts.length; j++) {
         const fact = facts[j];
-        saveMemory(fact.content, embeddings[j], fact.tags || ['benchmark'], 'longmemeval', {
+        await saveMemory(fact.content, embeddings[j], fact.tags || ['benchmark'], 'longmemeval', {
           deduplicate: false,
-          autoLink: false,
           type: (fact.type as any) || 'observation',
         });
         memoriesCount++;

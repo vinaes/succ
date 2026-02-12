@@ -15,7 +15,12 @@
  */
 
 import { getTopTokens, getTokenFrequencyStats, isPostgresBackend } from './storage/index.js';
-import { getDb } from './db/connection.js';
+import {
+  initBPESchema as initBPESchemaDb,
+  saveBPEVocabToDb,
+  loadBPEVocabFromDb,
+  getLastBPETrainTimeFromDb,
+} from './db/bpe.js';
 
 // ============================================================================
 // Types
@@ -42,22 +47,7 @@ export interface BPEConfig {
 
 export function initBPESchema(): void {
   if (isPostgresBackend()) return; // BPE tables only exist in SQLite
-  const db = getDb();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS bpe_vocab (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      merges TEXT NOT NULL,
-      vocab TEXT NOT NULL,
-      vocab_size INTEGER NOT NULL,
-      corpus_size INTEGER NOT NULL,
-      trained_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS bpe_metadata (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
+  initBPESchemaDb();
 }
 
 // ============================================================================
@@ -220,29 +210,13 @@ export function segmentWithBPE(word: string, vocab: BPEVocab): string[] {
  */
 export function saveBPEVocab(vocab: BPEVocab): void {
   if (isPostgresBackend()) return; // BPE tables only exist in SQLite
-  initBPESchema();
-  const db = getDb();
-
-  // Convert vocab Map to array for JSON serialization
   const vocabArray = Array.from(vocab.vocab.entries());
-
-  db.prepare(
-    `
-    INSERT INTO bpe_vocab (merges, vocab, vocab_size, corpus_size, trained_at)
-    VALUES (?, ?, ?, ?, ?)
-  `
-  ).run(
+  saveBPEVocabToDb(
     JSON.stringify(vocab.merges),
     JSON.stringify(vocabArray),
     vocab.vocabSize,
     vocab.corpusSize,
-    vocab.trainedAt
-  );
-
-  // Update last trained timestamp
-  db.prepare('INSERT OR REPLACE INTO bpe_metadata (key, value) VALUES (?, ?)').run(
-    'last_trained',
-    vocab.trainedAt
+    vocab.trainedAt,
   );
 }
 
@@ -251,19 +225,7 @@ export function saveBPEVocab(vocab: BPEVocab): void {
  */
 export function loadBPEVocab(): BPEVocab | null {
   if (isPostgresBackend()) return null; // BPE tables only exist in SQLite
-  initBPESchema();
-  const db = getDb();
-
-  const row = db
-    .prepare('SELECT * FROM bpe_vocab ORDER BY id DESC LIMIT 1')
-    .get() as {
-    merges: string;
-    vocab: string;
-    vocab_size: number;
-    corpus_size: number;
-    trained_at: string;
-  } | null;
-
+  const row = loadBPEVocabFromDb();
   if (!row) return null;
 
   return {
@@ -280,14 +242,7 @@ export function loadBPEVocab(): BPEVocab | null {
  */
 export function getLastBPETrainTime(): string | null {
   if (isPostgresBackend()) return null; // BPE tables only exist in SQLite
-  initBPESchema();
-  const db = getDb();
-
-  const row = db
-    .prepare('SELECT value FROM bpe_metadata WHERE key = ?')
-    .get('last_trained') as { value: string } | null;
-
-  return row?.value ?? null;
+  return getLastBPETrainTimeFromDb();
 }
 
 /**
