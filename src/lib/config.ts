@@ -380,7 +380,7 @@ export interface WebSearchConfig {
   timeout_ms?: number;                // Timeout for web search in ms (default: 30000)
   deep_research_timeout_ms?: number;  // Timeout for deep research in ms (default: 120000)
   temperature?: number;               // Temperature (default: 0.1 — low for factual search)
-  save_to_memory?: boolean;           // Auto-save search results to memory (default: false)
+  save_to_memory?: boolean;           // Auto-save search results to memory (default: true)
   daily_budget_usd?: number;          // Daily spending limit in USD (default: 0 = unlimited)
 }
 
@@ -837,7 +837,7 @@ export function getWebSearchConfig(): Required<WebSearchConfig> {
     timeout_ms: userConfig.timeout_ms ?? 30000,
     deep_research_timeout_ms: userConfig.deep_research_timeout_ms ?? 120000,
     temperature: userConfig.temperature ?? 0.1,
-    save_to_memory: userConfig.save_to_memory ?? false,
+    save_to_memory: userConfig.save_to_memory ?? true,
     daily_budget_usd: userConfig.daily_budget_usd ?? 0,
   };
 }
