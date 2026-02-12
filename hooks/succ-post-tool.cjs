@@ -8,7 +8,7 @@
  * 3. Test runs - save test results
  * 4. File creation - note new files
  * 5. MEMORY.md sync - auto-save bullets to long-term memory
- * 6. Task/Explore results - save subagent findings to long-term memory
+ * 6. Task/Explore/succ-* results - save subagent findings to long-term memory
  *
  * Uses daemon API for memory operations
  */
@@ -164,8 +164,8 @@ process.stdin.on('end', async () => {
     // Pattern 3: Task/Explore results → save subagent findings to long-term memory
     if (toolName === 'Task' && toolInput.subagent_type) {
       const agentType = toolInput.subagent_type;
-      // Capture Explore, Plan, and feature-dev agents
-      if (/^(Explore|Plan|feature-dev)/.test(agentType)) {
+      // Capture Explore, Plan, feature-dev, and all succ-* agents
+      if (/^(Explore|Plan|feature-dev|succ-)/.test(agentType)) {
         // Extract clean text from agent response (strip JSON wrapper with status/prompt/agentId)
         let text = '';
         try {
@@ -184,9 +184,14 @@ process.stdin.on('end', async () => {
         }
 
         if (text.length > 50 && text.length < 20000) {
-          const desc = (toolInput.description || '').slice(0, 100);
-          const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
-          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`);
+          // Skip if succ-* agent already saved to memory (avoid duplicates)
+          const agentAlreadySaved = /^succ-/.test(agentType) &&
+            /succ_remember|saved to memory|memory \(id:/i.test(text);
+          if (!agentAlreadySaved) {
+            const desc = (toolInput.description || '').slice(0, 100);
+            const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
+            await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`);
+          }
         }
       }
     }
