@@ -1014,6 +1014,11 @@ export async function getAllMemoriesWithEmbeddings(options?: {
   return d.getAllMemoriesWithEmbeddings(options);
 }
 
+export async function getMemoryEmbeddingsByIds(ids: number[]): Promise<Map<number, number[]>> {
+  const d = await getStorageDispatcher();
+  return d.getMemoryEmbeddingsByIds(ids);
+}
+
 export async function deleteMemoryLinksForMemory(memoryId: number): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoryLinksForMemory(memoryId);

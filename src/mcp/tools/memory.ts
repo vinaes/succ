@@ -898,22 +898,8 @@ export function registerMemoryTools(server: McpServer) {
         if (retrievalConfig.mmr_enabled && allResults.length > 1) {
           try {
             const { applyMMR } = await import('../../lib/mmr.js');
-            // Fetch embeddings for MMR candidates
-            const { getDb } = await import('../../lib/db/index.js');
-            const db = getDb();
-            const resultIds = allResults.map(r => r.id);
-            const placeholders = resultIds.map(() => '?').join(',');
-            const embRows = db.prepare(
-              `SELECT id, embedding FROM memories WHERE id IN (${placeholders})`
-            ).all(...resultIds) as Array<{ id: number; embedding: Buffer | null }>;
-
-            const { bufferToFloatArray } = await import('../../lib/db/helpers.js');
-            const embMap = new Map<number, number[]>();
-            for (const row of embRows) {
-              if (row.embedding) {
-                embMap.set(row.id, Array.from(bufferToFloatArray(row.embedding)));
-              }
-            }
+            const { getMemoryEmbeddingsByIds } = await import('../../lib/storage/index.js');
+            const embMap = await getMemoryEmbeddingsByIds(allResults.map(r => r.id));
 
             const mmrInput = allResults.map(r => ({
               ...r,
