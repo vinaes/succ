@@ -2,12 +2,11 @@
  * Memory retriever — query succ's hybrid search for benchmark answers
  */
 
-import { hybridSearchMemories } from '../../../src/lib/db/hybrid-search.js';
+import { hybridSearchMemories } from '../../../src/lib/storage/index.js';
 import { getEmbedding } from '../../../src/lib/embeddings.js';
-import type { HybridMemoryResult } from '../../../src/lib/db/hybrid-search.js';
 
 export interface RetrievalResult {
-  memories: HybridMemoryResult[];
+  memories: Array<{ content: string; similarity: number; created_at?: string }>;
   contextBlock: string;
 }
 
@@ -22,7 +21,7 @@ export async function retrieveMemories(
   alpha: number = 0.3,
 ): Promise<RetrievalResult> {
   const queryEmbedding = await getEmbedding(question);
-  const memories = hybridSearchMemories(question, queryEmbedding, topK, threshold, alpha);
+  const memories = await hybridSearchMemories(question, queryEmbedding, topK, threshold, alpha);
 
   // Format memories into a context block
   const contextLines: string[] = [];

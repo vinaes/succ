@@ -12,9 +12,7 @@
  */
 
 import { callLLM } from './llm.js';
-import { invalidateMemory } from './storage/index.js';
-import { getDb } from './db/connection.js';
-import { bufferToFloatArray } from './db/helpers.js';
+import { invalidateMemory, getAllMemoriesWithEmbeddings } from './storage/index.js';
 import { cosineSimilarity } from './embeddings.js';
 
 const SUPERSESSION_PROMPT = `You are comparing two memories from a developer's project.
@@ -59,18 +57,15 @@ export async function checkSupersession(
 
   try {
     // Find similar memories (cosine > threshold, excluding the new one and already invalidated)
-    const database = getDb();
-    const rows = database.prepare(
-      'SELECT id, content, embedding FROM memories WHERE id != ? AND invalidated_by IS NULL'
-    ).all(newMemoryId) as Array<{ id: number; content: string; embedding: Buffer }>;
+    const allMemories = await getAllMemoriesWithEmbeddings({ excludeInvalidated: true });
 
     // Score all and take top N similar
     const candidates: Array<{ id: number; content: string; similarity: number }> = [];
-    for (const row of rows) {
-      const existing = bufferToFloatArray(row.embedding);
-      const sim = cosineSimilarity(newEmbedding, existing);
+    for (const mem of allMemories) {
+      if (mem.id === newMemoryId || !mem.embedding) continue;
+      const sim = cosineSimilarity(newEmbedding, mem.embedding);
       if (sim >= SIMILARITY_THRESHOLD) {
-        candidates.push({ id: row.id, content: row.content, similarity: sim });
+        candidates.push({ id: mem.id, content: mem.content, similarity: sim });
       }
     }
 

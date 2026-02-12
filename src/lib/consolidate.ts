@@ -86,19 +86,6 @@ export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { e
 }
 
 /**
- * Convert Buffer to number array (Float32)
- */
-function bufferToFloatArray(buffer: Buffer): number[] {
-  const aligned = Buffer.from(buffer);
-  const floatArray = new Float32Array(
-    aligned.buffer,
-    aligned.byteOffset,
-    aligned.byteLength / Float32Array.BYTES_PER_ELEMENT
-  );
-  return Array.from(floatArray);
-}
-
-/**
  * Run similarity calculations in worker threads for large datasets
  */
 async function runSimilarityWorkers(
