@@ -733,6 +733,37 @@ export function registerMemoryTools(server: McpServer) {
           localResults = globalOnlyMode ? [] : await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3, retrievalConfig.bm25_alpha);
         }
 
+        // ── Query expansion: LLM-generated alternative queries for broader recall ──
+        if (retrievalConfig.query_expansion_enabled && !globalOnlyMode && query.split(/\s+/).length > 5) {
+          try {
+            const { expandQuery } = await import('../../lib/query-expansion.js');
+            const expandedQueries = await expandQuery(query, retrievalConfig.query_expansion_mode);
+            if (expandedQueries.length > 0) {
+              const existingIds = new Set(localResults.map(r => r.id));
+              for (const eq of expandedQueries) {
+                const eqEmbedding = await getEmbedding(eq);
+                const eqResults = await hybridSearchMemories(eq, eqEmbedding, limit, 0.3, retrievalConfig.bm25_alpha);
+                for (const r of eqResults) {
+                  if (!existingIds.has(r.id)) {
+                    localResults.push(r);
+                    existingIds.add(r.id);
+                  } else {
+                    // Keep the higher similarity score
+                    const existing = localResults.find(lr => lr.id === r.id);
+                    if (existing && r.similarity > existing.similarity) {
+                      existing.similarity = r.similarity;
+                    }
+                  }
+                }
+              }
+              localResults.sort((a: any, b: any) => b.similarity - a.similarity);
+              localResults = localResults.slice(0, limit * 2);
+            }
+          } catch {
+            // Query expansion failure should never break search
+          }
+        }
+
         // Apply tag filter if specified
         if (tags && tags.length > 0) {
           localResults = localResults.filter((m) => {
@@ -846,6 +877,52 @@ export function registerMemoryTools(server: McpServer) {
             allResults = await applyCentralityBoost(allResults, config.graph_centrality);
           } catch {
             // Centrality module not available — skip
+          }
+        }
+
+        // Quality boost: higher-quality memories rank higher
+        if (retrievalConfig.quality_boost_enabled && allResults.length > 0) {
+          const weight = retrievalConfig.quality_boost_weight;
+          allResults = allResults.map(r => {
+            const qs = (r as any).quality_score as number | null | undefined;
+            if (qs != null && qs > 0) {
+              const factor = 1 - weight + weight * qs;
+              return { ...r, similarity: r.similarity * factor };
+            }
+            return r;
+          });
+          allResults.sort((a, b) => b.similarity - a.similarity);
+        }
+
+        // MMR diversity reranking: reduce near-duplicate results
+        if (retrievalConfig.mmr_enabled && allResults.length > 1) {
+          try {
+            const { applyMMR } = await import('../../lib/mmr.js');
+            // Fetch embeddings for MMR candidates
+            const { getDb } = await import('../../lib/db/index.js');
+            const db = getDb();
+            const resultIds = allResults.map(r => r.id);
+            const placeholders = resultIds.map(() => '?').join(',');
+            const embRows = db.prepare(
+              `SELECT id, embedding FROM memories WHERE id IN (${placeholders})`
+            ).all(...resultIds) as Array<{ id: number; embedding: Buffer | null }>;
+
+            const { bufferToFloatArray } = await import('../../lib/db/helpers.js');
+            const embMap = new Map<number, number[]>();
+            for (const row of embRows) {
+              if (row.embedding) {
+                embMap.set(row.id, Array.from(bufferToFloatArray(row.embedding)));
+              }
+            }
+
+            const mmrInput = allResults.map(r => ({
+              ...r,
+              embedding: embMap.get(r.id) || null,
+            }));
+
+            allResults = applyMMR(mmrInput, Array.from(queryEmbedding), retrievalConfig.mmr_lambda, limit);
+          } catch {
+            // MMR module not available — skip
           }
         }
 

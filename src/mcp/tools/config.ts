@@ -53,7 +53,7 @@ export function registerConfigTools(server: McpServer) {
   // Tool: succ_config_set - Update configuration values
   server.tool(
     'succ_config_set',
-    'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: embedding_mode (local/openrouter/custom), analyze_mode (claude/local/openrouter), llm.type (claude/local/openrouter), llm.model, llm.transport (process/ws/http), openrouter_api_key, embedding_api_url, analyze_api_url, analyze_model, quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled',
+    'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: embedding_mode (local/openrouter/custom), analyze_mode (claude/local/openrouter), llm.type (claude/local/openrouter), llm.model, llm.transport (process/ws/http), openrouter_api_key, embedding_api_url, analyze_api_url, analyze_model, quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled, retrieval.quality_boost_enabled, retrieval.quality_boost_weight, retrieval.mmr_enabled, retrieval.mmr_lambda, retrieval.query_expansion_enabled, retrieval.query_expansion_mode',
     {
       key: z.string().describe('Config key to set (e.g., "embedding_mode", "analyze_model", "idle_reflection.enabled")'),
       value: z.string().describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),

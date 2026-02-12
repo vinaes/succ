@@ -40,6 +40,8 @@ export interface HybridMemoryResult {
   access_count?: number;
   valid_from?: string | null;
   valid_until?: string | null;
+  // Quality
+  quality_score?: number | null;
 }
 
 export interface HybridGlobalMemoryResult {
@@ -385,6 +387,7 @@ export function hybridSearchMemories(
     id: number; content: string; tags: string | null; source: string | null;
     type: string | null; created_at: string; last_accessed: string | null;
     access_count: number; valid_from: string | null; valid_until: string | null;
+    quality_score: number | null;
   };
   let rowMap: Map<number, MemoryRow> = new Map();
 
@@ -406,7 +409,7 @@ export function hybridSearchMemories(
         const placeholders = docIds.map(() => '?').join(',');
         const rows = database.prepare(`
           SELECT id, content, tags, source, type, created_at,
-                 last_accessed, access_count, valid_from, valid_until
+                 last_accessed, access_count, valid_from, valid_until, quality_score
           FROM memories WHERE id IN (${placeholders})
         `).all(...docIds) as MemoryRow[];
 
@@ -430,7 +433,7 @@ export function hybridSearchMemories(
   if (vectorResults.length === 0) {
     const rows = database.prepare(`
       SELECT id, content, tags, source, type, created_at, embedding,
-             last_accessed, access_count, valid_from, valid_until
+             last_accessed, access_count, valid_from, valid_until, quality_score
       FROM memories WHERE embedding IS NOT NULL LIMIT ?
     `).all(BRUTE_FORCE_MAX_ROWS) as Array<MemoryRow & { embedding: Buffer }>;
 
@@ -458,7 +461,7 @@ export function hybridSearchMemories(
       const placeholders = missingIds.map(() => '?').join(',');
       const missingRows = database.prepare(`
         SELECT id, content, tags, source, type, created_at,
-               last_accessed, access_count, valid_from, valid_until
+               last_accessed, access_count, valid_from, valid_until, quality_score
         FROM memories WHERE id IN (${placeholders})
       `).all(...missingIds) as MemoryRow[];
       for (const row of missingRows) {
@@ -488,6 +491,7 @@ export function hybridSearchMemories(
       access_count: row.access_count,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
+      quality_score: row.quality_score,
     });
   }
   return results;

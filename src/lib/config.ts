@@ -389,6 +389,12 @@ export interface RetrievalConfig {
   default_top_k?: number;  // Default number of results for recall (default: 10)
   temporal_auto_skip?: boolean;  // Auto-disable decay when all results <24h old (default: true)
   preference_quality_boost?: boolean;  // Lower quality threshold for preference facts (default: true)
+  quality_boost_enabled?: boolean;  // Boost ranking by quality_score at retrieval time (default: false)
+  quality_boost_weight?: number;  // Weight for quality boost: 0=no effect, 1=full effect (default: 0.15)
+  mmr_enabled?: boolean;  // Maximal Marginal Relevance diversity reranking (default: false)
+  mmr_lambda?: number;  // MMR balance: 1=pure relevance, 0=pure diversity (default: 0.8)
+  query_expansion_enabled?: boolean;  // LLM-based query expansion for richer recall (default: false)
+  query_expansion_mode?: 'local' | 'openrouter' | 'claude';  // LLM backend for expansion (default: from llm config)
 }
 
 export interface ObserverConfig {
@@ -1132,6 +1138,18 @@ export interface ConfigDisplay {
     check_interval: number;
     min_conversation_length: number;
   };
+  // Retrieval settings
+  retrieval: {
+    bm25_alpha: number;
+    default_top_k: number;
+    temporal_auto_skip: boolean;
+    quality_boost_enabled: boolean;
+    quality_boost_weight: number;
+    mmr_enabled: boolean;
+    mmr_lambda: number;
+    query_expansion_enabled: boolean;
+    query_expansion_mode: string;
+  };
   // Web search settings
   web_search: {
     enabled: boolean;
@@ -1269,6 +1287,20 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       check_interval: idleWatcher.check_interval,
       min_conversation_length: idleWatcher.min_conversation_length,
     },
+    retrieval: (() => {
+      const rc = getRetrievalConfig();
+      return {
+        bm25_alpha: rc.bm25_alpha,
+        default_top_k: rc.default_top_k,
+        temporal_auto_skip: rc.temporal_auto_skip,
+        quality_boost_enabled: rc.quality_boost_enabled,
+        quality_boost_weight: rc.quality_boost_weight,
+        mmr_enabled: rc.mmr_enabled,
+        mmr_lambda: rc.mmr_lambda,
+        query_expansion_enabled: rc.query_expansion_enabled,
+        query_expansion_mode: rc.query_expansion_mode,
+      };
+    })(),
     web_search: (() => {
       const ws = getWebSearchConfig();
       return {
@@ -1427,6 +1459,16 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`  Idle minutes: ${display.idle_watcher.idle_minutes}`);
   lines.push(`  Check interval: ${display.idle_watcher.check_interval}s`);
   lines.push(`  Min conversation length: ${display.idle_watcher.min_conversation_length}`);
+  lines.push('');
+
+  // Retrieval
+  lines.push('## Retrieval');
+  lines.push(`  BM25 alpha: ${display.retrieval.bm25_alpha}`);
+  lines.push(`  Default top-k: ${display.retrieval.default_top_k}`);
+  lines.push(`  Temporal auto-skip: ${display.retrieval.temporal_auto_skip}`);
+  lines.push(`  Quality boost: ${display.retrieval.quality_boost_enabled} (weight: ${display.retrieval.quality_boost_weight})`);
+  lines.push(`  MMR diversity: ${display.retrieval.mmr_enabled} (lambda: ${display.retrieval.mmr_lambda})`);
+  lines.push(`  Query expansion: ${display.retrieval.query_expansion_enabled} (mode: ${display.retrieval.query_expansion_mode})`);
   lines.push('');
 
   // Web Search
@@ -1625,6 +1667,12 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     default_top_k: userConfig.default_top_k ?? 10,
     temporal_auto_skip: userConfig.temporal_auto_skip ?? true,
     preference_quality_boost: userConfig.preference_quality_boost ?? true,
+    quality_boost_enabled: userConfig.quality_boost_enabled ?? false,
+    quality_boost_weight: userConfig.quality_boost_weight ?? 0.15,
+    mmr_enabled: userConfig.mmr_enabled ?? false,
+    mmr_lambda: userConfig.mmr_lambda ?? 0.8,
+    query_expansion_enabled: userConfig.query_expansion_enabled ?? false,
+    query_expansion_mode: userConfig.query_expansion_mode ?? 'local',
   };
 }
 
