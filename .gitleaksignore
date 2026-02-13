@@ -1,0 +1,6 @@
+# Test data in sensitive-filter.test.ts — fake/mock secrets for testing the filter itself
+fb44af82014f80d2f5e90da6369191200525f864:src/lib/sensitive-filter.test.ts:github-pat:32
+fb44af82014f80d2f5e90da6369191200525f864:src/lib/sensitive-filter.test.ts:generic-api-key:100
+fb44af82014f80d2f5e90da6369191200525f864:src/lib/sensitive-filter.test.ts:jwt:120
+fb44af82014f80d2f5e90da6369191200525f864:src/lib/sensitive-filter.test.ts:gcp-api-key:50
+fb44af82014f80d2f5e90da6369191200525f864:src/lib/sensitive-filter.test.ts:stripe-access-token:44
