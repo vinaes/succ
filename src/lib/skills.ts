@@ -16,11 +16,10 @@ import * as path from 'path';
 import { logError, logWarn, logInfo } from './fault-logger.js';
 import {
   getAllSkills as getAllSkillsDb,
-  searchSkillsDb,
   upsertSkill,
   trackSkillUsageDb,
 } from './storage/index.js';
-import { getSuccDir, getConfig, getProjectRoot } from './config.js';
+import { getConfig } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
 import { callLLM as sharedCallLLM, getLLMConfig, type LLMBackend } from './llm.js';

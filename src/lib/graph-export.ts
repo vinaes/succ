@@ -566,7 +566,7 @@ async function getMemoryTypeAsync(id: number): Promise<string> {
 
 async function generateIndexContent(
   memories: ExportMemoryRow[],
-  brainDir: string
+  _brainDir: string
 ): Promise<string> {
   const stats = await getGraphStats();
   const projectName = path.basename(getProjectRoot());

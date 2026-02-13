@@ -44,11 +44,6 @@ export async function backfill(options: BackfillOptions = {}): Promise<void> {
   if (dryRun) console.log('Mode: dry-run (no writes)\n');
   else console.log('Mode: backfill\n');
 
-  const target = doAll ? 'all'
-    : memories ? 'memories'
-    : globalMem ? 'global_memories'
-    : 'documents';
-
   // If multiple specific flags, run each
   const targets: Array<'memories' | 'global_memories' | 'documents'> = [];
   if (doAll) {

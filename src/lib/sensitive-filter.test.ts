@@ -3,7 +3,6 @@ import {
   scanSensitive,
   hasSensitiveInfo,
   formatMatches,
-  type SensitiveMatch,
 } from './sensitive-filter.js';
 
 describe('Sensitive Filter', () => {

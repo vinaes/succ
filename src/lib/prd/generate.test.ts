@@ -271,7 +271,7 @@ vi.mock('../config.js', () => {
 });
 
 // Import mocked helpers — the cast is needed because these are test-only exports
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const configMock: any = await import('../config.js');
 const __setProjectRoot: (r: string) => void = configMock.__setProjectRoot;
 const __setConfig: (c: Record<string, unknown>) => void = configMock.__setConfig;

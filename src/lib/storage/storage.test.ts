@@ -8,7 +8,7 @@
  * 4. Qdrant vector store (if qdrant is available)
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   getStorageConfig,
   validateStorageConfig,

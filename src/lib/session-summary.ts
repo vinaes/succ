@@ -7,13 +7,13 @@
  * Part of idle-time compute (sleep-time compute) operations.
  */
 
-import { saveMemory, saveMemoriesBatch, searchMemories, closeDb, recordTokenStat } from './storage/index.js';
+import { saveMemoriesBatch, closeDb, recordTokenStat } from './storage/index.js';
 import type { MemoryBatchInput } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
-import { scoreMemory, passesQualityThreshold } from './quality.js';
+import { scoreMemory } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
-import { logError, logWarn, logInfo } from './fault-logger.js';
+import { logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, type LLMBackend } from './llm.js';
@@ -166,7 +166,7 @@ async function saveFactsAsMemories(
         source: 'session-summary',
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
       });
-    } catch (error) {
+    } catch {
       errors.push(`Failed to save fact: ${fact.content.substring(0, 50)}...`);
     }
   }
@@ -199,7 +199,7 @@ export async function extractSessionSummary(
 ): Promise<SessionSummaryResult> {
   const { verbose = false, dryRun = false, onProgress } = options;
   const config = getIdleReflectionConfig();
-  const globalConfig = getConfig();
+  getConfig();
 
   const result: SessionSummaryResult = {
     factsExtracted: 0,

@@ -24,7 +24,6 @@ import {
 } from '../lib/storage/index.js';
 import { indexCodeFile } from '../commands/index-code.js';
 import {
-  CODE_EXTENSIONS,
   DOC_EXTENSIONS,
   shouldIgnorePath,
   getFileType,

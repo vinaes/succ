@@ -13,7 +13,6 @@ import {
   analyzeRetention,
   calculateRetentionStats,
   DEFAULT_RETENTION_CONFIG,
-  type RetentionConfig,
 } from './retention.js';
 import { exponentialDecay, calculateAccessBoost as temporalAccessBoost } from './temporal.js';
 import type { MemoryForRetention } from './storage/index.js';

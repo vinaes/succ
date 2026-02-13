@@ -1,7 +1,6 @@
 import { getConfig, getConfigWithOverride, getLLMTaskConfig, LOCAL_MODEL } from './config.js';
 import { createHash } from 'crypto';
-import { logWarn, logInfo } from './fault-logger.js';
-import os from 'os';
+import { logWarn } from './fault-logger.js';
 import { NativeOrtSession } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
 import { NetworkError, ValidationError } from './errors.js';

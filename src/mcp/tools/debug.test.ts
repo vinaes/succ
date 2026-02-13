@@ -17,8 +17,6 @@ vi.mock('../../lib/config.js', () => ({
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerDebugTools } from './debug.js';
 import {
-  ensureDebugsDir,
-  saveSession,
   loadSession,
   listSessions,
   generateSessionId,
@@ -44,6 +42,7 @@ function createMockServer(): McpServer {
   return mockServer;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function makeSession(overrides: Partial<DebugSession> = {}): DebugSession {
   return {
     id: overrides.id ?? generateSessionId(),

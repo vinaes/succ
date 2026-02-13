@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getClaudeDir, getProjectRoot } from '../lib/config.js';
+import { getProjectRoot } from '../lib/config.js';
 import { createDaemonClient, ensureDaemonRunning } from '../daemon/client.js';
 import { logError } from '../lib/fault-logger.js';
 
@@ -126,7 +126,6 @@ export async function watchDaemonStatus(): Promise<void> {
   }
 
   // Show daemon logs
-  const claudeDir = getClaudeDir();
   const succDir = path.join(getProjectRoot(), '.succ');
   const logFile = path.join(succDir, 'daemon.log');
 

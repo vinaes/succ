@@ -22,6 +22,7 @@ interface BackendTestResult {
 const results: BackendTestResult[] = [];
 
 // Test data - sample memories with embeddings
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function generateEmbedding(seed: number): number[] {
   // Deterministic pseudo-random based on seed
   const embedding = new Array(384).fill(0);
@@ -49,7 +50,7 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
   console.log('========================================');
 
   try {
-    const { getDb, closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } = await import('../db/index.js');
+    const { closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } = await import('../db/index.js');
     const { getEmbedding } = await import('../embeddings.js');
 
     // Save test memories
@@ -302,7 +303,7 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       return { name: 'SQLite + Qdrant', status: 'skip', error: 'Qdrant not available' };
     }
 
-    const { getDb, closeDb, saveMemory, deleteMemory, getMemoryById } = await import('../db/index.js');
+    const { closeDb, saveMemory, deleteMemory, getMemoryById } = await import('../db/index.js');
     const { createQdrantVectorStore } = await import('./vector/qdrant.js');
     const { getEmbedding } = await import('../embeddings.js');
 

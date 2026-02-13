@@ -94,7 +94,7 @@ export interface DocumentInput {
   signature?: string;
 }
 
-export interface DocumentBatch extends DocumentInput {}
+export type DocumentBatch = DocumentInput;
 
 export interface DocumentBatchWithHash extends DocumentBatch {
   hash: string;

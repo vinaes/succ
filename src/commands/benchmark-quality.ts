@@ -11,11 +11,10 @@ import {
   scoreWithHeuristics,
   scoreWithLocal,
   scoreWithApi,
-  formatQualityScore,
   cleanupQualityScoring,
   QualityScore,
 } from '../lib/quality.js';
-import { hasApiKey, getConfig, getLLMTaskConfig } from '../lib/config.js';
+import { hasApiKey, getLLMTaskConfig } from '../lib/config.js';
 
 // Default Ollama models to benchmark (small, fast models good for classification)
 const OLLAMA_MODELS = [

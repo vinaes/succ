@@ -8,7 +8,7 @@
  */
 
 import { Worker } from 'worker_threads';
-import { logWarn, logInfo } from './fault-logger.js';
+import { logWarn } from './fault-logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -24,8 +24,6 @@ import {
   createMemoryLink,
   LinkRelation,
   getAllMemoriesWithEmbeddings as getAllMemoriesWithEmbeddingsDb,
-  deleteMemoryLinksForMemory,
-  isPostgresBackend,
 } from './storage/index.js';
 import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, getLLMTaskConfig } from './config.js';

@@ -171,8 +171,7 @@ export function scanSensitive(text: string): FilterResult {
     const tokenTypes = ['PERSON_NAME', 'EMAIL_ADDRESS', 'PHONE_NUMBER', 'CREDIT_CARD_NUMBER', 'SSN'];
     for (const tokenType of tokenTypes) {
       const tokenPattern = new RegExp(tokenType, 'g');
-      let tokenMatch;
-      while ((tokenMatch = tokenPattern.exec(redactPiiResult)) !== null) {
+      while (tokenPattern.exec(redactPiiResult) !== null) {
         // Find the original value by position mapping (approximate)
         // Since redactpii changes positions, we need to find the original
         // This is a simplified approach - we mark the text as having PII

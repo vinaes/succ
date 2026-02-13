@@ -3,7 +3,6 @@ import * as sqliteVec from 'sqlite-vec';
 import { getConfig, getLLMTaskConfig } from '../config.js';
 import { logWarn } from '../fault-logger.js';
 import { getModelDimension } from '../embeddings.js';
-import { bufferToFloatArray } from './helpers.js';
 
 // Flag to track if sqlite-vec is available
 export let sqliteVecAvailable = true;
@@ -345,7 +344,7 @@ export function initDb(database: Database.Database): void {
  * If so, warn the user that they need to reindex.
  */
 function checkModelCompatibility(database: Database.Database): void {
-  const config = getConfig();
+  getConfig();
   const currentModel = getLLMTaskConfig('embeddings').model;
 
   // Get stored model
@@ -661,7 +660,6 @@ export function initGlobalDb(database: Database.Database): void {
 export function initGlobalVecTable(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
-  const config = getConfig();
   const configDims = getConfig().llm?.embeddings?.dimensions;
   const dims = configDims ?? getModelDimension(getLLMTaskConfig('embeddings').model) ?? 384;
 

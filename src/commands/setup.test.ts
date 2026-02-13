@@ -12,7 +12,6 @@ import { setup } from './setup.js';
 
 describe('setup command', () => {
   let tmpDir: string;
-  let originalPlatform: PropertyDescriptor | undefined;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 

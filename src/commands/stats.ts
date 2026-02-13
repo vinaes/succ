@@ -13,7 +13,6 @@ import {
   getStats,
   getMemoryStats,
   getTokenStatsAggregated,
-  getTokenStatsSummary,
   clearTokenStats,
   type TokenEventType,
 } from '../lib/storage/index.js';
@@ -68,7 +67,6 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   const summaryEnabled = idleConfig.operations?.session_summary ?? true;
 
   const aggregated = await getTokenStatsAggregated();
-  const summary = await getTokenStatsSummary();
 
   // Always use Opus as reference model for "Claude equivalent" pricing
   // This provides consistent comparison regardless of actual backend used

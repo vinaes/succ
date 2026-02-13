@@ -10,23 +10,17 @@
  * - ON CONFLICT instead of INSERT OR REPLACE
  */
 
-import type { Pool, PoolClient, PoolConfig, QueryResult } from 'pg';
+import type { Pool, PoolConfig } from 'pg';
 import type {
-  Document,
   DocumentBatch,
   DocumentBatchWithHash,
   Memory,
   MemoryType,
   MemoryLink,
   MemoryWithLinks,
-  ConnectedMemory,
   GraphStats,
-  GlobalMemory,
   TokenStatRecord,
-  TokenStatsAggregated,
   MemoryForRetention,
-  MemorySearchResult,
-  QualityScoreData,
   LinkRelation,
   StorageConfig,
   WebSearchHistoryInput,

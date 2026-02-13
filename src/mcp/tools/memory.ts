@@ -16,7 +16,6 @@ import path from 'path';
 import {
   saveMemory,
   saveMemoriesBatch,
-  searchMemories,
   getRecentMemories,
   getMemoryById,
   deleteMemory,

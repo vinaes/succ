@@ -99,7 +99,7 @@ export function enrichForEmbedding(chunk: Chunk): string {
 /**
  * Split text into overlapping chunks
  */
-export function chunkText(text: string, filePath: string): Chunk[] {
+export function chunkText(text: string, _filePath: string): Chunk[] {
   const config = getConfig();
   const { chunk_size, chunk_overlap } = config;
 

@@ -308,7 +308,7 @@ export function createLLMCaller(
 
     if (mode === 'api') {
       // Use callApiRaw from analyze-profile.ts
-      const { profileProjectWithLLM } = await import('./analyze-profile.js');
+      await import('./analyze-profile.js');
       const cfg = getLLMTaskConfig('analyze');
       const apiUrl = cfg.api_url;
 

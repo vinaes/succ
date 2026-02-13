@@ -252,7 +252,7 @@ export async function callLLMChat(
   const temperature = options.temperature ?? config.temperature ?? 0.7;
 
   switch (config.backend) {
-    case 'claude':
+    case 'claude': {
       if (getClaudeMode() === 'ws') {
         const transport = await ClaudeWSTransport.getInstance();
         return transport.sendChat(messages, { model: config.model, timeout });
@@ -262,6 +262,7 @@ export async function callLLMChat(
         .map((m) => (m.role === 'system' ? `System: ${m.content}` : m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
         .join('\n\n');
       return runClaudeCLI(prompt, config.model, timeout);
+    }
 
     case 'api':
       return callApiLLMChat(messages, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);

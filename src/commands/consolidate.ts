@@ -8,7 +8,6 @@
 
 import {
   consolidateMemories,
-  findConsolidationCandidates,
   getConsolidationStats,
   undoConsolidation,
 } from '../lib/consolidate.js';

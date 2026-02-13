@@ -10,10 +10,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getConfig, getDbPath } from '../lib/config.js';
 import { getStorageInfo } from '../lib/storage/index.js';
-import { exportData, importData, exportToFile, importFromFile, getExportStats } from '../lib/storage/migration/export-import.js';
-import type { ExportData } from '../lib/storage/migration/export-import.js';
+import { exportData, exportToFile, importFromFile, getExportStats } from '../lib/storage/migration/export-import.js';
 import { logError } from '../lib/fault-logger.js';
 
 interface MigrateOptions {

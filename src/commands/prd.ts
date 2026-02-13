@@ -20,7 +20,7 @@ import {
 } from '../lib/prd/state.js';
 import { exportPrdToObsidian, exportAllPrds } from '../lib/prd/export.js';
 import { computeStats } from '../lib/prd/types.js';
-import type { ExecutionMode, Task } from '../lib/prd/types.js';
+import type { ExecutionMode } from '../lib/prd/types.js';
 import { logError } from '../lib/fault-logger.js';
 
 // ============================================================================
@@ -412,7 +412,7 @@ function extractTitleFromMarkdown(markdown: string): string {
 
 export async function prdArchive(
   prdIdArg?: string,
-  options: Record<string, unknown> = {}
+  _options: Record<string, unknown> = {}
 ): Promise<void> {
   let prdId = prdIdArg;
   if (!prdId) {

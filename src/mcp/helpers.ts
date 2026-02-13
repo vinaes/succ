@@ -192,7 +192,7 @@ export async function trackTokenSavings(
 export async function trackMemoryAccess(
   memoryIds: number[],
   limit: number,
-  totalResults: number
+  _totalResults: number
 ): Promise<void> {
   if (memoryIds.length === 0) return;
 

@@ -9,9 +9,7 @@ import type {
   IdleWatcherConfig,
   RetentionPolicyConfig,
   CompactBriefingConfig,
-  ErrorReportingConfig,
   IdleReflectionConfig,
-  ReadinessGateConfig,
 } from './config-types.js';
 
 // Default embedding model for local ONNX mode

@@ -573,7 +573,7 @@ async function runOnboarding(useAi: boolean): Promise<void> {
 /**
  * Interactive setup wizard
  */
-async function runInteractiveSetup(projectRoot: string, verbose: boolean = false): Promise<void> {
+async function runInteractiveSetup(projectRoot: string, _verbose: boolean = false): Promise<void> {
   const globalConfigDir = path.join(os.homedir(), '.succ');
   const globalConfigPath = path.join(globalConfigDir, 'config.json');
   const projectConfigDir = path.join(projectRoot, '.succ');
@@ -858,7 +858,7 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
  *
  * The old ~/.claude/mcp_servers.json format is deprecated.
  */
-function addMcpServer(projectRoot: string): 'added' | 'exists' | 'failed' {
+function addMcpServer(_projectRoot: string): 'added' | 'exists' | 'failed' {
   // Claude Code main config location
   const claudeConfigPath = path.join(os.homedir(), '.claude.json');
 

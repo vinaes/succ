@@ -10,7 +10,6 @@ import {
   exportData,
   exportToFile,
   importData,
-  importFromFile,
   getExportStats,
   type ExportData,
 } from './export-import.js';

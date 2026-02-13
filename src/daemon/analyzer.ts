@@ -9,12 +9,11 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { glob } from 'glob';
-import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
-import { withLock } from '../lib/lock.js';
-import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
+import { getProjectRoot } from '../lib/config.js';
+import { getEmbeddings } from '../lib/embeddings.js';
 import { saveMemory, hybridSearchDocs } from '../lib/storage/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
-import { callLLM, type LLMBackend } from '../lib/llm.js';
+import { callLLM } from '../lib/llm.js';
 import { DISCOVERY_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -89,7 +88,9 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
       if (pkg.dependencies) {
         lines.push(`Dependencies: ${Object.keys(pkg.dependencies).slice(0, 10).join(', ')}`);
       }
-    } catch {}
+    } catch {
+      // intentional
+    }
   }
 
   // Add directory structure with AST symbols where possible
@@ -279,7 +280,7 @@ export function startAnalyzer(
     return analyzerState;
   }
 
-  const projectRoot = getProjectRoot();
+  getProjectRoot();
   const intervalMinutes = config.intervalMinutes ?? 30;
   const mode = config.mode ?? 'claude';
 

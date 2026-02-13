@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDbPath, getClaudeDir, getProjectRoot, getConfig, getDaemonStatuses } from '../lib/config.js';
+import { getDbPath, getClaudeDir, getProjectRoot, getDaemonStatuses } from '../lib/config.js';
 import { getStats, getStaleFileCount, closeDb } from '../lib/storage/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
 import { logError } from '../lib/fault-logger.js';
