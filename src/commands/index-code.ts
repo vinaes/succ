@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
-import { chunkCode, chunkCodeAsync } from '../lib/chunker.js';
+import { chunkCodeAsync, getChunkingStats, resetChunkingStats } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from '../lib/bm25.js';
@@ -114,6 +114,8 @@ export async function indexCode(
   console.log(`Patterns: ${patterns.join(', ')}`);
   console.log(`Mode: ${force ? 'Force reindex all files' : 'Incremental (skip unchanged files)'}`);
 
+  resetChunkingStats();
+
   const result = await runIndexer({
     searchPath,
     projectRoot,
@@ -131,6 +133,15 @@ export async function indexCode(
   });
 
   printResults(result, 'code ');
+
+  // Show AST vs regex chunking breakdown
+  const chunkStats = getChunkingStats();
+  if (chunkStats.astFiles > 0 || chunkStats.regexFiles > 0) {
+    console.log(`  AST chunks:    ${chunkStats.astFiles} files (tree-sitter)`);
+    if (chunkStats.regexFiles > 0) {
+      console.log(`  Regex chunks:  ${chunkStats.regexFiles} files (fallback)`);
+    }
+  }
 
   if (result.skippedLargeFiles > 0) {
     console.log(`  (Large files >${maxFileSize}KB were skipped)`);

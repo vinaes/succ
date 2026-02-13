@@ -1,6 +1,17 @@
 import { getConfig } from './config.js';
 import type { SymbolType } from './tree-sitter/types.js';
 
+/** Chunking stats — tracks how many files used AST vs regex chunking */
+let chunkingStats = { astFiles: 0, regexFiles: 0 };
+
+export function getChunkingStats(): { astFiles: number; regexFiles: number } {
+  return { ...chunkingStats };
+}
+
+export function resetChunkingStats(): void {
+  chunkingStats = { astFiles: 0, regexFiles: 0 };
+}
+
 /**
  * Count net brace depth change ({=+1, }=-1) ignoring braces inside strings and comments
  */
@@ -350,13 +361,18 @@ export async function chunkCodeAsync(content: string, filePath: string): Promise
   try {
     const { chunkCodeWithTreeSitter } = await import('./tree-sitter/chunker-ts.js');
     const tsChunks = await chunkCodeWithTreeSitter(content, filePath);
-    if (tsChunks && tsChunks.length > 0) {
-      return tsChunks;
+    if (tsChunks !== null) {
+      // Tree-sitter handled this file (even if 0 chunks for empty files)
+      chunkingStats.astFiles++;
+      if (tsChunks.length > 0) return tsChunks;
+      // Empty result — fall through to regex for non-empty content
+      if (content.trim().length === 0) return tsChunks;
     }
   } catch {
     // Tree-sitter unavailable or failed — fall through to regex
   }
 
+  chunkingStats.regexFiles++;
   return chunkCode(content, filePath);
 }
 
