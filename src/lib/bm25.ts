@@ -214,21 +214,38 @@ export function tokenizeDocs(text: string): string[] {
 
 export type TokenizerType = 'code' | 'docs';
 
+/** Document with optional AST metadata for BM25 indexing */
+export interface BM25Doc {
+  id: number;
+  content: string;
+  symbolName?: string;
+  signature?: string;
+}
+
 /**
- * Build BM25 index from documents
+ * Build BM25 index from documents.
+ * For code documents with AST metadata, uses tokenizeCodeWithAST for TF boost.
  */
 export function buildIndex(
-  docs: { id: number; content: string }[],
+  docs: BM25Doc[],
   tokenizer: TokenizerType = 'code'
 ): BM25Index {
-  const tokenizeFn = tokenizer === 'code' ? tokenizeCode : tokenizeDocs;
   const invertedIndex = new Map<string, Map<number, number>>();
   const docLengths = new Map<number, number>();
   const rawContent = new Map<number, string>();
   let totalLength = 0;
 
   for (const doc of docs) {
-    const tokens = tokenizeFn(doc.content);
+    // Use AST-enriched tokenizer when metadata is available (code search)
+    let tokens: string[];
+    if (tokenizer === 'code' && (doc.symbolName || doc.signature)) {
+      const sigTokens = doc.signature ? tokenizeCode(doc.signature) : [];
+      tokens = tokenizeCodeWithAST(doc.content, sigTokens, doc.symbolName);
+    } else {
+      const tokenizeFn = tokenizer === 'code' ? tokenizeCode : tokenizeDocs;
+      tokens = tokenizeFn(doc.content);
+    }
+
     docLengths.set(doc.id, tokens.length);
     rawContent.set(doc.id, doc.content.toLowerCase());
     totalLength += tokens.length;
@@ -256,15 +273,23 @@ export function buildIndex(
 }
 
 /**
- * Add single document to existing index
+ * Add single document to existing index.
+ * For code documents with AST metadata, uses tokenizeCodeWithAST for TF boost.
  */
 export function addToIndex(
   index: BM25Index,
-  doc: { id: number; content: string },
+  doc: BM25Doc,
   tokenizer: TokenizerType = 'code'
 ): void {
-  const tokenizeFn = tokenizer === 'code' ? tokenizeCode : tokenizeDocs;
-  const tokens = tokenizeFn(doc.content);
+  // Use AST-enriched tokenizer when metadata is available
+  let tokens: string[];
+  if (tokenizer === 'code' && (doc.symbolName || doc.signature)) {
+    const sigTokens = doc.signature ? tokenizeCode(doc.signature) : [];
+    tokens = tokenizeCodeWithAST(doc.content, sigTokens, doc.symbolName);
+  } else {
+    const tokenizeFn = tokenizer === 'code' ? tokenizeCode : tokenizeDocs;
+    tokens = tokenizeFn(doc.content);
+  }
 
   // Update avg doc length
   const oldTotal = index.avgDocLength * index.totalDocs;

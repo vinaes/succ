@@ -127,18 +127,45 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   // Ensure brain structure exists
   await ensureBrainStructure(brainDir, projectRoot);
 
-  // Pass 0: LLM project profiling
-  const profileSpinner = ora('Profiling project with LLM...').start();
+  // Pass 0: Project profiling (AST-first, LLM enrichment optional)
+  const profileSpinner = ora('Profiling project...').start();
   let profile: ProjectProfile;
   try {
-    profile = await profileProjectWithLLM(projectRoot, mode, fast);
-    profileSpinner.succeed(
-      `Profiled: ${profile.languages.join(', ')} — ${profile.systems.length} systems, ${profile.features.length} features`
-    );
+    // Start with static AST profiling (instant, zero-cost)
+    profile = await profileProjectWithAST(projectRoot);
+    const astSystems = profile.systems.length;
+    const astFeatures = profile.features.length;
+
+    // Enrich with LLM profiling when not in fast mode (better system/feature naming)
+    if (!fast && mode === 'api') {
+      try {
+        const llmProfile = await profileProjectWithLLM(projectRoot, mode, false);
+        // Merge: LLM provides better names/descriptions, AST provides accurate structure
+        if (llmProfile.systems.length > 0) profile.systems = llmProfile.systems;
+        if (llmProfile.features.length > 0) profile.features = llmProfile.features;
+        if (llmProfile.entryPoints.length > 0) profile.entryPoints = llmProfile.entryPoints;
+        if (llmProfile.keyFiles.length > 0) {
+          // Merge key files: LLM picks + AST picks
+          profile.keyFiles = [...new Set([...llmProfile.keyFiles, ...profile.keyFiles])];
+        }
+        profileSpinner.succeed(
+          `Profiled (AST+LLM): ${profile.languages.join(', ')} — ${profile.systems.length} systems, ${profile.features.length} features`
+        );
+      } catch (err) {
+        logWarn('analyze', 'LLM enrichment failed, using AST-only profile');
+        profileSpinner.succeed(
+          `Profiled (AST): ${profile.languages.join(', ')} — ${astSystems} systems, ${astFeatures} features`
+        );
+      }
+    } else {
+      profileSpinner.succeed(
+        `Profiled (AST): ${profile.languages.join(', ')} — ${astSystems} systems, ${astFeatures} features`
+      );
+    }
   } catch (err) {
-    logError('analyze', 'LLM profiling failed', err instanceof Error ? err : undefined);
+    logError('analyze', 'AST profiling failed', err instanceof Error ? err : undefined);
     profile = getDefaultProfile();
-    profileSpinner.warn('LLM profiling failed, using fallback profile');
+    profileSpinner.warn('Profiling failed, using fallback profile');
   }
   console.log('');
 
@@ -1061,6 +1088,193 @@ async function runAgentsApi(
   }
 
   printTimingSummary(timings, Date.now() - totalStart);
+}
+
+/**
+ * Static project profiling using tree-sitter AST + file heuristics.
+ * No LLM call needed — deterministic, instant, zero-cost.
+ *
+ * Extracts: languages, entry points, key files (by export count),
+ * systems (by directory grouping), features (by exported symbols).
+ */
+async function profileProjectWithAST(
+  projectRoot: string,
+): Promise<ProjectProfile> {
+  const { getLanguageForExtension } = await import('../lib/tree-sitter/types.js');
+
+  // 1. Scan file tree
+  const allFiles = await glob('**/*', {
+    cwd: projectRoot,
+    ignore: [
+      '**/node_modules/**', '**/.git/**', '**/dist/**', '**/.succ/**',
+      '**/vendor/**', '**/coverage/**', '**/__pycache__/**',
+      '**/target/**', '**/.next/**', '**/.cache/**',
+      '**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**',
+    ],
+    nodir: true,
+  });
+
+  // 2. Detect languages from extensions
+  const langCounts = new Map<string, number>();
+  const extCounts = new Map<string, number>();
+  const sourceFiles: string[] = [];
+
+  for (const file of allFiles) {
+    const ext = path.extname(file).toLowerCase();
+    const lang = getLanguageForExtension(ext);
+    if (lang) {
+      langCounts.set(lang, (langCounts.get(lang) || 0) + 1);
+      extCounts.set(ext, (extCounts.get(ext) || 0) + 1);
+      sourceFiles.push(file);
+    }
+  }
+
+  const languages = [...langCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([lang]) => lang);
+
+  const sourceExtensions = [...extCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([ext]) => ext);
+
+  // 3. Detect entry points (common patterns)
+  const entryPointPatterns = [
+    /^src\/(index|main|cli|app|server)\.[tj]sx?$/,
+    /^(index|main|cli|app|server)\.[tj]sx?$/,
+    /^src\/bin\/.*\.[tj]sx?$/,
+    /^cmd\/.*\.(go)$/,
+    /^main\.(py|go|rs)$/,
+    /^src\/(main|lib)\.(rs|py)$/,
+  ];
+  const entryPoints = sourceFiles
+    .filter(f => entryPointPatterns.some(p => p.test(f.replace(/\\/g, '/'))))
+    .slice(0, 5);
+
+  // 4. Detect project files
+  const projectFileNames = ['package.json', 'tsconfig.json', 'go.mod', 'Cargo.toml',
+    'pyproject.toml', 'pom.xml', 'build.gradle', 'README.md', '.env.example'];
+  const projectFiles = projectFileNames.filter(pf =>
+    allFiles.includes(pf) || fs.existsSync(path.join(projectRoot, pf))
+  );
+
+  // 5. Detect test patterns from existing files
+  const testPatterns: string[] = [];
+  if (allFiles.some(f => f.includes('.test.'))) testPatterns.push('**/*.test.*');
+  if (allFiles.some(f => f.includes('.spec.'))) testPatterns.push('**/*.spec.*');
+  if (allFiles.some(f => { const n = f.replace(/\\/g, '/'); return n.startsWith('test/') || n.startsWith('tests/'); })) testPatterns.push('**/test/**', '**/tests/**');
+
+  // 6. Extract symbols from key files using tree-sitter
+  let parseCode: ((code: string, lang: string) => Promise<any>) | null = null;
+  let extractSymbolsFn: ((tree: any, code: string, lang: string) => Promise<any[]>) | null = null;
+  try {
+    const parser = await import('../lib/tree-sitter/parser.js');
+    const extractor = await import('../lib/tree-sitter/extractor.js');
+    parseCode = parser.parseCode;
+    extractSymbolsFn = extractor.extractSymbols;
+  } catch {
+    // tree-sitter not available
+  }
+
+  // Track exports per file for key file detection
+  const fileExports: Array<{ file: string; exports: number; symbols: Array<{ name: string; type: string }> }> = [];
+
+  if (parseCode && extractSymbolsFn) {
+    // Parse up to 30 source files for symbol extraction
+    const filesToParse = sourceFiles
+      .filter(f => !f.includes('.d.ts'))
+      .slice(0, 30);
+
+    for (const file of filesToParse) {
+      const ext = path.extname(file).toLowerCase();
+      const lang = getLanguageForExtension(ext);
+      if (!lang) continue;
+
+      try {
+        const content = fs.readFileSync(path.join(projectRoot, file), 'utf-8');
+        if (content.length > 50000) continue; // skip very large files
+
+        const tree = await parseCode(content, lang);
+        if (!tree) continue;
+
+        const symbols = await extractSymbolsFn(tree, content, lang);
+        tree.delete();
+
+        if (symbols.length > 0) {
+          fileExports.push({
+            file,
+            exports: symbols.length,
+            symbols: symbols.map(s => ({ name: s.name, type: s.type })),
+          });
+        }
+      } catch {
+        // skip unparseable files
+      }
+    }
+  }
+
+  // 7. Determine key files (most exports)
+  const keyFiles = fileExports
+    .sort((a, b) => b.exports - a.exports)
+    .slice(0, 10)
+    .map(f => f.file);
+
+  // 8. Build systems from directory grouping
+  const dirSymbols = new Map<string, { files: string[]; symbolCount: number; topFile: string }>();
+  for (const fe of fileExports) {
+    const dir = path.dirname(fe.file);
+    const existing = dirSymbols.get(dir);
+    if (existing) {
+      existing.files.push(fe.file);
+      existing.symbolCount += fe.exports;
+      if (fe.exports > (fileExports.find(f => f.file === existing.topFile)?.exports ?? 0)) {
+        existing.topFile = fe.file;
+      }
+    } else {
+      dirSymbols.set(dir, { files: [fe.file], symbolCount: fe.exports, topFile: fe.file });
+    }
+  }
+
+  const systems = [...dirSymbols.entries()]
+    .filter(([, v]) => v.symbolCount >= 3) // at least 3 symbols to be a "system"
+    .sort((a, b) => b[1].symbolCount - a[1].symbolCount)
+    .slice(0, 15)
+    .map(([dir, v]) => {
+      // Create human-readable name from directory path
+      const parts = dir.replace(/\\/g, '/').split('/').filter(p => p !== 'src' && p !== 'lib');
+      const name = parts.length > 0
+        ? parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+        : path.basename(v.topFile, path.extname(v.topFile));
+      return {
+        name,
+        keyFile: v.topFile,
+        description: `${v.symbolCount} symbols across ${v.files.length} file(s)`,
+      };
+    });
+
+  // 9. Build features from exported functions (top-level only)
+  const features = fileExports
+    .flatMap(fe => fe.symbols
+      .filter(s => s.type === 'function' || s.type === 'class')
+      .map(s => ({ name: s.name, keyFile: fe.file, type: s.type }))
+    )
+    .slice(0, 15)
+    .map(f => ({
+      name: f.name,
+      keyFile: f.keyFile,
+      description: `${f.type} in ${f.keyFile}`,
+    }));
+
+  return {
+    languages,
+    sourceExtensions,
+    testPatterns,
+    ignoreDirectories: ['node_modules', 'dist', '.git', '.succ', 'vendor', 'coverage'],
+    projectFiles,
+    entryPoints,
+    keyFiles,
+    systems,
+    features,
+  };
 }
 
 /**

@@ -29,7 +29,7 @@ function getCodeBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from documents — enrich with AST metadata for better ranking
+  // Build from documents — pass AST metadata for tokenizeCodeWithAST boost
   const rows = database.prepare(
     "SELECT id, content, symbol_name, signature FROM documents WHERE file_path LIKE 'code:%'"
   ).all() as Array<{
@@ -39,16 +39,14 @@ function getCodeBm25Index(): bm25.BM25Index {
     signature: string | null;
   }>;
 
-  // Enrich content with AST tokens: append symbol name + signature for BM25 boosting
-  const enriched = rows.map(row => {
-    if (!row.symbol_name && !row.signature) return { id: row.id, content: row.content };
-    const parts = [row.content];
-    if (row.symbol_name) parts.push(row.symbol_name, row.symbol_name); // 3x boost (once in content + twice)
-    if (row.signature) parts.push(row.signature);
-    return { id: row.id, content: parts.join('\n') };
-  });
+  const docs: bm25.BM25Doc[] = rows.map(row => ({
+    id: row.id,
+    content: row.content,
+    symbolName: row.symbol_name ?? undefined,
+    signature: row.signature ?? undefined,
+  }));
 
-  codeBm25Index = bm25.buildIndex(enriched, 'code');
+  codeBm25Index = bm25.buildIndex(docs, 'code');
 
   // Store for future use
   saveCodeBm25Index();
@@ -82,11 +80,8 @@ export function updateCodeBm25Index(docId: number, content: string, symbolName?:
   const index = getCodeBm25Index();
   // Remove old entry if exists
   bm25.removeFromIndex(index, docId);
-  // Enrich with AST metadata for BM25 boosting
-  const parts = [content];
-  if (symbolName) parts.push(symbolName, symbolName); // 3x boost
-  if (signature) parts.push(signature);
-  bm25.addToIndex(index, { id: docId, content: parts.join('\n') }, 'code');
+  // Pass AST metadata for tokenizeCodeWithAST boost
+  bm25.addToIndex(index, { id: docId, content, symbolName, signature }, 'code');
   saveCodeBm25Index();
 }
 
