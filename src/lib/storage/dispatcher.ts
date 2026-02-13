@@ -205,6 +205,7 @@ export class StorageDispatcher {
           await this.qdrant!.upsertDocumentWithPayload(id, embedding, {
             filePath, content, startLine, endLine,
             projectId: this.qdrant!.getProjectId() ?? '',
+            symbolName, symbolType, signature,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync document vector ${id}`, error);
@@ -223,7 +224,7 @@ export class StorageDispatcher {
         try {
           const items = documents.map((doc, idx) => ({
             id: ids[idx], embedding: doc.embedding,
-            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
+            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '', symbolName: doc.symbolName, symbolType: doc.symbolType, signature: doc.signature } as DocumentUpsertMeta,
           }));
           await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
@@ -243,7 +244,7 @@ export class StorageDispatcher {
         try {
           const items = documents.map((doc, idx) => ({
             id: ids[idx], embedding: doc.embedding,
-            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
+            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '', symbolName: doc.symbolName, symbolType: doc.symbolType, signature: doc.signature } as DocumentUpsertMeta,
           }));
           await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
@@ -935,17 +936,19 @@ export class StorageDispatcher {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    // Fetch extra results when post-filtering so we can still fill limit after filtering
-    const fetchLimit = filters ? lim * 3 : lim;
+    // Overfetch only when regex post-filter is needed (symbolType is filtered natively by Qdrant/PG)
+    const hasRegex = !!filters?.regex;
+    const fetchLimit = hasRegex ? lim * 3 : lim;
+    const regexFilter = hasRegex ? { regex: filters!.regex } : undefined;
     if (this.hasQdrant()) {
       try {
-        let results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, fetchLimit, thresh, { codeOnly: true });
-        if (results.length > 0) return this.applyCodeFilters(results, filters, lim);
+        const qdrantResults = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, fetchLimit, thresh, { codeOnly: true, symbolType: filters?.symbolType });
+        if (qdrantResults.length > 0) return this.applyCodeFilters(qdrantResults, regexFilter, lim);
       } catch (error) { this._warnQdrantFailure('hybridSearchCode failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
       const results = (await this.postgres.searchDocuments(queryEmbedding, fetchLimit, thresh, { codeOnly: true, symbolType: filters?.symbolType })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
-      return this.applyCodeFilters(results, filters ? { regex: filters.regex } : undefined, lim);
+      return this.applyCodeFilters(results, regexFilter, lim);
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
