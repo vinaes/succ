@@ -62,9 +62,12 @@ export async function backfill(options: BackfillOptions = {}): Promise<void> {
       dryRun,
     });
 
-    const count = t === 'memories' ? stats.memories
-      : t === 'global_memories' ? stats.globalMemories
-      : stats.documents;
+    const count =
+      t === 'memories'
+        ? stats.memories
+        : t === 'global_memories'
+          ? stats.globalMemories
+          : stats.documents;
     totalSynced += count;
   }
 

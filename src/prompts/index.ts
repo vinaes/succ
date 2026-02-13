@@ -42,10 +42,7 @@ export { KEYWORD_EXTRACTION_PROMPT, SKILL_RANKING_PROMPT } from './skills.js';
 export { REFLECTION_PROMPT, DISCOVERY_PROMPT } from './daemon.js';
 
 // Analysis prompts (analyze command)
-export {
-  PROJECT_ANALYSIS_WRAPPER,
-  DOCUMENTATION_WRITER_SYSTEM,
-} from './analyze.js';
+export { PROJECT_ANALYSIS_WRAPPER, DOCUMENTATION_WRITER_SYSTEM } from './analyze.js';
 
 // Quality scoring
 export { QUALITY_SCORER_SYSTEM } from './quality.js';

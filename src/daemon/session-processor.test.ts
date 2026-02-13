@@ -284,7 +284,7 @@ describe('parseFactsResponse', () => {
     const facts = parseFactsResponse(response);
 
     expect(facts).toHaveLength(5);
-    expect(facts.map(f => f.type)).toEqual(validTypes);
+    expect(facts.map((f) => f.type)).toEqual(validTypes);
   });
 
   it('should clamp confidence between 0 and 1', () => {
@@ -478,6 +478,8 @@ describe('batch memory save optimization', () => {
     expect(result.saved).toBeGreaterThanOrEqual(0);
     expect(result.skipped).toBeGreaterThanOrEqual(0);
     expect(result.results).toHaveLength(2);
-    expect(result.results.every((r: any) => r.reason === 'saved' || r.reason === 'duplicate')).toBe(true);
+    expect(result.results.every((r: any) => r.reason === 'saved' || r.reason === 'duplicate')).toBe(
+      true
+    );
   });
 });

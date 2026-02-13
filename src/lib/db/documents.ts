@@ -59,14 +59,15 @@ export function upsertDocument(
   embedding: number[],
   symbolName?: string,
   symbolType?: string,
-  signature?: string,
+  signature?: string
 ): void {
   const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
 
   // Get existing doc ID if any (for vec table update)
-  const existing = cachedPrepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
-    .get(filePath, chunkIndex) as { id: number } | undefined;
+  const existing = cachedPrepare(
+    'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?'
+  ).get(filePath, chunkIndex) as { id: number } | undefined;
 
   database
     .prepare(
@@ -84,29 +85,54 @@ export function upsertDocument(
       updated_at = CURRENT_TIMESTAMP
   `
     )
-    .run(filePath, chunkIndex, content, startLine, endLine, embeddingBlob, symbolName ?? null, symbolType ?? null, signature ?? null);
+    .run(
+      filePath,
+      chunkIndex,
+      content,
+      startLine,
+      endLine,
+      embeddingBlob,
+      symbolName ?? null,
+      symbolType ?? null,
+      signature ?? null
+    );
 
   // Update vec_documents with mapping table
   if (sqliteVecAvailable) {
     try {
       if (existing) {
         // Update existing: delete old mapping and vec entry, insert new
-        const oldMapping = cachedPrepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(existing.id) as { vec_rowid: number } | undefined;
+        const oldMapping = cachedPrepare(
+          'SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?'
+        ).get(existing.id) as { vec_rowid: number } | undefined;
         if (oldMapping) {
           cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(oldMapping.vec_rowid);
           cachedPrepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(existing.id);
         }
-        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
-        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, existing.id);
+        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(
+          embeddingBlob
+        );
+        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(
+          vecResult.lastInsertRowid,
+          existing.id
+        );
       } else {
         // New doc - get the inserted ID
-        const newDoc = cachedPrepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
-          .get(filePath, chunkIndex) as { id: number };
-        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
-        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newDoc.id);
+        const newDoc = cachedPrepare(
+          'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?'
+        ).get(filePath, chunkIndex) as { id: number };
+        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(
+          embeddingBlob
+        );
+        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(
+          vecResult.lastInsertRowid,
+          newDoc.id
+        );
       }
     } catch (err) {
-      logWarn('documents', 'Vector insert failed for document, semantic search may not find it', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('documents', 'Vector insert failed for document, semantic search may not find it', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -139,18 +165,28 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
   const transaction = database.transaction((docs: DocumentBatch[]) => {
     for (const doc of docs) {
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
-      stmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob, doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null);
+      stmt.run(
+        doc.filePath,
+        doc.chunkIndex,
+        doc.content,
+        doc.startLine,
+        doc.endLine,
+        embeddingBlob,
+        doc.symbolName ?? null,
+        doc.symbolType ?? null,
+        doc.signature ?? null
+      );
     }
   });
 
   transaction(documents);
 
   // Rebuild vec_documents for affected files
-  rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
+  rebuildVecDocumentsForFiles(documents.map((d) => d.filePath));
 
   // Auto-invalidate affected BM25 indexes
-  const hasCode = documents.some(d => d.filePath.startsWith('code:'));
-  const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
+  const hasCode = documents.some((d) => d.filePath.startsWith('code:'));
+  const hasDocs = documents.some((d) => !d.filePath.startsWith('code:'));
   if (hasCode) invalidateCodeBm25Index();
   if (hasDocs) invalidateDocsBm25Index();
 
@@ -177,20 +213,30 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
 
         for (const doc of docs) {
           // Delete existing vec entry if any (using mapping table)
-          const existing = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(doc.id) as { vec_rowid: number } | undefined;
+          const existing = database
+            .prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?')
+            .get(doc.id) as { vec_rowid: number } | undefined;
           if (existing) {
             database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(existing.vec_rowid);
             database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(doc.id);
           }
           // Insert new vec entry with mapping
-          const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(doc.embedding);
-          database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, doc.id);
+          const vecResult = database
+            .prepare('INSERT INTO vec_documents(embedding) VALUES (?)')
+            .run(doc.embedding);
+          database
+            .prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)')
+            .run(vecResult.lastInsertRowid, doc.id);
         }
       }
     });
     transaction();
   } catch (err) {
-    logWarn('documents', 'Batch vector insert failed, documents may not be semantically searchable', { error: err instanceof Error ? err.message : String(err) });
+    logWarn(
+      'documents',
+      'Batch vector insert failed, documents may not be semantically searchable',
+      { error: err instanceof Error ? err.message : String(err) }
+    );
   }
 }
 
@@ -231,7 +277,17 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
     for (const doc of docs) {
       // Insert document
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
-      docStmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob, doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null);
+      docStmt.run(
+        doc.filePath,
+        doc.chunkIndex,
+        doc.content,
+        doc.startLine,
+        doc.endLine,
+        embeddingBlob,
+        doc.symbolName ?? null,
+        doc.symbolType ?? null,
+        doc.signature ?? null
+      );
 
       // Update file hash (once per file)
       if (!processedFiles.has(doc.filePath)) {
@@ -244,11 +300,11 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   transaction(documents);
 
   // Rebuild vec_documents for affected files
-  rebuildVecDocumentsForFiles(documents.map(d => d.filePath));
+  rebuildVecDocumentsForFiles(documents.map((d) => d.filePath));
 
   // Auto-invalidate affected BM25 indexes
-  const hasCode = documents.some(d => d.filePath.startsWith('code:'));
-  const hasDocs = documents.some(d => !d.filePath.startsWith('code:'));
+  const hasCode = documents.some((d) => d.filePath.startsWith('code:'));
+  const hasDocs = documents.some((d) => !d.filePath.startsWith('code:'));
   if (hasCode) invalidateCodeBm25Index();
   if (hasDocs) invalidateDocsBm25Index();
 
@@ -260,17 +316,22 @@ export function deleteDocumentsByPath(filePath: string): void {
   // Also delete from vec_documents using mapping table
   if (sqliteVecAvailable) {
     try {
-      const docIds = cachedPrepare('SELECT id FROM documents WHERE file_path = ?')
-        .all(filePath) as Array<{ id: number }>;
+      const docIds = cachedPrepare('SELECT id FROM documents WHERE file_path = ?').all(
+        filePath
+      ) as Array<{ id: number }>;
       for (const { id } of docIds) {
-        const mapping = cachedPrepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(id) as { vec_rowid: number } | undefined;
+        const mapping = cachedPrepare(
+          'SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?'
+        ).get(id) as { vec_rowid: number } | undefined;
         if (mapping) {
           cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
           cachedPrepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
         }
       }
     } catch (err) {
-      logWarn('documents', 'Vector cleanup failed during document deletion', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('documents', 'Vector cleanup failed during document deletion', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -304,14 +365,18 @@ export function searchDocuments(
       `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
 
       if (vecResults.length > 0) {
-        const docIds = vecResults.map(r => r.doc_id);
-        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        const docIds = vecResults.map((r) => r.doc_id);
+        const distanceMap = new Map(vecResults.map((r) => [r.doc_id, r.distance]));
 
         const placeholders = docIds.map(() => '?').join(',');
-        const rows = database.prepare(`
+        const rows = database
+          .prepare(
+            `
           SELECT id, file_path, content, start_line, end_line
           FROM documents WHERE id IN (${placeholders})
-        `).all(...docIds) as Array<{
+        `
+          )
+          .all(...docIds) as Array<{
           id: number;
           file_path: string;
           content: string;
@@ -339,7 +404,9 @@ export function searchDocuments(
         return results.slice(0, limit);
       }
     } catch (err) {
-      logWarn('documents', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('documents', 'sqlite-vec KNN failed, using brute-force fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -388,13 +455,12 @@ export function getRecentDocuments(limit: number = 10): Array<{
       WHERE file_path NOT LIKE 'code:%'
       ORDER BY rowid DESC
       LIMIT ?
-    `)
-    .all(limit) as Array<{
-      file_path: string;
-      content: string;
-      start_line: number;
-      end_line: number;
-    }>;
+    `).all(limit) as Array<{
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+  }>;
 
   return rows;
 }
@@ -407,10 +473,12 @@ export function getStats(): {
   const totalDocs = cachedPrepare('SELECT COUNT(*) as count FROM documents').get() as {
     count: number;
   };
-  const totalFiles = cachedPrepare('SELECT COUNT(DISTINCT file_path) as count FROM documents')
-    .get() as { count: number };
-  const lastIndexed = cachedPrepare('SELECT MAX(updated_at) as last FROM documents')
-    .get() as { last: string | null };
+  const totalFiles = cachedPrepare(
+    'SELECT COUNT(DISTINCT file_path) as count FROM documents'
+  ).get() as { count: number };
+  const lastIndexed = cachedPrepare('SELECT MAX(updated_at) as last FROM documents').get() as {
+    last: string | null;
+  };
 
   return {
     total_documents: totalDocs.count,
@@ -424,7 +492,8 @@ export function getStats(): {
  * Used for reindexing after embedding model change.
  */
 export function clearDocuments(): void {
-  const docCount = (cachedPrepare('SELECT COUNT(*) as cnt FROM documents').get() as { cnt: number }).cnt;
+  const docCount = (cachedPrepare('SELECT COUNT(*) as cnt FROM documents').get() as { cnt: number })
+    .cnt;
   logDocDeletion('clearDocuments', docCount, 'all documents + file_hashes cleared');
   cachedPrepare('DELETE FROM documents').run();
   cachedPrepare('DELETE FROM file_hashes').run();
@@ -441,7 +510,11 @@ export function clearDocuments(): void {
  * Used for reindexing code after embedding model change.
  */
 export function clearCodeDocuments(): void {
-  const codeCount = (cachedPrepare("SELECT COUNT(*) as cnt FROM documents WHERE file_path LIKE 'code:%'").get() as { cnt: number }).cnt;
+  const codeCount = (
+    cachedPrepare("SELECT COUNT(*) as cnt FROM documents WHERE file_path LIKE 'code:%'").get() as {
+      cnt: number;
+    }
+  ).cnt;
   logDocDeletion('clearCodeDocuments', codeCount, 'code documents cleared');
   cachedPrepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
   cachedPrepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
@@ -455,7 +528,9 @@ export function clearCodeDocuments(): void {
  * Returns null if no documents exist.
  */
 export function getStoredEmbeddingDimension(): number | null {
-  const row = cachedPrepare('SELECT embedding FROM documents LIMIT 1').get() as { embedding: Buffer } | undefined;
+  const row = cachedPrepare('SELECT embedding FROM documents LIMIT 1').get() as
+    | { embedding: Buffer }
+    | undefined;
   if (!row) return null;
   const embedding = bufferToFloatArray(row.embedding);
   return embedding.length;

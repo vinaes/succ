@@ -50,7 +50,9 @@ function extractTopicsFromTranscript(transcript: string): string[] {
   const topics: string[] = [];
 
   // Extract file paths mentioned
-  const fileMatches = transcript.match(/(?:src|lib|components|pages|api|hooks|utils|test)\/[\w\-./]+\.\w+/gi);
+  const fileMatches = transcript.match(
+    /(?:src|lib|components|pages|api|hooks|utils|test)\/[\w\-./]+\.\w+/gi
+  );
   if (fileMatches) {
     topics.push(...fileMatches.slice(0, 5));
   }
@@ -79,8 +81,22 @@ function extractTopicsFromTranscript(transcript: string): string[] {
 
   // Extract key phrases
   const keyPhrases = [
-    'implement', 'fix', 'add', 'update', 'refactor', 'bug', 'error', 'feature',
-    'реализовать', 'исправить', 'добавить', 'обновить', 'рефакторинг', 'баг', 'ошибка', 'фича'
+    'implement',
+    'fix',
+    'add',
+    'update',
+    'refactor',
+    'bug',
+    'error',
+    'feature',
+    'реализовать',
+    'исправить',
+    'добавить',
+    'обновить',
+    'рефакторинг',
+    'баг',
+    'ошибка',
+    'фича',
   ];
 
   for (const phrase of keyPhrases) {
@@ -106,7 +122,7 @@ async function findRelevantMemories(
   if (topics.length === 0) {
     // Fall back to recent memories if no topics extracted
     const recent = await getRecentMemories(limit);
-    return recent.map(m => ({
+    return recent.map((m) => ({
       content: m.content,
       tags: m.tags,
       relevance: 0.5,
@@ -118,7 +134,7 @@ async function findRelevantMemories(
   const embedding = await getEmbedding(searchQuery);
   const results = await searchMemories(embedding, limit, 0.3);
 
-  return results.map(m => ({
+  return results.map((m) => ({
     content: m.content,
     tags: m.tags,
     relevance: m.similarity,
@@ -134,18 +150,21 @@ async function generateBriefingWithLLM(
   memories: Array<{ content: string; tags: string[]; relevance: number }>,
   backendOverride?: LLMBackend
 ): Promise<string | null> {
-  const memoriesText = memories
-    .map(m => `[${m.tags.join(', ')}] ${m.content}`)
-    .join('\n\n');
+  const memoriesText = memories.map((m) => `[${m.tags.join(', ')}] ${m.content}`).join('\n\n');
 
-  const prompt = SESSION_BRIEFING_PROMPT
-    .replace('{transcript}', transcript.substring(0, 4000))
-    .replace('{memories}', memoriesText || 'No relevant memories found.');
+  const prompt = SESSION_BRIEFING_PROMPT.replace(
+    '{transcript}',
+    transcript.substring(0, 4000)
+  ).replace('{memories}', memoriesText || 'No relevant memories found.');
 
   try {
     // Use sleep agent for background precomputation if enabled
     const configOverride = backendOverride ? { backend: backendOverride } : undefined;
-    const result = await callLLM(prompt, { timeout: 45000, maxTokens: 1000, useSleepAgent: true }, configOverride);
+    const result = await callLLM(
+      prompt,
+      { timeout: 45000, maxTokens: 1000, useSleepAgent: true },
+      configOverride
+    );
     return result?.trim() || null;
   } catch (error) {
     logWarn('precompute', 'LLM briefing failed', { error: String(error) });
@@ -223,9 +242,10 @@ export async function precomputeContext(
     const timestamp = now.toISOString();
 
     // Build memories section only if there are memories
-    const memoriesSection = memories.length > 0
-      ? `\n---\n\n## Relevant Memories\n\n${memories.map(m => `- [${m.tags.join(', ')}] ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`).join('\n')}`
-      : '';
+    const memoriesSection =
+      memories.length > 0
+        ? `\n---\n\n## Relevant Memories\n\n${memories.map((m) => `- [${m.tags.join(', ')}] ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`).join('\n')}`
+        : '';
 
     const contextContent = `# Next Session Context
 
@@ -251,7 +271,6 @@ ${memoriesSection}
     }
 
     result.success = true;
-
   } catch (error) {
     result.error = String(error);
   }

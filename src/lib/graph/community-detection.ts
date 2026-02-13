@@ -51,7 +51,8 @@ export function buildAdjacencyList(
  */
 function mulberry32(seed: number): () => number {
   return () => {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -209,8 +210,17 @@ export async function detectCommunities(
   const allMemories = await getAllMemoriesForExport();
   const memoryTagMap = new Map<number, string[]>();
   for (const mem of allMemories) {
-    const tags = Array.isArray(mem.tags) ? mem.tags :
-      (typeof mem.tags === 'string' ? (() => { try { return JSON.parse(mem.tags); } catch { return []; } })() : []);
+    const tags = Array.isArray(mem.tags)
+      ? mem.tags
+      : typeof mem.tags === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(mem.tags);
+            } catch {
+              return [];
+            }
+          })()
+        : [];
     memoryTagMap.set(mem.id, tags);
   }
 
@@ -238,13 +248,25 @@ export async function detectCommunities(
 /**
  * Get community assignment for a specific memory from its tags.
  */
-export async function getMemoryCommunity(memoryId: number, tagPrefix: string = 'community'): Promise<number | null> {
+export async function getMemoryCommunity(
+  memoryId: number,
+  tagPrefix: string = 'community'
+): Promise<number | null> {
   const { getMemoryById } = await import('../storage/index.js');
   const mem = await getMemoryById(memoryId);
   if (!mem) return null;
 
-  const tags: string[] = Array.isArray(mem.tags) ? mem.tags :
-    (typeof mem.tags === 'string' ? (() => { try { return JSON.parse(mem.tags as string); } catch { return []; } })() : []);
+  const tags: string[] = Array.isArray(mem.tags)
+    ? mem.tags
+    : typeof mem.tags === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(mem.tags as string);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
 
   const prefix = `${tagPrefix}:`;
   const communityTag = tags.find((t: string) => t.startsWith(prefix));

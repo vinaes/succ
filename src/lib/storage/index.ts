@@ -122,7 +122,9 @@ export function getStorageInfo(): {
     return {
       backend: 'postgresql',
       vector: config.vector === 'qdrant' ? 'qdrant' : 'pgvector',
-      path: pgConfig.connection_string || `${pgConfig.host ?? 'localhost'}:${pgConfig.port ?? 5432}/${pgConfig.database ?? 'succ'}`,
+      path:
+        pgConfig.connection_string ||
+        `${pgConfig.host ?? 'localhost'}:${pgConfig.port ?? 5432}/${pgConfig.database ?? 'succ'}`,
     };
   }
 
@@ -137,28 +139,61 @@ export function getStorageInfo(): {
 // ===========================================================================
 
 export async function upsertDocument(
-  filePath: string, chunkIndex: number, content: string,
-  startLine: number, endLine: number, embedding: number[],
-  symbolName?: string, symbolType?: string, signature?: string,
+  filePath: string,
+  chunkIndex: number,
+  content: string,
+  startLine: number,
+  endLine: number,
+  embedding: number[],
+  symbolName?: string,
+  symbolType?: string,
+  signature?: string
 ): Promise<void> {
   const d = await getStorageDispatcher();
-  return d.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
+  return d.upsertDocument(
+    filePath,
+    chunkIndex,
+    content,
+    startLine,
+    endLine,
+    embedding,
+    symbolName,
+    symbolType,
+    signature
+  );
 }
 
-export async function upsertDocumentsBatch(documents: Array<{
-  filePath: string; chunkIndex: number; content: string;
-  startLine: number; endLine: number; embedding: number[];
-  symbolName?: string; symbolType?: string; signature?: string;
-}>): Promise<void> {
+export async function upsertDocumentsBatch(
+  documents: Array<{
+    filePath: string;
+    chunkIndex: number;
+    content: string;
+    startLine: number;
+    endLine: number;
+    embedding: number[];
+    symbolName?: string;
+    symbolType?: string;
+    signature?: string;
+  }>
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.upsertDocumentsBatch(documents);
 }
 
-export async function upsertDocumentsBatchWithHashes(documents: Array<{
-  filePath: string; chunkIndex: number; content: string;
-  startLine: number; endLine: number; embedding: number[]; hash: string;
-  symbolName?: string; symbolType?: string; signature?: string;
-}>): Promise<void> {
+export async function upsertDocumentsBatchWithHashes(
+  documents: Array<{
+    filePath: string;
+    chunkIndex: number;
+    content: string;
+    startLine: number;
+    endLine: number;
+    embedding: number[];
+    hash: string;
+    symbolName?: string;
+    symbolType?: string;
+    signature?: string;
+  }>
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.upsertDocumentsBatchWithHashes(documents);
 }
@@ -169,20 +204,39 @@ export async function deleteDocumentsByPath(filePath: string): Promise<void> {
 }
 
 export async function searchDocuments(
-  queryEmbedding: number[], limit?: number, threshold?: number
-): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number
+): Promise<
+  Array<{
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+    similarity: number;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.searchDocuments(queryEmbedding, limit, threshold);
 }
 
-export async function getRecentDocuments(limit?: number): Promise<Array<{
-  file_path: string; content: string; start_line: number; end_line: number;
-}>> {
+export async function getRecentDocuments(limit?: number): Promise<
+  Array<{
+    file_path: string;
+    content: string;
+    start_line: number;
+    end_line: number;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getRecentDocuments(limit);
 }
 
-export async function getStats(): Promise<{ total_documents: number; total_files: number; last_indexed: string | null }> {
+export async function getStats(): Promise<{
+  total_documents: number;
+  total_files: number;
+  last_indexed: string | null;
+}> {
   const d = await getStorageDispatcher();
   return d.getStats();
 }
@@ -226,14 +280,16 @@ export async function getAllFileHashes(): Promise<Map<string, string>> {
   return d.getAllFileHashes();
 }
 
-export async function getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
+export async function getAllFileHashesWithTimestamps(): Promise<
+  Array<{ file_path: string; content_hash: string; indexed_at: string }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllFileHashesWithTimestamps();
 }
 
 export interface IndexFreshnessResult {
-  stale: string[];     // DB file_path values (with code: prefix if applicable)
-  deleted: string[];   // DB file_path values
+  stale: string[]; // DB file_path values (with code: prefix if applicable)
+  deleted: string[]; // DB file_path values
   total: number;
 }
 
@@ -283,7 +339,9 @@ export async function getStaleFiles(projectRoot: string): Promise<IndexFreshness
 /**
  * Convenience wrapper returning counts (used by status displays).
  */
-export async function getStaleFileCount(projectRoot: string): Promise<{ stale: number; deleted: number; total: number }> {
+export async function getStaleFileCount(
+  projectRoot: string
+): Promise<{ stale: number; deleted: number; total: number }> {
   const result = await getStaleFiles(projectRoot);
   return { stale: result.stale.length, deleted: result.deleted.length, total: result.total };
 }
@@ -293,14 +351,18 @@ export async function getStaleFileCount(projectRoot: string): Promise<{ stale: n
 // ===========================================================================
 
 export async function findSimilarMemory(
-  embedding: number[], threshold?: number
+  embedding: number[],
+  threshold?: number
 ): Promise<{ id: number; content: string; similarity: number } | null> {
   const d = await getStorageDispatcher();
   return d.findSimilarMemory(embedding, threshold);
 }
 
 export async function saveMemory(
-  content: string, embedding: number[], tags?: string[], source?: string,
+  content: string,
+  embedding: number[],
+  tags?: string[],
+  source?: string,
   options?: {
     type?: MemoryType;
     deduplicate?: boolean;
@@ -310,7 +372,13 @@ export async function saveMemory(
     validUntil?: string | Date;
     autoLink?: boolean;
   }
-): Promise<{ id: number; isDuplicate: boolean; existingId?: number; similarity?: number; linksCreated?: number }> {
+): Promise<{
+  id: number;
+  isDuplicate: boolean;
+  existingId?: number;
+  similarity?: number;
+  linksCreated?: number;
+}> {
   const d = await getStorageDispatcher();
 
   // Adapt qualityScore: consumers pass { score, factors }, dispatcher wants separate params
@@ -325,8 +393,10 @@ export async function saveMemory(
   }
 
   // Convert Date to string for validity
-  const validFrom = options?.validFrom instanceof Date ? options.validFrom.toISOString() : options?.validFrom;
-  const validUntil = options?.validUntil instanceof Date ? options.validUntil.toISOString() : options?.validUntil;
+  const validFrom =
+    options?.validFrom instanceof Date ? options.validFrom.toISOString() : options?.validFrom;
+  const validUntil =
+    options?.validUntil instanceof Date ? options.validUntil.toISOString() : options?.validUntil;
 
   const result = await d.saveMemory(content, embedding, tags ?? [], source, {
     type: options?.type,
@@ -357,8 +427,11 @@ export async function saveMemoriesBatch(
 }
 
 export async function searchMemories(
-  queryEmbedding: number[], limit?: number, threshold?: number,
-  tags?: string[], since?: Date,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  tags?: string[],
+  since?: Date,
   options?: { includeExpired?: boolean; asOfDate?: Date }
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
@@ -416,7 +489,10 @@ export async function deleteMemoriesByIds(ids: number[]): Promise<number> {
 }
 
 export async function searchMemoriesAsOf(
-  queryEmbedding: number[], asOfDate: Date, limit?: number, threshold?: number
+  queryEmbedding: number[],
+  asOfDate: Date,
+  limit?: number,
+  threshold?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.searchMemoriesAsOf(queryEmbedding, asOfDate, limit, threshold);
@@ -444,14 +520,18 @@ export async function getAllMemoriesForRetention(): Promise<any[]> {
 // ===========================================================================
 
 export async function findSimilarGlobalMemory(
-  embedding: number[], threshold?: number
+  embedding: number[],
+  threshold?: number
 ): Promise<{ id: number; content: string; similarity: number } | null> {
   const d = await getStorageDispatcher();
   return d.findSimilarGlobalMemory(embedding, threshold);
 }
 
 export async function saveGlobalMemory(
-  content: string, embedding: number[], tags?: string[], source?: string,
+  content: string,
+  embedding: number[],
+  tags?: string[],
+  source?: string,
   projectOrOptions?: string | { type?: MemoryType; deduplicate?: boolean },
   options?: { type?: MemoryType; deduplicate?: boolean }
 ): Promise<{ id: number; isDuplicate: boolean; existingId?: number; similarity?: number }> {
@@ -479,7 +559,10 @@ export async function saveGlobalMemory(
 }
 
 export async function searchGlobalMemories(
-  queryEmbedding: number[], limit?: number, threshold?: number, tags?: string[]
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  tags?: string[]
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
@@ -529,7 +612,12 @@ export async function invalidateBM25Index(): Promise<void> {
   return d.invalidateBM25Index();
 }
 
-export async function updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): Promise<void> {
+export async function updateCodeBm25Index(
+  docId: number,
+  content: string,
+  symbolName?: string,
+  signature?: string
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.updateCodeBm25Index(docId, content, symbolName, signature);
 }
@@ -539,7 +627,10 @@ export async function updateMemoriesBm25Index(memoryId: number, content: string)
   return d.updateMemoriesBm25Index(memoryId, content);
 }
 
-export async function updateGlobalMemoriesBm25Index(memoryId: number, content: string): Promise<void> {
+export async function updateGlobalMemoriesBm25Index(
+  memoryId: number,
+  content: string
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.updateGlobalMemoriesBm25Index(memoryId, content);
 }
@@ -549,29 +640,47 @@ export async function updateGlobalMemoriesBm25Index(memoryId: number, content: s
 // ===========================================================================
 
 export async function hybridSearchCode(
-  query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, filters?: { regex?: string; symbolType?: string }
+  query: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  alpha?: number,
+  filters?: { regex?: string; symbolType?: string }
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
 }
 
 export async function hybridSearchDocs(
-  query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number
+  query: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  alpha?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
 }
 
 export async function hybridSearchMemories(
-  query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number
+  query: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  alpha?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
 }
 
 export async function hybridSearchGlobalMemories(
-  query: string, queryEmbedding: number[], limit?: number, threshold?: number,
-  alpha?: number, tags?: string[], since?: Date
+  query: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  alpha?: number,
+  tags?: string[],
+  since?: Date
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.hybridSearchGlobalMemories(query, queryEmbedding, limit, threshold, alpha, tags, since);
@@ -582,7 +691,9 @@ export async function hybridSearchGlobalMemories(
 // ===========================================================================
 
 export async function createMemoryLink(
-  sourceId: number, targetId: number, relation?: LinkRelation,
+  sourceId: number,
+  targetId: number,
+  relation?: LinkRelation,
   weight?: number,
   optionsOrValidFrom?: string | { validFrom?: string; validUntil?: string },
   validUntil?: string
@@ -601,7 +712,9 @@ export async function createMemoryLink(
 }
 
 export async function deleteMemoryLink(
-  sourceId: number, targetId: number, relation?: LinkRelation
+  sourceId: number,
+  targetId: number,
+  relation?: LinkRelation
 ): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.deleteMemoryLink(sourceId, targetId, relation);
@@ -613,7 +726,8 @@ export async function getMemoryLinks(memoryId: number): Promise<any> {
 }
 
 export async function getMemoryWithLinks(
-  memoryId: number, options?: { asOfDate?: Date; includeExpired?: boolean }
+  memoryId: number,
+  options?: { asOfDate?: Date; includeExpired?: boolean }
 ): Promise<any> {
   const d = await getStorageDispatcher();
   return d.getMemoryWithLinks(memoryId, options);
@@ -625,20 +739,27 @@ export async function findConnectedMemories(memoryId: number, maxDepth?: number)
 }
 
 export async function findRelatedMemoriesForLinking(
-  memoryId: number, threshold?: number, maxLinks?: number
+  memoryId: number,
+  threshold?: number,
+  maxLinks?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.findRelatedMemoriesForLinking(memoryId, threshold, maxLinks);
 }
 
 export async function createAutoLinks(
-  memoryId: number, threshold?: number, maxLinks?: number
+  memoryId: number,
+  threshold?: number,
+  maxLinks?: number
 ): Promise<number> {
   const d = await getStorageDispatcher();
   return d.createAutoLinks(memoryId, threshold, maxLinks);
 }
 
-export async function autoLinkSimilarMemories(threshold?: number, maxLinks?: number): Promise<number> {
+export async function autoLinkSimilarMemories(
+  threshold?: number,
+  maxLinks?: number
+): Promise<number> {
   const d = await getStorageDispatcher();
   return d.autoLinkSimilarMemories(threshold, maxLinks);
 }
@@ -649,7 +770,9 @@ export async function getGraphStats(): Promise<any> {
 }
 
 export async function invalidateMemoryLink(
-  sourceId: number, targetId: number, relation?: LinkRelation
+  sourceId: number,
+  targetId: number,
+  relation?: LinkRelation
 ): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.invalidateMemoryLink(sourceId, targetId, relation);
@@ -661,7 +784,9 @@ export async function getMemoryLinksAsOf(memoryId: number, asOfDate: Date): Prom
 }
 
 export async function findConnectedMemoriesAsOf(
-  memoryId: number, asOfDate: Date, maxDepth?: number
+  memoryId: number,
+  asOfDate: Date,
+  maxDepth?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
   return d.findConnectedMemoriesAsOf(memoryId, asOfDate, maxDepth);
@@ -681,12 +806,19 @@ export async function updateMemoryTags(memoryId: number, tags: string[]): Promis
   return d.updateMemoryTags(memoryId, tags);
 }
 
-export async function updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+export async function updateMemoryLink(
+  linkId: number,
+  updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.updateMemoryLink(linkId, updates);
 }
 
-export async function upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+export async function upsertCentralityScore(
+  memoryId: number,
+  degree: number,
+  normalizedDegree: number
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.upsertCentralityScore(memoryId, degree, normalizedDegree);
 }
@@ -720,7 +852,9 @@ export async function getTotalTokenCount(): Promise<number> {
   return d.getTotalTokenCount();
 }
 
-export async function getTopTokens(limit?: number): Promise<Array<{ token: string; frequency: number }>> {
+export async function getTopTokens(
+  limit?: number
+): Promise<Array<{ token: string; frequency: number }>> {
   const d = await getStorageDispatcher();
   return d.getTopTokens(limit);
 }
@@ -731,7 +865,9 @@ export async function clearTokenFrequencies(): Promise<void> {
 }
 
 export async function getTokenFrequencyStats(): Promise<{
-  unique_tokens: number; total_occurrences: number; avg_frequency: number;
+  unique_tokens: number;
+  total_occurrences: number;
+  avg_frequency: number;
 }> {
   const d = await getStorageDispatcher();
   return d.getTokenFrequencyStats();
@@ -770,7 +906,9 @@ export async function recordWebSearch(record: WebSearchHistoryInput): Promise<nu
   return d.recordWebSearch(record);
 }
 
-export async function getWebSearchHistory(filter?: WebSearchHistoryFilter): Promise<WebSearchHistoryRecord[]> {
+export async function getWebSearchHistory(
+  filter?: WebSearchHistoryFilter
+): Promise<WebSearchHistoryRecord[]> {
   const d = await getStorageDispatcher();
   return d.getWebSearchHistory(filter ?? {});
 }
@@ -807,32 +945,60 @@ export async function backfillQdrant(
 // ===========================================================================
 
 export async function upsertSkill(skill: {
-  name: string; description: string; source: 'local' | 'skyll';
-  path?: string; content?: string; skyllId?: string; cacheExpires?: string;
+  name: string;
+  description: string;
+  source: 'local' | 'skyll';
+  path?: string;
+  content?: string;
+  skyllId?: string;
+  cacheExpires?: string;
 }): Promise<number> {
   const d = await getStorageDispatcher();
   return d.upsertSkill(skill);
 }
 
-export async function getAllSkills(): Promise<Array<{
-  id: number; name: string; description: string; source: string;
-  path?: string; content?: string; skyllId?: string; usageCount: number; lastUsed?: string;
-}>> {
+export async function getAllSkills(): Promise<
+  Array<{
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    content?: string;
+    skyllId?: string;
+    usageCount: number;
+    lastUsed?: string;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllSkills();
 }
 
-export async function searchSkillsDb(query: string, limit?: number): Promise<Array<{
-  id: number; name: string; description: string; source: string;
-  path?: string; usageCount: number;
-}>> {
+export async function searchSkillsDb(
+  query: string,
+  limit?: number
+): Promise<
+  Array<{
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    usageCount: number;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.searchSkills(query, limit);
 }
 
 export async function getSkillByName(name: string): Promise<{
-  id: number; name: string; description: string; source: string;
-  path?: string; content?: string; skyllId?: string;
+  id: number;
+  name: string;
+  description: string;
+  source: string;
+  path?: string;
+  content?: string;
+  skyllId?: string;
 } | null> {
   const d = await getStorageDispatcher();
   return d.getSkillByName(name);
@@ -854,7 +1020,10 @@ export async function clearExpiredSkyllCache(): Promise<number> {
 }
 
 export async function getCachedSkyllSkill(skyllId: string): Promise<{
-  id: number; name: string; description: string; content?: string;
+  id: number;
+  name: string;
+  description: string;
+  content?: string;
 } | null> {
   const d = await getStorageDispatcher();
   return d.getCachedSkyllSkill(skyllId);
@@ -869,37 +1038,65 @@ export async function getSkyllCacheStats(): Promise<{ cachedSkills: number }> {
 // Bulk Export (for checkpoint, graph-export)
 // ===========================================================================
 
-export async function getAllMemoriesForExport(): Promise<Array<{
-  id: number; content: string; tags: string[]; source: string | null;
-  embedding: number[] | null; type: string | null;
-  quality_score: number | null; quality_factors: Record<string, number> | null;
-  access_count: number; last_accessed: string | null; created_at: string;
-  invalidated_by: number | null;
-}>> {
+export async function getAllMemoriesForExport(): Promise<
+  Array<{
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    embedding: number[] | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: Record<string, number> | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
+    invalidated_by: number | null;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllMemoriesForExport();
 }
 
-export async function getAllDocumentsForExport(): Promise<Array<{
-  id: number; file_path: string; chunk_index: number; content: string;
-  start_line: number; end_line: number; embedding: number[] | null; created_at: string;
-}>> {
+export async function getAllDocumentsForExport(): Promise<
+  Array<{
+    id: number;
+    file_path: string;
+    chunk_index: number;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: number[] | null;
+    created_at: string;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllDocumentsForExport();
 }
 
-export async function getAllMemoryLinksForExport(): Promise<Array<{
-  id: number; source_id: number; target_id: number;
-  relation: string; weight: number; created_at: string;
-  llm_enriched: boolean;
-}>> {
+export async function getAllMemoryLinksForExport(): Promise<
+  Array<{
+    id: number;
+    source_id: number;
+    target_id: number;
+    relation: string;
+    weight: number;
+    created_at: string;
+    llm_enriched: boolean;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllMemoryLinksForExport();
 }
 
-export async function getAllCentralityForExport(): Promise<Array<{
-  memory_id: number; degree: number; normalized_degree: number; updated_at: string;
-}>> {
+export async function getAllCentralityForExport(): Promise<
+  Array<{
+    memory_id: number;
+    degree: number;
+    normalized_degree: number;
+    updated_at: string;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllCentralityForExport();
 }
@@ -910,23 +1107,40 @@ export async function getAllCentralityForExport(): Promise<Array<{
 
 export async function bulkRestore(data: {
   memories: Array<{
-    id: number; content: string; tags: string[]; source: string | null;
-    embedding: number[] | null; type: string | null;
-    quality_score: number | null; quality_factors: Record<string, number> | null;
-    access_count: number; last_accessed: string | null; created_at: string;
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    embedding: number[] | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: Record<string, number> | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
   }>;
   memoryLinks: Array<{
-    source_id: number; target_id: number; relation: string;
-    weight: number; created_at: string; llm_enriched?: boolean;
+    source_id: number;
+    target_id: number;
+    relation: string;
+    weight: number;
+    created_at: string;
+    llm_enriched?: boolean;
   }>;
   centrality: Array<{
-    memory_id: number; degree: number;
-    normalized_degree: number; updated_at: string;
+    memory_id: number;
+    degree: number;
+    normalized_degree: number;
+    updated_at: string;
   }>;
   documents: Array<{
-    file_path: string; chunk_index: number; content: string;
-    start_line: number; end_line: number;
-    embedding: number[] | null; created_at: string;
+    file_path: string;
+    chunk_index: number;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: number[] | null;
+    created_at: string;
   }>;
   overwrite: boolean;
   restoreDocuments: boolean;
@@ -945,9 +1159,13 @@ export async function bulkRestore(data: {
 // ===========================================================================
 
 export async function appendLearningDelta(delta: {
-  timestamp: string; source: string;
-  memoriesBefore: number; memoriesAfter: number; newMemories: number;
-  typesAdded: Record<string, number>; avgQualityOfNew?: number | null;
+  timestamp: string;
+  source: string;
+  memoriesBefore: number;
+  memoriesAfter: number;
+  newMemories: number;
+  typesAdded: Record<string, number>;
+  avgQualityOfNew?: number | null;
 }): Promise<void> {
   const d = await getStorageDispatcher();
   return d.appendLearningDelta(delta);
@@ -958,13 +1176,19 @@ export async function appendRawLearningDelta(text: string): Promise<void> {
   return d.appendRawLearningDelta(text);
 }
 
-export async function getLearningDeltas(options?: {
-  limit?: number; since?: string;
-}): Promise<Array<{
-  id: number; timestamp: string; source: string;
-  memories_before: number; memories_after: number; new_memories: number;
-  types_added: string | null; avg_quality: number | null; created_at: string;
-}>> {
+export async function getLearningDeltas(options?: { limit?: number; since?: string }): Promise<
+  Array<{
+    id: number;
+    timestamp: string;
+    source: string;
+    memories_before: number;
+    memories_after: number;
+    new_memories: number;
+    types_added: string | null;
+    avg_quality: number | null;
+    created_at: string;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getLearningDeltas(options);
 }
@@ -993,11 +1217,20 @@ export async function getAverageMemoryQuality(): Promise<{ avg: number | null; c
 // ===========================================================================
 
 export async function getMemoriesForAgentsExport(options: {
-  types: string[]; minQuality: number; limit: number;
-}): Promise<Array<{
-  id: number; content: string; type: string | null; tags: string[];
-  source: string | null; quality_score: number | null; created_at: string;
-}>> {
+  types: string[];
+  minQuality: number;
+  limit: number;
+}): Promise<
+  Array<{
+    id: number;
+    content: string;
+    type: string | null;
+    tags: string[];
+    source: string | null;
+    quality_score: number | null;
+    created_at: string;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getMemoriesForAgentsExport(options);
 }
@@ -1007,13 +1240,21 @@ export async function getMemoriesForAgentsExport(options: {
 // ===========================================================================
 
 export async function getAllMemoriesWithEmbeddings(options?: {
-  types?: string[]; excludeInvalidated?: boolean;
-}): Promise<Array<{
-  id: number; content: string; tags: string[]; source: string | null;
-  embedding: number[] | null; type: string | null;
-  quality_score: number | null; created_at: string;
-  invalidated_by: number | null;
-}>> {
+  types?: string[];
+  excludeInvalidated?: boolean;
+}): Promise<
+  Array<{
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    embedding: number[] | null;
+    type: string | null;
+    quality_score: number | null;
+    created_at: string;
+    invalidated_by: number | null;
+  }>
+> {
   const d = await getStorageDispatcher();
   return d.getAllMemoriesWithEmbeddings(options);
 }
@@ -1028,12 +1269,17 @@ export async function deleteMemoryLinksForMemory(memoryId: number): Promise<numb
   return d.deleteMemoryLinksForMemory(memoryId);
 }
 
-export async function updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+export async function updateMemoryEmbeddingsBatch(
+  updates: Array<{ id: number; embedding: number[] }>
+): Promise<void> {
   const d = await getStorageDispatcher();
   return d.updateMemoryEmbeddingsBatch(updates);
 }
 
-export async function getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+export async function getMemoriesNeedingReembedding(
+  limit: number = 100,
+  afterId: number = 0
+): Promise<Array<{ id: number; content: string }>> {
   const d = await getStorageDispatcher();
   return d.getMemoriesNeedingReembedding(limit, afterId);
 }

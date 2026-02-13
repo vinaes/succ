@@ -1,12 +1,15 @@
-import {
-  closeDb,
-  getGraphStats,
-  autoLinkSimilarMemories,
-} from '../lib/storage/index.js';
+import { closeDb, getGraphStats, autoLinkSimilarMemories } from '../lib/storage/index.js';
 import { exportGraphSilent } from '../lib/graph-export.js';
 
 interface GraphOptions {
-  action: 'export' | 'stats' | 'auto-link' | 'enrich-relations' | 'proximity' | 'communities' | 'centrality';
+  action:
+    | 'export'
+    | 'stats'
+    | 'auto-link'
+    | 'enrich-relations'
+    | 'proximity'
+    | 'communities'
+    | 'centrality';
   format?: 'obsidian' | 'json';
   threshold?: number;
   output?: string;
@@ -104,7 +107,9 @@ async function proximity(minCount?: number, dryRun?: boolean): Promise<void> {
   if (dryRun) {
     console.log(`Dry run: ${result.total_pairs} pairs found (minCooccurrence: ${minCount ?? 2}).`);
   } else {
-    console.log(`Created: ${result.created}, Skipped: ${result.skipped}, Total pairs: ${result.total_pairs}`);
+    console.log(
+      `Created: ${result.created}, Skipped: ${result.skipped}, Total pairs: ${result.total_pairs}`
+    );
   }
 }
 
@@ -112,9 +117,13 @@ async function communities(): Promise<void> {
   const { detectCommunities } = await import('../lib/graph/community-detection.js');
   console.log('Running community detection...');
   const result = await detectCommunities();
-  console.log(`Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.`);
+  console.log(
+    `Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.`
+  );
   for (const c of result.communities) {
-    console.log(`  Community ${c.id}: ${c.size} members [${c.members.slice(0, 10).join(', ')}${c.size > 10 ? '...' : ''}]`);
+    console.log(
+      `  Community ${c.id}: ${c.size} members [${c.members.slice(0, 10).join(', ')}${c.size > 10 ? '...' : ''}]`
+    );
   }
 }
 

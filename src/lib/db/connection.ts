@@ -54,10 +54,10 @@ export function onDbChange(callback: () => void): void {
  */
 export function applySqliteTuning(database: Database.Database): void {
   database.pragma('busy_timeout = 5000');
-  database.pragma('cache_size = -16000');    // 16MB cache (default ~2MB)
-  database.pragma('mmap_size = 67108864');   // 64MB memory-mapped I/O
-  database.pragma('synchronous = NORMAL');   // Safe with WAL, skip fsync wait
-  database.pragma('temp_store = MEMORY');    // Temp tables in RAM
+  database.pragma('cache_size = -16000'); // 16MB cache (default ~2MB)
+  database.pragma('mmap_size = 67108864'); // 64MB memory-mapped I/O
+  database.pragma('synchronous = NORMAL'); // Safe with WAL, skip fsync wait
+  database.pragma('temp_store = MEMORY'); // Temp tables in RAM
 }
 
 /**

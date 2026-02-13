@@ -3,9 +3,20 @@ import path from 'path';
 import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
-import { chunkCodeAsync, enrichForEmbedding, getChunkingStats, resetChunkingStats } from '../lib/chunker.js';
+import {
+  chunkCodeAsync,
+  enrichForEmbedding,
+  getChunkingStats,
+  resetChunkingStats,
+} from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
+import {
+  getStoredEmbeddingDimension,
+  clearCodeDocuments,
+  upsertDocumentsBatchWithHashes,
+  getFileHash,
+  updateTokenFrequencies,
+} from '../lib/storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { needsBPERetrain, trainBPEFromDatabase } from '../lib/bpe.js';
@@ -107,7 +118,8 @@ export async function indexCode(
 
   // Check if using non-default patterns (partial indexing)
   // In this case, skip cleanup to avoid deleting files not matching current patterns
-  const isDefaultPatterns = JSON.stringify(patterns.sort()) === JSON.stringify(DEFAULT_CODE_PATTERNS.sort());
+  const isDefaultPatterns =
+    JSON.stringify(patterns.sort()) === JSON.stringify(DEFAULT_CODE_PATTERNS.sort());
   const isFullIndex = searchPath === projectRoot && isDefaultPatterns;
 
   console.log(`Indexing code in ${path.relative(projectRoot, searchPath) || searchPath}`);
@@ -179,7 +191,10 @@ export interface IndexCodeFileResult {
 /**
  * Index a single code file
  */
-export async function indexCodeFile(filePath: string, options: { force?: boolean } = {}): Promise<IndexCodeFileResult> {
+export async function indexCodeFile(
+  filePath: string,
+  options: { force?: boolean } = {}
+): Promise<IndexCodeFileResult> {
   const { force = false } = options;
   const projectRoot = getProjectRoot();
   const absolutePath = path.resolve(filePath);
@@ -198,7 +213,11 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
   // Check file size (500KB limit)
   const maxFileSize = 500 * 1024;
   if (stats.size > maxFileSize) {
-    return { success: false, skipped: true, reason: `File too large: ${(stats.size / 1024).toFixed(0)}KB > 500KB` };
+    return {
+      success: false,
+      skipped: true,
+      reason: `File too large: ${(stats.size / 1024).toFixed(0)}KB > 500KB`,
+    };
   }
 
   // Read file content
@@ -220,11 +239,15 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
   // Chunk the code (tree-sitter with fallback to regex)
   const chunks = await chunkCodeAsync(content, absolutePath);
   if (chunks.length === 0) {
-    return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
+    return {
+      success: true,
+      skipped: true,
+      reason: 'No chunks generated (file too small or empty)',
+    };
   }
 
   // Generate embeddings — prepend symbol metadata for better semantic quality
-  const texts = chunks.map(c => enrichForEmbedding(c));
+  const texts = chunks.map((c) => enrichForEmbedding(c));
   const embeddings = await getEmbeddings(texts);
 
   // Prepare documents for upsert (with hash for each document, including AST metadata)

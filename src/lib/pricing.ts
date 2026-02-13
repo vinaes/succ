@@ -183,7 +183,8 @@ export function calculateCost(usage: TokenUsage, modelId?: string): CostBreakdow
 
   const inputCost = (usage.input_tokens / 1_000_000) * pricing.input;
   const outputCost = (usage.output_tokens / 1_000_000) * pricing.output;
-  const cacheWriteCost = ((usage.cache_creation_input_tokens || 0) / 1_000_000) * pricing.cache_write;
+  const cacheWriteCost =
+    ((usage.cache_creation_input_tokens || 0) / 1_000_000) * pricing.cache_write;
   const cacheReadCost = ((usage.cache_read_input_tokens || 0) / 1_000_000) * pricing.cache_read;
 
   return {
@@ -267,9 +268,7 @@ function detectModelFromClaudeCode(): string | null {
 
   // Find project directory (case-insensitive on Windows)
   const projectDirs = fs.readdirSync(projectsDir);
-  const matchingDir = projectDirs.find(
-    (d) => d.toLowerCase() === projectDirName.toLowerCase()
-  );
+  const matchingDir = projectDirs.find((d) => d.toLowerCase() === projectDirName.toLowerCase());
 
   if (!matchingDir) {
     return null;

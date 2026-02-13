@@ -1,4 +1,9 @@
-import { closeDb, clearDocuments, clearCodeDocuments, deleteMemoriesOlderThan } from '../lib/storage/index.js';
+import {
+  closeDb,
+  clearDocuments,
+  clearCodeDocuments,
+  deleteMemoriesOlderThan,
+} from '../lib/storage/index.js';
 
 interface ClearOptions {
   indexOnly?: boolean;

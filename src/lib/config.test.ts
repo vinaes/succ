@@ -30,8 +30,7 @@ describe('Config Module', () => {
       const root = getProjectRoot();
 
       expect(
-        fs.existsSync(path.join(root, '.git')) ||
-        fs.existsSync(path.join(root, '.claude'))
+        fs.existsSync(path.join(root, '.git')) || fs.existsSync(path.join(root, '.claude'))
       ).toBe(true);
     });
   });

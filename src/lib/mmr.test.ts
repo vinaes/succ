@@ -18,9 +18,7 @@ describe('applyMMR', () => {
   });
 
   it('returns single item unchanged', () => {
-    const items: MMRItem[] = [
-      { id: 1, similarity: 0.9, embedding: makeEmbedding([1, 0, 0, 0]) },
-    ];
+    const items: MMRItem[] = [{ id: 1, similarity: 0.9, embedding: makeEmbedding([1, 0, 0, 0]) }];
     const result = applyMMR(items, [1, 0, 0, 0]);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe(1);
@@ -33,14 +31,14 @@ describe('applyMMR', () => {
       { id: 3, similarity: 0.7, embedding: makeEmbedding([0, 1, 0, 0]) },
     ];
     const result = applyMMR(items, [1, 0, 0, 0], 1.0);
-    expect(result.map(r => r.id)).toEqual([1, 2, 3]);
+    expect(result.map((r) => r.id)).toEqual([1, 2, 3]);
   });
 
   it('with low lambda, promotes diverse items over similar ones', () => {
     // Items 1 and 2 are near-identical embeddings, item 3 is orthogonal
     const items: MMRItem[] = [
       { id: 1, similarity: 0.95, embedding: makeEmbedding([1, 0, 0, 0]) },
-      { id: 2, similarity: 0.90, embedding: makeEmbedding([0.99, 0.01, 0, 0]) },
+      { id: 2, similarity: 0.9, embedding: makeEmbedding([0.99, 0.01, 0, 0]) },
       { id: 3, similarity: 0.85, embedding: makeEmbedding([0, 1, 0, 0]) },
     ];
     // With lambda=0.5, diversity should push item 3 ahead of item 2
@@ -68,14 +66,26 @@ describe('applyMMR', () => {
     ];
     const result = applyMMR(items, [1, 0, 0, 0], 0.8);
     // Items with embeddings are MMR-ranked first, item without embedding is appended
-    const ids = result.map(r => r.id);
+    const ids = result.map((r) => r.id);
     expect(ids[ids.length - 1]).toBe(2);
   });
 
   it('preserves extra properties on items', () => {
     const items = [
-      { id: 1, similarity: 0.9, embedding: makeEmbedding([1, 0, 0, 0]), content: 'hello', tags: 'test' },
-      { id: 2, similarity: 0.8, embedding: makeEmbedding([0, 1, 0, 0]), content: 'world', tags: 'other' },
+      {
+        id: 1,
+        similarity: 0.9,
+        embedding: makeEmbedding([1, 0, 0, 0]),
+        content: 'hello',
+        tags: 'test',
+      },
+      {
+        id: 2,
+        similarity: 0.8,
+        embedding: makeEmbedding([0, 1, 0, 0]),
+        content: 'world',
+        tags: 'other',
+      },
     ];
     const result = applyMMR(items, [1, 0, 0, 0], 0.8);
     expect(result[0]).toHaveProperty('content');
@@ -87,7 +97,7 @@ describe('applyMMR', () => {
     const items: MMRItem[] = [
       { id: 1, similarity: 0.95, embedding: makeEmbedding([1, 0, 0, 0]) },
       { id: 2, similarity: 0.93, embedding: makeEmbedding([0.98, 0.02, 0, 0]) },
-      { id: 3, similarity: 0.80, embedding: makeEmbedding([0, 0, 1, 0]) },
+      { id: 3, similarity: 0.8, embedding: makeEmbedding([0, 0, 1, 0]) },
     ];
     // Default lambda=0.8: relevance still dominates, so order may stay
     // but the scores should differ

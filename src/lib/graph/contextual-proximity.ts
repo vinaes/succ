@@ -6,11 +6,7 @@
  * self-join by source → co-occurrence matrix → weighted edges.
  */
 
-import {
-  getAllMemoriesForExport,
-  getMemoryLinks,
-  createMemoryLink,
-} from '../storage/index.js';
+import { getAllMemoriesForExport, getMemoryLinks, createMemoryLink } from '../storage/index.js';
 
 // ============================================================================
 // Source Normalization
@@ -66,7 +62,10 @@ export function calculateProximity(
   }
 
   // Build co-occurrence pairs
-  const pairMap = new Map<string, { node_1: number; node_2: number; count: number; sources: string[] }>();
+  const pairMap = new Map<
+    string,
+    { node_1: number; node_2: number; count: number; sources: string[] }
+  >();
 
   for (const [source, ids] of sourceGroups) {
     if (ids.length < 2) continue;
@@ -110,20 +109,20 @@ export async function createProximityLinks(
   // Get all non-invalidated memories with sources via storage
   const allMemories = await getAllMemoriesForExport();
   const memories = allMemories
-    .filter(m => m.source && !m.invalidated_by)
-    .map(m => ({ id: m.id, source: m.source }));
+    .filter((m) => m.source && !m.invalidated_by)
+    .map((m) => ({ id: m.id, source: m.source }));
 
   const pairs = calculateProximity(memories);
 
   // Filter by min co-occurrence
-  const filtered = pairs.filter(p => p.count >= minCooccurrence);
+  const filtered = pairs.filter((p) => p.count >= minCooccurrence);
 
   if (dryRun) {
     return { created: 0, skipped: 0, total_pairs: filtered.length };
   }
 
   // Find max count for weight normalization
-  const maxCount = Math.max(1, ...filtered.map(p => p.count));
+  const maxCount = Math.max(1, ...filtered.map((p) => p.count));
 
   let created = 0;
   let skipped = 0;
@@ -131,8 +130,9 @@ export async function createProximityLinks(
   for (const pair of filtered) {
     // Check if any link already exists between these two memories
     const linksA = await getMemoryLinks(pair.node_1);
-    const hasLink = linksA.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
-                    linksA.incoming?.some((l: any) => l.source_id === pair.node_2);
+    const hasLink =
+      linksA.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
+      linksA.incoming?.some((l: any) => l.source_id === pair.node_2);
 
     if (hasLink) {
       skipped++;

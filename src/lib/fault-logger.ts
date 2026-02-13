@@ -30,7 +30,10 @@ let _version: string | undefined;
 function getVersion(): string {
   if (_version) return _version;
   try {
-    const pkgPath = path.resolve(new URL('.', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'), '../../package.json');
+    const pkgPath = path.resolve(
+      new URL('.', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'),
+      '../../package.json'
+    );
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     _version = pkg.version || 'unknown';
   } catch {
@@ -92,11 +95,9 @@ function sendToWebhook(entry: FaultEntry, url: string, headers?: Record<string, 
 // Channel 3: Sentry (lazy-loaded optional peer dependency)
 // ---------------------------------------------------------------------------
 
- 
 let sentryModule: any = undefined; // undefined=not tried, false=not installed
 let sentryInitialized = false;
 
- 
 async function getSentry(): Promise<any> {
   if (sentryModule === false) return null;
   if (sentryModule) return sentryModule;
@@ -110,7 +111,12 @@ async function getSentry(): Promise<any> {
   }
 }
 
-function sendToSentry(entry: FaultEntry, dsn: string, environment: string, sampleRate: number): void {
+function sendToSentry(
+  entry: FaultEntry,
+  dsn: string,
+  environment: string,
+  sampleRate: number
+): void {
   (async () => {
     try {
       const Sentry = await getSentry();
@@ -153,7 +159,7 @@ export function logFault(
   level: FaultLevel,
   component: string,
   message: string,
-  opts?: { error?: Error; context?: Record<string, unknown> },
+  opts?: { error?: Error; context?: Record<string, unknown> }
 ): void {
   try {
     const config = getErrorReportingConfig();
@@ -174,7 +180,11 @@ export function logFault(
 
     // Channel 2: webhook (if configured)
     if (config.webhook_url) {
-      sendToWebhook({ ...entry, version: getVersion() }, config.webhook_url, config.webhook_headers);
+      sendToWebhook(
+        { ...entry, version: getVersion() },
+        config.webhook_url,
+        config.webhook_headers
+      );
     }
 
     // Channel 3: sentry (if configured)
@@ -187,17 +197,30 @@ export function logFault(
 }
 
 /** Log an error (convenience wrapper). */
-export function logError(component: string, message: string, error?: Error, context?: Record<string, unknown>): void {
+export function logError(
+  component: string,
+  message: string,
+  error?: Error,
+  context?: Record<string, unknown>
+): void {
   logFault('error', component, message, { error, context });
 }
 
 /** Log a warning (convenience wrapper). */
-export function logWarn(component: string, message: string, context?: Record<string, unknown>): void {
+export function logWarn(
+  component: string,
+  message: string,
+  context?: Record<string, unknown>
+): void {
   logFault('warn', component, message, { context });
 }
 
 /** Log an info message (convenience wrapper). */
-export function logInfo(component: string, message: string, context?: Record<string, unknown>): void {
+export function logInfo(
+  component: string,
+  message: string,
+  context?: Record<string, unknown>
+): void {
   logFault('info', component, message, { context });
 }
 

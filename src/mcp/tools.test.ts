@@ -13,22 +13,56 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('../lib/storage/index.js', () => ({
   hybridSearchDocs: vi.fn(async () => [
-    { content: 'doc result', file_path: 'test.md', similarity: 0.85, chunk_index: 0, start_line: 1, end_line: 10 },
+    {
+      content: 'doc result',
+      file_path: 'test.md',
+      similarity: 0.85,
+      chunk_index: 0,
+      start_line: 1,
+      end_line: 10,
+    },
   ]),
   hybridSearchCode: vi.fn(async () => [
-    { content: 'code result', file_path: 'code:test.ts', similarity: 0.8, chunk_index: 0, start_line: 1, end_line: 5 },
+    {
+      content: 'code result',
+      file_path: 'code:test.ts',
+      similarity: 0.8,
+      chunk_index: 0,
+      start_line: 1,
+      end_line: 5,
+    },
   ]),
   hybridSearchMemories: vi.fn(async () => [
-    { id: 1, content: 'memory result', tags: ['test'], similarity: 0.9, type: 'observation', created_at: new Date().toISOString() },
+    {
+      id: 1,
+      content: 'memory result',
+      tags: ['test'],
+      similarity: 0.9,
+      type: 'observation',
+      created_at: new Date().toISOString(),
+    },
   ]),
   hybridSearchGlobalMemories: vi.fn(async () => [
-    { id: 10, content: 'global memory', tags: ['global'], similarity: 0.85, type: 'learning', created_at: new Date().toISOString() },
+    {
+      id: 10,
+      content: 'global memory',
+      tags: ['global'],
+      similarity: 0.85,
+      type: 'learning',
+      created_at: new Date().toISOString(),
+    },
   ]),
   getRecentDocuments: vi.fn(async () => [
     { content: 'recent doc', file_path: 'recent.md', chunk_index: 0, start_line: 1, end_line: 5 },
   ]),
   getRecentMemories: vi.fn(async () => [
-    { id: 1, content: 'recent memory', tags: [], type: 'observation', created_at: new Date().toISOString() },
+    {
+      id: 1,
+      content: 'recent memory',
+      tags: [],
+      type: 'observation',
+      created_at: new Date().toISOString(),
+    },
   ]),
   getRecentGlobalMemories: vi.fn(async () => []),
   saveMemory: vi.fn(async () => ({ id: 1, isDuplicate: false })),
@@ -60,11 +94,27 @@ vi.mock('../lib/storage/index.js', () => ({
   ]),
   autoLinkSimilarMemories: vi.fn(async () => 2),
   getGraphStats: vi.fn(async () => ({
-    total_memories: 10, total_links: 5, avg_links_per_memory: 0.5,
-    isolated_memories: 3, relations: { related: 3, caused_by: 2 },
+    total_memories: 10,
+    total_links: 5,
+    avg_links_per_memory: 0.5,
+    isolated_memories: 3,
+    relations: { related: 3, caused_by: 2 },
   })),
-  LINK_RELATIONS: ['related', 'caused_by', 'leads_to', 'similar_to', 'contradicts', 'implements', 'supersedes', 'references'],
-  getStats: vi.fn(async () => ({ total_documents: 100, total_files: 10, last_indexed: '2025-01-01' })),
+  LINK_RELATIONS: [
+    'related',
+    'caused_by',
+    'leads_to',
+    'similar_to',
+    'contradicts',
+    'implements',
+    'supersedes',
+    'references',
+  ],
+  getStats: vi.fn(async () => ({
+    total_documents: 100,
+    total_files: 10,
+    last_indexed: '2025-01-01',
+  })),
   getMemoryStats: vi.fn(async () => ({
     total_memories: 20,
     oldest_memory: '2024-01-01',
@@ -97,9 +147,7 @@ vi.mock('../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),
-  getDaemonStatuses: vi.fn(async () => [
-    { name: 'daemon', running: false, pid: null },
-  ]),
+  getDaemonStatuses: vi.fn(async () => [{ name: 'daemon', running: false, pid: null }]),
   getIdleReflectionConfig: vi.fn(() => ({
     enabled: false,
     idle_minutes: 5,
@@ -126,7 +174,10 @@ vi.mock('../lib/config.js', () => ({
 }));
 
 vi.mock('../lib/quality.js', () => ({
-  scoreMemory: vi.fn(async () => ({ score: 0.8, factors: { specificity: 0.8, actionability: 0.7, novelty: 0.9, clarity: 0.8 } })),
+  scoreMemory: vi.fn(async () => ({
+    score: 0.8,
+    factors: { specificity: 0.8, actionability: 0.7, novelty: 0.9, clarity: 0.8 },
+  })),
   passesQualityThreshold: vi.fn(() => true),
   formatQualityScore: vi.fn(() => 'Quality: 0.80'),
 }));

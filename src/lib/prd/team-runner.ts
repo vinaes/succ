@@ -73,10 +73,7 @@ interface WorkerResult {
  * 3. no files_to_modify overlap with currently running tasks
  * 4. hasn't exhausted max_attempts
  */
-export function getReadyTasks(
-  tasks: Task[],
-  runningTasks: RunningTask[],
-): Task[] {
+export function getReadyTasks(tasks: Task[], runningTasks: RunningTask[]): Task[] {
   // Collect all files being modified by running tasks
   const runningFiles = new Set<string>();
   for (const rt of runningTasks) {
@@ -85,14 +82,14 @@ export function getReadyTasks(
     }
   }
 
-  return tasks.filter(task => {
+  return tasks.filter((task) => {
     if (task.status !== 'pending') return false;
     if (!allDependenciesMet(task, tasks)) return false;
     if (task.attempts.length >= task.max_attempts) return false;
 
     // File conflict check
     if (runningFiles.size > 0 && task.files_to_modify.length > 0) {
-      const hasConflict = task.files_to_modify.some(f => runningFiles.has(f));
+      const hasConflict = task.files_to_modify.some((f) => runningFiles.has(f));
       if (hasConflict) return false;
     }
 
@@ -107,10 +104,7 @@ export function getReadyTasks(
 /**
  * Run tasks in parallel with worktree isolation.
  */
-export async function runTeam(
-  tasks: Task[],
-  options: TeamRunOptions,
-): Promise<void> {
+export async function runTeam(tasks: Task[], options: TeamRunOptions): Promise<void> {
   const { concurrency, model, prdId, root, prd, execution } = options;
   const running: RunningTask[] = [];
 
@@ -123,7 +117,7 @@ export async function runTeam(
     while (true) {
       // Check if all done
       const allDone = tasks.every(
-        t => t.status === 'completed' || t.status === 'skipped' || t.status === 'failed',
+        (t) => t.status === 'completed' || t.status === 'skipped' || t.status === 'failed'
       );
       if (allDone) break;
 
@@ -139,14 +133,14 @@ export async function runTeam(
 
       // Deadlock: nothing running, nothing ready, but tasks remain
       if (running.length === 0 && toDispatch.length === 0) {
-        const pending = tasks.filter(t => t.status === 'pending');
+        const pending = tasks.filter((t) => t.status === 'pending');
         if (pending.length === 0) break;
 
         // Skip tasks with failed dependencies
         let skipped = false;
         for (const t of pending) {
-          const hasFailedDep = t.depends_on.some(depId => {
-            const dep = tasks.find(d => d.id === depId);
+          const hasFailedDep = t.depends_on.some((depId) => {
+            const dep = tasks.find((d) => d.id === depId);
             return dep && dep.status === 'failed';
           });
           if (hasFailedDep) {
@@ -215,7 +209,7 @@ function dispatchTask(
   execution: PrdExecution,
   model: string,
   root: string,
-  prdId: string,
+  prdId: string
 ): RunningTask {
   console.log(`  [>] Dispatching ${task.id}: ${task.title}`);
   task.status = 'in_progress';
@@ -276,7 +270,7 @@ async function handleTaskCompletion(
   prd: Prd,
   _execution: PrdExecution,
   root: string,
-  prdId: string,
+  prdId: string
 ): Promise<void> {
   const { task, result, worktreePath } = completed;
   const attempt = task.attempts[task.attempts.length - 1];
@@ -311,8 +305,8 @@ async function handleTaskCompletion(
 
     if (!allRequiredPassed(gateResults)) {
       attempt.status = 'failed';
-      const failedGates = gateResults.filter(r => !r.passed && r.gate.required);
-      attempt.error = `Gates failed: ${failedGates.map(r => r.gate.type).join(', ')}`;
+      const failedGates = gateResults.filter((r) => !r.passed && r.gate.required);
+      attempt.error = `Gates failed: ${failedGates.map((r) => r.gate.type).join(', ')}`;
       console.log(`  [x] ${task.id} gates failed:\n${formatGateResults(gateResults)}`);
       appendProgress(prdId, `${task.id} gates failed: ${attempt.error}`);
       task.status = task.attempts.length >= task.max_attempts ? 'failed' : 'pending';
@@ -349,10 +343,10 @@ async function handleTaskCompletion(
 // ============================================================================
 
 async function raceWorkers(
-  running: RunningTask[],
+  running: RunningTask[]
 ): Promise<{ completed: WorkerResult; index: number }> {
   const indexed = running.map((rt, i) =>
-    rt.promise.then(result => ({ completed: result, index: i })),
+    rt.promise.then((result) => ({ completed: result, index: i }))
   );
   return Promise.race(indexed);
 }

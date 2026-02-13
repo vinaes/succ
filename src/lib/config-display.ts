@@ -55,7 +55,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
   const envVars: string[] = [];
   if (process.env.OPENROUTER_API_KEY) envVars.push('OPENROUTER_API_KEY');
 
-  const mask = (val: string | undefined) => maskSecrets ? maskSensitive(val) : (val || '(not set)');
+  const mask = (val: string | undefined) => (maskSecrets ? maskSensitive(val) : val || '(not set)');
 
   // Resolve per-task configs
   const embCfg = getLLMTaskConfig('embeddings');
@@ -83,15 +83,35 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       max_tokens: config.llm?.max_tokens ?? 2000,
       temperature: config.llm?.temperature ?? 0.3,
       transport: config.llm?.claude?.transport || config.llm?.transport,
-      embeddings: { mode: embCfg.mode, model: embCfg.model, api_url: embCfg.mode === 'api' ? embCfg.api_url : undefined },
-      analyze: {
-        mode: anlCfg.mode, model: anlCfg.model,
-        api_url: anlCfg.mode === 'api' ? anlCfg.api_url : undefined,
-        concurrency: (config.llm?.analyze as Record<string, unknown> | undefined)?.concurrency as number ?? 3,
+      embeddings: {
+        mode: embCfg.mode,
+        model: embCfg.model,
+        api_url: embCfg.mode === 'api' ? embCfg.api_url : undefined,
       },
-      quality: { mode: qCfg.mode, model: qCfg.model, api_url: qCfg.mode === 'api' ? qCfg.api_url : undefined },
-      chat: { mode: chatCfg.mode, model: chatCfg.model, max_tokens: chatCfg.max_tokens, temperature: chatCfg.temperature },
-      sleep: { enabled: config.llm?.sleep?.enabled ?? false, mode: sleepCfg.mode, model: sleepCfg.model },
+      analyze: {
+        mode: anlCfg.mode,
+        model: anlCfg.model,
+        api_url: anlCfg.mode === 'api' ? anlCfg.api_url : undefined,
+        concurrency:
+          ((config.llm?.analyze as Record<string, unknown> | undefined)?.concurrency as number) ??
+          3,
+      },
+      quality: {
+        mode: qCfg.mode,
+        model: qCfg.model,
+        api_url: qCfg.mode === 'api' ? qCfg.api_url : undefined,
+      },
+      chat: {
+        mode: chatCfg.mode,
+        model: chatCfg.model,
+        max_tokens: chatCfg.max_tokens,
+        temperature: chatCfg.temperature,
+      },
+      sleep: {
+        enabled: config.llm?.sleep?.enabled ?? false,
+        mode: sleepCfg.mode,
+        model: sleepCfg.model,
+      },
       skills: { mode: skillsCfg.mode, model: skillsCfg.model },
     },
     storage: (() => {
@@ -107,7 +127,9 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
           database: sc.postgresql.database,
           ssl: sc.postgresql.ssl ?? false,
           pool_size: sc.postgresql.pool_size ?? 10,
-          connection_string: sc.postgresql.connection_string ? mask(sc.postgresql.connection_string) : undefined,
+          connection_string: sc.postgresql.connection_string
+            ? mask(sc.postgresql.connection_string)
+            : undefined,
         };
       } else {
         result.sqlite = {
@@ -288,15 +310,21 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`    Mode: ${display.llm.embeddings.mode}, Model: ${display.llm.embeddings.model}`);
   if (display.llm.embeddings.api_url) lines.push(`    API URL: ${display.llm.embeddings.api_url}`);
   lines.push('  Analyze:');
-  lines.push(`    Mode: ${display.llm.analyze.mode}, Model: ${display.llm.analyze.model}, Concurrency: ${display.llm.analyze.concurrency}`);
+  lines.push(
+    `    Mode: ${display.llm.analyze.mode}, Model: ${display.llm.analyze.model}, Concurrency: ${display.llm.analyze.concurrency}`
+  );
   if (display.llm.analyze.api_url) lines.push(`    API URL: ${display.llm.analyze.api_url}`);
   lines.push('  Quality:');
   lines.push(`    Mode: ${display.llm.quality.mode}, Model: ${display.llm.quality.model}`);
   if (display.llm.quality.api_url) lines.push(`    API URL: ${display.llm.quality.api_url}`);
   lines.push('  Chat:');
-  lines.push(`    Mode: ${display.llm.chat.mode}, Model: ${display.llm.chat.model}, Temp: ${display.llm.chat.temperature}`);
+  lines.push(
+    `    Mode: ${display.llm.chat.mode}, Model: ${display.llm.chat.model}, Temp: ${display.llm.chat.temperature}`
+  );
   lines.push('  Sleep:');
-  lines.push(`    Enabled: ${display.llm.sleep.enabled}, Mode: ${display.llm.sleep.mode}, Model: ${display.llm.sleep.model}`);
+  lines.push(
+    `    Enabled: ${display.llm.sleep.enabled}, Mode: ${display.llm.sleep.mode}, Model: ${display.llm.sleep.model}`
+  );
   lines.push('  Skills:');
   lines.push(`    Mode: ${display.llm.skills.mode}, Model: ${display.llm.skills.model}`);
   lines.push('');
@@ -359,7 +387,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`    - Min memory age: ${guards.min_memory_age_days} days`);
   lines.push(`    - Min corpus size: ${guards.min_corpus_size}`);
   lines.push(`    - Require LLM merge: ${guards.require_llm_merge}`);
-  lines.push(`    - Similarity threshold: ${display.idle_reflection.thresholds.similarity_for_merge}`);
+  lines.push(
+    `    - Similarity threshold: ${display.idle_reflection.thresholds.similarity_for_merge}`
+  );
   lines.push('');
 
   // Idle Watcher
@@ -375,9 +405,15 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`  BM25 alpha: ${display.retrieval.bm25_alpha}`);
   lines.push(`  Default top-k: ${display.retrieval.default_top_k}`);
   lines.push(`  Temporal auto-skip: ${display.retrieval.temporal_auto_skip}`);
-  lines.push(`  Quality boost: ${display.retrieval.quality_boost_enabled} (weight: ${display.retrieval.quality_boost_weight})`);
-  lines.push(`  MMR diversity: ${display.retrieval.mmr_enabled} (lambda: ${display.retrieval.mmr_lambda})`);
-  lines.push(`  Query expansion: ${display.retrieval.query_expansion_enabled} (mode: ${display.retrieval.query_expansion_mode})`);
+  lines.push(
+    `  Quality boost: ${display.retrieval.quality_boost_enabled} (weight: ${display.retrieval.quality_boost_weight})`
+  );
+  lines.push(
+    `  MMR diversity: ${display.retrieval.mmr_enabled} (lambda: ${display.retrieval.mmr_lambda})`
+  );
+  lines.push(
+    `  Query expansion: ${display.retrieval.query_expansion_enabled} (mode: ${display.retrieval.query_expansion_mode})`
+  );
   lines.push('');
 
   // Web Search
@@ -390,7 +426,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`  Deep Research timeout: ${display.web_search.deep_research_timeout_ms}ms`);
   lines.push(`  Temperature: ${display.web_search.temperature}`);
   lines.push(`  Save to memory: ${display.web_search.save_to_memory}`);
-  lines.push(`  Daily budget: ${display.web_search.daily_budget_usd > 0 ? `$${display.web_search.daily_budget_usd}` : 'unlimited'}`);
+  lines.push(
+    `  Daily budget: ${display.web_search.daily_budget_usd > 0 ? `$${display.web_search.daily_budget_usd}` : 'unlimited'}`
+  );
   lines.push('');
 
   // Error Reporting

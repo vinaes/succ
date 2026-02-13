@@ -5,9 +5,17 @@ import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes,
-  updateMemoryEmbeddingsBatch, getMemoriesNeedingReembedding, getMemoryCount, getMemoryEmbeddingCount,
-  initStorageDispatcher } from '../lib/storage/index.js';
+import {
+  getStoredEmbeddingDimension,
+  clearDocuments,
+  getFileHash,
+  upsertDocumentsBatchWithHashes,
+  updateMemoryEmbeddingsBatch,
+  getMemoriesNeedingReembedding,
+  getMemoryCount,
+  getMemoryEmbeddingCount,
+  initStorageDispatcher,
+} from '../lib/storage/index.js';
 import { getEmbedding, getEmbeddings, getEmbeddingInfo } from '../lib/embeddings.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
 
@@ -19,10 +27,7 @@ interface IndexOptions {
   autoReindex?: boolean; // Auto-reindex on dimension mismatch (for non-interactive mode)
 }
 
-export async function index(
-  targetPath?: string,
-  options: IndexOptions = {}
-): Promise<void> {
+export async function index(targetPath?: string, options: IndexOptions = {}): Promise<void> {
   const { pattern = '**/*.md', autoReindex = false, memories = false } = options;
   let { force = false } = options;
 
@@ -35,9 +40,7 @@ export async function index(
   const claudeDir = getClaudeDir();
 
   // Default to brain directory
-  const searchPath = targetPath
-    ? path.resolve(targetPath)
-    : path.join(claudeDir, 'brain');
+  const searchPath = targetPath ? path.resolve(targetPath) : path.join(claudeDir, 'brain');
 
   if (!fs.existsSync(searchPath)) {
     logError('index', `Path not found: ${searchPath}`);
@@ -150,7 +153,10 @@ export interface IndexDocFileResult {
 /**
  * Index a single documentation file
  */
-export async function indexDocFile(filePath: string, options: { force?: boolean } = {}): Promise<IndexDocFileResult> {
+export async function indexDocFile(
+  filePath: string,
+  options: { force?: boolean } = {}
+): Promise<IndexDocFileResult> {
   const { force = false } = options;
   const projectRoot = getProjectRoot();
   const absolutePath = path.resolve(filePath);
@@ -196,11 +202,15 @@ export async function indexDocFile(filePath: string, options: { force?: boolean 
   // Chunk the text
   const chunks = chunkText(body, absolutePath);
   if (chunks.length === 0) {
-    return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
+    return {
+      success: true,
+      skipped: true,
+      reason: 'No chunks generated (file too small or empty)',
+    };
   }
 
   // Generate embeddings
-  const texts = chunks.map(c => c.content);
+  const texts = chunks.map((c) => c.content);
   const embeddings = await getEmbeddings(texts);
 
   // Prepare documents for upsert (with hash for each document)
@@ -247,7 +257,7 @@ async function reembedMemories(): Promise<void> {
     const batch = await getMemoriesNeedingReembedding(BATCH, afterId);
     if (batch.length === 0) break;
 
-    const texts = batch.map(m => m.content.slice(0, 2000));
+    const texts = batch.map((m) => m.content.slice(0, 2000));
 
     try {
       const embeddings = await getEmbeddings(texts);

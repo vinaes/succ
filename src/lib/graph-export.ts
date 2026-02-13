@@ -40,7 +40,12 @@ function getTargetFolder(type: MemoryType | string, tags: string[], brainDir: st
   }
 
   // Learning and pattern memories go to Knowledge
-  if (type === 'learning' || type === 'pattern' || tags.includes('learning') || tags.includes('pattern')) {
+  if (
+    type === 'learning' ||
+    type === 'pattern' ||
+    tags.includes('learning') ||
+    tags.includes('pattern')
+  ) {
     return path.join(brainDir, '02_Knowledge');
   }
 
@@ -68,7 +73,12 @@ function getWikiLinkPath(
   if (targetType === 'decision' || targetTags.includes('decision')) {
     return `01_Projects/${projectName}/Decisions/${dateStr} ${typePascal} (${targetId})`;
   }
-  if (targetType === 'learning' || targetType === 'pattern' || targetTags.includes('learning') || targetTags.includes('pattern')) {
+  if (
+    targetType === 'learning' ||
+    targetType === 'pattern' ||
+    targetTags.includes('learning') ||
+    targetTags.includes('pattern')
+  ) {
     return `02_Knowledge/${dateStr} ${typePascal} (${targetId})`;
   }
   return `00_Inbox/${dateStr} ${typePascal} (${targetId})`;
@@ -108,20 +118,21 @@ export function scheduleAutoExport(): void {
     lastExportTime = now;
 
     try {
-      await exportGraphSilent(
-        config.graph_export_format || 'obsidian',
-        config.graph_export_path
-      );
+      await exportGraphSilent(config.graph_export_format || 'obsidian', config.graph_export_path);
     } catch (err) {
-      logWarn('graph-export', 'Auto-export failed', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('graph-export', 'Auto-export failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     // Also auto-generate AGENTS.md if enabled
     const agentsMdConfig = (config as any).agents_md;
     if (agentsMdConfig?.enabled) {
       import('./agents-md-generator.js')
-        .then(mod => mod.writeAgentsMd())
-        .catch(() => { /* Silently ignore AGENTS.md errors */ });
+        .then((mod) => mod.writeAgentsMd())
+        .catch(() => {
+          /* Silently ignore AGENTS.md errors */
+        });
     }
   }, EXPORT_DEBOUNCE_MS);
 }
@@ -151,7 +162,7 @@ export async function exportGraphSilent(
     valid_until?: string | null;
   }
   const memories: ExportMemoryRow[] = rawMemories
-    .filter(m => m.invalidated_by === null) // Only active memories
+    .filter((m) => m.invalidated_by === null) // Only active memories
     .map((m: MemoryRowWithTemporal) => ({
       id: m.id,
       content: m.content,
@@ -193,14 +204,18 @@ async function exportToJson(
   const now = new Date();
 
   const graphData = {
-    memories: memories.map(m => {
-      const temporalResult = calculateTemporalScore(1.0, {
-        created_at: m.created_at,
-        last_accessed: m.last_accessed || null,
-        access_count: m.access_count || 0,
-        valid_from: m.valid_from || null,
-        valid_until: m.valid_until || null,
-      }, temporalConfig);
+    memories: memories.map((m) => {
+      const temporalResult = calculateTemporalScore(
+        1.0,
+        {
+          created_at: m.created_at,
+          last_accessed: m.last_accessed || null,
+          access_count: m.access_count || 0,
+          valid_from: m.valid_from || null,
+          valid_until: m.valid_until || null,
+        },
+        temporalConfig
+      );
       const temporalScore = temporalResult.temporalScore;
 
       // Determine temporal status
@@ -248,7 +263,7 @@ async function exportToJson(
   // Get all links via dispatcher
   const allLinks = await getAllMemoryLinksForExport();
 
-  graphData.links = allLinks.map(l => ({
+  graphData.links = allLinks.map((l) => ({
     source: l.source_id,
     target: l.target_id,
     relation: l.relation,
@@ -309,13 +324,17 @@ async function exportToObsidian(
     const title = firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
 
     // Calculate temporal state and decay score
-    const temporalResult = calculateTemporalScore(1.0, {
-      created_at: memory.created_at,
-      last_accessed: memory.last_accessed || null,
-      access_count: memory.access_count || 0,
-      valid_from: memory.valid_from || null,
-      valid_until: memory.valid_until || null,
-    }, temporalConfig);
+    const temporalResult = calculateTemporalScore(
+      1.0,
+      {
+        created_at: memory.created_at,
+        last_accessed: memory.last_accessed || null,
+        access_count: memory.access_count || 0,
+        valid_from: memory.valid_from || null,
+        valid_until: memory.valid_until || null,
+      },
+      temporalConfig
+    );
     const temporalScore = temporalResult.temporalScore;
 
     // Determine temporal status
@@ -337,7 +356,7 @@ async function exportToObsidian(
       '---',
       `id: ${memory.id}`,
       `type: ${type}`,
-      `tags: [${tags.map(t => `"${t}"`).join(', ')}]`,
+      `tags: [${tags.map((t) => `"${t}"`).join(', ')}]`,
       `source: ${memory.source || 'unknown'}`,
       `created: ${memory.created_at}`,
     ];
@@ -361,7 +380,7 @@ async function exportToObsidian(
     }
 
     // Add community assignment from tags (community:N)
-    const communityTag = tags.find(t => t.startsWith('community:'));
+    const communityTag = tags.find((t) => t.startsWith('community:'));
     if (communityTag) {
       frontmatterLines.push(`community: ${communityTag.split(':')[1]}`);
     }
@@ -381,7 +400,8 @@ ${memory.content}
     if (links.outgoing.length > 0) {
       content += `## Related\n\n`;
       for (const link of links.outgoing) {
-        const targetType = memoryTypesMap.get(link.target_id) || await getMemoryTypeAsync(link.target_id);
+        const targetType =
+          memoryTypesMap.get(link.target_id) || (await getMemoryTypeAsync(link.target_id));
         const targetTags = memoryTagsMap.get(link.target_id) || [];
         const targetDate = memoryDatesMap.get(link.target_id) || dateStr;
         const wikiPath = getWikiLinkPath(targetType, targetTags, link.target_id, targetDate);
@@ -394,7 +414,8 @@ ${memory.content}
     if (links.incoming.length > 0) {
       content += `## Referenced By\n\n`;
       for (const link of links.incoming) {
-        const sourceType = memoryTypesMap.get(link.source_id) || await getMemoryTypeAsync(link.source_id);
+        const sourceType =
+          memoryTypesMap.get(link.source_id) || (await getMemoryTypeAsync(link.source_id));
         const sourceTags = memoryTagsMap.get(link.source_id) || [];
         const sourceDate = memoryDatesMap.get(link.source_id) || dateStr;
         const wikiPath = getWikiLinkPath(sourceType, sourceTags, link.source_id, sourceDate);
@@ -416,12 +437,15 @@ ${memory.content}
   // Collect community IDs for graph coloring
   const communityIds = new Set<number>();
   for (const m of memories) {
-    const ct = m.tags.find(t => t.startsWith('community:'));
+    const ct = m.tags.find((t) => t.startsWith('community:'));
     if (ct) communityIds.add(parseInt(ct.split(':')[1], 10));
   }
 
   // Create/update Obsidian config for graph colors
-  ensureObsidianGraphConfig(brainDir, Array.from(communityIds).sort((a, b) => a - b));
+  ensureObsidianGraphConfig(
+    brainDir,
+    Array.from(communityIds).sort((a, b) => a - b)
+  );
 
   return { memoriesExported: exported, linksExported: totalLinks };
 }
@@ -438,13 +462,28 @@ function communityColor(index: number, total: number): number {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
   const m = l - c / 2;
-  let r = 0, g = 0, b = 0;
-  if (hue < 60)       { r = c; g = x; }
-  else if (hue < 120) { r = x; g = c; }
-  else if (hue < 180) { g = c; b = x; }
-  else if (hue < 240) { g = x; b = c; }
-  else if (hue < 300) { r = x; b = c; }
-  else                 { r = c; b = x; }
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (hue < 60) {
+    r = c;
+    g = x;
+  } else if (hue < 120) {
+    r = x;
+    g = c;
+  } else if (hue < 180) {
+    g = c;
+    b = x;
+  } else if (hue < 240) {
+    g = x;
+    b = c;
+  } else if (hue < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
   const ri = Math.round((r + m) * 255);
   const gi = Math.round((g + m) * 255);
   const bi = Math.round((b + m) * 255);
@@ -468,56 +507,53 @@ function ensureObsidianGraphConfig(brainDir: string, communityIds: number[] = []
 
   // Graph config with color groups
   const graphConfig = {
-    "collapse-filter": false,
-    "search": "",
-    "showTags": true,
-    "showAttachments": false,
-    "hideUnresolved": false,
-    "showOrphans": true,
-    "collapse-color-groups": false,
-    "colorGroups": [
+    'collapse-filter': false,
+    search: '',
+    showTags: true,
+    showAttachments: false,
+    hideUnresolved: false,
+    showOrphans: true,
+    'collapse-color-groups': false,
+    colorGroups: [
       // Folders
-      { "query": "path:Decisions", "color": { "a": 1, "rgb": 16744448 } },    // Orange
-      { "query": "path:Strategy", "color": { "a": 1, "rgb": 10494192 } },     // Purple
-      { "query": "path:02_Knowledge", "color": { "a": 1, "rgb": 65382 } },    // Green
-      { "query": "path:Systems", "color": { "a": 1, "rgb": 3447003 } },       // Cyan
-      { "query": "path:Features", "color": { "a": 1, "rgb": 16761035 } },     // Pink
-      { "query": "path:Technical", "color": { "a": 1, "rgb": 10066329 } },    // Silver
-      { "query": "path:Files", "color": { "a": 1, "rgb": 6591981 } },         // Teal
-      { "query": "path:Reflections", "color": { "a": 1, "rgb": 9109504 } },   // Dark red
-      { "query": "path:00_Inbox", "color": { "a": 1, "rgb": 8421504 } },      // Gray
+      { query: 'path:Decisions', color: { a: 1, rgb: 16744448 } }, // Orange
+      { query: 'path:Strategy', color: { a: 1, rgb: 10494192 } }, // Purple
+      { query: 'path:02_Knowledge', color: { a: 1, rgb: 65382 } }, // Green
+      { query: 'path:Systems', color: { a: 1, rgb: 3447003 } }, // Cyan
+      { query: 'path:Features', color: { a: 1, rgb: 16761035 } }, // Pink
+      { query: 'path:Technical', color: { a: 1, rgb: 10066329 } }, // Silver
+      { query: 'path:Files', color: { a: 1, rgb: 6591981 } }, // Teal
+      { query: 'path:Reflections', color: { a: 1, rgb: 9109504 } }, // Dark red
+      { query: 'path:00_Inbox', color: { a: 1, rgb: 8421504 } }, // Gray
       // Tags (higher priority - listed after folders)
-      { "query": "tag:#decision", "color": { "a": 1, "rgb": 16744448 } },     // Orange
-      { "query": "tag:#learning", "color": { "a": 1, "rgb": 65382 } },        // Green
-      { "query": "tag:#pattern", "color": { "a": 1, "rgb": 10494192 } },      // Purple
-      { "query": "tag:#error", "color": { "a": 1, "rgb": 16711680 } },        // Red
-      { "query": "tag:#architecture", "color": { "a": 1, "rgb": 3447003 } },  // Cyan
-      { "query": "tag:#sprint", "color": { "a": 1, "rgb": 65535 } },          // Aqua
+      { query: 'tag:#decision', color: { a: 1, rgb: 16744448 } }, // Orange
+      { query: 'tag:#learning', color: { a: 1, rgb: 65382 } }, // Green
+      { query: 'tag:#pattern', color: { a: 1, rgb: 10494192 } }, // Purple
+      { query: 'tag:#error', color: { a: 1, rgb: 16711680 } }, // Red
+      { query: 'tag:#architecture', color: { a: 1, rgb: 3447003 } }, // Cyan
+      { query: 'tag:#sprint', color: { a: 1, rgb: 65535 } }, // Aqua
       // Community color groups (auto-generated from detected communities)
-      ...communityIds.map(id => ({
-        "query": `tag:#community/${id}`,
-        "color": { "a": 1, "rgb": communityColor(id, communityIds.length) }
+      ...communityIds.map((id) => ({
+        query: `tag:#community/${id}`,
+        color: { a: 1, rgb: communityColor(id, communityIds.length) },
       })),
     ],
-    "collapse-display": false,
-    "showArrow": true,
-    "textFadeMultiplier": 0,
-    "nodeSizeMultiplier": 1.2,
-    "lineSizeMultiplier": 1,
-    "collapse-forces": false,
-    "centerStrength": 0.5,
-    "repelStrength": 12,
-    "linkStrength": 1,
-    "linkDistance": 180,
-    "scale": 0.6,
-    "close": false
+    'collapse-display': false,
+    showArrow: true,
+    textFadeMultiplier: 0,
+    nodeSizeMultiplier: 1.2,
+    lineSizeMultiplier: 1,
+    'collapse-forces': false,
+    centerStrength: 0.5,
+    repelStrength: 12,
+    linkStrength: 1,
+    linkDistance: 180,
+    scale: 0.6,
+    close: false,
   };
 
   // Write graph config
-  fs.writeFileSync(
-    path.join(obsidianDir, 'graph.json'),
-    JSON.stringify(graphConfig, null, 2)
-  );
+  fs.writeFileSync(path.join(obsidianDir, 'graph.json'), JSON.stringify(graphConfig, null, 2));
 
   // CSS snippet for additional styling
   const cssSnippet = `/* succ Brain Vault Graph Styling - Auto-generated */
@@ -547,8 +583,8 @@ function ensureObsidianGraphConfig(brainDir: string, communityIds: number[] = []
 
   // Enable the snippet in appearance.json
   const appearanceConfig = {
-    "cssTheme": "",
-    "enabledCssSnippets": ["succ-graph"]
+    cssTheme: '',
+    enabledCssSnippets: ['succ-graph'],
   };
   fs.writeFileSync(
     path.join(obsidianDir, 'appearance.json'),
@@ -582,10 +618,13 @@ async function generateIndexContent(
   };
 
   // Group by location
-  const byLocation: Record<string, Array<{ id: number; type: string; date: string; status: string }>> = {
-    'Decisions': [],
-    'Knowledge': [],
-    'Inbox': [],
+  const byLocation: Record<
+    string,
+    Array<{ id: number; type: string; date: string; status: string }>
+  > = {
+    Decisions: [],
+    Knowledge: [],
+    Inbox: [],
   };
 
   for (const m of memories) {
@@ -594,13 +633,17 @@ async function generateIndexContent(
     const dateStr = new Date(m.created_at).toISOString().split('T')[0];
 
     // Calculate temporal status
-    const temporalResult = calculateTemporalScore(1.0, {
-      created_at: m.created_at,
-      last_accessed: m.last_accessed || null,
-      access_count: m.access_count || 0,
-      valid_from: m.valid_from || null,
-      valid_until: m.valid_until || null,
-    }, temporalConfig);
+    const temporalResult = calculateTemporalScore(
+      1.0,
+      {
+        created_at: m.created_at,
+        last_accessed: m.last_accessed || null,
+        access_count: m.access_count || 0,
+        valid_from: m.valid_from || null,
+        valid_until: m.valid_until || null,
+      },
+      temporalConfig
+    );
     const temporalScore = temporalResult.temporalScore;
 
     let status = 'active';
@@ -615,7 +658,12 @@ async function generateIndexContent(
 
     if (type === 'decision' || tags.includes('decision')) {
       byLocation['Decisions'].push({ id: m.id, type, date: dateStr, status });
-    } else if (type === 'learning' || type === 'pattern' || tags.includes('learning') || tags.includes('pattern')) {
+    } else if (
+      type === 'learning' ||
+      type === 'pattern' ||
+      tags.includes('learning') ||
+      tags.includes('pattern')
+    ) {
       byLocation['Knowledge'].push({ id: m.id, type, date: dateStr, status });
     } else {
       byLocation['Inbox'].push({ id: m.id, type, date: dateStr, status });

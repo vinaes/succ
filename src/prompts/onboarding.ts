@@ -102,19 +102,19 @@ What frustrates you most about AI coding assistants?
 `;
 
 export const WIZARD_SOLUTION_MAP: Record<string, string> = {
-  'forgets': `**Memories** solve this!
+  forgets: `**Memories** solve this!
 succ stores decisions and learnings that persist across sessions.
 AI remembers what you've discussed before.`,
 
-  'codebase': `**Code Index + Brain Vault** solve this!
+  codebase: `**Code Index + Brain Vault** solve this!
 succ indexes your code and documentation for semantic search.
 AI can find relevant files and understand patterns.`,
 
-  'repeat': `**Memories** solve this!
+  repeat: `**Memories** solve this!
 When you make a decision, AI stores it with succ_remember.
 Next session, it recalls with succ_recall — no repetition needed.`,
 
-  'structure': `**Brain Vault** solves this!
+  structure: `**Brain Vault** solves this!
 Put architecture docs in .succ/brain/ and they're instantly searchable.
 AI uses succ_search to find relevant context.`,
 };

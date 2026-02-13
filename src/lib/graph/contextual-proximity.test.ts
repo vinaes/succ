@@ -2,24 +2,50 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
 // In-memory stores
-let mockMemories: Array<{ id: number; content: string; tags: string[]; source: string | null; type: string; created_at: string; invalidated_by?: number | null }>;
-let mockLinks: Array<{ id: number; source_id: number; target_id: number; relation: string; weight: number }>;
+let mockMemories: Array<{
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  type: string;
+  created_at: string;
+  invalidated_by?: number | null;
+}>;
+let mockLinks: Array<{
+  id: number;
+  source_id: number;
+  target_id: number;
+  relation: string;
+  weight: number;
+}>;
 
 vi.mock('../storage/index.js', () => ({
   getAllMemoriesForExport: async () => mockMemories,
   getMemoryLinks: async (memoryId: number) => {
-    const outgoing = mockLinks.filter(l => l.source_id === memoryId);
-    const incoming = mockLinks.filter(l => l.target_id === memoryId);
+    const outgoing = mockLinks.filter((l) => l.source_id === memoryId);
+    const incoming = mockLinks.filter((l) => l.target_id === memoryId);
     return { outgoing, incoming };
   },
-  createMemoryLink: async (sourceId: number, targetId: number, relation: string, weight: number) => {
-    const existing = mockLinks.find(l =>
-      (l.source_id === sourceId && l.target_id === targetId) ||
-      (l.source_id === targetId && l.target_id === sourceId)
+  createMemoryLink: async (
+    sourceId: number,
+    targetId: number,
+    relation: string,
+    weight: number
+  ) => {
+    const existing = mockLinks.find(
+      (l) =>
+        (l.source_id === sourceId && l.target_id === targetId) ||
+        (l.source_id === targetId && l.target_id === sourceId)
     );
     if (existing) return { id: existing.id, created: false };
     const id = mockLinks.length + 1;
-    mockLinks.push({ id, source_id: sourceId, target_id: targetId, relation, weight: weight ?? 1.0 });
+    mockLinks.push({
+      id,
+      source_id: sourceId,
+      target_id: targetId,
+      relation,
+      weight: weight ?? 1.0,
+    });
     return { id, created: true };
   },
 }));
@@ -82,7 +108,7 @@ describe('Contextual Proximity', () => {
       ];
       const result = calculateProximity(memories);
       expect(result).toHaveLength(3);
-      expect(result.find(p => p.node_1 === 1 && p.node_2 === 2)).toBeDefined();
+      expect(result.find((p) => p.node_1 === 1 && p.node_2 === 2)).toBeDefined();
     });
 
     it('counts multiple source co-occurrences', () => {
@@ -92,7 +118,7 @@ describe('Contextual Proximity', () => {
         { id: 3, source: 'src/lib/config.ts' },
       ];
       const result = calculateProximity(memories);
-      const pair12 = result.find(p => p.node_1 === 1 && p.node_2 === 2);
+      const pair12 = result.find((p) => p.node_1 === 1 && p.node_2 === 2);
       expect(pair12).toBeDefined();
     });
 

@@ -33,11 +33,31 @@ function generateEmbedding(seed: number): number[] {
 }
 
 const TEST_MEMORIES = [
-  { content: 'Storage abstraction supports multiple backends', tags: ['decision', 'architecture'], type: 'decision' as const },
-  { content: 'PostgreSQL with pgvector for production deployments', tags: ['learning', 'postgres'], type: 'learning' as const },
-  { content: 'Qdrant for high-performance vector search', tags: ['learning', 'qdrant'], type: 'learning' as const },
-  { content: 'SQLite remains default for local development', tags: ['decision'], type: 'decision' as const },
-  { content: 'Export/import enables migration between backends', tags: ['feature'], type: 'observation' as const },
+  {
+    content: 'Storage abstraction supports multiple backends',
+    tags: ['decision', 'architecture'],
+    type: 'decision' as const,
+  },
+  {
+    content: 'PostgreSQL with pgvector for production deployments',
+    tags: ['learning', 'postgres'],
+    type: 'learning' as const,
+  },
+  {
+    content: 'Qdrant for high-performance vector search',
+    tags: ['learning', 'qdrant'],
+    type: 'learning' as const,
+  },
+  {
+    content: 'SQLite remains default for local development',
+    tags: ['decision'],
+    type: 'decision' as const,
+  },
+  {
+    content: 'Export/import enables migration between backends',
+    tags: ['feature'],
+    type: 'observation' as const,
+  },
 ];
 
 // ============================================================================
@@ -50,7 +70,8 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
   console.log('========================================');
 
   try {
-    const { closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } = await import('../db/index.js');
+    const { closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } =
+      await import('../db/index.js');
     const { getEmbedding } = await import('../embeddings.js');
 
     // Save test memories
@@ -61,7 +82,10 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
     for (let i = 0; i < TEST_MEMORIES.length; i++) {
       const m = TEST_MEMORIES[i];
       const embedding = await getEmbedding(m.content);
-      const result = saveMemory(m.content, embedding, m.tags, 'test-backends', { type: m.type, deduplicate: false });
+      const result = saveMemory(m.content, embedding, m.tags, 'test-backends', {
+        type: m.type,
+        deduplicate: false,
+      });
       savedIds.push(result.id);
     }
 
@@ -328,7 +352,10 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       const embedding = await getEmbedding(m.content);
 
       // Save to SQLite (metadata + embedding)
-      const result = saveMemory(m.content, embedding, m.tags, 'test-backends', { type: m.type, deduplicate: false });
+      const result = saveMemory(m.content, embedding, m.tags, 'test-backends', {
+        type: m.type,
+        deduplicate: false,
+      });
       savedIds.push(result.id);
 
       // Save to Qdrant (vector only)
@@ -403,15 +430,15 @@ function printSummary() {
 
   console.log('');
 
-  const passed = results.filter(r => r.status === 'pass').length;
-  const failed = results.filter(r => r.status === 'fail').length;
-  const skipped = results.filter(r => r.status === 'skip').length;
+  const passed = results.filter((r) => r.status === 'pass').length;
+  const failed = results.filter((r) => r.status === 'fail').length;
+  const skipped = results.filter((r) => r.status === 'skip').length;
 
   console.log(`Results: ${passed} passed, ${failed} failed, ${skipped} skipped`);
 
   if (failed > 0) {
     console.log('\nFailures:');
-    for (const r of results.filter(r => r.status === 'fail')) {
+    for (const r of results.filter((r) => r.status === 'fail')) {
       console.log(`  ${r.name}: ${r.error}`);
     }
   }

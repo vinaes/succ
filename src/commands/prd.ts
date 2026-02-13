@@ -82,7 +82,7 @@ export async function prdGenerate(
     console.log(`  Title: ${result.prd.title}`);
     console.log(`  Status: ${result.prd.status}`);
     console.log(`  Mode: ${result.prd.execution_mode}`);
-    console.log(`  Gates: ${result.prd.quality_gates.map(g => g.type).join(', ') || 'none'}`);
+    console.log(`  Gates: ${result.prd.quality_gates.map((g) => g.type).join(', ') || 'none'}`);
 
     if (result.tasks) {
       console.log(`\n  Tasks: ${result.tasks.length}`);
@@ -112,10 +112,7 @@ export async function prdGenerate(
 // parse
 // ============================================================================
 
-export async function prdParse(
-  fileOrId: string,
-  options: ParseOptions = {}
-): Promise<void> {
+export async function prdParse(fileOrId: string, options: ParseOptions = {}): Promise<void> {
   try {
     let prdContent: string;
     let prdId: string;
@@ -221,10 +218,7 @@ export async function prdParse(
 // run
 // ============================================================================
 
-export async function prdRun(
-  prdIdArg?: string,
-  options: RunCmdOptions = {}
-): Promise<void> {
+export async function prdRun(prdIdArg?: string, options: RunCmdOptions = {}): Promise<void> {
   try {
     // Find PRD
     let prdId = prdIdArg;
@@ -281,7 +275,9 @@ export async function prdList(options: ListOptions = {}): Promise<void> {
     const statusIcon = getStatusIcon(entry.status);
     const created = entry.created_at.slice(0, 10);
     console.log(`  ${statusIcon} ${entry.id}  ${entry.title}`);
-    console.log(`    status: ${entry.status} | mode: ${entry.execution_mode} | created: ${created}`);
+    console.log(
+      `    status: ${entry.status} | mode: ${entry.execution_mode} | created: ${created}`
+    );
   }
 }
 
@@ -289,10 +285,7 @@ export async function prdList(options: ListOptions = {}): Promise<void> {
 // status
 // ============================================================================
 
-export async function prdStatus(
-  prdIdArg?: string,
-  options: StatusOptions = {}
-): Promise<void> {
+export async function prdStatus(prdIdArg?: string, options: StatusOptions = {}): Promise<void> {
   // Find PRD
   let prdId = prdIdArg;
   if (!prdId) {
@@ -335,7 +328,7 @@ export async function prdStatus(
   }
 
   if (prd.quality_gates.length > 0) {
-    console.log(`  Gates: ${prd.quality_gates.map(g => `${g.type}(${g.command})`).join(', ')}`);
+    console.log(`  Gates: ${prd.quality_gates.map((g) => `${g.type}(${g.command})`).join(', ')}`);
   }
 
   // Tasks
@@ -371,7 +364,9 @@ export async function prdStatus(
       if (task.attempts.length > 0) {
         console.log(`    Attempts: ${task.attempts.length}`);
         const lastAttempt = task.attempts[task.attempts.length - 1];
-        console.log(`    Last: ${lastAttempt.status}${lastAttempt.error ? ' — ' + lastAttempt.error : ''}`);
+        console.log(
+          `    Last: ${lastAttempt.status}${lastAttempt.error ? ' — ' + lastAttempt.error : ''}`
+        );
       }
     }
   }
@@ -383,24 +378,37 @@ export async function prdStatus(
 
 function getStatusIcon(status: string): string {
   switch (status) {
-    case 'draft': return '[.]';
-    case 'ready': return '[>]';
-    case 'in_progress': return '[~]';
-    case 'completed': return '[+]';
-    case 'failed': return '[x]';
-    case 'archived': return '[-]';
-    default: return '[ ]';
+    case 'draft':
+      return '[.]';
+    case 'ready':
+      return '[>]';
+    case 'in_progress':
+      return '[~]';
+    case 'completed':
+      return '[+]';
+    case 'failed':
+      return '[x]';
+    case 'archived':
+      return '[-]';
+    default:
+      return '[ ]';
   }
 }
 
 function getTaskStatusIcon(status: string): string {
   switch (status) {
-    case 'pending': return '[ ]';
-    case 'in_progress': return '[~]';
-    case 'completed': return '[+]';
-    case 'failed': return '[x]';
-    case 'skipped': return '[-]';
-    default: return '[ ]';
+    case 'pending':
+      return '[ ]';
+    case 'in_progress':
+      return '[~]';
+    case 'completed':
+      return '[+]';
+    case 'failed':
+      return '[x]';
+    case 'skipped':
+      return '[-]';
+    default:
+      return '[ ]';
   }
 }
 
@@ -437,9 +445,14 @@ export async function prdArchive(
     savePrd(prd);
     console.log(`Archived PRD: ${prd.title} (${prdId})`);
   } catch (error) {
-    logError('prd', `Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      'prd',
+      `Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`
+    );
 
-    console.error(`Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Failed to archive PRD: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   }
 }
@@ -453,10 +466,7 @@ interface ExportOptions {
   all?: boolean;
 }
 
-export async function prdExport(
-  prdIdArg?: string,
-  options: ExportOptions = {}
-): Promise<void> {
+export async function prdExport(prdIdArg?: string, options: ExportOptions = {}): Promise<void> {
   try {
     if (options.all) {
       const results = exportAllPrds(options.output);

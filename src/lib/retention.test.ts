@@ -50,7 +50,7 @@ describe('Retention Policy', () => {
     });
 
     it('should always return positive values', () => {
-      const factors = [0, 1, 10, 100, 1000, 10000].map(days =>
+      const factors = [0, 1, 10, 100, 1000, 10000].map((days) =>
         calculateRecencyFactor(days, 0.01)
       );
 
@@ -225,7 +225,9 @@ describe('Retention Policy', () => {
       const result = analyzeRetention(memories);
 
       if (result.delete.length >= 2) {
-        expect(result.delete[0].effectiveScore).toBeLessThanOrEqual(result.delete[1].effectiveScore);
+        expect(result.delete[0].effectiveScore).toBeLessThanOrEqual(
+          result.delete[1].effectiveScore
+        );
       }
     });
 
@@ -266,10 +268,34 @@ describe('Retention Policy', () => {
 
     it('should calculate correct counts', () => {
       const results = [
-        { tier: 'keep' as const, effectiveScore: 0.8, qualityScore: 0.8, ageDays: 10, accessCount: 5 },
-        { tier: 'keep' as const, effectiveScore: 0.7, qualityScore: 0.7, ageDays: 20, accessCount: 3 },
-        { tier: 'warn' as const, effectiveScore: 0.2, qualityScore: 0.3, ageDays: 100, accessCount: 0 },
-        { tier: 'delete' as const, effectiveScore: 0.1, qualityScore: 0.2, ageDays: 200, accessCount: 0 },
+        {
+          tier: 'keep' as const,
+          effectiveScore: 0.8,
+          qualityScore: 0.8,
+          ageDays: 10,
+          accessCount: 5,
+        },
+        {
+          tier: 'keep' as const,
+          effectiveScore: 0.7,
+          qualityScore: 0.7,
+          ageDays: 20,
+          accessCount: 3,
+        },
+        {
+          tier: 'warn' as const,
+          effectiveScore: 0.2,
+          qualityScore: 0.3,
+          ageDays: 100,
+          accessCount: 0,
+        },
+        {
+          tier: 'delete' as const,
+          effectiveScore: 0.1,
+          qualityScore: 0.2,
+          ageDays: 200,
+          accessCount: 0,
+        },
       ].map((r, i) => ({
         memoryId: i + 1,
         content: `Memory ${i + 1}`,

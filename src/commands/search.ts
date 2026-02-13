@@ -1,5 +1,10 @@
 import { getEmbedding } from '../lib/embeddings.js';
-import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/storage/index.js';
+import {
+  searchDocuments,
+  closeDb,
+  getStoredEmbeddingDimension,
+  clearDocuments,
+} from '../lib/storage/index.js';
 import inquirer from 'inquirer';
 import { index as indexBrain } from './index.js';
 import { logError } from '../lib/fault-logger.js';
@@ -9,10 +14,7 @@ interface SearchOptions {
   threshold?: string;
 }
 
-export async function search(
-  query: string,
-  options: SearchOptions = {}
-): Promise<void> {
+export async function search(query: string, options: SearchOptions = {}): Promise<void> {
   const limit = parseInt(options.limit || '5', 10);
   const threshold = parseFloat(options.threshold || '0.5');
 
@@ -45,7 +47,10 @@ export async function search(
               name: 'action',
               message: 'What would you like to do?',
               choices: [
-                { name: 'Reindex now (clear old index and reindex with current model)', value: 'reindex' },
+                {
+                  name: 'Reindex now (clear old index and reindex with current model)',
+                  value: 'reindex',
+                },
                 { name: 'Cancel search', value: 'cancel' },
               ],
             },

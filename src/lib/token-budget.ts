@@ -111,8 +111,12 @@ export function recordSynthesis(
  */
 export function getTotalLLMTokens(sessionId: string): number {
   const budget = getBudget(sessionId);
-  return budget.extractionInputTokens + budget.extractionOutputTokens +
-         budget.synthesisInputTokens + budget.synthesisOutputTokens;
+  return (
+    budget.extractionInputTokens +
+    budget.extractionOutputTokens +
+    budget.synthesisInputTokens +
+    budget.synthesisOutputTokens
+  );
 }
 
 /**

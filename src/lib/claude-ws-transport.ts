@@ -82,7 +82,14 @@ interface NDJSONKeepAlive {
   type: 'keep_alive';
 }
 
-type NDJSONMessage = NDJSONSystemInit | NDJSONAssistant | NDJSONResult | NDJSONControlRequest | NDJSONControlResponse | NDJSONKeepAlive | { type: string; [key: string]: unknown };
+type NDJSONMessage =
+  | NDJSONSystemInit
+  | NDJSONAssistant
+  | NDJSONResult
+  | NDJSONControlRequest
+  | NDJSONControlResponse
+  | NDJSONKeepAlive
+  | { type: string; [key: string]: unknown };
 
 // ============================================================================
 // ClaudeWSTransport — Singleton
@@ -177,8 +184,8 @@ export class ClaudeWSTransport {
     await this.readyPromise;
 
     // Find system message if any and prepend to first user message
-    const systemMsg = messages.find(m => m.role === 'system');
-    const userMessages = messages.filter(m => m.role === 'user');
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const userMessages = messages.filter((m) => m.role === 'user');
 
     if (userMessages.length === 0) {
       throw new ValidationError('[claude-ws] No user messages in chat');
@@ -218,7 +225,9 @@ export class ClaudeWSTransport {
     logInfo('ws-transport', `Ready (port=${this.port}, session=${this.sessionId})`);
 
     // Cleanup on process exit
-    const cleanup = () => { ClaudeWSTransport.shutdown(); };
+    const cleanup = () => {
+      ClaudeWSTransport.shutdown();
+    };
     process.on('beforeExit', cleanup);
     process.on('SIGTERM', cleanup);
     process.on('SIGINT', cleanup);
@@ -255,7 +264,7 @@ export class ClaudeWSTransport {
         socket.on('message', (data) => {
           const raw = data.toString();
           // NDJSON: multiple JSON objects separated by newlines
-          const lines = raw.split('\n').filter(l => l.trim());
+          const lines = raw.split('\n').filter((l) => l.trim());
           for (const line of lines) {
             try {
               const msg = JSON.parse(line) as NDJSONMessage;
@@ -276,7 +285,11 @@ export class ClaudeWSTransport {
         });
 
         socket.on('error', (err) => {
-          logError('ws-transport', `Socket error: ${err.message}`, err instanceof Error ? err : new Error(String(err)));
+          logError(
+            'ws-transport',
+            `Socket error: ${err.message}`,
+            err instanceof Error ? err : new Error(String(err))
+          );
         });
       });
     });
@@ -286,12 +299,16 @@ export class ClaudeWSTransport {
     const sdkUrl = `ws://127.0.0.1:${this.port}`;
 
     const args = [
-      '--sdk-url', sdkUrl,
+      '--sdk-url',
+      sdkUrl,
       '--print',
-      '--output-format', 'stream-json',
-      '--input-format', 'stream-json',
+      '--output-format',
+      'stream-json',
+      '--input-format',
+      'stream-json',
       '--no-session-persistence',
-      '-p', '',
+      '-p',
+      '',
     ];
 
     // WS mode always uses Claude API — resolve model from config.
@@ -421,9 +438,11 @@ export class ClaudeWSTransport {
         if (this.pending) {
           clearTimeout(this.pending.timer);
           if (resultMsg.is_error || resultMsg.subtype.startsWith('error')) {
-            this.pending.reject(new Error(
-              `[claude-ws] CLI error: ${resultMsg.subtype} — ${resultMsg.result || 'unknown'}`
-            ));
+            this.pending.reject(
+              new Error(
+                `[claude-ws] CLI error: ${resultMsg.subtype} — ${resultMsg.result || 'unknown'}`
+              )
+            );
           } else {
             // Use collected assistant text, fall back to result text
             const text = this.pending.responseText.trim() || resultMsg.result?.trim() || '';
@@ -502,7 +521,7 @@ export class ClaudeWSTransport {
     prompt: string,
     opts: WSSendOptions | undefined,
     resolve: (text: string) => void,
-    reject: (err: Error) => void,
+    reject: (err: Error) => void
   ): void {
     if (!this.ws || this.ws.readyState !== 1) {
       reject(new Error('[claude-ws] Not connected'));

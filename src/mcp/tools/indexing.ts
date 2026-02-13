@@ -80,7 +80,12 @@ export function registerIndexingTools(server: McpServer) {
     'Analyze a single source file and generate documentation in brain vault. Modes: claude (CLI with Haiku), local (Ollama/LM Studio), openrouter (cloud API). Check succ_status first - if analyze daemon is running, it handles this automatically.',
     {
       file: z.string().describe('Path to the file to analyze'),
-      mode: z.enum(['claude', 'api']).optional().describe('claude = Claude CLI (Haiku), api = any OpenAI-compatible endpoint (default: from config)'),
+      mode: z
+        .enum(['claude', 'api'])
+        .optional()
+        .describe(
+          'claude = Claude CLI (Haiku), api = any OpenAI-compatible endpoint (default: from config)'
+        ),
       project_path: projectPathParam,
     },
     async ({ file, mode, project_path }) => {
@@ -199,7 +204,9 @@ export function registerIndexingTools(server: McpServer) {
 
         if (result.reindexed === 0 && result.cleaned === 0 && result.errors === 0) {
           return {
-            content: [{ type: 'text' as const, text: `All ${result.total} indexed files are up to date.` }],
+            content: [
+              { type: 'text' as const, text: `All ${result.total} indexed files are up to date.` },
+            ],
           };
         }
 
@@ -226,7 +233,10 @@ export function registerIndexingTools(server: McpServer) {
     'Extract functions, classes, interfaces, and type definitions from a source file using tree-sitter AST parsing. Returns symbol names, types, signatures, and line numbers. Supports 13 languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.',
     {
       file: z.string().describe('Path to the source file to extract symbols from'),
-      type: z.enum(['all', 'function', 'method', 'class', 'interface', 'type_alias']).optional().default('all')
+      type: z
+        .enum(['all', 'function', 'method', 'class', 'interface', 'type_alias'])
+        .optional()
+        .default('all')
         .describe('Filter by symbol type (default: all)'),
       project_path: projectPathParam,
     },
@@ -253,14 +263,24 @@ export function registerIndexingTools(server: McpServer) {
         const language = getLanguageForExtension(ext);
         if (!language) {
           return {
-            content: [{ type: 'text' as const, text: `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`,
+              },
+            ],
           };
         }
 
         const tree = await parseCode(content, language);
         if (!tree) {
           return {
-            content: [{ type: 'text' as const, text: `Failed to parse ${file} — tree-sitter grammar not available for ${language}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Failed to parse ${file} — tree-sitter grammar not available for ${language}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -269,26 +289,33 @@ export function registerIndexingTools(server: McpServer) {
           let symbols = await extractSymbols(tree, content, language);
 
           if (type !== 'all') {
-            symbols = symbols.filter(s => s.type === type);
+            symbols = symbols.filter((s) => s.type === type);
           }
 
           if (symbols.length === 0) {
             return {
-              content: [{ type: 'text' as const, text: `No ${type === 'all' ? '' : type + ' '}symbols found in ${file}` }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `No ${type === 'all' ? '' : type + ' '}symbols found in ${file}`,
+                },
+              ],
             };
           }
 
-          const lines = symbols.map(s => {
+          const lines = symbols.map((s) => {
             const sig = s.signature ? `: ${s.signature}` : '';
             const doc = s.docComment ? ` — ${s.docComment.split('\n')[0]}` : '';
             return `  ${s.type} **${s.name}**${sig} (L${s.startRow + 1}-${s.endRow + 1})${doc}`;
           });
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `${symbols.length} symbols in ${file} (${language}):\n\n${lines.join('\n')}`,
-            }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `${symbols.length} symbols in ${file} (${language}):\n\n${lines.join('\n')}`,
+              },
+            ],
           };
         } finally {
           tree.delete();

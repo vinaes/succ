@@ -5,8 +5,13 @@ import ora from 'ora';
 import { getProjectRoot, getSuccDir, getLLMTaskConfig } from '../lib/config.js';
 import { logError } from '../lib/fault-logger.js';
 import {
-  loadAnalyzeState, saveAnalyzeState, getGitHead, getChangedFiles,
-  hashFile, shouldRerunAgent, type AnalyzeState
+  loadAnalyzeState,
+  saveAnalyzeState,
+  getGitHead,
+  getChangedFiles,
+  hashFile,
+  shouldRerunAgent,
+  type AnalyzeState,
 } from '../lib/analyze-state.js';
 
 // Import from new modules
@@ -95,19 +100,27 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   // Write progress file
   const progressFile = path.join(succDir, 'analyze.progress.json');
   const writeProgress = (status: string, completed: number, total: number, current?: string) => {
-    fs.writeFileSync(progressFile, JSON.stringify({
-      status,
-      completed,
-      total,
-      current,
-      startedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }, null, 2));
+    fs.writeFileSync(
+      progressFile,
+      JSON.stringify(
+        {
+          status,
+          completed,
+          total,
+          current,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
   };
 
-  const backendName = mode === 'api'
-    ? `API (${analyzeCfg.model || 'not configured'} @ ${analyzeCfg.api_url})`
-    : 'Claude Code CLI';
+  const backendName =
+    mode === 'api'
+      ? `API (${analyzeCfg.model || 'not configured'} @ ${analyzeCfg.api_url})`
+      : 'Claude Code CLI';
 
   console.log('🧠 Analyzing project with Claude agents...\n');
   console.log(`Project: ${projectRoot}`);
@@ -173,12 +186,14 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   if (prevState && prevState.gitCommit && currentHead) {
     const changedFiles = getChangedFiles(projectRoot, prevState.gitCommit);
-    const skippable = agents.filter(a => !shouldRerunAgent(a.name, prevState, changedFiles));
-    const rerun = agents.filter(a => shouldRerunAgent(a.name, prevState, changedFiles));
+    const skippable = agents.filter((a) => !shouldRerunAgent(a.name, prevState, changedFiles));
+    const rerun = agents.filter((a) => shouldRerunAgent(a.name, prevState, changedFiles));
 
     if (skippable.length > 0 && rerun.length < agents.length) {
-      console.log(`Incremental: skipping ${skippable.length} unchanged agent(s): ${skippable.map(a => a.name).join(', ')}`);
-      console.log(`Re-running ${rerun.length} agent(s): ${rerun.map(a => a.name).join(', ')}\n`);
+      console.log(
+        `Incremental: skipping ${skippable.length} unchanged agent(s): ${skippable.map((a) => a.name).join(', ')}`
+      );
+      console.log(`Re-running ${rerun.length} agent(s): ${rerun.map((a) => a.name).join(', ')}\n`);
       agents = rerun;
     }
 
@@ -221,7 +236,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
       fs.mkdirSync(systemsDir, { recursive: true });
       cleanAgentSubfiles(systemsDir, systemsOverviewPath);
 
-      console.log(`\nSystems documentation (${profile.systems.length} systems, concurrency ${concurrency})...`);
+      console.log(
+        `\nSystems documentation (${profile.systems.length} systems, concurrency ${concurrency})...`
+      );
       const sysResults = await runMultiPassItems({
         type: 'systems',
         projectName,
@@ -242,14 +259,20 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
         fs.writeFileSync(filePath, item.content, 'utf-8');
       }
       // Write programmatic MOC
-      const mocItems = sysResults.succeeded.map(s => {
-        const orig = profile.systems.find(p => sanitizeFilename(p.name) === s.name);
+      const mocItems = sysResults.succeeded.map((s) => {
+        const orig = profile.systems.find((p) => sanitizeFilename(p.name) === s.name);
         return { name: s.name, description: orig?.description || '', keyFile: orig?.keyFile || '' };
       });
-      fs.writeFileSync(systemsOverviewPath, buildMocContent('systems', projectName, mocItems), 'utf-8');
+      fs.writeFileSync(
+        systemsOverviewPath,
+        buildMocContent('systems', projectName, mocItems),
+        'utf-8'
+      );
 
       if (sysResults.failed.length > 0) {
-        console.log(`  ⚠ ${sysResults.failed.length} system(s) failed: ${sysResults.failed.map(f => f.name).join(', ')}`);
+        console.log(
+          `  ⚠ ${sysResults.failed.length} system(s) failed: ${sysResults.failed.map((f) => f.name).join(', ')}`
+        );
       }
       console.log(`  ${sysResults.succeeded.length}/${profile.systems.length} systems documented`);
     }
@@ -261,7 +284,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
       fs.mkdirSync(featuresDir, { recursive: true });
       cleanAgentSubfiles(featuresDir, featuresOverviewPath);
 
-      console.log(`\nFeatures documentation (${profile.features.length} features, concurrency ${concurrency})...`);
+      console.log(
+        `\nFeatures documentation (${profile.features.length} features, concurrency ${concurrency})...`
+      );
       const featResults = await runMultiPassItems({
         type: 'features',
         projectName,
@@ -282,16 +307,24 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
         fs.writeFileSync(filePath, item.content, 'utf-8');
       }
       // Write programmatic MOC
-      const mocItems = featResults.succeeded.map(f => {
-        const orig = profile.features.find(p => sanitizeFilename(p.name) === f.name);
+      const mocItems = featResults.succeeded.map((f) => {
+        const orig = profile.features.find((p) => sanitizeFilename(p.name) === f.name);
         return { name: f.name, description: orig?.description || '', keyFile: orig?.keyFile || '' };
       });
-      fs.writeFileSync(featuresOverviewPath, buildMocContent('features', projectName, mocItems), 'utf-8');
+      fs.writeFileSync(
+        featuresOverviewPath,
+        buildMocContent('features', projectName, mocItems),
+        'utf-8'
+      );
 
       if (featResults.failed.length > 0) {
-        console.log(`  ⚠ ${featResults.failed.length} feature(s) failed: ${featResults.failed.map(f => f.name).join(', ')}`);
+        console.log(
+          `  ⚠ ${featResults.failed.length} feature(s) failed: ${featResults.failed.map((f) => f.name).join(', ')}`
+        );
       }
-      console.log(`  ${featResults.succeeded.length}/${profile.features.length} features documented`);
+      console.log(
+        `  ${featResults.succeeded.length}/${profile.features.length} features documented`
+      );
     }
   }
 

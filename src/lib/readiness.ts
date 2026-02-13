@@ -53,17 +53,17 @@ interface Weights {
 }
 
 const MEMORY_WEIGHTS: Weights = {
-  coverage: 0.20,
-  top_similarity: 0.30,
+  coverage: 0.2,
+  top_similarity: 0.3,
   coherence: 0.15,
-  quality_avg: 0.20,
+  quality_avg: 0.2,
   freshness: 0.15,
 };
 
 const DOC_CODE_WEIGHTS: Weights = {
-  coverage: 0.30,
-  top_similarity: 0.40,
-  coherence: 0.30,
+  coverage: 0.3,
+  top_similarity: 0.4,
+  coherence: 0.3,
   quality_avg: 0,
   freshness: 0,
 };
@@ -85,7 +85,7 @@ function calcTopSimilarity(results: ReadinessInput[]): number {
 function calcCoherence(results: ReadinessInput[]): number {
   if (results.length <= 1) return results.length === 1 ? 0.5 : 0;
 
-  const sims = results.map(r => r.similarity);
+  const sims = results.map((r) => r.similarity);
   const mean = sims.reduce((a, b) => a + b, 0) / sims.length;
   if (mean === 0) return 0;
 
@@ -98,20 +98,20 @@ function calcCoherence(results: ReadinessInput[]): number {
 }
 
 function calcQualityAvg(results: ReadinessInput[]): number {
-  const withQuality = results.filter(r => r.quality_score != null);
+  const withQuality = results.filter((r) => r.quality_score != null);
   if (withQuality.length === 0) return 0.5; // neutral fallback
   return withQuality.reduce((sum, r) => sum + (r.quality_score ?? 0), 0) / withQuality.length;
 }
 
 function calcFreshness(results: ReadinessInput[]): number {
-  const withAccess = results.filter(r => r.last_accessed != null);
+  const withAccess = results.filter((r) => r.last_accessed != null);
   if (withAccess.length === 0) return 0.5; // neutral fallback
 
   const now = Date.now();
   const HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   const FLOOR = 0.1;
 
-  const decays = withAccess.map(r => {
+  const decays = withAccess.map((r) => {
     const lastAccessed = new Date(r.last_accessed!).getTime();
     const age = Math.max(0, now - lastAccessed);
     const lambda = Math.LN2 / HALF_LIFE_MS;
@@ -128,7 +128,7 @@ function calcFreshness(results: ReadinessInput[]): number {
 export function assessReadiness(
   results: ReadinessInput[],
   searchType: SearchType,
-  config?: ReadinessGateConfig,
+  config?: ReadinessGateConfig
 ): ReadinessAssessment {
   const thresholds = config?.thresholds ?? DEFAULT_READINESS_GATE_CONFIG.thresholds;
   const expected = config?.expected_results ?? DEFAULT_READINESS_GATE_CONFIG.expected_results;
@@ -197,9 +197,10 @@ export function formatReadinessHeader(assessment: ReadinessAssessment): string {
     return ''; // Silent for high confidence
   }
 
-  const weakStr = assessment.weak_factors.length > 0
-    ? ` Weak: ${assessment.weak_factors.map(f => `${f} (${Math.round(assessment.factors[f as keyof typeof assessment.factors] * 100)}%)`).join(', ')}`
-    : '';
+  const weakStr =
+    assessment.weak_factors.length > 0
+      ? ` Weak: ${assessment.weak_factors.map((f) => `${f} (${Math.round(assessment.factors[f as keyof typeof assessment.factors] * 100)}%)`).join(', ')}`
+      : '';
 
   if (assessment.recommendation === 'warn') {
     return `> **Confidence: ${pct}%** — Limited context available.${weakStr}`;

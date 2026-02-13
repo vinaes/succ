@@ -1,5 +1,12 @@
 import { getEmbedding, getEmbeddingInfo, cleanupEmbeddings } from '../lib/embeddings.js';
-import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/storage/index.js';
+import {
+  saveMemory,
+  searchMemories,
+  hybridSearchMemories,
+  deleteMemory,
+  closeDb,
+  getMemoryStats,
+} from '../lib/storage/index.js';
 import {
   setConfigOverride,
   hasApiKey,
@@ -142,7 +149,10 @@ async function runModeBenchmark(iterations: number, modeName: string): Promise<M
     const uniqueContent = mem.content + ` (${modeName} test ${i})`;
     const start = Date.now();
     const embedding = await getEmbedding(uniqueContent);
-    const result = await saveMemory(uniqueContent, embedding, mem.tags, `benchmark-${modeName}`, { deduplicate: false, autoLink: false });
+    const result = await saveMemory(uniqueContent, embedding, mem.tags, `benchmark-${modeName}`, {
+      deduplicate: false,
+      autoLink: false,
+    });
     saveTimes.push(Date.now() - start);
     savedIds.push(result.id);
   }
@@ -316,10 +326,10 @@ export interface BenchmarkOptions {
 
 // Available local models for benchmarking
 export const LOCAL_MODELS = [
-  'Xenova/all-MiniLM-L6-v2',      // 384d, fast, default
-  'Xenova/bge-small-en-v1.5',     // 384d, better accuracy
-  'Xenova/bge-base-en-v1.5',      // 768d, best local accuracy
-  'Xenova/bge-large-en-v1.5',     // 1024d, highest quality
+  'Xenova/all-MiniLM-L6-v2', // 384d, fast, default
+  'Xenova/bge-small-en-v1.5', // 384d, better accuracy
+  'Xenova/bge-base-en-v1.5', // 768d, best local accuracy
+  'Xenova/bge-large-en-v1.5', // 1024d, highest quality
 ] as const;
 
 /**
@@ -367,7 +377,10 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
 
     const embCfg = getLLMTaskConfig('embeddings');
     setConfigOverride({
-      llm: { embeddings: { mode: 'api', model: 'openai/text-embedding-3-small' }, api_key: embCfg.api_key },
+      llm: {
+        embeddings: { mode: 'api', model: 'openai/text-embedding-3-small' },
+        api_key: embCfg.api_key,
+      },
     });
     cleanupEmbeddings(); // Reset cache
 
@@ -489,18 +502,10 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
 
     if (local.advancedAccuracy && openrouter.advancedAccuracy) {
       console.log('\n  Advanced Metrics Comparison:');
-      console.log(
-        `  Local MRR:      ${(local.advancedAccuracy.mrr * 100).toFixed(1)}%`
-      );
-      console.log(
-        `  OpenRouter MRR: ${(openrouter.advancedAccuracy.mrr * 100).toFixed(1)}%`
-      );
-      console.log(
-        `  Local NDCG:     ${(local.advancedAccuracy.ndcg * 100).toFixed(1)}%`
-      );
-      console.log(
-        `  OpenRouter NDCG: ${(openrouter.advancedAccuracy.ndcg * 100).toFixed(1)}%`
-      );
+      console.log(`  Local MRR:      ${(local.advancedAccuracy.mrr * 100).toFixed(1)}%`);
+      console.log(`  OpenRouter MRR: ${(openrouter.advancedAccuracy.mrr * 100).toFixed(1)}%`);
+      console.log(`  Local NDCG:     ${(local.advancedAccuracy.ndcg * 100).toFixed(1)}%`);
+      console.log(`  OpenRouter NDCG: ${(openrouter.advancedAccuracy.ndcg * 100).toFixed(1)}%`);
     }
   }
 
@@ -525,7 +530,9 @@ function formatResult(name: string, times: number[]): BenchmarkResult {
  * Run quick benchmark on existing memories (no test data insertion)
  * Uses the actual project's memories for realistic performance measurement
  */
-export async function benchmarkExisting(options: { k?: number; json?: boolean } = {}): Promise<void> {
+export async function benchmarkExisting(
+  options: { k?: number; json?: boolean } = {}
+): Promise<void> {
   const k = options.k || 5;
 
   console.log('═══════════════════════════════════════════════════════════');
@@ -820,7 +827,9 @@ export async function benchmarkWithHistory(options: BenchmarkOptions = {}): Prom
       if (options.compare) {
         const latest = getLatestBenchmark(history, 'local', localModel);
         if (latest) {
-          console.log('\n' + formatBenchmarkComparison(accuracy, latest.accuracy, latest.timestamp));
+          console.log(
+            '\n' + formatBenchmarkComparison(accuracy, latest.accuracy, latest.timestamp)
+          );
         } else {
           console.log('\n  No previous benchmark found for comparison.');
           console.log('  Run with --save first to establish a baseline.');
@@ -859,7 +868,9 @@ export async function benchmarkWithHistory(options: BenchmarkOptions = {}): Prom
 /**
  * List benchmark history entries
  */
-export async function listBenchmarkHistory(options: { limit?: number; json?: boolean } = {}): Promise<void> {
+export async function listBenchmarkHistory(
+  options: { limit?: number; json?: boolean } = {}
+): Promise<void> {
   const limit = options.limit || 10;
   const history = loadBenchmarkHistory();
 

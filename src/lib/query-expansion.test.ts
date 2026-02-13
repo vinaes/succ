@@ -40,18 +40,14 @@ describe('expandQuery', () => {
   });
 
   it('strips bullet points from LLM response', async () => {
-    mockedCallLLM.mockResolvedValue(
-      '- auth flow security\n* login management\n- session tokens'
-    );
+    mockedCallLLM.mockResolvedValue('- auth flow security\n* login management\n- session tokens');
 
     const result = await expandQuery('how does auth work');
     expect(result).toEqual(['auth flow security', 'login management', 'session tokens']);
   });
 
   it('filters out empty lines and very short strings', async () => {
-    mockedCallLLM.mockResolvedValue(
-      'valid query here\n\nab\n\nanother valid query'
-    );
+    mockedCallLLM.mockResolvedValue('valid query here\n\nab\n\nanother valid query');
 
     const result = await expandQuery('test query');
     expect(result).toEqual(['valid query here', 'another valid query']);

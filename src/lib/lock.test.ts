@@ -6,7 +6,10 @@ import { acquireLock, withLock, getLockStatus, forceReleaseLock } from './lock.j
 
 // Mock the config to use a temp directory
 vi.mock('./config.js', () => {
-  const tempDir = path.join(os.tmpdir(), `succ-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const tempDir = path.join(
+    os.tmpdir(),
+    `succ-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
   return {
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,

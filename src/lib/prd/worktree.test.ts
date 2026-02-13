@@ -58,10 +58,9 @@ describe('worktree', () => {
 
       createWorktree('task_001', 'prd/prd_abc', '/project');
 
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        expect.stringContaining('worktrees'),
-        { recursive: true },
-      );
+      expect(mockFs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('worktrees'), {
+        recursive: true,
+      });
     });
 
     it('should run git worktree add --detach', () => {
@@ -71,7 +70,7 @@ describe('worktree', () => {
 
       expect(mockExecSync).toHaveBeenCalledWith(
         expect.stringContaining('git worktree add --detach'),
-        expect.objectContaining({ cwd: '/project' }),
+        expect.objectContaining({ cwd: '/project' })
       );
       expect(wt.taskId).toBe('task_001');
       expect(wt.baseBranch).toBe('prd/prd_abc');
@@ -93,7 +92,7 @@ describe('worktree', () => {
       expect(mockFs.symlinkSync).toHaveBeenCalledWith(
         expect.stringContaining('node_modules'),
         expect.stringContaining('node_modules'),
-        'junction',
+        'junction'
       );
     });
 
@@ -113,7 +112,7 @@ describe('worktree', () => {
       // Should have called git worktree remove for cleanup
       expect(mockExecSync).toHaveBeenCalledWith(
         expect.stringContaining('worktree remove'),
-        expect.anything(),
+        expect.anything()
       );
     });
   });
@@ -148,10 +147,10 @@ describe('worktree', () => {
       expect(result.commitSha).toBe('abc123');
 
       // Verify the sequence: add → status → commit → rev-parse → cherry-pick
-      const calls = mockExecSync.mock.calls.map(c => c[0] as string);
-      expect(calls.some(c => c.includes('git add -A'))).toBe(true);
-      expect(calls.some(c => c.includes('git commit'))).toBe(true);
-      expect(calls.some(c => c.includes('cherry-pick abc123'))).toBe(true);
+      const calls = mockExecSync.mock.calls.map((c) => c[0] as string);
+      expect(calls.some((c) => c.includes('git add -A'))).toBe(true);
+      expect(calls.some((c) => c.includes('git commit'))).toBe(true);
+      expect(calls.some((c) => c.includes('cherry-pick abc123'))).toBe(true);
     });
 
     it('should abort cherry-pick on conflict', () => {
@@ -183,8 +182,8 @@ describe('worktree', () => {
 
       mergeWorktreeChanges('/wt', '/project', 'fix "bug" in parser');
 
-      const commitCall = mockExecSync.mock.calls.find(
-        c => (c[0] as string).includes('git commit'),
+      const commitCall = mockExecSync.mock.calls.find((c) =>
+        (c[0] as string).includes('git commit')
       );
       expect(commitCall).toBeDefined();
       expect(commitCall![0]).toContain('\\"bug\\"');
@@ -201,7 +200,7 @@ describe('worktree', () => {
 
       expect(mockExecSync).toHaveBeenCalledWith(
         expect.stringContaining('worktree remove --force'),
-        expect.objectContaining({ cwd: '/project' }),
+        expect.objectContaining({ cwd: '/project' })
       );
     });
 
@@ -215,10 +214,7 @@ describe('worktree', () => {
       removeWorktree('task_001', '/project');
 
       expect(mockFs.rmSync).toHaveBeenCalled();
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'git worktree prune',
-        expect.anything(),
-      );
+      expect(mockExecSync).toHaveBeenCalledWith('git worktree prune', expect.anything());
     });
   });
 
@@ -245,8 +241,8 @@ describe('worktree', () => {
       cleanupAllWorktrees('/project');
 
       // Should have called remove for task_001 and task_002, but not .gitkeep
-      const removeCalls = mockExecSync.mock.calls.filter(
-        c => (c[0] as string).includes('worktree remove'),
+      const removeCalls = mockExecSync.mock.calls.filter((c) =>
+        (c[0] as string).includes('worktree remove')
       );
       expect(removeCalls.length).toBe(2);
     });
@@ -257,10 +253,7 @@ describe('worktree', () => {
 
       cleanupAllWorktrees('/project');
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'git worktree prune',
-        expect.anything(),
-      );
+      expect(mockExecSync).toHaveBeenCalledWith('git worktree prune', expect.anything());
     });
   });
 });

@@ -13,9 +13,19 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getWebSearchConfig } from '../../lib/config.js';
-import { isApiConfigured, callOpenRouterSearch, type OpenRouterSearchResponse, type ChatMessage } from '../../lib/llm.js';
+import {
+  isApiConfigured,
+  callOpenRouterSearch,
+  type OpenRouterSearchResponse,
+  type ChatMessage,
+} from '../../lib/llm.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
-import { recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
+import {
+  recordWebSearch,
+  getTodayWebSearchSpend,
+  getWebSearchHistory,
+  getWebSearchSummary,
+} from '../../lib/storage/index.js';
 import type { WebSearchToolName } from '../../lib/storage/types.js';
 import { logWarn } from '../../lib/fault-logger.js';
 
@@ -47,7 +57,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 function estimateCost(usage: OpenRouterSearchResponse['usage'], model: string): number {
   if (!usage) return 0;
   const pricing = MODEL_PRICING[model] || { input: 3, output: 15 };
-  return (usage.prompt_tokens * pricing.input + usage.completion_tokens * pricing.output) / 1_000_000;
+  return (
+    (usage.prompt_tokens * pricing.input + usage.completion_tokens * pricing.output) / 1_000_000
+  );
 }
 
 /**
@@ -61,7 +73,7 @@ async function recordSearchToDb(
   cost: number,
   citations: string[] | undefined,
   hasReasoning: boolean,
-  responseLength: number,
+  responseLength: number
 ): Promise<void> {
   try {
     await recordWebSearch({
@@ -76,7 +88,9 @@ async function recordSearchToDb(
       response_length_chars: responseLength,
     });
   } catch (err) {
-    logWarn('web-search', 'Failed to record web search stats', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('web-search', 'Failed to record web search stats', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -91,7 +105,9 @@ async function checkBudget(dailyBudget: number): Promise<string | null> {
       return `Daily web search budget exceeded ($${spent.toFixed(4)} / $${dailyBudget}). Reset tomorrow or increase with: succ_config_set key="web_search.daily_budget_usd" value="..."`;
     }
   } catch (err) {
-    logWarn('web-search', 'Failed to check daily budget, allowing search', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('web-search', 'Failed to check daily budget, allowing search', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
   return null;
 }
@@ -101,14 +117,14 @@ async function checkBudget(dailyBudget: number): Promise<string | null> {
  */
 function formatCitations(
   citations?: string[],
-  searchResults?: Array<{ title?: string; url: string; snippet?: string }>,
+  searchResults?: Array<{ title?: string; url: string; snippet?: string }>
 ): string {
   if (!citations || citations.length === 0) return '';
 
   const lines: string[] = ['\n\n---\n**Sources:**'];
   for (let i = 0; i < citations.length; i++) {
     const url = citations[i];
-    const result = searchResults?.find(r => r.url === url);
+    const result = searchResults?.find((r) => r.url === url);
     let title: string;
     try {
       title = result?.title || new URL(url).hostname;
@@ -123,7 +139,12 @@ function formatCitations(
 /**
  * Format usage/cost information
  */
-function formatUsage(usage: OpenRouterSearchResponse['usage'], cost: number, dailyBudget: number, todaySpent: number): string {
+function formatUsage(
+  usage: OpenRouterSearchResponse['usage'],
+  cost: number,
+  dailyBudget: number,
+  todaySpent: number
+): string {
   if (!usage) return '';
   const parts = [
     `Tokens: ${usage.total_tokens.toLocaleString()} (prompt: ${usage.prompt_tokens.toLocaleString()}, completion: ${usage.completion_tokens.toLocaleString()})`,
@@ -143,7 +164,7 @@ async function saveResultToMemory(
   content: string,
   citations: string[] | undefined,
   toolName: string,
-  type: 'observation' | 'learning',
+  type: 'observation' | 'learning'
 ): Promise<string> {
   try {
     const { getEmbedding } = await import('../../lib/embeddings.js');
@@ -160,7 +181,7 @@ async function saveResultToMemory(
       embedding,
       [toolName === 'succ_deep_research' ? 'deep-research' : 'web-search', 'auto-saved'],
       toolName,
-      { type },
+      { type }
     );
 
     if (result.isDuplicate) {
@@ -173,16 +194,25 @@ async function saveResultToMemory(
 }
 
 export function registerWebSearchTools(server: McpServer) {
-
   // succ_quick_search — cheapest, fastest web search
   server.tool(
     'succ_quick_search',
     'Quick, cheap web search via OpenRouter (default: Perplexity Sonar, ~$1/MTok). Best for simple factual queries: version numbers, release dates, quick lookups. Configure model with web_search.quick_search_model. Requires OPENROUTER_API_KEY.',
     {
-      query: z.string().describe('Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'),
-      system_prompt: z.string().optional().describe('Optional system prompt to guide response format'),
+      query: z
+        .string()
+        .describe(
+          'Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'
+        ),
+      system_prompt: z
+        .string()
+        .optional()
+        .describe('Optional system prompt to guide response format'),
       max_tokens: z.number().optional().describe('Max response tokens (default: 2000)'),
-      save_to_memory: z.boolean().optional().describe('Save result to succ memory (default: from config)'),
+      save_to_memory: z
+        .boolean()
+        .optional()
+        .describe('Save result to succ memory (default: from config)'),
       project_path: projectPathParam,
     },
     async ({ query, system_prompt, max_tokens, save_to_memory, project_path }) => {
@@ -190,7 +220,12 @@ export function registerWebSearchTools(server: McpServer) {
 
       if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."',
+            },
+          ],
           isError: true,
         };
       }
@@ -198,13 +233,19 @@ export function registerWebSearchTools(server: McpServer) {
       const wsConfig = getWebSearchConfig();
       if (!wsConfig.enabled) {
         return {
-          content: [{ type: 'text' as const, text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"',
+            },
+          ],
           isError: true,
         };
       }
 
       const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-      if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+      if (budgetError)
+        return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       try {
         const messages: ChatMessage[] = [];
@@ -219,11 +260,20 @@ export function registerWebSearchTools(server: McpServer) {
           effectiveModel,
           wsConfig.quick_search_timeout_ms,
           max_tokens || wsConfig.quick_search_max_tokens,
-          wsConfig.temperature,
+          wsConfig.temperature
         );
 
         const cost = estimateCost(result.usage, effectiveModel);
-        await recordSearchToDb('succ_quick_search', effectiveModel, query, result.usage, cost, result.citations, false, result.content.length);
+        await recordSearchToDb(
+          'succ_quick_search',
+          effectiveModel,
+          query,
+          result.usage,
+          cost,
+          result.citations,
+          false,
+          result.content.length
+        );
 
         const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = result.content;
@@ -232,14 +282,23 @@ export function registerWebSearchTools(server: McpServer) {
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
-          text += await saveResultToMemory(query, result.content, result.citations, 'succ_quick_search', 'observation');
+          text += await saveResultToMemory(
+            query,
+            result.content,
+            result.citations,
+            'succ_quick_search',
+            'observation'
+          );
         }
 
         return { content: [{ type: 'text' as const, text }] };
       } catch (error: any) {
-        return { content: [{ type: 'text' as const, text: `Quick search failed: ${error.message}` }], isError: true };
+        return {
+          content: [{ type: 'text' as const, text: `Quick search failed: ${error.message}` }],
+          isError: true,
+        };
       }
-    },
+    }
   );
 
   // succ_web_search — fast real-time web search
@@ -247,11 +306,26 @@ export function registerWebSearchTools(server: McpServer) {
     'succ_web_search',
     'Web search via OpenRouter (default: Perplexity Sonar Pro). Higher quality than succ_quick_search. Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Alternatives: x-ai/grok-3:online, google/gemini-2.0-flash-001:online, or any model with :online suffix. Requires OPENROUTER_API_KEY.',
     {
-      query: z.string().describe('The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'),
-      model: z.string().optional().describe('Override search model. Default from config (perplexity/sonar-pro). Perplexity: sonar, sonar-pro, sonar-reasoning-pro. Grok: x-ai/grok-3:online, x-ai/grok-3-mini:online. Any OpenRouter model with :online suffix supports web search.'),
-      system_prompt: z.string().optional().describe('Optional system prompt to guide the response format or focus'),
+      query: z
+        .string()
+        .describe(
+          'The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'
+        ),
+      model: z
+        .string()
+        .optional()
+        .describe(
+          'Override search model. Default from config (perplexity/sonar-pro). Perplexity: sonar, sonar-pro, sonar-reasoning-pro. Grok: x-ai/grok-3:online, x-ai/grok-3-mini:online. Any OpenRouter model with :online suffix supports web search.'
+        ),
+      system_prompt: z
+        .string()
+        .optional()
+        .describe('Optional system prompt to guide the response format or focus'),
       max_tokens: z.number().optional().describe('Max response tokens (default: 4000)'),
-      save_to_memory: z.boolean().optional().describe('Save result to succ memory (default: from config)'),
+      save_to_memory: z
+        .boolean()
+        .optional()
+        .describe('Save result to succ memory (default: from config)'),
       project_path: projectPathParam,
     },
     async ({ query, model, system_prompt, max_tokens, save_to_memory, project_path }) => {
@@ -259,7 +333,12 @@ export function registerWebSearchTools(server: McpServer) {
 
       if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."',
+            },
+          ],
           isError: true,
         };
       }
@@ -267,13 +346,19 @@ export function registerWebSearchTools(server: McpServer) {
       const wsConfig = getWebSearchConfig();
       if (!wsConfig.enabled) {
         return {
-          content: [{ type: 'text' as const, text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"',
+            },
+          ],
           isError: true,
         };
       }
 
       const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-      if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+      if (budgetError)
+        return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       const effectiveModel = model || wsConfig.model;
 
@@ -289,11 +374,20 @@ export function registerWebSearchTools(server: McpServer) {
           effectiveModel,
           wsConfig.timeout_ms,
           max_tokens || wsConfig.max_tokens,
-          wsConfig.temperature,
+          wsConfig.temperature
         );
 
         const cost = estimateCost(result.usage, effectiveModel);
-        await recordSearchToDb('succ_web_search', effectiveModel, query, result.usage, cost, result.citations, false, result.content.length);
+        await recordSearchToDb(
+          'succ_web_search',
+          effectiveModel,
+          query,
+          result.usage,
+          cost,
+          result.citations,
+          false,
+          result.content.length
+        );
 
         const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = result.content;
@@ -302,14 +396,23 @@ export function registerWebSearchTools(server: McpServer) {
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
-          text += await saveResultToMemory(query, result.content, result.citations, 'succ_web_search', 'observation');
+          text += await saveResultToMemory(
+            query,
+            result.content,
+            result.citations,
+            'succ_web_search',
+            'observation'
+          );
         }
 
         return { content: [{ type: 'text' as const, text }] };
       } catch (error: any) {
-        return { content: [{ type: 'text' as const, text: `Web search failed: ${error.message}` }], isError: true };
+        return {
+          content: [{ type: 'text' as const, text: `Web search failed: ${error.message}` }],
+          isError: true,
+        };
       }
-    },
+    }
   );
 
   // succ_deep_research — expensive multi-step research
@@ -317,19 +420,44 @@ export function registerWebSearchTools(server: McpServer) {
     'succ_deep_research',
     'Deep multi-step web research via OpenRouter (default: Perplexity Sonar Deep Research). Autonomously searches, reads, and synthesizes multiple sources. WARNING: Significantly more expensive and slower than succ_web_search (30-120s, runs 30+ searches). Configure model with web_search.deep_research_model. Requires OPENROUTER_API_KEY.',
     {
-      query: z.string().describe('The research question (e.g., "Compare React Server Components vs Astro Islands for e-commerce")'),
-      system_prompt: z.string().optional().describe('Optional system prompt to guide research focus or output format'),
+      query: z
+        .string()
+        .describe(
+          'The research question (e.g., "Compare React Server Components vs Astro Islands for e-commerce")'
+        ),
+      system_prompt: z
+        .string()
+        .optional()
+        .describe('Optional system prompt to guide research focus or output format'),
       max_tokens: z.number().optional().describe('Max response tokens (default: 8000)'),
-      include_reasoning: z.boolean().optional().describe('Include the model\'s internal reasoning process (default: false)'),
-      save_to_memory: z.boolean().optional().describe('Save result to succ memory (default: from config)'),
+      include_reasoning: z
+        .boolean()
+        .optional()
+        .describe("Include the model's internal reasoning process (default: false)"),
+      save_to_memory: z
+        .boolean()
+        .optional()
+        .describe('Save result to succ memory (default: from config)'),
       project_path: projectPathParam,
     },
-    async ({ query, system_prompt, max_tokens, include_reasoning, save_to_memory, project_path }) => {
+    async ({
+      query,
+      system_prompt,
+      max_tokens,
+      include_reasoning,
+      save_to_memory,
+      project_path,
+    }) => {
       await applyProjectPath(project_path);
 
       if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."',
+            },
+          ],
           isError: true,
         };
       }
@@ -337,13 +465,19 @@ export function registerWebSearchTools(server: McpServer) {
       const wsConfig = getWebSearchConfig();
       if (!wsConfig.enabled) {
         return {
-          content: [{ type: 'text' as const, text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Web search is disabled. Enable with: succ_config_set key="web_search.enabled" value="true"',
+            },
+          ],
           isError: true,
         };
       }
 
       const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-      if (budgetError) return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+      if (budgetError)
+        return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
 
       try {
         const messages: ChatMessage[] = [];
@@ -357,11 +491,20 @@ export function registerWebSearchTools(server: McpServer) {
           wsConfig.deep_research_model,
           wsConfig.deep_research_timeout_ms,
           max_tokens || wsConfig.deep_research_max_tokens,
-          wsConfig.temperature,
+          wsConfig.temperature
         );
 
         const cost = estimateCost(result.usage, wsConfig.deep_research_model);
-        await recordSearchToDb('succ_deep_research', wsConfig.deep_research_model, query, result.usage, cost, result.citations, !!result.reasoning, result.content.length);
+        await recordSearchToDb(
+          'succ_deep_research',
+          wsConfig.deep_research_model,
+          query,
+          result.usage,
+          cost,
+          result.citations,
+          !!result.reasoning,
+          result.content.length
+        );
 
         const todaySpent = wsConfig.daily_budget_usd > 0 ? await getTodayWebSearchSpend() : 0;
         let text = '';
@@ -374,14 +517,23 @@ export function registerWebSearchTools(server: McpServer) {
 
         const shouldSave = save_to_memory ?? wsConfig.save_to_memory;
         if (shouldSave) {
-          text += await saveResultToMemory(query, result.content, result.citations, 'succ_deep_research', 'learning');
+          text += await saveResultToMemory(
+            query,
+            result.content,
+            result.citations,
+            'succ_deep_research',
+            'learning'
+          );
         }
 
         return { content: [{ type: 'text' as const, text }] };
       } catch (error: any) {
-        return { content: [{ type: 'text' as const, text: `Deep research failed: ${error.message}` }], isError: true };
+        return {
+          content: [{ type: 'text' as const, text: `Deep research failed: ${error.message}` }],
+          isError: true,
+        };
       }
-    },
+    }
   );
 
   // succ_web_search_history — view past searches
@@ -389,7 +541,10 @@ export function registerWebSearchTools(server: McpServer) {
     'succ_web_search_history',
     'View web search history with filtering. Shows past searches, costs, and usage statistics. Useful for tracking spend, reviewing past queries, and auditing search usage.',
     {
-      tool_name: z.enum(['succ_quick_search', 'succ_web_search', 'succ_deep_research']).optional().describe('Filter by tool'),
+      tool_name: z
+        .enum(['succ_quick_search', 'succ_web_search', 'succ_deep_research'])
+        .optional()
+        .describe('Filter by tool'),
       model: z.string().optional().describe('Filter by model (e.g., "perplexity/sonar-pro")'),
       query_text: z.string().optional().describe('Filter by query substring'),
       date_from: z.string().optional().describe('Start date (ISO, e.g., "2025-01-01")'),
@@ -410,8 +565,12 @@ export function registerWebSearchTools(server: McpServer) {
 
         // Summary section
         lines.push('## Web Search Summary');
-        lines.push(`Total: ${summary.total_searches} searches, $${summary.total_cost_usd.toFixed(4)}`);
-        lines.push(`Today: ${summary.today_searches} searches, $${summary.today_cost_usd.toFixed(4)}`);
+        lines.push(
+          `Total: ${summary.total_searches} searches, $${summary.total_cost_usd.toFixed(4)}`
+        );
+        lines.push(
+          `Today: ${summary.today_searches} searches, $${summary.today_cost_usd.toFixed(4)}`
+        );
 
         if (Object.keys(summary.by_tool).length > 0) {
           lines.push('');
@@ -428,8 +587,12 @@ export function registerWebSearchTools(server: McpServer) {
           for (const r of records) {
             const date = r.created_at.slice(0, 16).replace('T', ' ');
             const tokens = r.prompt_tokens + r.completion_tokens;
-            lines.push(`- **[${date}]** \`${r.tool_name}\` — "${r.query.slice(0, 80)}${r.query.length > 80 ? '...' : ''}"`);
-            lines.push(`  Model: ${r.model} | Tokens: ${tokens.toLocaleString()} | Cost: $${r.estimated_cost_usd.toFixed(4)}${r.citations_count > 0 ? ` | Citations: ${r.citations_count}` : ''}`);
+            lines.push(
+              `- **[${date}]** \`${r.tool_name}\` — "${r.query.slice(0, 80)}${r.query.length > 80 ? '...' : ''}"`
+            );
+            lines.push(
+              `  Model: ${r.model} | Tokens: ${tokens.toLocaleString()} | Cost: $${r.estimated_cost_usd.toFixed(4)}${r.citations_count > 0 ? ` | Citations: ${r.citations_count}` : ''}`
+            );
           }
         } else {
           lines.push('\n_No search records found matching filters._');
@@ -437,8 +600,13 @@ export function registerWebSearchTools(server: McpServer) {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (error: any) {
-        return { content: [{ type: 'text' as const, text: `Failed to retrieve search history: ${error.message}` }], isError: true };
+        return {
+          content: [
+            { type: 'text' as const, text: `Failed to retrieve search history: ${error.message}` },
+          ],
+          isError: true,
+        };
       }
-    },
+    }
   );
 }

@@ -65,7 +65,9 @@ const testQueries = [
 /**
  * Generate test embeddings
  */
-async function generateTestEmbeddings(count: number): Promise<{ content: string; embedding: Float32Array }[]> {
+async function generateTestEmbeddings(
+  count: number
+): Promise<{ content: string; embedding: Float32Array }[]> {
   console.log(`  Generating ${count} test embeddings...`);
   const results: { content: string; embedding: Float32Array }[] = [];
 
@@ -107,7 +109,7 @@ function bruteForceSearch(
   allEmbeddings: { id: number; embedding: Float32Array }[],
   k: number
 ): { id: number; similarity: number }[] {
-  const results = allEmbeddings.map(item => ({
+  const results = allEmbeddings.map((item) => ({
     id: item.id,
     similarity: cosineSimilarity(Array.from(queryEmbedding), Array.from(item.embedding)),
   }));
@@ -170,7 +172,9 @@ function runSqliteVec(
   }
 
   const totalMs = times.reduce((a, b) => a + b, 0);
-  const vectorCount = (db.prepare('SELECT COUNT(*) as cnt FROM vec_benchmark').get() as { cnt: number }).cnt;
+  const vectorCount = (
+    db.prepare('SELECT COUNT(*) as cnt FROM vec_benchmark').get() as { cnt: number }
+  ).cnt;
 
   return {
     method: 'sqlite-vec (indexed)',
@@ -194,7 +198,9 @@ function float32ToBuffer(arr: Float32Array): Buffer {
 /**
  * Setup sqlite-vec database with test data
  */
-function setupSqliteVecDb(embeddings: { content: string; embedding: Float32Array }[]): Database.Database {
+function setupSqliteVecDb(
+  embeddings: { content: string; embedding: Float32Array }[]
+): Database.Database {
   const db = new Database(':memory:');
   sqliteVec.load(db);
 
@@ -264,7 +270,9 @@ export async function benchmarkSqliteVec(options: SqliteVecBenchmarkOptions = {}
 
   for (const size of sizes) {
     console.log(`\n┌─────────────────────────────────────────────────────────────┐`);
-    console.log(`│ Testing with ${size.toString().padStart(5)} vectors                                 │`);
+    console.log(
+      `│ Testing with ${size.toString().padStart(5)} vectors                                 │`
+    );
     console.log(`└─────────────────────────────────────────────────────────────┘`);
 
     // Generate test embeddings for this size
@@ -299,8 +307,12 @@ export async function benchmarkSqliteVec(options: SqliteVecBenchmarkOptions = {}
 
     // Print intermediate results
     console.log(`\n  Results for ${size} vectors:`);
-    console.log(`    Brute-force: ${bruteForceResult.avgMs.toFixed(2)}ms avg (${bruteForceResult.queriesPerSecond.toFixed(0)} q/s)`);
-    console.log(`    sqlite-vec:  ${sqliteVecResult.avgMs.toFixed(2)}ms avg (${sqliteVecResult.queriesPerSecond.toFixed(0)} q/s)`);
+    console.log(
+      `    Brute-force: ${bruteForceResult.avgMs.toFixed(2)}ms avg (${bruteForceResult.queriesPerSecond.toFixed(0)} q/s)`
+    );
+    console.log(
+      `    sqlite-vec:  ${sqliteVecResult.avgMs.toFixed(2)}ms avg (${sqliteVecResult.queriesPerSecond.toFixed(0)} q/s)`
+    );
     console.log(`    Speedup:     ${speedup.toFixed(1)}x`);
   }
 
@@ -337,15 +349,23 @@ export async function benchmarkSqliteVec(options: SqliteVecBenchmarkOptions = {}
     const smallResult = results[0];
     const largeResult = results[results.length - 1];
 
-    console.log(`  At ${smallResult.memoriesCount} vectors: sqlite-vec is ${smallResult.speedup.toFixed(1)}x faster`);
-    console.log(`  At ${largeResult.memoriesCount} vectors: sqlite-vec is ${largeResult.speedup.toFixed(1)}x faster`);
+    console.log(
+      `  At ${smallResult.memoriesCount} vectors: sqlite-vec is ${smallResult.speedup.toFixed(1)}x faster`
+    );
+    console.log(
+      `  At ${largeResult.memoriesCount} vectors: sqlite-vec is ${largeResult.speedup.toFixed(1)}x faster`
+    );
 
     // Calculate scaling
     const bfScaling = largeResult.bruteForce.avgMs / smallResult.bruteForce.avgMs;
     const svScaling = largeResult.sqliteVec.avgMs / smallResult.sqliteVec.avgMs;
 
-    console.log(`  Brute-force scales ${bfScaling.toFixed(1)}x slower (${smallResult.memoriesCount} -> ${largeResult.memoriesCount})`);
-    console.log(`  sqlite-vec scales ${svScaling.toFixed(1)}x slower (${smallResult.memoriesCount} -> ${largeResult.memoriesCount})`);
+    console.log(
+      `  Brute-force scales ${bfScaling.toFixed(1)}x slower (${smallResult.memoriesCount} -> ${largeResult.memoriesCount})`
+    );
+    console.log(
+      `  sqlite-vec scales ${svScaling.toFixed(1)}x slower (${smallResult.memoriesCount} -> ${largeResult.memoriesCount})`
+    );
 
     if (bfScaling > svScaling * 1.5) {
       console.log(`  sqlite-vec has better O() complexity (likely O(log n) vs O(n))`);
@@ -355,7 +375,9 @@ export async function benchmarkSqliteVec(options: SqliteVecBenchmarkOptions = {}
   console.log('\nRecommendation:');
   const largeResult = results[results.length - 1];
   if (largeResult && largeResult.speedup > 2) {
-    console.log(`  sqlite-vec provides significant speedup at ${largeResult.memoriesCount}+ vectors`);
+    console.log(
+      `  sqlite-vec provides significant speedup at ${largeResult.memoriesCount}+ vectors`
+    );
     console.log(`  Consider migrating to sqlite-vec for production`);
   } else if (largeResult && largeResult.speedup > 1.2) {
     console.log(`  sqlite-vec provides moderate speedup`);

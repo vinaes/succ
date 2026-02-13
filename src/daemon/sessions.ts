@@ -21,14 +21,14 @@ export interface SessionState {
   lastReflection: number;
   reflectionCount: number;
   isService?: boolean;
-  hadUserPrompt?: boolean;  // True if session ever received user_prompt activity
+  hadUserPrompt?: boolean; // True if session ever received user_prompt activity
   // Change detection — skip redundant work during long AFK
-  lastTranscriptSize?: number;   // Transcript file size (bytes) at last briefing
-  lastMemoryCount?: number;      // Total memory count at last reflection
-  lastLinkCount?: number;        // Total link count at last graph enrichment
+  lastTranscriptSize?: number; // Transcript file size (bytes) at last briefing
+  lastMemoryCount?: number; // Total memory count at last reflection
+  lastLinkCount?: number; // Total link count at last graph enrichment
   // Mid-conversation observer state
-  lastObservation?: number;      // Timestamp of last mid-session observation
-  lastObservationSize?: number;  // Transcript size (bytes) at last observation
+  lastObservation?: number; // Timestamp of last mid-session observation
+  lastObservationSize?: number; // Transcript size (bytes) at last observation
 }
 
 export type ActivityType = 'user_prompt' | 'stop';
@@ -196,24 +196,20 @@ export interface IdleWatcherOptions {
   checkIntervalSeconds?: number;
   idleMinutes?: number;
   reflectionCooldownMinutes?: number;
-  preGenerateIdleSeconds?: number;  // Pre-generate briefing after this many seconds idle (default: 30)
+  preGenerateIdleSeconds?: number; // Pre-generate briefing after this many seconds idle (default: 30)
   log?: (message: string) => void;
 }
 
 export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
-  const {
-    sessionManager,
-    onIdle,
-    onPreGenerateBriefing,
-    log = console.log,
-  } = options;
+  const { sessionManager, onIdle, onPreGenerateBriefing, log = console.log } = options;
 
   // Get config with defaults
   const watcherConfig = getIdleWatcherConfig();
   const checkIntervalSeconds = options.checkIntervalSeconds ?? watcherConfig.check_interval;
   const idleMinutes = options.idleMinutes ?? watcherConfig.idle_minutes;
-  const cooldownMinutes = options.reflectionCooldownMinutes ?? watcherConfig.reflection_cooldown_minutes;
-  const preGenerateIdleSeconds = options.preGenerateIdleSeconds ?? 120;  // Default 2 min
+  const cooldownMinutes =
+    options.reflectionCooldownMinutes ?? watcherConfig.reflection_cooldown_minutes;
+  const preGenerateIdleSeconds = options.preGenerateIdleSeconds ?? 120; // Default 2 min
 
   let intervalId: NodeJS.Timeout | null = null;
 
@@ -234,9 +230,13 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
 
       // Pre-generate briefing after short idle (30s by default)
       // This runs in background, doesn't block
-      if (onPreGenerateBriefing && session.transcriptPath && timeSinceActivity >= preGenerateIdleMs) {
+      if (
+        onPreGenerateBriefing &&
+        session.transcriptPath &&
+        timeSinceActivity >= preGenerateIdleMs
+      ) {
         // Fire and forget - don't await
-        onPreGenerateBriefing(sessionId, session.transcriptPath).catch(err => {
+        onPreGenerateBriefing(sessionId, session.transcriptPath).catch((err) => {
           log(`[idle-watcher] Briefing pre-generation failed for ${sessionId}: ${err}`);
         });
       }
@@ -263,7 +263,9 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
   return {
     start(): void {
       if (intervalId) return;
-      log(`[idle-watcher] Starting (check every ${checkIntervalSeconds}s, idle after ${idleMinutes}min)`);
+      log(
+        `[idle-watcher] Starting (check every ${checkIntervalSeconds}s, idle after ${idleMinutes}min)`
+      );
       intervalId = setInterval(() => check().catch(console.error), checkIntervalSeconds * 1000);
     },
 

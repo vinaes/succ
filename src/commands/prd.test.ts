@@ -57,17 +57,19 @@ describe('prdArchive', () => {
     await prdArchive('prd_test123');
 
     expect(loadPrd).toHaveBeenCalledWith('prd_test123');
-    expect(savePrd).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'prd_test123',
-      status: 'archived',
-      version: 1,
-      title: 'Test PRD',
-      description: 'Test description',
-      execution_mode: 'loop',
-      source_file: 'prd.md',
-      goals: ['Goal 1'],
-      out_of_scope: ['Out of scope'],
-    }));
+    expect(savePrd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'prd_test123',
+        status: 'archived',
+        version: 1,
+        title: 'Test PRD',
+        description: 'Test description',
+        execution_mode: 'loop',
+        source_file: 'prd.md',
+        goals: ['Goal 1'],
+        out_of_scope: ['Out of scope'],
+      })
+    );
     expect(consoleLogSpy).toHaveBeenCalledWith('Archived PRD: Test PRD (prd_test123)');
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -112,14 +114,16 @@ describe('prdArchive', () => {
 
     expect(findLatestPrd).toHaveBeenCalled();
     expect(loadPrd).toHaveBeenCalledWith('prd_latest');
-    expect(savePrd).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'prd_latest',
-      status: 'archived',
-      version: 1,
-      title: 'Latest PRD',
-      description: 'Latest description',
-      execution_mode: 'loop',
-    }));
+    expect(savePrd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'prd_latest',
+        status: 'archived',
+        version: 1,
+        title: 'Latest PRD',
+        description: 'Latest description',
+        execution_mode: 'loop',
+      })
+    );
     expect(consoleLogSpy).toHaveBeenCalledWith('Archived PRD: Latest PRD (prd_latest)');
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -130,7 +134,9 @@ describe('prdArchive', () => {
     await expect(prdArchive()).rejects.toThrow('process.exit(1)');
 
     expect(findLatestPrd).toHaveBeenCalled();
-    expect(consoleErrorSpy).toHaveBeenCalledWith('No PRDs found. Create one with: succ prd generate "description"');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'No PRDs found. Create one with: succ prd generate "description"'
+    );
     expect(processExitSpy).toHaveBeenCalledWith(1);
     expect(loadPrd).not.toHaveBeenCalled();
     expect(savePrd).not.toHaveBeenCalled();
@@ -181,10 +187,12 @@ describe('prdArchive', () => {
     await expect(prdArchive('prd_save_error')).rejects.toThrow('process.exit(1)');
 
     expect(loadPrd).toHaveBeenCalledWith('prd_save_error');
-    expect(savePrd).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'prd_save_error',
-      status: 'archived',
-    }));
+    expect(savePrd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'prd_save_error',
+        status: 'archived',
+      })
+    );
     expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to archive PRD: Disk write error');
     expect(processExitSpy).toHaveBeenCalledWith(1);
     expect(consoleLogSpy).not.toHaveBeenCalled();

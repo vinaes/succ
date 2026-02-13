@@ -85,9 +85,12 @@ async function doCreate(options: CheckpointOptions): Promise<void> {
     const fs = await import('fs');
     const stat = fs.statSync(outputPath);
     console.log(`  Size: ${formatSize(stat.size)}`);
-
   } catch (error) {
-    logError('checkpoint', 'Failed to create checkpoint', error instanceof Error ? error : new Error(String(error)));
+    logError(
+      'checkpoint',
+      'Failed to create checkpoint',
+      error instanceof Error ? error : new Error(String(error))
+    );
     console.error('Failed to create checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
@@ -141,9 +144,12 @@ async function doRestore(options: CheckpointOptions): Promise<void> {
     console.log(`  Documents: ${result.documentsRestored}`);
     console.log(`  Memory links: ${result.linksRestored}`);
     console.log(`  Brain files: ${result.brainFilesRestored}`);
-
   } catch (error) {
-    logError('checkpoint', 'Failed to restore checkpoint', error instanceof Error ? error : new Error(String(error)));
+    logError(
+      'checkpoint',
+      'Failed to restore checkpoint',
+      error instanceof Error ? error : new Error(String(error))
+    );
     console.error('Failed to restore checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
@@ -219,9 +225,12 @@ async function doInfo(options: CheckpointOptions): Promise<void> {
         console.log(`  ${key}`);
       }
     }
-
   } catch (error) {
-    logError('checkpoint', 'Failed to read checkpoint', error instanceof Error ? error : new Error(String(error)));
+    logError(
+      'checkpoint',
+      'Failed to read checkpoint',
+      error instanceof Error ? error : new Error(String(error))
+    );
     console.error('Failed to read checkpoint:', error instanceof Error ? error.message : error);
     process.exit(1);
   }

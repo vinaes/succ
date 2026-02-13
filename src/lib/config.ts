@@ -100,7 +100,12 @@ import {
 // ============================================================================
 
 // Config cache: avoids re-reading files on every getConfig() call
-let configCache: { config: SuccConfig; globalMtime: number; projectMtime: number; projectPath: string } | null = null;
+let configCache: {
+  config: SuccConfig;
+  globalMtime: number;
+  projectMtime: number;
+  projectPath: string;
+} | null = null;
 
 /** Invalidate config cache (for tests or after config changes) */
 export function invalidateConfigCache(): void {
@@ -121,20 +126,25 @@ export function getConfig(): SuccConfig {
   // Find active project config path
   const projectConfigPaths = [
     path.join(process.cwd(), '.succ', 'config.json'),
-    path.join(process.cwd(), '.claude', 'succ.json'),  // legacy
+    path.join(process.cwd(), '.claude', 'succ.json'), // legacy
   ];
   let activeProjectPath = '';
   for (const p of projectConfigPaths) {
-    if (fs.existsSync(p)) { activeProjectPath = p; break; }
+    if (fs.existsSync(p)) {
+      activeProjectPath = p;
+      break;
+    }
   }
 
   // Check if cache is still valid (stat is cheaper than read+parse)
   if (configCache) {
     const globalMtime = getFileMtime(globalConfigPath);
     const projectMtime = activeProjectPath ? getFileMtime(activeProjectPath) : 0;
-    if (globalMtime === configCache.globalMtime &&
-        projectMtime === configCache.projectMtime &&
-        activeProjectPath === configCache.projectPath) {
+    if (
+      globalMtime === configCache.globalMtime &&
+      projectMtime === configCache.projectMtime &&
+      activeProjectPath === configCache.projectPath
+    ) {
       return configCache.config;
     }
   }
@@ -154,7 +164,10 @@ export function getConfig(): SuccConfig {
   if (activeProjectPath) {
     try {
       const projectConfig = JSON.parse(fs.readFileSync(activeProjectPath, 'utf-8'));
-      fileConfig = deepMerge(fileConfig as Record<string, unknown>, projectConfig) as Partial<SuccConfig>;
+      fileConfig = deepMerge(
+        fileConfig as Record<string, unknown>,
+        projectConfig
+      ) as Partial<SuccConfig>;
     } catch {
       // Ignore parse errors
     }
@@ -182,7 +195,10 @@ export function getConfig(): SuccConfig {
 export function getProjectRoot(): string {
   // 1. Check env overrides: SUCC_PROJECT_ROOT (explicit), CLAUDE_PROJECT_DIR (Claude Code hooks/MCP)
   const envRoot = process.env.SUCC_PROJECT_ROOT || process.env.CLAUDE_PROJECT_DIR;
-  if (envRoot && (fs.existsSync(path.join(envRoot, '.succ')) || fs.existsSync(path.join(envRoot, '.git')))) {
+  if (
+    envRoot &&
+    (fs.existsSync(path.join(envRoot, '.succ')) || fs.existsSync(path.join(envRoot, '.git')))
+  ) {
     return envRoot;
   }
 
@@ -329,49 +345,58 @@ export function getLLMTaskConfig(
   const localOnlyTasks = new Set(['embeddings', 'quality']);
   const globalType = llm.type;
   // Skip llm.type fallback if it's 'claude' but the task doesn't support it
-  const globalTypeFallback = (globalType && !(localOnlyTasks.has(task) && globalType === 'claude'))
-    ? globalType
-    : undefined;
+  const globalTypeFallback =
+    globalType && !(localOnlyTasks.has(task) && globalType === 'claude') ? globalType : undefined;
 
-  const mode = (taskConfig as Record<string, unknown>).mode as string
-    || globalTypeFallback
-    || defaultModes[task];
+  const mode =
+    ((taskConfig as Record<string, unknown>).mode as string) ||
+    globalTypeFallback ||
+    defaultModes[task];
 
   // llm.model is the global API/Claude model — don't use it as fallback for 'local' mode
   const globalModelFallback = mode === 'local' ? undefined : llm.model;
-  const model = (taskConfig as Record<string, unknown>).model as string
-    || globalModelFallback
-    || defaultModels[mode] || defaultModels['api'];
+  const model =
+    ((taskConfig as Record<string, unknown>).model as string) ||
+    globalModelFallback ||
+    defaultModels[mode] ||
+    defaultModels['api'];
 
-  const apiKey = (taskConfig as Record<string, unknown>).api_key as string | undefined
-    || llm.api_key
-    || process.env.OPENROUTER_API_KEY
-    || undefined;
+  const apiKey =
+    ((taskConfig as Record<string, unknown>).api_key as string | undefined) ||
+    llm.api_key ||
+    process.env.OPENROUTER_API_KEY ||
+    undefined;
 
-  const apiUrl = (taskConfig as Record<string, unknown>).api_url as string | undefined
-    || llm.api_url
-    || DEFAULT_API_URL;
+  const apiUrl =
+    ((taskConfig as Record<string, unknown>).api_url as string | undefined) ||
+    llm.api_url ||
+    DEFAULT_API_URL;
 
-  const maxTokens = ((taskConfig as Record<string, unknown>).max_tokens as number | undefined)
-    ?? llm.max_tokens
-    ?? (task === 'chat' ? 4000 : task === 'analyze' ? 4096 : 2000);
+  const maxTokens =
+    ((taskConfig as Record<string, unknown>).max_tokens as number | undefined) ??
+    llm.max_tokens ??
+    (task === 'chat' ? 4000 : task === 'analyze' ? 4096 : 2000);
 
-  const temperature = ((taskConfig as Record<string, unknown>).temperature as number | undefined)
-    ?? llm.temperature
-    ?? (task === 'chat' ? 0.7 : 0.3);
+  const temperature =
+    ((taskConfig as Record<string, unknown>).temperature as number | undefined) ??
+    llm.temperature ??
+    (task === 'chat' ? 0.7 : 0.3);
 
   // Task-specific extra fields
-  const batchSize = task === 'embeddings'
-    ? ((taskConfig as Record<string, unknown>).batch_size as number | undefined) ?? 32
-    : undefined;
+  const batchSize =
+    task === 'embeddings'
+      ? (((taskConfig as Record<string, unknown>).batch_size as number | undefined) ?? 32)
+      : undefined;
 
-  const dimensions = task === 'embeddings'
-    ? ((taskConfig as Record<string, unknown>).dimensions as number | undefined)
-    : undefined;
+  const dimensions =
+    task === 'embeddings'
+      ? ((taskConfig as Record<string, unknown>).dimensions as number | undefined)
+      : undefined;
 
-  const concurrency = task === 'analyze'
-    ? ((taskConfig as Record<string, unknown>).concurrency as number | undefined) ?? 3
-    : undefined;
+  const concurrency =
+    task === 'analyze'
+      ? (((taskConfig as Record<string, unknown>).concurrency as number | undefined) ?? 3)
+      : undefined;
 
   return {
     mode: mode as 'claude' | 'api' | 'local',
@@ -397,8 +422,11 @@ export function getIdleWatcherConfig(): Required<IdleWatcherConfig> {
     enabled: userConfig.enabled ?? DEFAULT_IDLE_WATCHER_CONFIG.enabled,
     idle_minutes: userConfig.idle_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.idle_minutes,
     check_interval: userConfig.check_interval ?? DEFAULT_IDLE_WATCHER_CONFIG.check_interval,
-    min_conversation_length: userConfig.min_conversation_length ?? DEFAULT_IDLE_WATCHER_CONFIG.min_conversation_length,
-    reflection_cooldown_minutes: userConfig.reflection_cooldown_minutes ?? DEFAULT_IDLE_WATCHER_CONFIG.reflection_cooldown_minutes,
+    min_conversation_length:
+      userConfig.min_conversation_length ?? DEFAULT_IDLE_WATCHER_CONFIG.min_conversation_length,
+    reflection_cooldown_minutes:
+      userConfig.reflection_cooldown_minutes ??
+      DEFAULT_IDLE_WATCHER_CONFIG.reflection_cooldown_minutes,
   };
 }
 
@@ -413,12 +441,18 @@ export function getRetentionConfig(): Required<RetentionPolicyConfig> {
     enabled: userConfig.enabled ?? DEFAULT_RETENTION_POLICY_CONFIG.enabled,
     decay_rate: userConfig.decay_rate ?? DEFAULT_RETENTION_POLICY_CONFIG.decay_rate,
     access_weight: userConfig.access_weight ?? DEFAULT_RETENTION_POLICY_CONFIG.access_weight,
-    max_access_boost: userConfig.max_access_boost ?? DEFAULT_RETENTION_POLICY_CONFIG.max_access_boost,
+    max_access_boost:
+      userConfig.max_access_boost ?? DEFAULT_RETENTION_POLICY_CONFIG.max_access_boost,
     keep_threshold: userConfig.keep_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.keep_threshold,
-    delete_threshold: userConfig.delete_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.delete_threshold,
-    default_quality_score: userConfig.default_quality_score ?? DEFAULT_RETENTION_POLICY_CONFIG.default_quality_score,
-    auto_cleanup_interval_days: userConfig.auto_cleanup_interval_days ?? DEFAULT_RETENTION_POLICY_CONFIG.auto_cleanup_interval_days,
-    use_temporal_decay: userConfig.use_temporal_decay ?? DEFAULT_RETENTION_POLICY_CONFIG.use_temporal_decay,
+    delete_threshold:
+      userConfig.delete_threshold ?? DEFAULT_RETENTION_POLICY_CONFIG.delete_threshold,
+    default_quality_score:
+      userConfig.default_quality_score ?? DEFAULT_RETENTION_POLICY_CONFIG.default_quality_score,
+    auto_cleanup_interval_days:
+      userConfig.auto_cleanup_interval_days ??
+      DEFAULT_RETENTION_POLICY_CONFIG.auto_cleanup_interval_days,
+    use_temporal_decay:
+      userConfig.use_temporal_decay ?? DEFAULT_RETENTION_POLICY_CONFIG.use_temporal_decay,
   };
 }
 
@@ -451,7 +485,8 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   const userSleepAgent = userConfig.sleep_agent || {};
 
   // Sleep agent enabled state: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → false
-  const sleepEnabled = userSleepAgent.enabled ?? config.llm?.sleep?.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled;
+  const sleepEnabled =
+    userSleepAgent.enabled ?? config.llm?.sleep?.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled;
 
   // Safety: memory_consolidation requires GLOBAL opt-in.
   // Project config can DISABLE (false) but cannot ENABLE (true) on its own.
@@ -462,43 +497,76 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     const idleRef = globalCfg.idle_reflection as Record<string, unknown> | undefined;
     const ops = idleRef?.operations as Record<string, unknown> | undefined;
     globalConsolidation = ops?.memory_consolidation as boolean | undefined;
-  } catch { /* ignore parse errors */ }
+  } catch {
+    /* ignore parse errors */
+  }
 
   // Rule: global must explicitly be true, AND merged value must not be false
-  const consolidationEnabled = globalConsolidation === true
-    && (userConfig.operations?.memory_consolidation !== false);
+  const consolidationEnabled =
+    globalConsolidation === true && userConfig.operations?.memory_consolidation !== false;
 
   return {
     enabled: userConfig.enabled ?? DEFAULT_IDLE_REFLECTION_CONFIG.enabled,
     operations: {
       memory_consolidation: consolidationEnabled,
-      graph_refinement: userConfig.operations?.graph_refinement ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_refinement,
-      graph_enrichment: userConfig.operations?.graph_enrichment ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_enrichment,
-      session_summary: userConfig.operations?.session_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
-      precompute_context: userConfig.operations?.precompute_context ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,
-      write_reflection: userConfig.operations?.write_reflection ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.write_reflection,
-      retention_cleanup: userConfig.operations?.retention_cleanup ?? DEFAULT_IDLE_REFLECTION_CONFIG.operations.retention_cleanup,
+      graph_refinement:
+        userConfig.operations?.graph_refinement ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_refinement,
+      graph_enrichment:
+        userConfig.operations?.graph_enrichment ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.graph_enrichment,
+      session_summary:
+        userConfig.operations?.session_summary ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.session_summary,
+      precompute_context:
+        userConfig.operations?.precompute_context ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.precompute_context,
+      write_reflection:
+        userConfig.operations?.write_reflection ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.write_reflection,
+      retention_cleanup:
+        userConfig.operations?.retention_cleanup ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.operations.retention_cleanup,
     },
     thresholds: {
-      similarity_for_merge: userConfig.thresholds?.similarity_for_merge ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.similarity_for_merge,
-      auto_link_threshold: userConfig.thresholds?.auto_link_threshold ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.auto_link_threshold,
-      min_quality_for_summary: userConfig.thresholds?.min_quality_for_summary ?? DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.min_quality_for_summary,
+      similarity_for_merge:
+        userConfig.thresholds?.similarity_for_merge ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.similarity_for_merge,
+      auto_link_threshold:
+        userConfig.thresholds?.auto_link_threshold ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.auto_link_threshold,
+      min_quality_for_summary:
+        userConfig.thresholds?.min_quality_for_summary ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.min_quality_for_summary,
     },
     agent_model: userConfig.agent_model ?? DEFAULT_IDLE_REFLECTION_CONFIG.agent_model,
     sleep_agent: {
       enabled: sleepEnabled,
       handle_operations: {
-        memory_consolidation: userSleepAgent.handle_operations?.memory_consolidation ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.memory_consolidation,
-        session_summary: userSleepAgent.handle_operations?.session_summary ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.session_summary,
-        precompute_context: userSleepAgent.handle_operations?.precompute_context ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.precompute_context,
+        memory_consolidation:
+          userSleepAgent.handle_operations?.memory_consolidation ??
+          DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.memory_consolidation,
+        session_summary:
+          userSleepAgent.handle_operations?.session_summary ??
+          DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.session_summary,
+        precompute_context:
+          userSleepAgent.handle_operations?.precompute_context ??
+          DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.precompute_context,
       },
     },
     consolidation_guards: {
-      min_memory_age_days: userConfig.consolidation_guards?.min_memory_age_days ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_memory_age_days,
-      min_corpus_size: userConfig.consolidation_guards?.min_corpus_size ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_corpus_size,
-      require_llm_merge: userConfig.consolidation_guards?.require_llm_merge ?? DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.require_llm_merge,
+      min_memory_age_days:
+        userConfig.consolidation_guards?.min_memory_age_days ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_memory_age_days,
+      min_corpus_size:
+        userConfig.consolidation_guards?.min_corpus_size ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.min_corpus_size,
+      require_llm_merge:
+        userConfig.consolidation_guards?.require_llm_merge ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.consolidation_guards.require_llm_merge,
     },
-    max_memories_to_process: userConfig.max_memories_to_process ?? DEFAULT_IDLE_REFLECTION_CONFIG.max_memories_to_process,
+    max_memories_to_process:
+      userConfig.max_memories_to_process ?? DEFAULT_IDLE_REFLECTION_CONFIG.max_memories_to_process,
     timeout_seconds: userConfig.timeout_seconds ?? DEFAULT_IDLE_REFLECTION_CONFIG.timeout_seconds,
   };
 }
@@ -513,8 +581,10 @@ export function getCompactBriefingConfig(): Required<CompactBriefingConfig> {
   return {
     enabled: userConfig.enabled ?? DEFAULT_COMPACT_BRIEFING_CONFIG.enabled,
     format: userConfig.format ?? DEFAULT_COMPACT_BRIEFING_CONFIG.format,
-    include_learnings: userConfig.include_learnings ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_learnings,
-    include_memories: userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
+    include_learnings:
+      userConfig.include_learnings ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_learnings,
+    include_memories:
+      userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
     max_memories: userConfig.max_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.max_memories,
     timeout_ms: userConfig.timeout_ms ?? DEFAULT_COMPACT_BRIEFING_CONFIG.timeout_ms,
   };
@@ -596,8 +666,8 @@ export function getOperationAssignments(): OperationAssignmentType[] {
  */
 export function getAgentOperations(agent: 'claude' | 'sleep'): IdleOperation[] {
   return getOperationAssignments()
-    .filter(a => a.agent === agent && a.enabled)
-    .map(a => a.operation);
+    .filter((a) => a.agent === agent && a.enabled)
+    .map((a) => a.operation);
 }
 
 // ============================================================================
@@ -710,20 +780,40 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
   }
 
   // Watch & Analyze are services inside the daemon — query via HTTP
-  let services: { watch?: { active?: boolean }; analyze?: { active?: boolean; running?: boolean } } | null = null;
+  let services: {
+    watch?: { active?: boolean };
+    analyze?: { active?: boolean; running?: boolean };
+  } | null = null;
   if (daemonRunning && daemonPort) {
     try {
       const http = await import('http');
       services = await new Promise((resolve) => {
-        const req = http.get(`http://127.0.0.1:${daemonPort}/api/services`, { timeout: 2000 }, (res) => {
-          let data = '';
-          res.on('data', (chunk: string) => { data += chunk; });
-          res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
-        });
+        const req = http.get(
+          `http://127.0.0.1:${daemonPort}/api/services`,
+          { timeout: 2000 },
+          (res) => {
+            let data = '';
+            res.on('data', (chunk: string) => {
+              data += chunk;
+            });
+            res.on('end', () => {
+              try {
+                resolve(JSON.parse(data));
+              } catch {
+                resolve(null);
+              }
+            });
+          }
+        );
         req.on('error', () => resolve(null));
-        req.on('timeout', () => { req.destroy(); resolve(null); });
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(null);
+        });
       });
-    } catch { /* daemon unreachable */ }
+    } catch {
+      /* daemon unreachable */
+    }
   }
 
   statuses.push({
@@ -800,7 +890,9 @@ export function getErrorReportingConfig() {
     webhook_url: user.webhook_url ?? DEFAULT_ERROR_REPORTING_CONFIG.webhook_url,
     webhook_headers: user.webhook_headers ?? DEFAULT_ERROR_REPORTING_CONFIG.webhook_headers,
     sentry_dsn: user.sentry_dsn ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_dsn,
-    sentry_environment: user.sentry_environment ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_environment,
-    sentry_sample_rate: user.sentry_sample_rate ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_sample_rate,
+    sentry_environment:
+      user.sentry_environment ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_environment,
+    sentry_sample_rate:
+      user.sentry_sample_rate ?? DEFAULT_ERROR_REPORTING_CONFIG.sentry_sample_rate,
   };
 }

@@ -183,25 +183,44 @@ describe('temporal', () => {
       // Use much older dates to see clear decay difference
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       const results = [
-        { similarity: 0.9, created_at: monthAgo.toISOString(), last_accessed: monthAgo.toISOString(), access_count: 0 },
-        { similarity: 0.7, created_at: hourAgo.toISOString(), last_accessed: hourAgo.toISOString(), access_count: 0 },
+        {
+          similarity: 0.9,
+          created_at: monthAgo.toISOString(),
+          last_accessed: monthAgo.toISOString(),
+          access_count: 0,
+        },
+        {
+          similarity: 0.7,
+          created_at: hourAgo.toISOString(),
+          last_accessed: hourAgo.toISOString(),
+          access_count: 0,
+        },
       ];
 
       const scored = applyTemporalScoring(results, DEFAULT_TEMPORAL_CONFIG);
 
       // The older memory (monthAgo) should have a lower decay factor than recent (hourAgo)
-      const monthAgoResult = scored.find(r => r.created_at === monthAgo.toISOString())!;
-      const hourAgoResult = scored.find(r => r.created_at === hourAgo.toISOString())!;
-      expect(monthAgoResult.temporal_score.decayFactor).toBeLessThan(hourAgoResult.temporal_score.decayFactor);
+      const monthAgoResult = scored.find((r) => r.created_at === monthAgo.toISOString())!;
+      const hourAgoResult = scored.find((r) => r.created_at === hourAgo.toISOString())!;
+      expect(monthAgoResult.temporal_score.decayFactor).toBeLessThan(
+        hourAgoResult.temporal_score.decayFactor
+      );
     });
 
     it('filters expired results', () => {
       const results = [
-        { similarity: 0.9, created_at: weekAgo.toISOString(), valid_until: yesterday.toISOString() },
+        {
+          similarity: 0.9,
+          created_at: weekAgo.toISOString(),
+          valid_until: yesterday.toISOString(),
+        },
         { similarity: 0.7, created_at: hourAgo.toISOString() },
       ];
 
-      const scored = applyTemporalScoring(results, { ...DEFAULT_TEMPORAL_CONFIG, filter_expired: true });
+      const scored = applyTemporalScoring(results, {
+        ...DEFAULT_TEMPORAL_CONFIG,
+        filter_expired: true,
+      });
 
       expect(scored.length).toBe(1);
       expect(scored[0].similarity).toBeGreaterThan(0); // The non-expired one

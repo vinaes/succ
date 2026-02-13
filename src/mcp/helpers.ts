@@ -13,7 +13,17 @@
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import { closeDb, closeGlobalDb, closeStorageDispatcher, initStorageDispatcher, incrementMemoryAccessBatch, recordTokenStat, getStorageDispatcher, getMemoryStats, type TokenEventType } from '../lib/storage/index.js';
+import {
+  closeDb,
+  closeGlobalDb,
+  closeStorageDispatcher,
+  initStorageDispatcher,
+  incrementMemoryAccessBatch,
+  recordTokenStat,
+  getStorageDispatcher,
+  getMemoryStats,
+  type TokenEventType,
+} from '../lib/storage/index.js';
 import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 import { logFault, logWarn } from '../lib/fault-logger.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
@@ -23,8 +33,12 @@ import { estimateSavings, getCurrentModel } from '../lib/pricing.js';
 import type { SearchResult, ToolResponse } from './types.js';
 
 // Shared Zod param for project_path — add to every tool schema
-export const projectPathParam = z.string().optional()
-  .describe('Project directory path. Pass cwd of your project to use project-local data instead of global.');
+export const projectPathParam = z
+  .string()
+  .optional()
+  .describe(
+    'Project directory path. Pass cwd of your project to use project-local data instead of global.'
+  );
 
 // Track current project to avoid redundant reinit
 let _currentProject: string | null = null;
@@ -57,7 +71,10 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 
   // Reinit storage if we already had a different project OR this is first time
   if (_currentProject !== null) {
-    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-project-switch'); } catch (err) {
+    try {
+      const d = await getStorageDispatcher();
+      await d.flushSessionCounters('mcp-project-switch');
+    } catch (err) {
       logWarn('mcp', 'Session counter flush failed', { error: String(err) });
     }
     closeDb();
@@ -74,7 +91,10 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
 // Graceful shutdown handler
 export function setupGracefulShutdown() {
   const cleanup = async () => {
-    try { const d = await getStorageDispatcher(); await d.flushSessionCounters('mcp-session'); } catch (err) {
+    try {
+      const d = await getStorageDispatcher();
+      await d.flushSessionCounters('mcp-session');
+    } catch (err) {
       logWarn('mcp', 'Session counter flush failed', { error: String(err) });
     }
     await closeStorageDispatcher();

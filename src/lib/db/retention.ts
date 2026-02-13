@@ -8,12 +8,14 @@ import { getDb } from './connection.js';
 export function incrementMemoryAccess(memoryId: number, weight: number = 1.0): void {
   const database = getDb();
   database
-    .prepare(`
+    .prepare(
+      `
       UPDATE memories
       SET access_count = COALESCE(access_count, 0) + ?,
           last_accessed = CURRENT_TIMESTAMP
       WHERE id = ?
-    `)
+    `
+    )
     .run(weight, memoryId);
 }
 
@@ -21,7 +23,9 @@ export function incrementMemoryAccess(memoryId: number, weight: number = 1.0): v
  * Batch increment access counts for multiple memories.
  * @param accesses - Array of { memoryId, weight } objects
  */
-export function incrementMemoryAccessBatch(accesses: Array<{ memoryId: number; weight: number }>): void {
+export function incrementMemoryAccessBatch(
+  accesses: Array<{ memoryId: number; weight: number }>
+): void {
   if (accesses.length === 0) return;
 
   const database = getDb();
@@ -59,21 +63,23 @@ export interface MemoryForRetention {
 export function getAllMemoriesForRetention(): MemoryForRetention[] {
   const database = getDb();
   const rows = database
-    .prepare(`
+    .prepare(
+      `
       SELECT id, content, quality_score, access_count, created_at, last_accessed
       FROM memories
       ORDER BY created_at ASC
-    `)
+    `
+    )
     .all() as Array<{
-      id: number;
-      content: string;
-      quality_score: number | null;
-      access_count: number | null;
-      created_at: string;
-      last_accessed: string | null;
-    }>;
+    id: number;
+    content: string;
+    quality_score: number | null;
+    access_count: number | null;
+    created_at: string;
+    last_accessed: string | null;
+  }>;
 
-  return rows.map(row => ({
+  return rows.map((row) => ({
     id: row.id,
     content: row.content,
     quality_score: row.quality_score,
@@ -82,4 +88,3 @@ export function getAllMemoriesForRetention(): MemoryForRetention[] {
     last_accessed: row.last_accessed,
   }));
 }
-

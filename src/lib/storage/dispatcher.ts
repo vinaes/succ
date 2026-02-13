@@ -110,7 +110,11 @@ export async function initStorageDispatcher(): Promise<void> {
       const embDims = getEmbeddingInfo().dimensions ?? 384;
       await _qdrantStore.init(embDims);
     } catch (error) {
-      logError('storage', `Qdrant init failed, falling back to builtin: ${(error as Error).message}`, error as Error);
+      logError(
+        'storage',
+        `Qdrant init failed, falling back to builtin: ${(error as Error).message}`,
+        error as Error
+      );
       _qdrantStore = null;
     }
   }
@@ -119,16 +123,34 @@ export async function initStorageDispatcher(): Promise<void> {
   _dispatcher = null;
 }
 
-export function getBackendType(): 'sqlite' | 'postgresql' { return _backend; }
-export function getVectorBackendType(): 'builtin' | 'qdrant' { return _vectorBackend; }
-export function isPostgresBackend(): boolean { return _backend === 'postgresql'; }
-export function isQdrantVectors(): boolean { return _vectorBackend === 'qdrant'; }
-export function getPostgresBackend(): PostgresBackend | null { return _postgresBackend; }
-export function getQdrantStore(): QdrantVectorStore | null { return _qdrantStore; }
+export function getBackendType(): 'sqlite' | 'postgresql' {
+  return _backend;
+}
+export function getVectorBackendType(): 'builtin' | 'qdrant' {
+  return _vectorBackend;
+}
+export function isPostgresBackend(): boolean {
+  return _backend === 'postgresql';
+}
+export function isQdrantVectors(): boolean {
+  return _vectorBackend === 'qdrant';
+}
+export function getPostgresBackend(): PostgresBackend | null {
+  return _postgresBackend;
+}
+export function getQdrantStore(): QdrantVectorStore | null {
+  return _qdrantStore;
+}
 
 export async function closeStorageDispatcher(): Promise<void> {
-  if (_postgresBackend) { await _postgresBackend.close(); _postgresBackend = null; }
-  if (_qdrantStore) { await _qdrantStore.close(); _qdrantStore = null; }
+  if (_postgresBackend) {
+    await _postgresBackend.close();
+    _postgresBackend = null;
+  }
+  if (_qdrantStore) {
+    await _qdrantStore.close();
+    _qdrantStore = null;
+  }
   _initialized = false;
   _dispatcher = null;
 }
@@ -183,7 +205,14 @@ export class StorageDispatcher {
     const c = this._sessionCounters;
     const totalCreated = c.memoriesCreated + c.globalMemoriesCreated;
 
-    if (totalCreated === 0 && c.recallQueries === 0 && c.searchQueries === 0 && c.codeSearchQueries === 0 && c.webSearchQueries === 0) return;
+    if (
+      totalCreated === 0 &&
+      c.recallQueries === 0 &&
+      c.searchQueries === 0 &&
+      c.codeSearchQueries === 0 &&
+      c.webSearchQueries === 0
+    )
+      return;
 
     try {
       const stats = await this.getMemoryStats();
@@ -198,19 +227,32 @@ export class StorageDispatcher {
       });
     } catch (error) {
       // Don't let flush errors break shutdown
-      logError('storage', 'Failed to flush session counters', error instanceof Error ? error : new Error(String(error)));
+      logError(
+        'storage',
+        'Failed to flush session counters',
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
 
     this._sessionCounters = {
-      memoriesCreated: 0, memoriesDuplicated: 0, globalMemoriesCreated: 0,
-      recallQueries: 0, searchQueries: 0, codeSearchQueries: 0,
-      webSearchQueries: 0, webSearchCostUsd: 0, qdrantSyncFailures: 0,
-      typesCreated: {}, startedAt: new Date().toISOString(),
+      memoriesCreated: 0,
+      memoriesDuplicated: 0,
+      globalMemoriesCreated: 0,
+      recallQueries: 0,
+      searchQueries: 0,
+      codeSearchQueries: 0,
+      webSearchQueries: 0,
+      webSearchCostUsd: 0,
+      qdrantSyncFailures: 0,
+      typesCreated: {},
+      startedAt: new Date().toISOString(),
     };
   }
 
   private async getSqliteFns(): Promise<typeof import('../db/index.js')> {
-    if (!this._sqliteFns) { this._sqliteFns = await import('../db/index.js'); }
+    if (!this._sqliteFns) {
+      this._sqliteFns = await import('../db/index.js');
+    }
     return this._sqliteFns;
   }
 
@@ -224,18 +266,39 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async upsertDocument(
-    filePath: string, chunkIndex: number, content: string,
-    startLine: number, endLine: number, embedding: number[],
-    symbolName?: string, symbolType?: string, signature?: string,
+    filePath: string,
+    chunkIndex: number,
+    content: string,
+    startLine: number,
+    endLine: number,
+    embedding: number[],
+    symbolName?: string,
+    symbolType?: string,
+    signature?: string
   ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
-      const id = await this.postgres.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
+      const id = await this.postgres.upsertDocument(
+        filePath,
+        chunkIndex,
+        content,
+        startLine,
+        endLine,
+        embedding,
+        symbolName,
+        symbolType,
+        signature
+      );
       if (this.hasQdrant()) {
         try {
           await this.qdrant!.upsertDocumentWithPayload(id, embedding, {
-            filePath, content, startLine, endLine,
+            filePath,
+            content,
+            startLine,
+            endLine,
             projectId: this.qdrant!.getProjectId() ?? '',
-            symbolName, symbolType, signature,
+            symbolName,
+            symbolType,
+            signature,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync document vector ${id}`, error);
@@ -244,7 +307,17 @@ export class StorageDispatcher {
       return;
     }
     const sqlite = await this.getSqliteFns();
-    sqlite.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
+    sqlite.upsertDocument(
+      filePath,
+      chunkIndex,
+      content,
+      startLine,
+      endLine,
+      embedding,
+      symbolName,
+      symbolType,
+      signature
+    );
   }
 
   async upsertDocumentsBatch(documents: any[]): Promise<void> {
@@ -253,8 +326,18 @@ export class StorageDispatcher {
       if (this.hasQdrant() && ids.length > 0) {
         try {
           const items = documents.map((doc, idx) => ({
-            id: ids[idx], embedding: doc.embedding,
-            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '', symbolName: doc.symbolName, symbolType: doc.symbolType, signature: doc.signature } as DocumentUpsertMeta,
+            id: ids[idx],
+            embedding: doc.embedding,
+            meta: {
+              filePath: doc.filePath,
+              content: doc.content,
+              startLine: doc.startLine,
+              endLine: doc.endLine,
+              projectId: this.qdrant!.getProjectId() ?? '',
+              symbolName: doc.symbolName,
+              symbolType: doc.symbolType,
+              signature: doc.signature,
+            } as DocumentUpsertMeta,
           }));
           await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
@@ -273,8 +356,18 @@ export class StorageDispatcher {
       if (this.hasQdrant() && ids.length > 0) {
         try {
           const items = documents.map((doc, idx) => ({
-            id: ids[idx], embedding: doc.embedding,
-            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '', symbolName: doc.symbolName, symbolType: doc.symbolType, signature: doc.signature } as DocumentUpsertMeta,
+            id: ids[idx],
+            embedding: doc.embedding,
+            meta: {
+              filePath: doc.filePath,
+              content: doc.content,
+              startLine: doc.startLine,
+              endLine: doc.endLine,
+              projectId: this.qdrant!.getProjectId() ?? '',
+              symbolName: doc.symbolName,
+              symbolType: doc.symbolType,
+              signature: doc.signature,
+            } as DocumentUpsertMeta,
           }));
           await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
@@ -291,8 +384,11 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       const deletedIds = await this.postgres.deleteDocumentsByPath(filePath);
       if (this.vectorBackend === 'qdrant' && this.qdrant && deletedIds.length > 0) {
-        try { await this.qdrant.deleteDocumentVectorsByIds(deletedIds); }
-        catch (error) { this._warnQdrantFailure('Failed to delete document vectors', error); }
+        try {
+          await this.qdrant.deleteDocumentVectorsByIds(deletedIds);
+        } catch (error) {
+          this._warnQdrantFailure('Failed to delete document vectors', error);
+        }
       }
       return;
     }
@@ -301,8 +397,18 @@ export class StorageDispatcher {
   }
 
   async searchDocuments(
-    queryEmbedding: number[], limit: number = 5, threshold: number = 0.5
-  ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.5
+  ): Promise<
+    Array<{
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      similarity: number;
+    }>
+  > {
     if (this.hasQdrant()) {
       try {
         // Access Qdrant private methods via property access for backward compatibility
@@ -313,24 +419,40 @@ export class StorageDispatcher {
         const client = await qdrantAny.getClient();
         const name = qdrantAny.collectionName('documents');
         const qResults = await client.query(name, {
-          query: queryEmbedding, using: 'dense', limit, score_threshold: threshold,
-          params: { hnsw_ef: 128, exact: false }, with_payload: true,
+          query: queryEmbedding,
+          using: 'dense',
+          limit,
+          score_threshold: threshold,
+          params: { hnsw_ef: 128, exact: false },
+          with_payload: true,
         });
         const points = qResults.points ?? qResults;
         if (points.length > 0 && points[0].payload?.content) {
           return points.map((p: any) => ({
-            file_path: p.payload?.file_path ?? '', content: p.payload?.content ?? '',
-            start_line: p.payload?.start_line ?? 0, end_line: p.payload?.end_line ?? 0, similarity: p.score,
+            file_path: p.payload?.file_path ?? '',
+            content: p.payload?.content ?? '',
+            start_line: p.payload?.start_line ?? 0,
+            end_line: p.payload?.end_line ?? 0,
+            similarity: p.score,
           }));
         }
         if (this.backend === 'postgresql' && this.postgres) {
           const results = await this.qdrant!.searchDocuments(queryEmbedding, limit * 3, threshold);
           if (results.length > 0) {
-            const pgRows = await this.postgres.getDocumentsByIds(results.map(r => r.id));
-            return pgRows.map(row => {
-              const score = results.find(r => r.id === row.id)?.similarity ?? 0;
-              return { file_path: row.file_path, content: row.content, start_line: row.start_line, end_line: row.end_line, similarity: score };
-            }).sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+            const pgRows = await this.postgres.getDocumentsByIds(results.map((r) => r.id));
+            return pgRows
+              .map((row) => {
+                const score = results.find((r) => r.id === row.id)?.similarity ?? 0;
+                return {
+                  file_path: row.file_path,
+                  content: row.content,
+                  start_line: row.start_line,
+                  end_line: row.end_line,
+                  similarity: score,
+                };
+              })
+              .sort((a, b) => b.similarity - a.similarity)
+              .slice(0, limit);
           }
         }
       } catch (error) {
@@ -345,31 +467,43 @@ export class StorageDispatcher {
   }
 
   async getRecentDocuments(limit: number = 10): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getRecentDocuments(limit);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getRecentDocuments(limit);
     const sqlite = await this.getSqliteFns();
     return sqlite.getRecentDocuments(limit);
   }
 
-  async getStats(): Promise<{ total_documents: number; total_files: number; last_indexed: string | null }> {
+  async getStats(): Promise<{
+    total_documents: number;
+    total_files: number;
+    last_indexed: string | null;
+  }> {
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.getDocumentStats();
     const sqlite = await this.getSqliteFns();
     return sqlite.getStats();
   }
 
   async clearDocuments(): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearDocuments(); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.clearDocuments();
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.clearDocuments();
   }
 
   async clearCodeDocuments(): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearCodeDocuments(); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.clearCodeDocuments();
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.clearCodeDocuments();
   }
 
   async getStoredEmbeddingDimension(): Promise<number | null> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getStoredEmbeddingDimension();
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getStoredEmbeddingDimension();
     const sqlite = await this.getSqliteFns();
     return sqlite.getStoredEmbeddingDimension();
   }
@@ -379,9 +513,23 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async saveMemory(
-    content: string, embedding: number[], tags: string[] = [], source?: string,
-    options?: { type?: MemoryType; deduplicate?: boolean; qualityScore?: number; qualityFactors?: Record<string, number>; validFrom?: string; validUntil?: string; }
-  ): Promise<{ id: number; created: boolean; duplicate?: { id: number; content: string; similarity: number } }> {
+    content: string,
+    embedding: number[],
+    tags: string[] = [],
+    source?: string,
+    options?: {
+      type?: MemoryType;
+      deduplicate?: boolean;
+      qualityScore?: number;
+      qualityFactors?: Record<string, number>;
+      validFrom?: string;
+      validUntil?: string;
+    }
+  ): Promise<{
+    id: number;
+    created: boolean;
+    duplicate?: { id: number; content: string; similarity: number };
+  }> {
     const type = options?.type ?? 'observation';
     const deduplicate = options?.deduplicate ?? true;
     const qualityScore = options?.qualityScore;
@@ -392,67 +540,119 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
         const similar = await this.findSimilarMemory(embedding, 0.95);
-        if (similar) { this._sessionCounters.memoriesDuplicated++; return { id: similar.id, created: false, duplicate: similar }; }
+        if (similar) {
+          this._sessionCounters.memoriesDuplicated++;
+          return { id: similar.id, created: false, duplicate: similar };
+        }
       }
-      const id = await this.postgres.saveMemory(content, embedding, tags, source, type, qualityScore, qualityFactors, validFrom, validUntil);
+      const id = await this.postgres.saveMemory(
+        content,
+        embedding,
+        tags,
+        source,
+        type,
+        qualityScore,
+        qualityFactors,
+        validFrom,
+        validUntil
+      );
 
       // Sync to Qdrant with full payload
       if (this.hasQdrant()) {
         try {
           await this.qdrant!.upsertMemoryWithPayload(id, embedding, {
-            content, tags, source, type, projectId: this.qdrant!.getProjectId(),
-            createdAt: new Date().toISOString(), validFrom, validUntil,
+            content,
+            tags,
+            source,
+            type,
+            projectId: this.qdrant!.getProjectId(),
+            createdAt: new Date().toISOString(),
+            validFrom,
+            validUntil,
           });
-        } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${id}`, error); }
+        } catch (error) {
+          this._warnQdrantFailure(`Failed to sync memory vector ${id}`, error);
+        }
       }
       this._sessionCounters.memoriesCreated++;
-      this._sessionCounters.typesCreated[type] = (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+      this._sessionCounters.typesCreated[type] =
+        (this._sessionCounters.typesCreated[type] ?? 0) + 1;
       return { id, created: true };
     }
 
     const sqlite = await this.getSqliteFns();
     const result = sqlite.saveMemory(content, embedding, tags, source, {
-      type, deduplicate,
-      qualityScore: qualityScore != null ? { score: qualityScore, factors: qualityFactors ?? {} } : undefined,
-      validFrom, validUntil,
+      type,
+      deduplicate,
+      qualityScore:
+        qualityScore != null ? { score: qualityScore, factors: qualityFactors ?? {} } : undefined,
+      validFrom,
+      validUntil,
     });
 
     // SQLite + Qdrant: sync memory
     if (this.hasQdrant() && !result.isDuplicate) {
       try {
         await this.qdrant!.upsertMemoryWithPayload(result.id, embedding, {
-          content, tags, source, type, projectId: this.qdrant!.getProjectId(),
-          createdAt: new Date().toISOString(), validFrom, validUntil,
+          content,
+          tags,
+          source,
+          type,
+          projectId: this.qdrant!.getProjectId(),
+          createdAt: new Date().toISOString(),
+          validFrom,
+          validUntil,
         });
-      } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${result.id}`, error); }
+      } catch (error) {
+        this._warnQdrantFailure(`Failed to sync memory vector ${result.id}`, error);
+      }
     }
 
     const created = !result.isDuplicate;
     if (created) {
       this._sessionCounters.memoriesCreated++;
-      this._sessionCounters.typesCreated[type] = (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+      this._sessionCounters.typesCreated[type] =
+        (this._sessionCounters.typesCreated[type] ?? 0) + 1;
     } else {
       this._sessionCounters.memoriesDuplicated++;
     }
     return {
-      id: result.id, created,
-      duplicate: result.isDuplicate && result.similarity != null
-        ? { id: result.id, content: '', similarity: result.similarity } : undefined,
+      id: result.id,
+      created,
+      duplicate:
+        result.isDuplicate && result.similarity != null
+          ? { id: result.id, content: '', similarity: result.similarity }
+          : undefined,
     };
   }
 
   async searchMemories(
-    queryEmbedding: number[], limit: number = 5, threshold: number = 0.3,
-    tags?: string[], since?: Date, options?: { includeExpired?: boolean; asOfDate?: Date }
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.3,
+    tags?: string[],
+    since?: Date,
+    options?: { includeExpired?: boolean; asOfDate?: Date }
   ): Promise<any[]> {
     if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchMemories(
-          '', queryEmbedding, limit, threshold,
-          { projectId: this.qdrant!.getProjectId(), tags, since, asOfDate: options?.asOfDate, includeExpired: options?.includeExpired }
+          '',
+          queryEmbedding,
+          limit,
+          threshold,
+          {
+            projectId: this.qdrant!.getProjectId(),
+            tags,
+            since,
+            asOfDate: options?.asOfDate,
+            includeExpired: options?.includeExpired,
+          }
         );
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('searchMemories hybrid failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('searchMemories hybrid failed, falling back', error);
+      }
     }
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.searchMemories(queryEmbedding, limit, threshold, tags, since, options);
@@ -470,13 +670,16 @@ export class StorageDispatcher {
   async deleteMemory(id: number): Promise<boolean> {
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteMemory(id);
-      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) await this.qdrant.deleteMemoryVector(id);
+      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)
+        await this.qdrant.deleteMemoryVector(id);
       return deleted;
     }
     const sqlite = await this.getSqliteFns();
     const deleted = sqlite.deleteMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
-      try { await this.qdrant.deleteMemoryVector(id); } catch (err) {
+      try {
+        await this.qdrant.deleteMemoryVector(id);
+      } catch (err) {
         logWarn('storage', `Qdrant vector delete failed for memory ${id}`, { error: String(err) });
       }
     }
@@ -484,38 +687,57 @@ export class StorageDispatcher {
   }
 
   async getRecentMemories(limit: number = 10): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getRecentMemories(limit);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getRecentMemories(limit);
     const sqlite = await this.getSqliteFns();
     return sqlite.getRecentMemories(limit);
   }
 
-  async findSimilarMemory(embedding: number[], threshold?: number): Promise<{ id: number; content: string; similarity: number } | null> {
+  async findSimilarMemory(
+    embedding: number[],
+    threshold?: number
+  ): Promise<{ id: number; content: string; similarity: number } | null> {
     const thresh = threshold ?? 0.92;
     if (this.vectorBackend === 'qdrant' && this.qdrant) {
       try {
         const results = await this.qdrant.findSimilarWithContent('memories', embedding, 3, thresh);
         if (results.length > 0 && results[0].similarity >= thresh) {
-          return { id: results[0].id, content: results[0].content, similarity: results[0].similarity };
+          return {
+            id: results[0].id,
+            content: results[0].content,
+            similarity: results[0].similarity,
+          };
         }
         // v1 schema fallback: IDs only -> PG
         if (results.length === 0 && this.backend === 'postgresql' && this.postgres) {
           const qr = await this.qdrant.searchMemories(embedding, 3, thresh);
           if (qr.length > 0) {
-            const pgRows = await this.postgres.getMemoriesByIds(qr.map(r => r.id), { excludeInvalidated: false });
+            const pgRows = await this.postgres.getMemoriesByIds(
+              qr.map((r) => r.id),
+              { excludeInvalidated: false }
+            );
             if (pgRows.length > 0) {
-              const score = qr.find(r => r.id === pgRows[0].id)?.similarity ?? 0;
-              if (score >= thresh) return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
+              const score = qr.find((r) => r.id === pgRows[0].id)?.similarity ?? 0;
+              if (score >= thresh)
+                return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
             }
           }
         }
-      } catch (error) { this._warnQdrantFailure('findSimilarMemory failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('findSimilarMemory failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.findSimilarMemory(embedding, threshold);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.findSimilarMemory(embedding, threshold);
     const sqlite = await this.getSqliteFns();
     return sqlite.findSimilarMemory(embedding, threshold);
   }
 
-  async saveMemoriesBatch(memories: any[], deduplicateThreshold?: number, options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }): Promise<any> {
+  async saveMemoriesBatch(
+    memories: any[],
+    deduplicateThreshold?: number,
+    options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
+  ): Promise<any> {
     let result: any;
     if (this.backend === 'postgresql' && this.postgres) {
       result = await this.postgres.saveMemoriesBatch(memories, deduplicateThreshold, options);
@@ -541,8 +763,16 @@ export class StorageDispatcher {
                 type: mem.type,
                 projectId: this.qdrant!.getProjectId(),
                 createdAt: new Date().toISOString(),
-                validFrom: mem.validFrom ? (mem.validFrom instanceof Date ? mem.validFrom.toISOString() : mem.validFrom) : null,
-                validUntil: mem.validUntil ? (mem.validUntil instanceof Date ? mem.validUntil.toISOString() : mem.validUntil) : null,
+                validFrom: mem.validFrom
+                  ? mem.validFrom instanceof Date
+                    ? mem.validFrom.toISOString()
+                    : mem.validFrom
+                  : null,
+                validUntil: mem.validUntil
+                  ? mem.validUntil instanceof Date
+                    ? mem.validUntil.toISOString()
+                    : mem.validUntil
+                  : null,
               },
             };
           });
@@ -557,19 +787,22 @@ export class StorageDispatcher {
   }
 
   async invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.invalidateMemory(memoryId, supersededById);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.invalidateMemory(memoryId, supersededById);
     const sqlite = await this.getSqliteFns();
     return sqlite.invalidateMemory(memoryId, supersededById);
   }
 
   async restoreInvalidatedMemory(memoryId: number): Promise<boolean> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.restoreInvalidatedMemory(memoryId);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.restoreInvalidatedMemory(memoryId);
     const sqlite = await this.getSqliteFns();
     return sqlite.restoreInvalidatedMemory(memoryId);
   }
 
   async getConsolidationHistory(limit?: number): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getConsolidationHistory(limit);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getConsolidationHistory(limit);
     const sqlite = await this.getSqliteFns();
     return sqlite.getConsolidationHistory(limit);
   }
@@ -581,33 +814,48 @@ export class StorageDispatcher {
   }
 
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.deleteMemoriesOlderThan(date);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.deleteMemoriesOlderThan(date);
     const sqlite = await this.getSqliteFns();
     return sqlite.deleteMemoriesOlderThan(date);
   }
 
   async deleteMemoriesByTag(tag: string): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.deleteMemoriesByTag(tag);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.deleteMemoriesByTag(tag);
     const sqlite = await this.getSqliteFns();
     return sqlite.deleteMemoriesByTag(tag);
   }
 
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.deleteMemoriesByIds(ids);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.deleteMemoriesByIds(ids);
     const sqlite = await this.getSqliteFns();
     return sqlite.deleteMemoriesByIds(ids);
   }
 
-  async searchMemoriesAsOf(queryEmbedding: number[], asOfDate: Date, limit?: number, threshold?: number): Promise<any[]> {
+  async searchMemoriesAsOf(
+    queryEmbedding: number[],
+    asOfDate: Date,
+    limit?: number,
+    threshold?: number
+  ): Promise<any[]> {
     const lim = limit ?? 5;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchMemories('', queryEmbedding, lim, thresh, { createdBefore: asOfDate, asOfDate, includeExpired: false });
+        const results = await this.qdrant!.hybridSearchMemories('', queryEmbedding, lim, thresh, {
+          createdBefore: asOfDate,
+          asOfDate,
+          includeExpired: false,
+        });
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('searchMemoriesAsOf failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('searchMemoriesAsOf failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchMemoriesAsOf(queryEmbedding, asOfDate, limit, threshold);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.searchMemoriesAsOf(queryEmbedding, asOfDate, limit, threshold);
     const sqlite = await this.getSqliteFns();
     return sqlite.searchMemoriesAsOf(queryEmbedding, asOfDate, limit, threshold);
   }
@@ -616,50 +864,83 @@ export class StorageDispatcher {
   // Memory Links
   // ===========================================================================
 
-  async createMemoryLink(sourceId: number, targetId: number, relation: LinkRelation = 'related', weight: number = 1.0, validFrom?: string, validUntil?: string): Promise<{ id: number; created: boolean }> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.createMemoryLink(sourceId, targetId, relation, weight, validFrom, validUntil);
+  async createMemoryLink(
+    sourceId: number,
+    targetId: number,
+    relation: LinkRelation = 'related',
+    weight: number = 1.0,
+    validFrom?: string,
+    validUntil?: string
+  ): Promise<{ id: number; created: boolean }> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.createMemoryLink(
+        sourceId,
+        targetId,
+        relation,
+        weight,
+        validFrom,
+        validUntil
+      );
     const sqlite = await this.getSqliteFns();
     return sqlite.createMemoryLink(sourceId, targetId, relation, weight, { validFrom, validUntil });
   }
 
-  async deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): Promise<boolean> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.deleteMemoryLink(sourceId, targetId, relation);
+  async deleteMemoryLink(
+    sourceId: number,
+    targetId: number,
+    relation?: LinkRelation
+  ): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.deleteMemoryLink(sourceId, targetId, relation);
     const sqlite = await this.getSqliteFns();
     return sqlite.deleteMemoryLink(sourceId, targetId, relation);
   }
 
   async getMemoryLinks(memoryId: number): Promise<any> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getMemoryLinks(memoryId);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getMemoryLinks(memoryId);
     const sqlite = await this.getSqliteFns();
     return sqlite.getMemoryLinks(memoryId);
   }
 
-  async getMemoryWithLinks(memoryId: number, options?: { asOfDate?: Date; includeExpired?: boolean }): Promise<any> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getMemoryWithLinks(memoryId, options);
+  async getMemoryWithLinks(
+    memoryId: number,
+    options?: { asOfDate?: Date; includeExpired?: boolean }
+  ): Promise<any> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getMemoryWithLinks(memoryId, options);
     const sqlite = await this.getSqliteFns();
     return sqlite.getMemoryWithLinks(memoryId, options);
   }
 
   async findConnectedMemories(memoryId: number, maxDepth?: number): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.findConnectedMemories(memoryId, maxDepth);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.findConnectedMemories(memoryId, maxDepth);
     const sqlite = await this.getSqliteFns();
     return sqlite.findConnectedMemories(memoryId, maxDepth);
   }
 
-  async findRelatedMemoriesForLinking(memoryId: number, threshold?: number, maxLinks?: number): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.findRelatedMemoriesForLinking(memoryId, threshold, maxLinks);
+  async findRelatedMemoriesForLinking(
+    memoryId: number,
+    threshold?: number,
+    maxLinks?: number
+  ): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.findRelatedMemoriesForLinking(memoryId, threshold, maxLinks);
     const sqlite = await this.getSqliteFns();
     return sqlite.findRelatedMemoriesForLinking(memoryId, threshold, maxLinks);
   }
 
   async createAutoLinks(memoryId: number, threshold?: number, maxLinks?: number): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.createAutoLinks(memoryId, threshold, maxLinks);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.createAutoLinks(memoryId, threshold, maxLinks);
     const sqlite = await this.getSqliteFns();
     return sqlite.createAutoLinks(memoryId, threshold, maxLinks);
   }
 
   async autoLinkSimilarMemories(threshold?: number, maxLinks?: number): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.autoLinkSimilarMemories(threshold, maxLinks);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.autoLinkSimilarMemories(threshold, maxLinks);
     const sqlite = await this.getSqliteFns();
     return sqlite.autoLinkSimilarMemories(threshold, maxLinks);
   }
@@ -670,26 +951,38 @@ export class StorageDispatcher {
     return sqlite.getGraphStats();
   }
 
-  async invalidateMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): Promise<boolean> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.invalidateMemoryLink(sourceId, targetId, relation);
+  async invalidateMemoryLink(
+    sourceId: number,
+    targetId: number,
+    relation?: LinkRelation
+  ): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.invalidateMemoryLink(sourceId, targetId, relation);
     const sqlite = await this.getSqliteFns();
     return sqlite.invalidateMemoryLink(sourceId, targetId, relation);
   }
 
   async getMemoryLinksAsOf(memoryId: number, asOfDate: Date): Promise<any> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getMemoryLinksAsOf(memoryId, asOfDate);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getMemoryLinksAsOf(memoryId, asOfDate);
     const sqlite = await this.getSqliteFns();
     return sqlite.getMemoryLinksAsOf(memoryId, asOfDate);
   }
 
-  async findConnectedMemoriesAsOf(memoryId: number, asOfDate: Date, maxDepth?: number): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.findConnectedMemoriesAsOf(memoryId, asOfDate, maxDepth);
+  async findConnectedMemoriesAsOf(
+    memoryId: number,
+    asOfDate: Date,
+    maxDepth?: number
+  ): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.findConnectedMemoriesAsOf(memoryId, asOfDate, maxDepth);
     const sqlite = await this.getSqliteFns();
     return sqlite.findConnectedMemoriesAsOf(memoryId, asOfDate, maxDepth);
   }
 
   async getGraphStatsAsOf(asOfDate: Date): Promise<any> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getGraphStatsAsOf(asOfDate);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getGraphStatsAsOf(asOfDate);
     const sqlite = await this.getSqliteFns();
     return sqlite.getGraphStatsAsOf(asOfDate);
   }
@@ -706,7 +999,9 @@ export class StorageDispatcher {
     sqlite.updateMemoryEmbedding(memoryId, embedding);
   }
 
-  async updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+  async updateMemoryEmbeddingsBatch(
+    updates: Array<{ id: number; embedding: number[] }>
+  ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.updateMemoryEmbeddingsBatch(updates);
     }
@@ -716,7 +1011,10 @@ export class StorageDispatcher {
     }
   }
 
-  async getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+  async getMemoriesNeedingReembedding(
+    limit: number = 100,
+    afterId: number = 0
+  ): Promise<Array<{ id: number; content: string }>> {
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.getMemoriesNeedingReembedding(limit, afterId);
     }
@@ -748,7 +1046,10 @@ export class StorageDispatcher {
     sqlite.updateMemoryTags(memoryId, tags);
   }
 
-  async updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+  async updateMemoryLink(
+    linkId: number,
+    updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+  ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.updateMemoryLink(linkId, updates);
     }
@@ -756,7 +1057,11 @@ export class StorageDispatcher {
     sqlite.updateMemoryLink(linkId, updates);
   }
 
-  async upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+  async upsertCentralityScore(
+    memoryId: number,
+    degree: number,
+    normalizedDegree: number
+  ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.upsertCentralityScore(memoryId, degree, normalizedDegree);
     }
@@ -784,13 +1089,17 @@ export class StorageDispatcher {
   }
 
   async setFileHash(filePath: string, hash: string): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.setFileHash(filePath, hash);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.setFileHash(filePath, hash);
     const sqlite = await this.getSqliteFns();
     return sqlite.setFileHash(filePath, hash);
   }
 
   async deleteFileHash(filePath: string): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.deleteFileHash(filePath); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.deleteFileHash(filePath);
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.deleteFileHash(filePath);
   }
@@ -801,8 +1110,11 @@ export class StorageDispatcher {
     return sqlite.getAllFileHashes();
   }
 
-  async getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getAllFileHashesWithTimestamps();
+  async getAllFileHashesWithTimestamps(): Promise<
+    Array<{ file_path: string; content_hash: string; indexed_at: string }>
+  > {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getAllFileHashesWithTimestamps();
     const sqlite = await this.getSqliteFns();
     return sqlite.getAllFileHashesWithTimestamps();
   }
@@ -812,19 +1124,24 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async updateTokenFrequencies(tokens: string[]): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.updateTokenFrequencies(tokens); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.updateTokenFrequencies(tokens);
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.updateTokenFrequencies(tokens);
   }
 
   async getTokenFrequency(token: string): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTokenFrequency(token);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getTokenFrequency(token);
     const sqlite = await this.getSqliteFns();
     return sqlite.getTokenFrequency(token);
   }
 
   async getTokenFrequencies(tokens: string[]): Promise<Map<string, number>> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTokenFrequencies(tokens);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getTokenFrequencies(tokens);
     const sqlite = await this.getSqliteFns();
     return sqlite.getTokenFrequencies(tokens);
   }
@@ -842,13 +1159,21 @@ export class StorageDispatcher {
   }
 
   async clearTokenFrequencies(): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearTokenFrequencies(); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.clearTokenFrequencies();
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.clearTokenFrequencies();
   }
 
-  async getTokenFrequencyStats(): Promise<{ unique_tokens: number; total_occurrences: number; avg_frequency: number }> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTokenFrequencyStats();
+  async getTokenFrequencyStats(): Promise<{
+    unique_tokens: number;
+    total_occurrences: number;
+    avg_frequency: number;
+  }> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getTokenFrequencyStats();
     const sqlite = await this.getSqliteFns();
     return sqlite.getTokenFrequencyStats();
   }
@@ -858,7 +1183,8 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async recordTokenStat(record: any): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.recordTokenStat(record);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.recordTokenStat(record);
     const sqlite = await this.getSqliteFns();
     return sqlite.recordTokenStat(record);
   }
@@ -866,12 +1192,18 @@ export class StorageDispatcher {
   async getTokenStatsSummary(): Promise<any> {
     if (this.backend === 'postgresql' && this.postgres) {
       const summary = await this.postgres.getTokenStatsSummary();
-      const savingsPercent = summary.total_full_source_tokens > 0
-        ? (summary.total_savings_tokens / summary.total_full_source_tokens) * 100 : 0;
+      const savingsPercent =
+        summary.total_full_source_tokens > 0
+          ? (summary.total_savings_tokens / summary.total_full_source_tokens) * 100
+          : 0;
       return {
-        total_calls: summary.total_queries, total_returned_tokens: summary.total_returned_tokens,
-        total_full_source_tokens: summary.total_full_source_tokens, total_savings_tokens: summary.total_savings_tokens,
-        total_estimated_cost: summary.total_estimated_cost, savings_percent: savingsPercent, by_event_type: [],
+        total_calls: summary.total_queries,
+        total_returned_tokens: summary.total_returned_tokens,
+        total_full_source_tokens: summary.total_full_source_tokens,
+        total_savings_tokens: summary.total_savings_tokens,
+        total_estimated_cost: summary.total_estimated_cost,
+        savings_percent: savingsPercent,
+        by_event_type: [],
       };
     }
     const sqlite = await this.getSqliteFns();
@@ -879,13 +1211,17 @@ export class StorageDispatcher {
   }
 
   async getTokenStatsAggregated(): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTokenStatsAggregated();
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getTokenStatsAggregated();
     const sqlite = await this.getSqliteFns();
     return sqlite.getTokenStatsAggregated();
   }
 
   async clearTokenStats(): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearTokenStats(); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.clearTokenStats();
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.clearTokenStats();
   }
@@ -905,7 +1241,8 @@ export class StorageDispatcher {
   }
 
   async getWebSearchHistory(filter: WebSearchHistoryFilter): Promise<WebSearchHistoryRecord[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getWebSearchHistory(filter);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getWebSearchHistory(filter);
     const sqlite = await this.getSqliteFns();
     return sqlite.getWebSearchHistory(filter);
   }
@@ -917,13 +1254,17 @@ export class StorageDispatcher {
   }
 
   async getTodayWebSearchSpend(): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getTodayWebSearchSpend();
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getTodayWebSearchSpend();
     const sqlite = await this.getSqliteFns();
     return sqlite.getTodayWebSearchSpend();
   }
 
   async clearWebSearchHistory(): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.clearWebSearchHistory(); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.clearWebSearchHistory();
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.clearWebSearchHistory();
   }
@@ -933,19 +1274,28 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async incrementMemoryAccess(memoryId: number, weight?: number): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.incrementMemoryAccess(memoryId, weight); return; }
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.incrementMemoryAccess(memoryId, weight);
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.incrementMemoryAccess(memoryId, weight);
   }
 
-  async incrementMemoryAccessBatch(accesses: Array<{ memoryId: number; weight: number }>): Promise<void> {
-    if (this.backend === 'postgresql' && this.postgres) { await this.postgres.incrementMemoryAccessBatch(accesses); return; }
+  async incrementMemoryAccessBatch(
+    accesses: Array<{ memoryId: number; weight: number }>
+  ): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.incrementMemoryAccessBatch(accesses);
+      return;
+    }
     const sqlite = await this.getSqliteFns();
     sqlite.incrementMemoryAccessBatch(accesses);
   }
 
   async getAllMemoriesForRetention(): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getAllMemoriesForRetention();
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getAllMemoriesForRetention();
     const sqlite = await this.getSqliteFns();
     return sqlite.getAllMemoriesForRetention();
   }
@@ -954,20 +1304,56 @@ export class StorageDispatcher {
   // BM25 Index Management
   // ===========================================================================
 
-  async invalidateCodeBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateCodeBm25Index(); }
-  async invalidateDocsBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateDocsBm25Index(); }
-  async invalidateMemoriesBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateMemoriesBm25Index(); }
-  async invalidateGlobalMemoriesBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateGlobalMemoriesBm25Index(); }
-  async invalidateBM25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateBM25Index(); }
-  async updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): Promise<void> { const s = await this.getSqliteFns(); s.updateCodeBm25Index(docId, content, symbolName, signature); }
-  async updateMemoriesBm25Index(memoryId: number, content: string): Promise<void> { const s = await this.getSqliteFns(); s.updateMemoriesBm25Index(memoryId, content); }
-  async updateGlobalMemoriesBm25Index(memoryId: number, content: string): Promise<void> { const s = await this.getSqliteFns(); s.updateGlobalMemoriesBm25Index(memoryId, content); }
+  async invalidateCodeBm25Index(): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.invalidateCodeBm25Index();
+  }
+  async invalidateDocsBm25Index(): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.invalidateDocsBm25Index();
+  }
+  async invalidateMemoriesBm25Index(): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.invalidateMemoriesBm25Index();
+  }
+  async invalidateGlobalMemoriesBm25Index(): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.invalidateGlobalMemoriesBm25Index();
+  }
+  async invalidateBM25Index(): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.invalidateBM25Index();
+  }
+  async updateCodeBm25Index(
+    docId: number,
+    content: string,
+    symbolName?: string,
+    signature?: string
+  ): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.updateCodeBm25Index(docId, content, symbolName, signature);
+  }
+  async updateMemoriesBm25Index(memoryId: number, content: string): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.updateMemoriesBm25Index(memoryId, content);
+  }
+  async updateGlobalMemoriesBm25Index(memoryId: number, content: string): Promise<void> {
+    const s = await this.getSqliteFns();
+    s.updateGlobalMemoriesBm25Index(memoryId, content);
+  }
 
   // ===========================================================================
   // Hybrid Search — Approach C (BM25 + dense + RRF in single Qdrant call)
   // ===========================================================================
 
-  async hybridSearchCode(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, filters?: { regex?: string; symbolType?: string }): Promise<any[]> {
+  async hybridSearchCode(
+    query: string,
+    queryEmbedding: number[],
+    limit?: number,
+    threshold?: number,
+    alpha?: number,
+    filters?: { regex?: string; symbolType?: string }
+  ): Promise<any[]> {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
@@ -977,71 +1363,148 @@ export class StorageDispatcher {
     const regexFilter = hasRegex ? { regex: filters!.regex } : undefined;
     if (this.hasQdrant()) {
       try {
-        const qdrantResults = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, fetchLimit, thresh, { codeOnly: true, symbolType: filters?.symbolType });
+        const qdrantResults = await this.qdrant!.hybridSearchDocuments(
+          query,
+          queryEmbedding,
+          fetchLimit,
+          thresh,
+          { codeOnly: true, symbolType: filters?.symbolType }
+        );
         if (qdrantResults.length > 0) return this.applyCodeFilters(qdrantResults, regexFilter, lim);
-      } catch (error) { this._warnQdrantFailure('hybridSearchCode failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('hybridSearchCode failed, falling back', error);
+      }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      const results = (await this.postgres.searchDocuments(queryEmbedding, fetchLimit, thresh, { codeOnly: true, symbolType: filters?.symbolType })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      const results = (
+        await this.postgres.searchDocuments(queryEmbedding, fetchLimit, thresh, {
+          codeOnly: true,
+          symbolType: filters?.symbolType,
+        })
+      ).map((r) => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
       return this.applyCodeFilters(results, regexFilter, lim);
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
   }
 
-  async hybridSearchDocs(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+  async hybridSearchDocs(
+    query: string,
+    queryEmbedding: number[],
+    limit?: number,
+    threshold?: number,
+    alpha?: number
+  ): Promise<any[]> {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { docsOnly: true });
+        const results = await this.qdrant!.hybridSearchDocuments(
+          query,
+          queryEmbedding,
+          lim,
+          thresh,
+          { docsOnly: true }
+        );
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('hybridSearchDocs failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('hybridSearchDocs failed, falling back', error);
+      }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { docsOnly: true })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      return (
+        await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { docsOnly: true })
+      ).map((r) => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
   }
 
-  async hybridSearchMemories(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+  async hybridSearchMemories(
+    query: string,
+    queryEmbedding: number[],
+    limit?: number,
+    threshold?: number,
+    alpha?: number
+  ): Promise<any[]> {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchMemories(query, queryEmbedding, lim, thresh, { projectId: this.qdrant!.getProjectId() });
+        const results = await this.qdrant!.hybridSearchMemories(
+          query,
+          queryEmbedding,
+          lim,
+          thresh,
+          { projectId: this.qdrant!.getProjectId() }
+        );
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('hybridSearchMemories failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('hybridSearchMemories failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchMemories(queryEmbedding, lim, thresh);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.searchMemories(queryEmbedding, lim, thresh);
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
   }
 
-  async hybridSearchGlobalMemories(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, tags?: string[], since?: Date): Promise<any[]> {
+  async hybridSearchGlobalMemories(
+    query: string,
+    queryEmbedding: number[],
+    limit?: number,
+    threshold?: number,
+    alpha?: number,
+    tags?: string[],
+    since?: Date
+  ): Promise<any[]> {
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchGlobalMemories(query, queryEmbedding, lim, thresh, { tags, since });
+        const results = await this.qdrant!.hybridSearchGlobalMemories(
+          query,
+          queryEmbedding,
+          lim,
+          thresh,
+          { tags, since }
+        );
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchGlobalMemories(queryEmbedding, lim, thresh, tags);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.searchGlobalMemories(queryEmbedding, lim, thresh, tags);
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchGlobalMemories(query, queryEmbedding, limit, threshold, alpha, tags, since);
+    return sqlite.hybridSearchGlobalMemories(
+      query,
+      queryEmbedding,
+      limit,
+      threshold,
+      alpha,
+      tags,
+      since
+    );
   }
 
   /** Post-filter code search results by regex and/or symbolType, then trim to limit. */
-  private applyCodeFilters(results: any[], filters: { regex?: string; symbolType?: string } | undefined, limit: number): any[] {
+  private applyCodeFilters(
+    results: any[],
+    filters: { regex?: string; symbolType?: string } | undefined,
+    limit: number
+  ): any[] {
     if (!filters) return results.slice(0, limit);
 
     let regexFilter: RegExp | null = null;
     if (filters.regex && filters.regex.length <= 500) {
-      try { regexFilter = new RegExp(filters.regex, 'i'); } catch { /* invalid regex — skip */ }
+      try {
+        regexFilter = new RegExp(filters.regex, 'i');
+      } catch {
+        /* invalid regex — skip */
+      }
     }
 
     const filtered: any[] = [];
@@ -1059,9 +1522,21 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async saveGlobalMemory(
-    content: string, embedding: number[], tags: string[] = [], source?: string,
-    options?: { type?: MemoryType; deduplicate?: boolean; qualityScore?: number; qualityFactors?: Record<string, number>; }
-  ): Promise<{ id: number; created: boolean; duplicate?: { id: number; content: string; similarity: number } }> {
+    content: string,
+    embedding: number[],
+    tags: string[] = [],
+    source?: string,
+    options?: {
+      type?: MemoryType;
+      deduplicate?: boolean;
+      qualityScore?: number;
+      qualityFactors?: Record<string, number>;
+    }
+  ): Promise<{
+    id: number;
+    created: boolean;
+    duplicate?: { id: number; content: string; similarity: number };
+  }> {
     const type = options?.type ?? 'observation';
     const deduplicate = options?.deduplicate ?? true;
     const qualityScore = options?.qualityScore;
@@ -1070,26 +1545,56 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
         const similar = await this.findSimilarGlobalMemory(embedding, 0.95);
-        if (similar) { this._sessionCounters.memoriesDuplicated++; return { id: similar.id, created: false, duplicate: similar }; }
+        if (similar) {
+          this._sessionCounters.memoriesDuplicated++;
+          return { id: similar.id, created: false, duplicate: similar };
+        }
       }
-      const id = await this.postgres.saveGlobalMemory(content, embedding, tags, source, type, qualityScore, qualityFactors);
+      const id = await this.postgres.saveGlobalMemory(
+        content,
+        embedding,
+        tags,
+        source,
+        type,
+        qualityScore,
+        qualityFactors
+      );
 
       if (this.hasQdrant()) {
         try {
-          await this.qdrant!.upsertGlobalMemoryWithPayload(id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
-        } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error); }
+          await this.qdrant!.upsertGlobalMemoryWithPayload(id, embedding, {
+            content,
+            tags,
+            source,
+            type,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error);
+        }
       }
       this._sessionCounters.globalMemoriesCreated++;
       return { id, created: true };
     }
 
     const sqlite = await this.getSqliteFns();
-    const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, { type, deduplicate });
+    const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, {
+      type,
+      deduplicate,
+    });
 
     if (this.hasQdrant() && !result.isDuplicate) {
       try {
-        await this.qdrant!.upsertGlobalMemoryWithPayload(result.id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
-      } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error); }
+        await this.qdrant!.upsertGlobalMemoryWithPayload(result.id, embedding, {
+          content,
+          tags,
+          source,
+          type,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error);
+      }
     }
 
     if (!result.isDuplicate) {
@@ -1098,25 +1603,44 @@ export class StorageDispatcher {
       this._sessionCounters.memoriesDuplicated++;
     }
     return {
-      id: result.id, created: !result.isDuplicate,
-      duplicate: result.isDuplicate && result.similarity != null ? { id: result.id, content: '', similarity: result.similarity } : undefined,
+      id: result.id,
+      created: !result.isDuplicate,
+      duplicate:
+        result.isDuplicate && result.similarity != null
+          ? { id: result.id, content: '', similarity: result.similarity }
+          : undefined,
     };
   }
 
-  async searchGlobalMemories(queryEmbedding: number[], limit: number = 5, threshold: number = 0.3, tags?: string[]): Promise<any[]> {
+  async searchGlobalMemories(
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.3,
+    tags?: string[]
+  ): Promise<any[]> {
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchGlobalMemories('', queryEmbedding, limit, threshold, { tags });
+        const results = await this.qdrant!.hybridSearchGlobalMemories(
+          '',
+          queryEmbedding,
+          limit,
+          threshold,
+          { tags }
+        );
         if (results.length > 0) return results;
-      } catch (error) { this._warnQdrantFailure('searchGlobalMemories failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('searchGlobalMemories failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
     const sqlite = await this.getSqliteFns();
     return sqlite.searchGlobalMemories(queryEmbedding, limit, threshold, tags);
   }
 
   async getRecentGlobalMemories(limit: number = 10): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getRecentGlobalMemories(limit);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getRecentGlobalMemories(limit);
     const sqlite = await this.getSqliteFns();
     return sqlite.getRecentGlobalMemories(limit);
   }
@@ -1124,40 +1648,64 @@ export class StorageDispatcher {
   async deleteGlobalMemory(id: number): Promise<boolean> {
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteGlobalMemory(id);
-      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) await this.qdrant.deleteGlobalMemoryVector(id);
+      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)
+        await this.qdrant.deleteGlobalMemoryVector(id);
       return deleted;
     }
     const sqlite = await this.getSqliteFns();
     const deleted = sqlite.deleteGlobalMemory(id);
     if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
-      try { await this.qdrant.deleteGlobalMemoryVector(id); } catch (err) {
-        logWarn('storage', `Qdrant global vector delete failed for memory ${id}`, { error: String(err) });
+      try {
+        await this.qdrant.deleteGlobalMemoryVector(id);
+      } catch (err) {
+        logWarn('storage', `Qdrant global vector delete failed for memory ${id}`, {
+          error: String(err),
+        });
       }
     }
     return deleted;
   }
 
-  async findSimilarGlobalMemory(embedding: number[], threshold?: number): Promise<{ id: number; content: string; similarity: number } | null> {
+  async findSimilarGlobalMemory(
+    embedding: number[],
+    threshold?: number
+  ): Promise<{ id: number; content: string; similarity: number } | null> {
     const thresh = threshold ?? 0.92;
     if (this.vectorBackend === 'qdrant' && this.qdrant) {
       try {
-        const results = await this.qdrant.findSimilarWithContent('global_memories', embedding, 3, thresh);
+        const results = await this.qdrant.findSimilarWithContent(
+          'global_memories',
+          embedding,
+          3,
+          thresh
+        );
         if (results.length > 0 && results[0].similarity >= thresh) {
-          return { id: results[0].id, content: results[0].content, similarity: results[0].similarity };
+          return {
+            id: results[0].id,
+            content: results[0].content,
+            similarity: results[0].similarity,
+          };
         }
         if (results.length === 0 && this.backend === 'postgresql' && this.postgres) {
           const qr = await this.qdrant.searchGlobalMemories(embedding, 3, thresh);
           if (qr.length > 0) {
-            const pgRows = await this.postgres.getMemoriesByIds(qr.map(r => r.id), { excludeInvalidated: false });
+            const pgRows = await this.postgres.getMemoriesByIds(
+              qr.map((r) => r.id),
+              { excludeInvalidated: false }
+            );
             if (pgRows.length > 0) {
-              const score = qr.find(r => r.id === pgRows[0].id)?.similarity ?? 0;
-              if (score >= thresh) return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
+              const score = qr.find((r) => r.id === pgRows[0].id)?.similarity ?? 0;
+              if (score >= thresh)
+                return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
             }
           }
         }
-      } catch (error) { this._warnQdrantFailure('findSimilarGlobalMemory failed, falling back', error); }
+      } catch (error) {
+        this._warnQdrantFailure('findSimilarGlobalMemory failed, falling back', error);
+      }
     }
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.findSimilarGlobalMemory(embedding, threshold);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.findSimilarGlobalMemory(embedding, threshold);
     const sqlite = await this.getSqliteFns();
     return sqlite.findSimilarGlobalMemory(embedding, threshold);
   }
@@ -1191,47 +1739,90 @@ export class StorageDispatcher {
     return upsertSkill(skill);
   }
 
-  async getAllSkills(): Promise<Array<{
-    id: number; name: string; description: string; source: string;
-    path?: string; content?: string; skyllId?: string; usageCount: number; lastUsed?: string;
-  }>> {
+  async getAllSkills(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      description: string;
+      source: string;
+      path?: string;
+      content?: string;
+      skyllId?: string;
+      usageCount: number;
+      lastUsed?: string;
+    }>
+  > {
     if (this.backend === 'postgresql' && this.postgres) {
       const rows = await this.postgres.getAllSkills();
-      return rows.map(r => ({ ...r, lastUsed: r.lastUsed ? String(r.lastUsed) : undefined, usageCount: r.usageCount }));
+      return rows.map((r) => ({
+        ...r,
+        lastUsed: r.lastUsed ? String(r.lastUsed) : undefined,
+        usageCount: r.usageCount,
+      }));
     }
     const { getAllSkills } = await import('../db/skills.js');
     const rows = getAllSkills();
-    return rows.map(r => ({
-      id: r.id, name: r.name, description: r.description, source: r.source,
-      path: r.path, content: r.content, skyllId: r.skyll_id,
-      usageCount: r.usage_count ?? 0, lastUsed: r.last_used,
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      source: r.source,
+      path: r.path,
+      content: r.content,
+      skyllId: r.skyll_id,
+      usageCount: r.usage_count ?? 0,
+      lastUsed: r.last_used,
     }));
   }
 
-  async searchSkills(query: string, limit: number = 10): Promise<Array<{
-    id: number; name: string; description: string; source: string;
-    path?: string; usageCount: number;
-  }>> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchSkills(query, limit);
+  async searchSkills(
+    query: string,
+    limit: number = 10
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      description: string;
+      source: string;
+      path?: string;
+      usageCount: number;
+    }>
+  > {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.searchSkills(query, limit);
     const { searchSkills } = await import('../db/skills.js');
     const rows = searchSkills(query, limit);
-    return rows.map(r => ({
-      id: r.id, name: r.name, description: r.description, source: r.source,
-      path: r.path, usageCount: r.usage_count ?? 0,
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      source: r.source,
+      path: r.path,
+      usageCount: r.usage_count ?? 0,
     }));
   }
 
   async getSkillByName(name: string): Promise<{
-    id: number; name: string; description: string; source: string;
-    path?: string; content?: string; skyllId?: string;
+    id: number;
+    name: string;
+    description: string;
+    source: string;
+    path?: string;
+    content?: string;
+    skyllId?: string;
   } | null> {
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.getSkillByName(name);
     const { getSkillByName } = await import('../db/skills.js');
     const row = getSkillByName(name);
     if (!row) return null;
     return {
-      id: row.id, name: row.name, description: row.description, source: row.source,
-      path: row.path, content: row.content, skyllId: row.skyll_id,
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      source: row.source,
+      path: row.path,
+      content: row.content,
+      skyllId: row.skyll_id,
     };
   }
 
@@ -1248,15 +1839,20 @@ export class StorageDispatcher {
   }
 
   async clearExpiredSkyllCache(): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.clearExpiredSkyllCache();
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.clearExpiredSkyllCache();
     const { clearExpiredSkyllCache } = await import('../db/skills.js');
     return clearExpiredSkyllCache();
   }
 
   async getCachedSkyllSkill(skyllId: string): Promise<{
-    id: number; name: string; description: string; content?: string;
+    id: number;
+    name: string;
+    description: string;
+    content?: string;
   } | null> {
-    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getCachedSkyllSkill(skyllId);
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getCachedSkyllSkill(skyllId);
     const { getCachedSkyllSkill } = await import('../db/skills.js');
     return getCachedSkyllSkill(skyllId);
   }
@@ -1271,38 +1867,65 @@ export class StorageDispatcher {
   // Bulk Export (for checkpoint, graph-export)
   // ===========================================================================
 
-
-  async getAllMemoriesForExport(): Promise<Array<{
-    id: number; content: string; tags: string[]; source: string | null;
-    embedding: number[] | null; type: string | null;
-    quality_score: number | null; quality_factors: Record<string, number> | null;
-    access_count: number; last_accessed: string | null; created_at: string;
-    invalidated_by: number | null;
-  }>> {
+  async getAllMemoriesForExport(): Promise<
+    Array<{
+      id: number;
+      content: string;
+      tags: string[];
+      source: string | null;
+      embedding: number[] | null;
+      type: string | null;
+      quality_score: number | null;
+      quality_factors: Record<string, number> | null;
+      access_count: number;
+      last_accessed: string | null;
+      created_at: string;
+      invalidated_by: number | null;
+    }>
+  > {
     const { getAllMemoriesForExportImpl } = await import('./dispatcher-export.js');
     return getAllMemoriesForExportImpl(this);
   }
 
-  async getAllDocumentsForExport(): Promise<Array<{
-    id: number; file_path: string; chunk_index: number; content: string;
-    start_line: number; end_line: number; embedding: number[] | null; created_at: string;
-  }>> {
+  async getAllDocumentsForExport(): Promise<
+    Array<{
+      id: number;
+      file_path: string;
+      chunk_index: number;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: number[] | null;
+      created_at: string;
+    }>
+  > {
     const { getAllDocumentsForExportImpl } = await import('./dispatcher-export.js');
     return getAllDocumentsForExportImpl(this);
   }
 
-  async getAllMemoryLinksForExport(): Promise<Array<{
-    id: number; source_id: number; target_id: number;
-    relation: string; weight: number; created_at: string;
-    llm_enriched: boolean;
-  }>> {
+  async getAllMemoryLinksForExport(): Promise<
+    Array<{
+      id: number;
+      source_id: number;
+      target_id: number;
+      relation: string;
+      weight: number;
+      created_at: string;
+      llm_enriched: boolean;
+    }>
+  > {
     const { getAllMemoryLinksForExportImpl } = await import('./dispatcher-export.js');
     return getAllMemoryLinksForExportImpl(this);
   }
 
-  async getAllCentralityForExport(): Promise<Array<{
-    memory_id: number; degree: number; normalized_degree: number; updated_at: string;
-  }>> {
+  async getAllCentralityForExport(): Promise<
+    Array<{
+      memory_id: number;
+      degree: number;
+      normalized_degree: number;
+      updated_at: string;
+    }>
+  > {
     const { getAllCentralityForExportImpl } = await import('./dispatcher-export.js');
     return getAllCentralityForExportImpl(this);
   }
@@ -1312,9 +1935,13 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async appendLearningDelta(delta: {
-    timestamp: string; source: string;
-    memoriesBefore: number; memoriesAfter: number; newMemories: number;
-    typesAdded: Record<string, number>; avgQualityOfNew?: number | null;
+    timestamp: string;
+    source: string;
+    memoriesBefore: number;
+    memoriesAfter: number;
+    newMemories: number;
+    typesAdded: Record<string, number>;
+    avgQualityOfNew?: number | null;
   }): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
@@ -1323,8 +1950,11 @@ export class StorageDispatcher {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           this.postgres.getProjectId(),
-          delta.timestamp, delta.source,
-          delta.memoriesBefore, delta.memoriesAfter, delta.newMemories,
+          delta.timestamp,
+          delta.source,
+          delta.memoriesBefore,
+          delta.memoriesAfter,
+          delta.newMemories,
           Object.keys(delta.typesAdded).length > 0 ? JSON.stringify(delta.typesAdded) : null,
           delta.avgQualityOfNew ?? null,
         ]
@@ -1337,10 +1967,13 @@ export class StorageDispatcher {
       `INSERT INTO learning_deltas (timestamp, source, memories_before, memories_after, new_memories, types_added, avg_quality)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      delta.timestamp, delta.source,
-      delta.memoriesBefore, delta.memoriesAfter, delta.newMemories,
+      delta.timestamp,
+      delta.source,
+      delta.memoriesBefore,
+      delta.memoriesAfter,
+      delta.newMemories,
       Object.keys(delta.typesAdded).length > 0 ? JSON.stringify(delta.typesAdded) : null,
-      delta.avgQualityOfNew ?? null,
+      delta.avgQualityOfNew ?? null
     );
   }
 
@@ -1362,13 +1995,24 @@ export class StorageDispatcher {
     ).run(new Date().toISOString(), text);
   }
 
-  async getLearningDeltas(options: {
-    limit?: number; since?: string;
-  } = {}): Promise<Array<{
-    id: number; timestamp: string; source: string;
-    memories_before: number; memories_after: number; new_memories: number;
-    types_added: string | null; avg_quality: number | null; created_at: string;
-  }>> {
+  async getLearningDeltas(
+    options: {
+      limit?: number;
+      since?: string;
+    } = {}
+  ): Promise<
+    Array<{
+      id: number;
+      timestamp: string;
+      source: string;
+      memories_before: number;
+      memories_after: number;
+      new_memories: number;
+      types_added: string | null;
+      avg_quality: number | null;
+      created_at: string;
+    }>
+  > {
     const limit = options.limit && options.limit > 0 ? options.limit : 20;
 
     if (this.backend === 'postgresql' && this.postgres) {
@@ -1415,7 +2059,11 @@ export class StorageDispatcher {
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
-    const row = db.prepare(`SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path LIKE 'code:%'`).get() as { count: number };
+    const row = db
+      .prepare(
+        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path LIKE 'code:%'`
+      )
+      .get() as { count: number };
     return row.count;
   }
 
@@ -1430,7 +2078,11 @@ export class StorageDispatcher {
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
-    const row = db.prepare(`SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path NOT LIKE 'code:%'`).get() as { count: number };
+    const row = db
+      .prepare(
+        `SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE file_path NOT LIKE 'code:%'`
+      )
+      .get() as { count: number };
     return row.count;
   }
 
@@ -1441,11 +2093,18 @@ export class StorageDispatcher {
         `SELECT AVG(quality_score) as avg, COUNT(*) as count FROM memories WHERE LOWER(project_id) = $1 AND quality_score IS NOT NULL`,
         [this.postgres.getProjectId()]
       );
-      return { avg: rows[0]?.avg ? parseFloat(rows[0].avg) : null, count: parseInt(rows[0]?.count ?? '0') };
+      return {
+        avg: rows[0]?.avg ? parseFloat(rows[0].avg) : null,
+        count: parseInt(rows[0]?.count ?? '0'),
+      };
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
-    const row = db.prepare(`SELECT AVG(quality_score) as avg, COUNT(*) as count FROM memories WHERE quality_score IS NOT NULL`).get() as { avg: number | null; count: number };
+    const row = db
+      .prepare(
+        `SELECT AVG(quality_score) as avg, COUNT(*) as count FROM memories WHERE quality_score IS NOT NULL`
+      )
+      .get() as { avg: number | null; count: number };
     return { avg: row.avg, count: row.count };
   }
 
@@ -1454,11 +2113,20 @@ export class StorageDispatcher {
   // ===========================================================================
 
   async getMemoriesForAgentsExport(options: {
-    types: string[]; minQuality: number; limit: number;
-  }): Promise<Array<{
-    id: number; content: string; type: string | null; tags: string[];
-    source: string | null; quality_score: number | null; created_at: string;
-  }>> {
+    types: string[];
+    minQuality: number;
+    limit: number;
+  }): Promise<
+    Array<{
+      id: number;
+      content: string;
+      type: string | null;
+      tags: string[];
+      source: string | null;
+      quality_score: number | null;
+      created_at: string;
+    }>
+  > {
     if (this.backend === 'postgresql' && this.postgres) {
       const pool = await this.postgres.getPool();
       const typePlaceholders = options.types.map((_, i) => `$${i + 2}`).join(', ');
@@ -1486,8 +2154,9 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
     const typePlaceholders = options.types.map(() => '?').join(', ');
-    const rows = db.prepare(
-      `SELECT id, content, type, tags, source, quality_score, created_at
+    const rows = db
+      .prepare(
+        `SELECT id, content, type, tags, source, quality_score, created_at
        FROM memories
        WHERE invalidated_by IS NULL
          AND type IN (${typePlaceholders})
@@ -1499,7 +2168,8 @@ export class StorageDispatcher {
          END,
          quality_score DESC
        LIMIT ?`
-    ).all(...options.types, options.minQuality, options.limit) as Array<{
+      )
+      .all(...options.types, options.minQuality, options.limit) as Array<{
       id: number;
       content: string;
       type: string | null;
@@ -1521,25 +2191,35 @@ export class StorageDispatcher {
   async getAllMemoriesWithEmbeddings(options?: {
     types?: string[];
     excludeInvalidated?: boolean;
-  }): Promise<Array<{
-    id: number; content: string; tags: string[]; source: string | null;
-    embedding: number[] | null; type: string | null;
-    quality_score: number | null; created_at: string;
-    invalidated_by: number | null;
-  }>> {
+  }): Promise<
+    Array<{
+      id: number;
+      content: string;
+      tags: string[];
+      source: string | null;
+      embedding: number[] | null;
+      type: string | null;
+      quality_score: number | null;
+      created_at: string;
+      invalidated_by: number | null;
+    }>
+  > {
     if (this.backend === 'postgresql' && this.postgres) {
       const rows = await this.postgres.getAllMemoriesWithEmbeddings();
       let result = rows.map((r: any) => ({
-        id: r.id, content: r.content,
+        id: r.id,
+        content: r.content,
         tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : (r.tags ?? []),
-        source: r.source ?? null, embedding: r.embedding ?? null,
+        source: r.source ?? null,
+        embedding: r.embedding ?? null,
         type: r.type ?? null,
         quality_score: r.qualityScore ?? r.quality_score ?? null,
         created_at: r.createdAt ?? r.created_at ?? new Date().toISOString(),
         invalidated_by: r.invalidatedBy ?? r.invalidated_by ?? null,
       }));
-      if (options?.excludeInvalidated) result = result.filter(r => r.invalidated_by == null);
-      if (options?.types?.length) result = result.filter(r => r.type != null && options.types!.includes(r.type));
+      if (options?.excludeInvalidated) result = result.filter((r) => r.invalidated_by == null);
+      if (options?.types?.length)
+        result = result.filter((r) => r.type != null && options.types!.includes(r.type));
       return result;
     }
     const sqlite = await this.getSqliteFns();
@@ -1557,12 +2237,21 @@ export class StorageDispatcher {
     const params = options?.types?.length ? options.types : [];
     const rows = db.prepare(sql).all(...params) as SqlMemoryRow[];
     return rows.map((row) => ({
-      id: row.id, content: row.content,
+      id: row.id,
+      content: row.content,
       tags: row.tags ? JSON.parse(row.tags) : [],
-      source: row.source, embedding: row.embedding
-        ? Array.from(new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4))
+      source: row.source,
+      embedding: row.embedding
+        ? Array.from(
+            new Float32Array(
+              row.embedding.buffer,
+              row.embedding.byteOffset,
+              row.embedding.byteLength / 4
+            )
+          )
         : null,
-      type: row.type, quality_score: row.quality_score,
+      type: row.type,
+      quality_score: row.quality_score,
       created_at: row.created_at,
       invalidated_by: row.invalidated_by ?? null,
     }));
@@ -1592,15 +2281,22 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
     const placeholders = ids.map(() => '?').join(',');
-    const rows = db.prepare(
-      `SELECT id, embedding FROM memories WHERE id IN (${placeholders})`
-    ).all(...ids) as Array<{ id: number; embedding: Buffer | null }>;
+    const rows = db
+      .prepare(`SELECT id, embedding FROM memories WHERE id IN (${placeholders})`)
+      .all(...ids) as Array<{ id: number; embedding: Buffer | null }>;
     const map = new Map<number, number[]>();
     for (const row of rows) {
       if (row.embedding) {
-        map.set(row.id, Array.from(new Float32Array(
-          row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4
-        )));
+        map.set(
+          row.id,
+          Array.from(
+            new Float32Array(
+              row.embedding.buffer,
+              row.embedding.byteOffset,
+              row.embedding.byteLength / 4
+            )
+          )
+        );
       }
     }
     return map;
@@ -1617,9 +2313,9 @@ export class StorageDispatcher {
     }
     const sqlite = await this.getSqliteFns();
     const db = sqlite.getDb();
-    const result = db.prepare(
-      'DELETE FROM memory_links WHERE source_id = ? OR target_id = ?'
-    ).run(memoryId, memoryId);
+    const result = db
+      .prepare('DELETE FROM memory_links WHERE source_id = ? OR target_id = ?')
+      .run(memoryId, memoryId);
     return result.changes;
   }
 
@@ -1633,23 +2329,40 @@ export class StorageDispatcher {
    */
   async bulkRestore(data: {
     memories: Array<{
-      id: number; content: string; tags: string[]; source: string | null;
-      embedding: number[] | null; type: string | null;
-      quality_score: number | null; quality_factors: Record<string, number> | null;
-      access_count: number; last_accessed: string | null; created_at: string;
+      id: number;
+      content: string;
+      tags: string[];
+      source: string | null;
+      embedding: number[] | null;
+      type: string | null;
+      quality_score: number | null;
+      quality_factors: Record<string, number> | null;
+      access_count: number;
+      last_accessed: string | null;
+      created_at: string;
     }>;
     memoryLinks: Array<{
-      source_id: number; target_id: number; relation: string;
-      weight: number; created_at: string; llm_enriched?: boolean;
+      source_id: number;
+      target_id: number;
+      relation: string;
+      weight: number;
+      created_at: string;
+      llm_enriched?: boolean;
     }>;
     centrality: Array<{
-      memory_id: number; degree: number;
-      normalized_degree: number; updated_at: string;
+      memory_id: number;
+      degree: number;
+      normalized_degree: number;
+      updated_at: string;
     }>;
     documents: Array<{
-      file_path: string; chunk_index: number; content: string;
-      start_line: number; end_line: number;
-      embedding: number[] | null; created_at: string;
+      file_path: string;
+      chunk_index: number;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: number[] | null;
+      created_at: string;
     }>;
     overwrite: boolean;
     restoreDocuments: boolean;
@@ -1667,11 +2380,20 @@ export class StorageDispatcher {
   // Backend Info
   // ===========================================================================
 
-  getBackendInfo(): { backend: 'sqlite' | 'postgresql'; vector: 'builtin' | 'qdrant'; vectorName: string } {
+  getBackendInfo(): {
+    backend: 'sqlite' | 'postgresql';
+    vector: 'builtin' | 'qdrant';
+    vectorName: string;
+  } {
     return {
       backend: this.backend,
       vector: this.vectorBackend,
-      vectorName: this.vectorBackend === 'qdrant' ? 'qdrant' : this.backend === 'postgresql' ? 'pgvector' : 'sqlite-vec',
+      vectorName:
+        this.vectorBackend === 'qdrant'
+          ? 'qdrant'
+          : this.backend === 'postgresql'
+            ? 'pgvector'
+            : 'sqlite-vec',
     };
   }
 
@@ -1690,7 +2412,6 @@ export class StorageDispatcher {
     const { backfillQdrantImpl } = await import('./dispatcher-export.js');
     return backfillQdrantImpl(this, target, options);
   }
-
 }
 
 /** Parse pgvector string '[1.0, 2.0, 3.0]' to number[] */
@@ -1698,7 +2419,7 @@ export class StorageDispatcher {
 function parsePgVector(str: string): number[] {
   const inner = str.slice(1, -1);
   if (!inner) return [];
-  return inner.split(',').map(s => parseFloat(s.trim()));
+  return inner.split(',').map((s) => parseFloat(s.trim()));
 }
 
 // Singleton

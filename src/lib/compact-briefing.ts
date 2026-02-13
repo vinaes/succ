@@ -46,7 +46,7 @@ interface TranscriptEntry {
  * Parse JSONL transcript content into formatted text
  */
 function parseTranscript(content: string): string {
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content.split('\n').filter((line) => line.trim());
   const parts: string[] = [];
 
   for (const line of lines) {
@@ -104,14 +104,14 @@ async function findRelevantMemories(
     if (topics.length === 0) {
       // Fall back to recent memories
       const recent = await getRecentMemories(limit);
-      return recent.map(m => ({ content: m.content, tags: m.tags }));
+      return recent.map((m) => ({ content: m.content, tags: m.tags }));
     }
 
     const searchQuery = topics.join(' ');
     const embedding = await getEmbedding(searchQuery);
     const results = await searchMemories(embedding, limit, 0.3);
 
-    return results.map(m => ({ content: m.content, tags: m.tags }));
+    return results.map((m) => ({ content: m.content, tags: m.tags }));
   } catch {
     return [];
   }
@@ -124,7 +124,9 @@ function extractTopics(transcript: string): string[] {
   const topics: string[] = [];
 
   // Extract file paths
-  const fileMatches = transcript.match(/(?:src|lib|components|pages|api|hooks|utils|test)\/[\w\-./]+\.\w+/gi);
+  const fileMatches = transcript.match(
+    /(?:src|lib|components|pages|api|hooks|utils|test)\/[\w\-./]+\.\w+/gi
+  );
   if (fileMatches) {
     topics.push(...fileMatches.slice(0, 3));
   }
@@ -183,16 +185,14 @@ export async function generateCompactBriefing(
     }
 
     // Limit transcript to avoid token limits (use last ~4000 chars for recency)
-    const truncatedTranscript = transcript.length > 6000
-      ? transcript.slice(-6000)
-      : transcript;
+    const truncatedTranscript = transcript.length > 6000 ? transcript.slice(-6000) : transcript;
 
     // Get relevant memories if enabled
     let memoriesSection = '';
     if (mergedConfig.include_memories) {
       const memories = await findRelevantMemories(transcript, mergedConfig.max_memories);
       if (memories.length > 0) {
-        memoriesSection = `Relevant context from previous sessions:\n${memories.map(m => `- [${m.tags.join(', ')}] ${m.content.slice(0, 200)}`).join('\n')}`;
+        memoriesSection = `Relevant context from previous sessions:\n${memories.map((m) => `- [${m.tags.join(', ')}] ${m.content.slice(0, 200)}`).join('\n')}`;
       }
     }
 

@@ -20,9 +20,9 @@ function getCodeBm25Index(): bm25.BM25Index {
   const database = getDb();
 
   // Try to load from metadata
-  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_code_index'").get() as
-    | { value: string }
-    | undefined;
+  const stored = database
+    .prepare("SELECT value FROM metadata WHERE key = 'bm25_code_index'")
+    .get() as { value: string } | undefined;
 
   if (stored) {
     try {
@@ -48,12 +48,16 @@ function getCodeBm25Index(): bm25.BM25Index {
     }>;
     if (rows.length === 0) break;
     for (const row of rows) {
-      bm25.addToIndex(codeBm25Index, {
-        id: row.id,
-        content: row.content,
-        symbolName: row.symbol_name ?? undefined,
-        signature: row.signature ?? undefined,
-      }, 'code');
+      bm25.addToIndex(
+        codeBm25Index,
+        {
+          id: row.id,
+          content: row.content,
+          symbolName: row.symbol_name ?? undefined,
+          signature: row.signature ?? undefined,
+        },
+        'code'
+      );
     }
     offset += rows.length;
     if (rows.length < REBUILD_BATCH_SIZE) break;
@@ -72,7 +76,9 @@ function saveCodeBm25Index(): void {
   if (!codeBm25Index) return;
   const database = getDb();
   const serialized = bm25.serializeIndex(codeBm25Index);
-  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_code_index', ?)").run(serialized);
+  database
+    .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_code_index', ?)")
+    .run(serialized);
 }
 
 /**
@@ -87,7 +93,12 @@ export function invalidateCodeBm25Index(): void {
 /**
  * Update BM25 index when a document is added/updated
  */
-export function updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): void {
+export function updateCodeBm25Index(
+  docId: number,
+  content: string,
+  symbolName?: string,
+  signature?: string
+): void {
   const index = getCodeBm25Index();
   // Remove old entry if exists
   bm25.removeFromIndex(index, docId);
@@ -114,9 +125,9 @@ function getDocsBm25Index(): bm25.BM25Index {
   const database = getDb();
 
   // Try to load from metadata
-  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_docs_index'").get() as
-    | { value: string }
-    | undefined;
+  const stored = database
+    .prepare("SELECT value FROM metadata WHERE key = 'bm25_docs_index'")
+    .get() as { value: string } | undefined;
 
   if (stored) {
     try {
@@ -129,7 +140,9 @@ function getDocsBm25Index(): bm25.BM25Index {
 
   // Build from documents in batches to limit peak memory
   docsBm25Index = bm25.createEmptyIndex();
-  const stmt = database.prepare("SELECT id, content FROM documents WHERE file_path NOT LIKE 'code:%' ORDER BY id LIMIT ? OFFSET ?");
+  const stmt = database.prepare(
+    "SELECT id, content FROM documents WHERE file_path NOT LIKE 'code:%' ORDER BY id LIMIT ? OFFSET ?"
+  );
   let offset = 0;
   for (;;) {
     const rows = stmt.all(REBUILD_BATCH_SIZE, offset) as Array<{ id: number; content: string }>;
@@ -154,7 +167,9 @@ function saveDocsBm25Index(): void {
   if (!docsBm25Index) return;
   const database = getDb();
   const serialized = bm25.serializeIndex(docsBm25Index);
-  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_docs_index', ?)").run(serialized);
+  database
+    .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_docs_index', ?)")
+    .run(serialized);
 }
 
 /**
@@ -194,9 +209,9 @@ function getMemoriesBm25Index(): bm25.BM25Index {
   const database = getDb();
 
   // Try to load from metadata
-  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'").get() as
-    | { value: string }
-    | undefined;
+  const stored = database
+    .prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'")
+    .get() as { value: string } | undefined;
 
   if (stored) {
     try {
@@ -236,7 +251,9 @@ function saveMemoriesBm25Index(): void {
   if (!memoriesBm25Index) return;
   const database = getDb();
   const serialized = bm25.serializeIndex(memoriesBm25Index);
-  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)").run(serialized);
+  database
+    .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)")
+    .run(serialized);
 }
 
 /**
@@ -276,9 +293,9 @@ function getGlobalMemoriesBm25Index(): bm25.BM25Index {
   const database = getGlobalDb();
 
   // Try to load from metadata
-  const stored = database.prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'").get() as
-    | { value: string }
-    | undefined;
+  const stored = database
+    .prepare("SELECT value FROM metadata WHERE key = 'bm25_memories_index'")
+    .get() as { value: string } | undefined;
 
   if (stored) {
     try {
@@ -317,9 +334,9 @@ function getGlobalMemoriesBm25Index(): bm25.BM25Index {
 function saveGlobalMemoriesBm25Index(): void {
   if (!globalMemoriesBm25Index) return;
   const database = getGlobalDb();
-  database.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)").run(
-    bm25.serializeIndex(globalMemoriesBm25Index)
-  );
+  database
+    .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bm25_memories_index', ?)")
+    .run(bm25.serializeIndex(globalMemoriesBm25Index));
 }
 
 /**
@@ -331,7 +348,9 @@ export function invalidateGlobalMemoriesBm25Index(): void {
     const database = getGlobalDb();
     database.prepare("DELETE FROM metadata WHERE key = 'bm25_memories_index'").run();
   } catch (err) {
-    logWarn('bm25', 'Failed to invalidate BM25 index', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('bm25', 'Failed to invalidate BM25 index', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

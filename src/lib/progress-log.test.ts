@@ -17,24 +17,32 @@ let testDb: Database.Database;
 vi.mock('./storage/index.js', () => {
   return {
     appendLearningDelta: vi.fn(async (delta: any) => {
-      testDb.prepare(`
+      testDb
+        .prepare(
+          `
         INSERT INTO learning_deltas (timestamp, source, memories_before, memories_after, new_memories, types_added, avg_quality)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        delta.timestamp,
-        delta.source,
-        delta.memoriesBefore,
-        delta.memoriesAfter,
-        delta.newMemories,
-        Object.keys(delta.typesAdded).length > 0 ? JSON.stringify(delta.typesAdded) : null,
-        delta.avgQualityOfNew ?? null,
-      );
+      `
+        )
+        .run(
+          delta.timestamp,
+          delta.source,
+          delta.memoriesBefore,
+          delta.memoriesAfter,
+          delta.newMemories,
+          Object.keys(delta.typesAdded).length > 0 ? JSON.stringify(delta.typesAdded) : null,
+          delta.avgQualityOfNew ?? null
+        );
     }),
     appendRawLearningDelta: vi.fn(async (text: string) => {
-      testDb.prepare(`
+      testDb
+        .prepare(
+          `
         INSERT INTO learning_deltas (timestamp, source, memories_before, memories_after, new_memories)
         VALUES (?, ?, 0, 0, 0)
-      `).run(new Date().toISOString(), text);
+      `
+        )
+        .run(new Date().toISOString(), text);
     }),
     getLearningDeltas: vi.fn(async (options?: { limit?: number; since?: string }) => {
       let sql = 'SELECT * FROM learning_deltas';
@@ -53,7 +61,12 @@ vi.mock('./storage/index.js', () => {
   };
 });
 
-import { appendProgressEntry, appendRawEntry, readProgressLog, getProgressEntries } from './progress-log.js';
+import {
+  appendProgressEntry,
+  appendRawEntry,
+  readProgressLog,
+  getProgressEntries,
+} from './progress-log.js';
 import type { LearningDelta } from './learning-delta.js';
 
 describe('Progress Log (DB-based)', () => {
@@ -150,13 +163,19 @@ describe('Progress Log (DB-based)', () => {
     it('should allow multiple entries', async () => {
       await appendProgressEntry({
         timestamp: '2026-02-06T10:00:00Z',
-        memoriesBefore: 0, memoriesAfter: 3, newMemories: 3,
-        typesAdded: { learning: 3 }, source: 'session-summary',
+        memoriesBefore: 0,
+        memoriesAfter: 3,
+        newMemories: 3,
+        typesAdded: { learning: 3 },
+        source: 'session-summary',
       });
       await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
-        memoriesBefore: 3, memoriesAfter: 5, newMemories: 2,
-        typesAdded: { decision: 2 }, source: 'manual',
+        memoriesBefore: 3,
+        memoriesAfter: 5,
+        newMemories: 2,
+        typesAdded: { decision: 2 },
+        source: 'manual',
       });
 
       const rows = testDb.prepare('SELECT * FROM learning_deltas').all();
@@ -192,13 +211,19 @@ describe('Progress Log (DB-based)', () => {
     it('should return formatted entries in reverse chronological order', async () => {
       await appendProgressEntry({
         timestamp: '2026-02-06T10:00:00Z',
-        memoriesBefore: 0, memoriesAfter: 3, newMemories: 3,
-        typesAdded: { learning: 3 }, source: 'first',
+        memoriesBefore: 0,
+        memoriesAfter: 3,
+        newMemories: 3,
+        typesAdded: { learning: 3 },
+        source: 'first',
       });
       await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
-        memoriesBefore: 3, memoriesAfter: 5, newMemories: 2,
-        typesAdded: { decision: 2 }, source: 'second',
+        memoriesBefore: 3,
+        memoriesAfter: 5,
+        newMemories: 2,
+        typesAdded: { decision: 2 },
+        source: 'second',
       });
 
       const entries = await readProgressLog();
@@ -211,8 +236,11 @@ describe('Progress Log (DB-based)', () => {
       for (let i = 0; i < 5; i++) {
         await appendProgressEntry({
           timestamp: `2026-02-0${i + 1}T10:00:00Z`,
-          memoriesBefore: i, memoriesAfter: i + 1, newMemories: 1,
-          typesAdded: { learning: 1 }, source: `entry-${i}`,
+          memoriesBefore: i,
+          memoriesAfter: i + 1,
+          newMemories: 1,
+          typesAdded: { learning: 1 },
+          source: `entry-${i}`,
         });
       }
 
@@ -224,13 +252,19 @@ describe('Progress Log (DB-based)', () => {
     it('should filter by since (ISO date)', async () => {
       await appendProgressEntry({
         timestamp: '2026-01-01T10:00:00Z',
-        memoriesBefore: 0, memoriesAfter: 1, newMemories: 1,
-        typesAdded: {}, source: 'old',
+        memoriesBefore: 0,
+        memoriesAfter: 1,
+        newMemories: 1,
+        typesAdded: {},
+        source: 'old',
       });
       await appendProgressEntry({
         timestamp: '2026-02-05T10:00:00Z',
-        memoriesBefore: 1, memoriesAfter: 2, newMemories: 1,
-        typesAdded: {}, source: 'recent',
+        memoriesBefore: 1,
+        memoriesAfter: 2,
+        newMemories: 1,
+        typesAdded: {},
+        source: 'recent',
       });
 
       const entries = await readProgressLog({ since: '2026-02-01' });
@@ -241,8 +275,11 @@ describe('Progress Log (DB-based)', () => {
     it('should format entries with types', async () => {
       await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
-        memoriesBefore: 5, memoriesAfter: 8, newMemories: 3,
-        typesAdded: { decision: 2, learning: 1 }, source: 'session-summary',
+        memoriesBefore: 5,
+        memoriesAfter: 8,
+        newMemories: 3,
+        typesAdded: { decision: 2, learning: 1 },
+        source: 'session-summary',
       });
 
       const entries = await readProgressLog();
@@ -256,8 +293,11 @@ describe('Progress Log (DB-based)', () => {
     it('should return structured rows', async () => {
       await appendProgressEntry({
         timestamp: '2026-02-06T12:00:00Z',
-        memoriesBefore: 10, memoriesAfter: 15, newMemories: 5,
-        typesAdded: { learning: 5 }, source: 'session-summary',
+        memoriesBefore: 10,
+        memoriesAfter: 15,
+        newMemories: 5,
+        typesAdded: { learning: 5 },
+        source: 'session-summary',
       });
 
       const entries = await getProgressEntries();
@@ -271,8 +311,11 @@ describe('Progress Log (DB-based)', () => {
       for (let i = 0; i < 5; i++) {
         await appendProgressEntry({
           timestamp: `2026-02-0${i + 1}T10:00:00Z`,
-          memoriesBefore: i, memoriesAfter: i + 1, newMemories: 1,
-          typesAdded: {}, source: `e${i}`,
+          memoriesBefore: i,
+          memoriesAfter: i + 1,
+          newMemories: 1,
+          typesAdded: {},
+          source: `e${i}`,
         });
       }
 

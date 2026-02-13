@@ -13,7 +13,7 @@ import type {
 } from './config-types.js';
 
 // Default embedding model for local ONNX mode
-export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2';  // 384 dimensions
+export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2'; // 384 dimensions
 
 // Default readiness gate config
 export const DEFAULT_READINESS_GATE_CONFIG = {
@@ -33,7 +33,7 @@ export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
 
 // Default retention policy config
 export const DEFAULT_RETENTION_POLICY_CONFIG: Required<RetentionPolicyConfig> = {
-  enabled: false,  // Manual only by default
+  enabled: false, // Manual only by default
   decay_rate: 0.01,
   access_weight: 0.1,
   max_access_boost: 2.0,
@@ -86,7 +86,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG: Required<IdleReflectionConfig> = {
     session_summary: true,
     precompute_context: true,
     write_reflection: true,
-    retention_cleanup: true,  // Enabled by default (only runs if retention.enabled=true in config)
+    retention_cleanup: true, // Enabled by default (only runs if retention.enabled=true in config)
   },
   thresholds: {
     similarity_for_merge: 0.92,

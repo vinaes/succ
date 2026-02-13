@@ -58,7 +58,11 @@ export async function startWatchDaemon(
       console.error('Failed to start watch service');
     }
   } catch (error) {
-    logError('watch', 'Error starting watch service:', error instanceof Error ? error : new Error(String(error)));
+    logError(
+      'watch',
+      'Error starting watch service:',
+      error instanceof Error ? error : new Error(String(error))
+    );
     console.error('Error starting watch service:', error);
     process.exit(1);
   }
@@ -134,9 +138,7 @@ export async function watchDaemonStatus(): Promise<void> {
     const logContent = fs.readFileSync(logFile, 'utf-8');
     const lines = logContent.trim().split('\n');
     // Filter to watch-related lines
-    const watchLines = lines
-      .filter(line => line.includes('[watch]'))
-      .slice(-10);
+    const watchLines = lines.filter((line) => line.includes('[watch]')).slice(-10);
     if (watchLines.length > 0) {
       console.log('\n   Recent activity:');
       for (const line of watchLines) {
@@ -149,10 +151,7 @@ export async function watchDaemonStatus(): Promise<void> {
 /**
  * Watch for file changes and auto-reindex
  */
-export async function watch(
-  targetPath?: string,
-  options: WatchOptions = {}
-): Promise<void> {
+export async function watch(targetPath?: string, options: WatchOptions = {}): Promise<void> {
   const { pattern = '**/*.md', includeCode = false } = options;
 
   // Ensure daemon is running
@@ -182,7 +181,9 @@ export async function watch(
       const status = await response.json();
       if (status.lastChange > 0) {
         const lastChange = new Date(status.lastChange);
-        process.stdout.write(`\rLast change: ${lastChange.toLocaleTimeString()} | Files: ${status.watchedFiles}   `);
+        process.stdout.write(
+          `\rLast change: ${lastChange.toLocaleTimeString()} | Files: ${status.watchedFiles}   `
+        );
       }
     } catch {
       // Ignore

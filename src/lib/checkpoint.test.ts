@@ -224,9 +224,7 @@ describe('Checkpoint Library', () => {
             },
           ],
           config: { key: 'value' },
-          brain_vault: [
-            { path: 'CLAUDE.md', content: '# Claude\n\nBrain file content' },
-          ],
+          brain_vault: [{ path: 'CLAUDE.md', content: '# Claude\n\nBrain file content' }],
         },
         stats: {
           memories_count: 1,

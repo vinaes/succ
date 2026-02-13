@@ -31,19 +31,27 @@ export interface ProfileItem {
  * Extracts: languages, entry points, key files (by export count),
  * systems (by directory grouping), features (by exported symbols).
  */
-export async function profileProjectWithAST(
-  projectRoot: string,
-): Promise<ProjectProfile> {
+export async function profileProjectWithAST(projectRoot: string): Promise<ProjectProfile> {
   const { getLanguageForExtension } = await import('../lib/tree-sitter/types.js');
 
   // 1. Scan file tree
   const allFiles = await glob('**/*', {
     cwd: projectRoot,
     ignore: [
-      '**/node_modules/**', '**/.git/**', '**/dist/**', '**/.succ/**',
-      '**/vendor/**', '**/coverage/**', '**/__pycache__/**',
-      '**/target/**', '**/.next/**', '**/.cache/**',
-      '**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**',
+      '**/node_modules/**',
+      '**/.git/**',
+      '**/dist/**',
+      '**/.succ/**',
+      '**/vendor/**',
+      '**/coverage/**',
+      '**/__pycache__/**',
+      '**/target/**',
+      '**/.next/**',
+      '**/.cache/**',
+      '**/*.test.*',
+      '**/*.spec.*',
+      '**/test/**',
+      '**/tests/**',
     ],
     nodir: true,
   });
@@ -63,13 +71,9 @@ export async function profileProjectWithAST(
     }
   }
 
-  const languages = [...langCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([lang]) => lang);
+  const languages = [...langCounts.entries()].sort((a, b) => b[1] - a[1]).map(([lang]) => lang);
 
-  const sourceExtensions = [...extCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([ext]) => ext);
+  const sourceExtensions = [...extCounts.entries()].sort((a, b) => b[1] - a[1]).map(([ext]) => ext);
 
   // 3. Detect entry points (common patterns)
   const entryPointPatterns = [
@@ -81,21 +85,36 @@ export async function profileProjectWithAST(
     /^src\/(main|lib)\.(rs|py)$/,
   ];
   const entryPoints = sourceFiles
-    .filter(f => entryPointPatterns.some(p => p.test(f.replace(/\\/g, '/'))))
+    .filter((f) => entryPointPatterns.some((p) => p.test(f.replace(/\\/g, '/'))))
     .slice(0, 5);
 
   // 4. Detect project files
-  const projectFileNames = ['package.json', 'tsconfig.json', 'go.mod', 'Cargo.toml',
-    'pyproject.toml', 'pom.xml', 'build.gradle', 'README.md', '.env.example'];
-  const projectFiles = projectFileNames.filter(pf =>
-    allFiles.includes(pf) || fs.existsSync(path.join(projectRoot, pf))
+  const projectFileNames = [
+    'package.json',
+    'tsconfig.json',
+    'go.mod',
+    'Cargo.toml',
+    'pyproject.toml',
+    'pom.xml',
+    'build.gradle',
+    'README.md',
+    '.env.example',
+  ];
+  const projectFiles = projectFileNames.filter(
+    (pf) => allFiles.includes(pf) || fs.existsSync(path.join(projectRoot, pf))
   );
 
   // 5. Detect test patterns from existing files
   const testPatterns: string[] = [];
-  if (allFiles.some(f => f.includes('.test.'))) testPatterns.push('**/*.test.*');
-  if (allFiles.some(f => f.includes('.spec.'))) testPatterns.push('**/*.spec.*');
-  if (allFiles.some(f => { const n = f.replace(/\\/g, '/'); return n.startsWith('test/') || n.startsWith('tests/'); })) testPatterns.push('**/test/**', '**/tests/**');
+  if (allFiles.some((f) => f.includes('.test.'))) testPatterns.push('**/*.test.*');
+  if (allFiles.some((f) => f.includes('.spec.'))) testPatterns.push('**/*.spec.*');
+  if (
+    allFiles.some((f) => {
+      const n = f.replace(/\\/g, '/');
+      return n.startsWith('test/') || n.startsWith('tests/');
+    })
+  )
+    testPatterns.push('**/test/**', '**/tests/**');
 
   // 6. Extract symbols from key files using tree-sitter
   let parseCode: ((code: string, lang: string) => Promise<any>) | null = null;
@@ -110,13 +129,15 @@ export async function profileProjectWithAST(
   }
 
   // Track exports per file for key file detection
-  const fileExports: Array<{ file: string; exports: number; symbols: Array<{ name: string; type: string }> }> = [];
+  const fileExports: Array<{
+    file: string;
+    exports: number;
+    symbols: Array<{ name: string; type: string }>;
+  }> = [];
 
   if (parseCode && extractSymbolsFn) {
     // Parse up to 30 source files for symbol extraction
-    const filesToParse = sourceFiles
-      .filter(f => !f.includes('.d.ts'))
-      .slice(0, 30);
+    const filesToParse = sourceFiles.filter((f) => !f.includes('.d.ts')).slice(0, 30);
 
     for (const file of filesToParse) {
       const ext = path.extname(file).toLowerCase();
@@ -137,7 +158,7 @@ export async function profileProjectWithAST(
           fileExports.push({
             file,
             exports: symbols.length,
-            symbols: symbols.map(s => ({ name: s.name, type: s.type })),
+            symbols: symbols.map((s) => ({ name: s.name, type: s.type })),
           });
         }
       } catch {
@@ -150,7 +171,7 @@ export async function profileProjectWithAST(
   const keyFiles = fileExports
     .sort((a, b) => b.exports - a.exports)
     .slice(0, 10)
-    .map(f => f.file);
+    .map((f) => f.file);
 
   // 8. Build systems from directory grouping
   const dirSymbols = new Map<string, { files: string[]; symbolCount: number; topFile: string }>();
@@ -160,7 +181,7 @@ export async function profileProjectWithAST(
     if (existing) {
       existing.files.push(fe.file);
       existing.symbolCount += fe.exports;
-      if (fe.exports > (fileExports.find(f => f.file === existing.topFile)?.exports ?? 0)) {
+      if (fe.exports > (fileExports.find((f) => f.file === existing.topFile)?.exports ?? 0)) {
         existing.topFile = fe.file;
       }
     } else {
@@ -174,10 +195,14 @@ export async function profileProjectWithAST(
     .slice(0, 15)
     .map(([dir, v]) => {
       // Create human-readable name from directory path
-      const parts = dir.replace(/\\/g, '/').split('/').filter(p => p !== 'src' && p !== 'lib');
-      const name = parts.length > 0
-        ? parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
-        : path.basename(v.topFile, path.extname(v.topFile));
+      const parts = dir
+        .replace(/\\/g, '/')
+        .split('/')
+        .filter((p) => p !== 'src' && p !== 'lib');
+      const name =
+        parts.length > 0
+          ? parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+          : path.basename(v.topFile, path.extname(v.topFile));
       return {
         name,
         keyFile: v.topFile,
@@ -187,12 +212,13 @@ export async function profileProjectWithAST(
 
   // 9. Build features from exported functions (top-level only)
   const features = fileExports
-    .flatMap(fe => fe.symbols
-      .filter(s => s.type === 'function' || s.type === 'class')
-      .map(s => ({ name: s.name, keyFile: fe.file, type: s.type }))
+    .flatMap((fe) =>
+      fe.symbols
+        .filter((s) => s.type === 'function' || s.type === 'class')
+        .map((s) => ({ name: s.name, keyFile: fe.file, type: s.type }))
     )
     .slice(0, 15)
-    .map(f => ({
+    .map((f) => ({
       name: f.name,
       keyFile: f.keyFile,
       description: `${f.type} in ${f.keyFile}`,
@@ -219,23 +245,30 @@ export async function profileProjectWithAST(
 export async function profileProjectWithLLM(
   projectRoot: string,
   mode: 'claude' | 'api',
-  fast: boolean,
+  fast: boolean
 ): Promise<ProjectProfile> {
   // 1. Gather raw file tree (lightweight — only paths, no content)
   const allFiles = await glob('**/*', {
     cwd: projectRoot,
     ignore: [
-      '**/node_modules/**', '**/.git/**', '**/dist/**', '**/.succ/**',
-      '**/vendor/**', '**/coverage/**', '**/__pycache__/**',
-      '**/target/**', '**/.next/**', '**/.cache/**',
+      '**/node_modules/**',
+      '**/.git/**',
+      '**/dist/**',
+      '**/.succ/**',
+      '**/vendor/**',
+      '**/coverage/**',
+      '**/__pycache__/**',
+      '**/target/**',
+      '**/.next/**',
+      '**/.cache/**',
     ],
     nodir: true,
   });
 
   const treeLimit = fast ? 200 : 300;
   const fileTree = allFiles.slice(0, treeLimit).join('\n');
-  const truncMsg = allFiles.length > treeLimit
-    ? `\n... and ${allFiles.length - treeLimit} more files` : '';
+  const truncMsg =
+    allFiles.length > treeLimit ? `\n... and ${allFiles.length - treeLimit} more files` : '';
 
   // 2. Build profiling prompt
   const prompt = `Analyze this project's file tree and respond with ONLY valid JSON (no markdown, no explanation).
@@ -285,12 +318,14 @@ Rules:
         responseText = await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 60000 });
       }
     } catch (err) {
-      logWarn('analyze', `LLM profiling call attempt ${attempt + 1} failed`, { error: String(err) });
+      logWarn('analyze', `LLM profiling call attempt ${attempt + 1} failed`, {
+        error: String(err),
+      });
       if (attempt === maxRetries) console.warn(`⚠ LLM profiling call failed: ${err}`);
     }
     if (responseText) break;
     if (attempt < maxRetries) {
-      await new Promise(r => setTimeout(r, 1000)); // brief pause before retry
+      await new Promise((r) => setTimeout(r, 1000)); // brief pause before retry
     }
   }
 
@@ -337,7 +372,9 @@ Rules:
       try {
         parsed = JSON.parse(repaired) as ProjectProfile;
         console.log('  (repaired truncated JSON)');
-      } catch { /* still broken */ }
+      } catch {
+        /* still broken */
+      }
     }
   }
 
@@ -381,7 +418,7 @@ export function getDefaultProfile(): ProjectProfile {
 export async function gatherProjectContext(
   projectRoot: string,
   profile: ProjectProfile,
-  fast = false,
+  fast = false
 ): Promise<string> {
   const parts: string[] = [];
 
@@ -389,20 +426,20 @@ export async function gatherProjectContext(
   parts.push(`## Project: ${path.basename(projectRoot)}`);
   parts.push(`Languages: ${profile.languages.join(', ')}`);
   if (profile.systems.length > 0) {
-    parts.push(`Identified systems: ${profile.systems.map(s => s.name).join(', ')}`);
+    parts.push(`Identified systems: ${profile.systems.map((s) => s.name).join(', ')}`);
   }
   if (profile.features.length > 0) {
-    parts.push(`Identified features: ${profile.features.map(f => f.name).join(', ')}`);
+    parts.push(`Identified features: ${profile.features.map((f) => f.name).join(', ')}`);
   }
   parts.push('');
 
   // Build glob from detected extensions
-  const sourceGlobs = profile.sourceExtensions.map(ext => `**/*${ext}`);
+  const sourceGlobs = profile.sourceExtensions.map((ext) => `**/*${ext}`);
   const allGlobs = [...sourceGlobs, '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.toml'];
 
   const ignorePatterns = [
-    ...profile.ignoreDirectories.map(d => `**/${d}/**`),
-    ...profile.testPatterns.map(p => p.startsWith('**/') ? p : `**/${p}`),
+    ...profile.ignoreDirectories.map((d) => `**/${d}/**`),
+    ...profile.testPatterns.map((p) => (p.startsWith('**/') ? p : `**/${p}`)),
     '**/*.d.ts',
   ];
 
@@ -455,7 +492,7 @@ export async function gatherProjectContext(
 
   // Fill remaining slots with broad directory coverage
   const extSet = new Set(profile.sourceExtensions);
-  const sourceFiles = files.filter(f => extSet.has(path.extname(f)));
+  const sourceFiles = files.filter((f) => extSet.has(path.extname(f)));
   const dirMap = new Map<string, string[]>();
   for (const f of sourceFiles) {
     const dir = path.dirname(f);
@@ -480,7 +517,9 @@ export async function gatherProjectContext(
     try {
       const content = fs.readFileSync(filePath, 'utf-8').slice(0, charLimit);
       parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
-    } catch { /* skip unreadable */ }
+    } catch {
+      /* skip unreadable */
+    }
   }
 
   return parts.join('\n');
@@ -524,8 +563,13 @@ export function gatherMinimalContext(projectRoot: string): string {
   try {
     const entries = fs.readdirSync(projectRoot, { withFileTypes: true });
     const dirs = entries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.') && !['node_modules', 'dist', 'build', 'vendor'].includes(e.name))
-      .map(e => e.name)
+      .filter(
+        (e) =>
+          e.isDirectory() &&
+          !e.name.startsWith('.') &&
+          !['node_modules', 'dist', 'build', 'vendor'].includes(e.name)
+      )
+      .map((e) => e.name)
       .slice(0, 8);
     if (dirs.length > 0) {
       parts.push(`Main directories: ${dirs.join(', ')}`);
@@ -580,9 +624,9 @@ function repairTruncatedJSON(json: string): string | null {
   // Trim to last complete value boundary (after a comma, colon, or bracket)
   let trimmed = json.replace(/,\s*$/, ''); // trailing comma
   // Remove incomplete string value at the end (e.g., ..."descr)
-  trimmed = trimmed.replace(/,\s*"[^"]*$/, '');         // trailing incomplete key
-  trimmed = trimmed.replace(/:\s*"[^"]*$/, ': ""');      // truncated string value — close it
-  trimmed = trimmed.replace(/:\s*$/, ': null');           // colon with no value
+  trimmed = trimmed.replace(/,\s*"[^"]*$/, ''); // trailing incomplete key
+  trimmed = trimmed.replace(/:\s*"[^"]*$/, ': ""'); // truncated string value — close it
+  trimmed = trimmed.replace(/:\s*$/, ': null'); // colon with no value
 
   // Count open brackets/braces and close them
   let openBraces = 0;
@@ -590,9 +634,18 @@ function repairTruncatedJSON(json: string): string | null {
   let inString = false;
   let escape = false;
   for (const ch of trimmed) {
-    if (escape) { escape = false; continue; }
-    if (ch === '\\') { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
     if (inString) continue;
     if (ch === '{') openBraces++;
     if (ch === '}') openBraces--;

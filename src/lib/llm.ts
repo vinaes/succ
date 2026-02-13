@@ -11,7 +11,7 @@
 import spawn from 'cross-spawn';
 import { logError, logWarn } from './fault-logger.js';
 // cross-spawn exposes .sync at runtime but not in types
- 
+
 // cross-spawn's sync method is available at runtime but not in types
 // Keep as any since cross-spawn types are incomplete
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
@@ -28,8 +28,8 @@ export type LLMBackend = 'claude' | 'api';
 export interface LLMRuntimeConfig {
   backend: LLMBackend;
   model: string;
-  endpoint?: string;  // API URL (for 'api' mode)
-  apiKey?: string;     // API key (for 'api' mode)
+  endpoint?: string; // API URL (for 'api' mode)
+  apiKey?: string; // API key (for 'api' mode)
   maxTokens?: number;
   temperature?: number;
 }
@@ -128,7 +128,7 @@ export function getSleepAgentConfig(): LLMRuntimeConfig | null {
   const taskCfg = getLLMTaskConfig('sleep');
 
   return {
-    backend: 'api',  // Sleep agent is always 'api' (claude = ToS issues)
+    backend: 'api', // Sleep agent is always 'api' (claude = ToS issues)
     model: taskCfg.model,
     endpoint: taskCfg.api_url + '/chat/completions',
     apiKey: taskCfg.api_key,
@@ -192,7 +192,15 @@ export async function callLLM(
       return runClaudeCLI(prompt, config.model, timeout);
 
     case 'api':
-      return callApiLLM(prompt, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
+      return callApiLLM(
+        prompt,
+        config.endpoint!,
+        config.model,
+        timeout,
+        maxTokens,
+        temperature,
+        config.apiKey
+      );
 
     default:
       throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
@@ -259,13 +267,27 @@ export async function callLLMChat(
       }
       // Process mode — CLI doesn't support multi-turn, concatenate messages
       const prompt = messages
-        .map((m) => (m.role === 'system' ? `System: ${m.content}` : m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
+        .map((m) =>
+          m.role === 'system'
+            ? `System: ${m.content}`
+            : m.role === 'user'
+              ? `User: ${m.content}`
+              : `Assistant: ${m.content}`
+        )
         .join('\n\n');
       return runClaudeCLI(prompt, config.model, timeout);
     }
 
     case 'api':
-      return callApiLLMChat(messages, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
+      return callApiLLMChat(
+        messages,
+        config.endpoint!,
+        config.model,
+        timeout,
+        maxTokens,
+        temperature,
+        config.apiKey
+      );
 
     default:
       throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
@@ -279,9 +301,9 @@ export async function callLLMChat(
 // ---- Shared Claude CLI helpers ----
 
 export interface ClaudeCLIOptions {
-  model?: string;    // default: 'haiku'
-  tools?: string;    // e.g. '' to disable tools; omit for default
-  timeout?: number;  // ms, default: 60000
+  model?: string; // default: 'haiku'
+  tools?: string; // e.g. '' to disable tools; omit for default
+  timeout?: number; // ms, default: 60000
 }
 
 function buildClaudeArgs(options?: ClaudeCLIOptions): string[] {
@@ -411,7 +433,10 @@ async function callApiLLM(
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
     logError('llm', `API error ${response.status}: ${errorBody}`);
-    throw new NetworkError(`LLM API error: ${response.status} ${response.statusText}`, response.status);
+    throw new NetworkError(
+      `LLM API error: ${response.status} ${response.statusText}`,
+      response.status
+    );
   }
 
   const data = (await response.json()) as {
@@ -452,7 +477,10 @@ async function callApiLLMChat(
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
     logError('llm', `API chat error ${response.status}: ${errorBody}`);
-    throw new NetworkError(`LLM API error: ${response.status} ${response.statusText}`, response.status);
+    throw new NetworkError(
+      `LLM API error: ${response.status} ${response.statusText}`,
+      response.status
+    );
   }
 
   const data = (await response.json()) as {
@@ -486,11 +514,13 @@ export async function callOpenRouterSearch(
   model: string,
   timeout: number,
   maxTokens: number,
-  temperature: number,
+  temperature: number
 ): Promise<OpenRouterSearchResponse> {
   const apiKey = getApiKey();
   if (!apiKey) {
-    throw new ConfigError('API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.');
+    throw new ConfigError(
+      'API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.'
+    );
   }
 
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
@@ -510,7 +540,10 @@ export async function callOpenRouterSearch(
   if (!response.ok) {
     const errorBody = await response.text();
     logError('llm', `Search API error ${response.status}: ${errorBody}`);
-    throw new NetworkError(`Search API error: ${response.status} ${response.statusText}`, response.status);
+    throw new NetworkError(
+      `Search API error: ${response.status} ${response.statusText}`,
+      response.status
+    );
   }
 
   const data = (await response.json()) as {
@@ -578,4 +611,3 @@ export async function getAvailableBackends(): Promise<LLMBackend[]> {
 
   return available;
 }
-

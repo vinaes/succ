@@ -140,7 +140,11 @@ export async function status(): Promise<void> {
       // Skip daemon status if it fails
     }
   } catch (error) {
-    logError('status', 'Error reading database:', error instanceof Error ? error : new Error(String(error)));
+    logError(
+      'status',
+      'Error reading database:',
+      error instanceof Error ? error : new Error(String(error))
+    );
 
     console.error('Error reading database:', error);
   } finally {

@@ -40,8 +40,7 @@ async function loadPg(): Promise<typeof import('pg')> {
     return pg;
   } catch {
     throw new ConfigError(
-      'PostgreSQL support requires the "pg" package. ' +
-      'Install it with: npm install pg'
+      'PostgreSQL support requires the "pg" package. ' + 'Install it with: npm install pg'
     );
   }
 }
@@ -60,7 +59,7 @@ function fromPgVector(str: string): number[] {
   // pgvector returns string like '[1.0, 2.0, 3.0]'
   const inner = str.slice(1, -1);
   if (!inner) return [];
-  return inner.split(',').map(s => parseFloat(s.trim()));
+  return inner.split(',').map((s) => parseFloat(s.trim()));
 }
 
 export interface PostgresBackendConfig {
@@ -240,9 +239,13 @@ export class PostgresBackend {
       END $$;
     `);
 
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id)'
+    );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
+    );
 
     // Metadata table
     await pool.query(`
@@ -319,7 +322,9 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
+    );
 
     // Memory links table
     await pool.query(`
@@ -336,11 +341,17 @@ export class PostgresBackend {
       )
     `);
 
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id)'
+    );
 
     // Migration: add llm_enriched column to memory_links
-    await pool.query('ALTER TABLE memory_links ADD COLUMN IF NOT EXISTS llm_enriched INTEGER DEFAULT 0');
+    await pool.query(
+      'ALTER TABLE memory_links ADD COLUMN IF NOT EXISTS llm_enriched INTEGER DEFAULT 0'
+    );
 
     // Migration: add project_id column to memory_links (for multi-project PG)
     await pool.query(`
@@ -354,7 +365,9 @@ export class PostgresBackend {
         END IF;
       END $$;
     `);
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_memory_links_project_id ON memory_links(project_id)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_links_project_id ON memory_links(project_id)'
+    );
 
     // Memory centrality cache table
     await pool.query(`
@@ -375,7 +388,9 @@ export class PostgresBackend {
       )
     `);
 
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_token_freq ON token_frequencies(frequency DESC)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_token_freq ON token_frequencies(frequency DESC)'
+    );
 
     // Token stats table
     // project_id: scopes stats to a specific project
@@ -409,9 +424,13 @@ export class PostgresBackend {
       END $$;
     `);
 
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_project_id ON token_stats(project_id)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_token_stats_project_id ON token_stats(project_id)'
+    );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_type ON token_stats(event_type)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_token_stats_created ON token_stats(created_at)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_token_stats_created ON token_stats(created_at)'
+    );
 
     // Skills table
     // project_id: scopes skills to a specific project (NULL for Skyll cached skills which are global)
@@ -472,7 +491,9 @@ export class PostgresBackend {
         END IF;
       END $$;
     `);
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)'
+    );
 
     // Learning deltas table for session progress tracking
     await pool.query(`
@@ -489,9 +510,15 @@ export class PostgresBackend {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_learning_deltas_project_id ON learning_deltas(project_id)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_learning_deltas_timestamp ON learning_deltas(timestamp)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_learning_deltas_project_id ON learning_deltas(project_id)'
+    );
 
     // Web search history table
     await pool.query(`
@@ -510,8 +537,12 @@ export class PostgresBackend {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_project_id ON web_search_history(project_id)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at)');
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_wsh_project_id ON web_search_history(project_id)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at)'
+    );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name)');
   }
 
@@ -539,7 +570,7 @@ export class PostgresBackend {
     embedding: number[],
     symbolName?: string,
     symbolType?: string,
-    signature?: string,
+    signature?: string
   ): Promise<number> {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before upserting documents');
@@ -558,7 +589,18 @@ export class PostgresBackend {
          signature = EXCLUDED.signature,
          updated_at = NOW()
        RETURNING id`,
-      [this.projectId, filePath, chunkIndex, content, startLine, endLine, toPgVector(embedding), symbolName ?? null, symbolType ?? null, signature ?? null]
+      [
+        this.projectId,
+        filePath,
+        chunkIndex,
+        content,
+        startLine,
+        endLine,
+        toPgVector(embedding),
+        symbolName ?? null,
+        symbolType ?? null,
+        signature ?? null,
+      ]
     );
     return result.rows[0].id;
   }
@@ -590,7 +632,18 @@ export class PostgresBackend {
              signature = EXCLUDED.signature,
              updated_at = NOW()
            RETURNING id`,
-          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding), doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null]
+          [
+            this.projectId,
+            doc.filePath,
+            doc.chunkIndex,
+            doc.content,
+            doc.startLine,
+            doc.endLine,
+            toPgVector(doc.embedding),
+            doc.symbolName ?? null,
+            doc.symbolType ?? null,
+            doc.signature ?? null,
+          ]
         );
         ids.push(result.rows[0].id);
       }
@@ -635,7 +688,18 @@ export class PostgresBackend {
              signature = EXCLUDED.signature,
              updated_at = NOW()
            RETURNING id`,
-          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding), doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null]
+          [
+            this.projectId,
+            doc.filePath,
+            doc.chunkIndex,
+            doc.content,
+            doc.startLine,
+            doc.endLine,
+            toPgVector(doc.embedding),
+            doc.symbolName ?? null,
+            doc.symbolType ?? null,
+            doc.signature ?? null,
+          ]
         );
         ids.push(result.rows[0].id);
 
@@ -672,7 +736,7 @@ export class PostgresBackend {
       'DELETE FROM documents WHERE LOWER(project_id) = $1 AND file_path = $2 RETURNING id',
       [this.projectId, filePath]
     );
-    return result.rows.map(r => r.id);
+    return result.rows.map((r) => r.id);
   }
 
   async searchDocuments(
@@ -680,7 +744,18 @@ export class PostgresBackend {
     limit: number = 5,
     threshold: number = 0.5,
     options?: { codeOnly?: boolean; docsOnly?: boolean; symbolType?: string }
-  ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number; symbol_name: string | null; symbol_type: string | null; signature: string | null }>> {
+  ): Promise<
+    Array<{
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      similarity: number;
+      symbol_name: string | null;
+      symbol_type: string | null;
+      signature: string | null;
+    }>
+  > {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before searching documents');
     }
@@ -727,7 +802,9 @@ export class PostgresBackend {
   async getDocumentsByIds(
     ids: number[],
     options?: { codeOnly?: boolean; docsOnly?: boolean }
-  ): Promise<Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>> {
+  ): Promise<
+    Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>
+  > {
     if (ids.length === 0) return [];
     const pool = await this.getPool();
 
@@ -777,32 +854,40 @@ export class PostgresBackend {
     if (!filters?.includeExpired && filters?.temporalAsOf) {
       const asOf = filters.temporalAsOf.toISOString();
       query += ` AND (valid_from IS NULL OR valid_from <= $${idx})`;
-      params.push(asOf); idx++;
+      params.push(asOf);
+      idx++;
       query += ` AND (valid_until IS NULL OR valid_until > $${idx})`;
-      params.push(asOf); idx++;
+      params.push(asOf);
+      idx++;
     }
 
     // Since filter
     if (filters?.since) {
       query += ` AND created_at >= $${idx}`;
-      params.push(filters.since.toISOString()); idx++;
+      params.push(filters.since.toISOString());
+      idx++;
     }
 
     // Created-before filter (for point-in-time queries)
     if (filters?.createdBefore) {
       query += ` AND created_at <= $${idx}`;
-      params.push(filters.createdBefore.toISOString()); idx++;
+      params.push(filters.createdBefore.toISOString());
+      idx++;
     }
 
     const result = await pool.query(query, params);
-    return result.rows.map(row => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -811,7 +896,11 @@ export class PostgresBackend {
     }));
   }
 
-  async getDocumentStats(): Promise<{ total_documents: number; total_files: number; last_indexed: string | null }> {
+  async getDocumentStats(): Promise<{
+    total_documents: number;
+    total_files: number;
+    last_indexed: string | null;
+  }> {
     const pool = await this.getPool();
 
     // If project_id is set, get stats for that project; otherwise get global stats
@@ -837,9 +926,15 @@ export class PostgresBackend {
     }
 
     // No project set = aggregate stats across all projects
-    const totalDocs = await pool.query<{ count: string }>('SELECT COUNT(*) as count FROM documents');
-    const totalFiles = await pool.query<{ count: string }>('SELECT COUNT(DISTINCT file_path) as count FROM documents');
-    const lastIndexed = await pool.query<{ last: string | null }>('SELECT MAX(updated_at) as last FROM documents');
+    const totalDocs = await pool.query<{ count: string }>(
+      'SELECT COUNT(*) as count FROM documents'
+    );
+    const totalFiles = await pool.query<{ count: string }>(
+      'SELECT COUNT(DISTINCT file_path) as count FROM documents'
+    );
+    const lastIndexed = await pool.query<{ last: string | null }>(
+      'SELECT MAX(updated_at) as last FROM documents'
+    );
 
     return {
       total_documents: parseInt(totalDocs.rows[0].count),
@@ -899,7 +994,10 @@ export class PostgresBackend {
       throw new StorageError('Project ID must be set before deleting file hash');
     }
     const pool = await this.getPool();
-    await pool.query('DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path = $2', [this.projectId, filePath]);
+    await pool.query('DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path = $2', [
+      this.projectId,
+      filePath,
+    ]);
   }
 
   async getAllFileHashes(): Promise<Map<string, string>> {
@@ -911,15 +1009,21 @@ export class PostgresBackend {
       'SELECT file_path, content_hash FROM file_hashes WHERE LOWER(project_id) = $1',
       [this.projectId]
     );
-    return new Map(result.rows.map(r => [r.file_path, r.content_hash]));
+    return new Map(result.rows.map((r) => [r.file_path, r.content_hash]));
   }
 
-  async getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
+  async getAllFileHashesWithTimestamps(): Promise<
+    Array<{ file_path: string; content_hash: string; indexed_at: string }>
+  > {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before getting file hashes');
     }
     const pool = await this.getPool();
-    const result = await pool.query<{ file_path: string; content_hash: string; indexed_at: string }>(
+    const result = await pool.query<{
+      file_path: string;
+      content_hash: string;
+      indexed_at: string;
+    }>(
       'SELECT file_path, content_hash, indexed_at::text FROM file_hashes WHERE LOWER(project_id) = $1',
       [this.projectId]
     );
@@ -1024,14 +1128,18 @@ export class PostgresBackend {
 
     const result = await pool.query(query, params);
 
-    let memories = result.rows.map(row => ({
+    let memories = result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -1042,8 +1150,8 @@ export class PostgresBackend {
 
     // Filter by tags if specified
     if (tags && tags.length > 0) {
-      memories = memories.filter(m =>
-        tags.some(t => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
+      memories = memories.filter((m) =>
+        tags.some((t) => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
       );
     }
 
@@ -1069,7 +1177,11 @@ export class PostgresBackend {
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -1145,14 +1257,18 @@ export class PostgresBackend {
 
     const result = await pool.query(query, params);
 
-    return result.rows.map(row => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -1217,7 +1333,11 @@ export class PostgresBackend {
     return { id: existing.rows[0].id, created: false };
   }
 
-  async deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): Promise<boolean> {
+  async deleteMemoryLink(
+    sourceId: number,
+    targetId: number,
+    relation?: LinkRelation
+  ): Promise<boolean> {
     const pool = await this.getPool();
 
     // Only delete links where both memories belong to current project
@@ -1246,7 +1366,9 @@ export class PostgresBackend {
     }
   }
 
-  async getMemoryLinks(memoryId: number): Promise<{ outgoing: MemoryLink[]; incoming: MemoryLink[] }> {
+  async getMemoryLinks(
+    memoryId: number
+  ): Promise<{ outgoing: MemoryLink[]; incoming: MemoryLink[] }> {
     const pool = await this.getPool();
 
     // Only return links where both source and target memories belong to current project
@@ -1362,9 +1484,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     // If project_id is set, get stats for that project; otherwise get all stats
-    const whereClause = this.projectId
-      ? 'WHERE LOWER(project_id) = $1'
-      : '';
+    const whereClause = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query<{
@@ -1373,7 +1493,8 @@ export class PostgresBackend {
       total_full_source_tokens: string;
       total_savings_tokens: string;
       total_estimated_cost: string;
-    }>(`
+    }>(
+      `
       SELECT
         COUNT(*) as total_queries,
         COALESCE(SUM(returned_tokens), 0) as total_returned_tokens,
@@ -1382,7 +1503,9 @@ export class PostgresBackend {
         COALESCE(SUM(estimated_cost), 0) as total_estimated_cost
       FROM token_stats
       ${whereClause}
-    `, params);
+    `,
+      params
+    );
 
     const row = result.rows[0];
     return {
@@ -1472,14 +1595,18 @@ export class PostgresBackend {
 
     const result = await pool.query(query, params);
 
-    let memories = result.rows.map(row => ({
+    let memories = result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -1490,8 +1617,8 @@ export class PostgresBackend {
 
     // Filter by tags if specified
     if (tags && tags.length > 0) {
-      memories = memories.filter(m =>
-        tags.some(t => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
+      memories = memories.filter((m) =>
+        tags.some((t) => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
       );
     }
 
@@ -1515,14 +1642,18 @@ export class PostgresBackend {
       [limit]
     );
 
-    return result.rows.map(row => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -1536,10 +1667,9 @@ export class PostgresBackend {
    */
   async deleteGlobalMemory(id: number): Promise<boolean> {
     const pool = await this.getPool();
-    const result = await pool.query(
-      'DELETE FROM memories WHERE id = $1 AND project_id IS NULL',
-      [id]
-    );
+    const result = await pool.query('DELETE FROM memories WHERE id = $1 AND project_id IS NULL', [
+      id,
+    ]);
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -1645,17 +1775,19 @@ export class PostgresBackend {
   /**
    * Get all skills for the current project (includes local + global Skyll cache).
    */
-  async getAllSkills(): Promise<Array<{
-    id: number;
-    name: string;
-    description: string;
-    source: string;
-    path?: string;
-    content?: string;
-    skyllId?: string;
-    usageCount: number;
-    lastUsed?: Date;
-  }>> {
+  async getAllSkills(): Promise<
+    Array<{
+      id: number;
+      name: string;
+      description: string;
+      source: string;
+      path?: string;
+      content?: string;
+      skyllId?: string;
+      usageCount: number;
+      lastUsed?: Date;
+    }>
+  > {
     const pool = await this.getPool();
     // Include both project-specific local skills AND global Skyll cached skills
     const result = await pool.query(
@@ -1665,7 +1797,7 @@ export class PostgresBackend {
        ORDER BY usage_count DESC, updated_at DESC`,
       [this.projectId]
     );
-    return result.rows.map(row => ({
+    return result.rows.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -1681,14 +1813,19 @@ export class PostgresBackend {
   /**
    * Search skills by name or description.
    */
-  async searchSkills(query: string, limit: number = 10): Promise<Array<{
-    id: number;
-    name: string;
-    description: string;
-    source: string;
-    path?: string;
-    usageCount: number;
-  }>> {
+  async searchSkills(
+    query: string,
+    limit: number = 10
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      description: string;
+      source: string;
+      path?: string;
+      usageCount: number;
+    }>
+  > {
     const pool = await this.getPool();
     const result = await pool.query(
       `SELECT id, name, description, source, path, usage_count
@@ -1699,7 +1836,7 @@ export class PostgresBackend {
        LIMIT $3`,
       [this.projectId, `%${query}%`, limit]
     );
-    return result.rows.map(row => ({
+    return result.rows.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -1825,16 +1962,24 @@ export class PostgresBackend {
 
   async updateMemoryEmbedding(memoryId: number, embedding: number[]): Promise<void> {
     const pool = await this.getPool();
-    await pool.query('UPDATE memories SET embedding = $1 WHERE id = $2', [toPgVector(embedding), memoryId]);
+    await pool.query('UPDATE memories SET embedding = $1 WHERE id = $2', [
+      toPgVector(embedding),
+      memoryId,
+    ]);
   }
 
-  async updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+  async updateMemoryEmbeddingsBatch(
+    updates: Array<{ id: number; embedding: number[] }>
+  ): Promise<void> {
     const pool = await this.getPool();
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       for (const { id, embedding } of updates) {
-        await client.query('UPDATE memories SET embedding = $1 WHERE id = $2', [toPgVector(embedding), id]);
+        await client.query('UPDATE memories SET embedding = $1 WHERE id = $2', [
+          toPgVector(embedding),
+          id,
+        ]);
       }
       await client.query('COMMIT');
     } catch (err) {
@@ -1845,7 +1990,9 @@ export class PostgresBackend {
     }
   }
 
-  async getMemoriesWithoutEmbeddings(limit: number = 100): Promise<Array<{ id: number; content: string }>> {
+  async getMemoriesWithoutEmbeddings(
+    limit: number = 100
+  ): Promise<Array<{ id: number; content: string }>> {
     const pool = await this.getPool();
     const result = await pool.query(
       'SELECT id, content FROM memories WHERE embedding IS NULL ORDER BY id LIMIT $1',
@@ -1854,7 +2001,10 @@ export class PostgresBackend {
     return result.rows;
   }
 
-  async getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+  async getMemoriesNeedingReembedding(
+    limit: number = 100,
+    afterId: number = 0
+  ): Promise<Array<{ id: number; content: string }>> {
     const pool = await this.getPool();
     const result = await pool.query(
       'SELECT id, content FROM memories WHERE id > $1 ORDER BY id LIMIT $2',
@@ -1877,17 +2027,33 @@ export class PostgresBackend {
 
   async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
     const pool = await this.getPool();
-    await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [JSON.stringify(tags), memoryId, this.projectId]);
+    await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [
+      JSON.stringify(tags),
+      memoryId,
+      this.projectId,
+    ]);
   }
 
-  async updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): Promise<void> {
+  async updateMemoryLink(
+    linkId: number,
+    updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+  ): Promise<void> {
     const pool = await this.getPool();
     const sets: string[] = [];
     const params: (string | number)[] = [];
     let idx = 1;
-    if (updates.relation !== undefined) { sets.push(`relation = $${idx++}`); params.push(updates.relation); }
-    if (updates.weight !== undefined) { sets.push(`weight = $${idx++}`); params.push(updates.weight); }
-    if (updates.llmEnriched !== undefined) { sets.push(`llm_enriched = $${idx++}`); params.push(updates.llmEnriched ? 1 : 0); }
+    if (updates.relation !== undefined) {
+      sets.push(`relation = $${idx++}`);
+      params.push(updates.relation);
+    }
+    if (updates.weight !== undefined) {
+      sets.push(`weight = $${idx++}`);
+      params.push(updates.weight);
+    }
+    if (updates.llmEnriched !== undefined) {
+      sets.push(`llm_enriched = $${idx++}`);
+      params.push(updates.llmEnriched ? 1 : 0);
+    }
     if (sets.length > 0) {
       params.push(linkId);
       try {
@@ -1897,7 +2063,8 @@ export class PostgresBackend {
         // Delete this link and mark the existing one as enriched instead.
         if (err.code === '23505' && updates.relation) {
           const row = await pool.query(
-            'SELECT source_id, target_id FROM memory_links WHERE id = $1', [linkId]
+            'SELECT source_id, target_id FROM memory_links WHERE id = $1',
+            [linkId]
           );
           if (row.rows.length > 0) {
             const { source_id, target_id } = row.rows[0];
@@ -1924,7 +2091,11 @@ export class PostgresBackend {
     }
   }
 
-  async upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): Promise<void> {
+  async upsertCentralityScore(
+    memoryId: number,
+    degree: number,
+    normalizedDegree: number
+  ): Promise<void> {
     const pool = await this.getPool();
     await pool.query(
       `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
@@ -2051,19 +2222,22 @@ export class PostgresBackend {
   // Token Stats - Additional Operations
   // ============================================================================
 
-  async getTokenStatsAggregated(): Promise<Array<{
-    event_type: string;
-    query_count: number;
-    total_returned_tokens: number;
-    total_full_source_tokens: number;
-    total_savings_tokens: number;
-    total_estimated_cost: number;
-  }>> {
+  async getTokenStatsAggregated(): Promise<
+    Array<{
+      event_type: string;
+      query_count: number;
+      total_returned_tokens: number;
+      total_full_source_tokens: number;
+      total_savings_tokens: number;
+      total_estimated_cost: number;
+    }>
+  > {
     const pool = await this.getPool();
     const whereClause = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(`
+    const result = await pool.query(
+      `
       SELECT
         event_type,
         COUNT(*) as query_count,
@@ -2075,7 +2249,9 @@ export class PostgresBackend {
       ${whereClause}
       GROUP BY event_type
       ORDER BY event_type
-    `, params);
+    `,
+      params
+    );
 
     return result.rows.map((row: any) => ({
       event_type: row.event_type,
@@ -2195,8 +2371,8 @@ export class PostgresBackend {
     );
 
     const todayWhere = this.projectId
-      ? 'WHERE LOWER(project_id) = $1 AND DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())'
-      : 'WHERE DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())';
+      ? "WHERE LOWER(project_id) = $1 AND DATE_TRUNC('day', created_at) = DATE_TRUNC('day', NOW())"
+      : "WHERE DATE_TRUNC('day', created_at) = DATE_TRUNC('day', NOW())";
     const today = await pool.query(
       `SELECT COUNT(*) as today_searches, COALESCE(SUM(estimated_cost_usd), 0) as today_cost_usd
        FROM web_search_history ${todayWhere}`,
@@ -2220,8 +2396,8 @@ export class PostgresBackend {
   async getTodayWebSearchSpend(): Promise<number> {
     const pool = await this.getPool();
     const whereClause = this.projectId
-      ? 'WHERE LOWER(project_id) = $1 AND DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())'
-      : 'WHERE DATE_TRUNC(\'day\', created_at) = DATE_TRUNC(\'day\', NOW())';
+      ? "WHERE LOWER(project_id) = $1 AND DATE_TRUNC('day', created_at) = DATE_TRUNC('day', NOW())"
+      : "WHERE DATE_TRUNC('day', created_at) = DATE_TRUNC('day', NOW())";
     const params = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
       `SELECT COALESCE(SUM(estimated_cost_usd), 0) as total FROM web_search_history ${whereClause}`,
@@ -2233,7 +2409,9 @@ export class PostgresBackend {
   async clearWebSearchHistory(): Promise<void> {
     const pool = await this.getPool();
     if (this.projectId) {
-      await pool.query('DELETE FROM web_search_history WHERE LOWER(project_id) = $1', [this.projectId]);
+      await pool.query('DELETE FROM web_search_history WHERE LOWER(project_id) = $1', [
+        this.projectId,
+      ]);
     } else {
       await pool.query('DELETE FROM web_search_history');
     }
@@ -2243,12 +2421,14 @@ export class PostgresBackend {
   // Document Operations - Additional
   // ============================================================================
 
-  async getRecentDocuments(limit: number = 10): Promise<Array<{
-    file_path: string;
-    content: string;
-    start_line: number;
-    end_line: number;
-  }>> {
+  async getRecentDocuments(limit: number = 10): Promise<
+    Array<{
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+    }>
+  > {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before getting recent documents');
     }
@@ -2272,8 +2452,14 @@ export class PostgresBackend {
   async clearCodeDocuments(): Promise<void> {
     const pool = await this.getPool();
     if (this.projectId) {
-      await pool.query("DELETE FROM documents WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'", [this.projectId]);
-      await pool.query("DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'", [this.projectId]);
+      await pool.query(
+        "DELETE FROM documents WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'",
+        [this.projectId]
+      );
+      await pool.query(
+        "DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path LIKE 'code:%'",
+        [this.projectId]
+      );
     } else {
       await pool.query("DELETE FROM documents WHERE file_path LIKE 'code:%'");
       await pool.query("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'");
@@ -2321,7 +2507,10 @@ export class PostgresBackend {
       params = [toPgVector(embedding), threshold];
     }
 
-    const result = await pool.query<{ id: number; content: string; similarity: number }>(query, params);
+    const result = await pool.query<{ id: number; content: string; similarity: number }>(
+      query,
+      params
+    );
     if (result.rows.length === 0) return null;
 
     return {
@@ -2424,7 +2613,10 @@ export class PostgresBackend {
             dupParams = [toPgVector(memory.embedding), deduplicateThreshold];
           }
 
-          const dupResult = await client.query<{ id: number; similarity: number }>(dupQuery, dupParams);
+          const dupResult = await client.query<{ id: number; similarity: number }>(
+            dupQuery,
+            dupParams
+          );
 
           if (dupResult.rows.length > 0) {
             results.push({
@@ -2441,10 +2633,14 @@ export class PostgresBackend {
 
         // Insert memory
         const validFromStr = memory.validFrom
-          ? (memory.validFrom instanceof Date ? memory.validFrom.toISOString() : memory.validFrom)
+          ? memory.validFrom instanceof Date
+            ? memory.validFrom.toISOString()
+            : memory.validFrom
           : null;
         const validUntilStr = memory.validUntil
-          ? (memory.validUntil instanceof Date ? memory.validUntil.toISOString() : memory.validUntil)
+          ? memory.validUntil instanceof Date
+            ? memory.validUntil.toISOString()
+            : memory.validUntil
           : null;
 
         const insertResult = await client.query<{ id: number }>(
@@ -2503,22 +2699,27 @@ export class PostgresBackend {
     const scopeParams = this.projectId ? [this.projectId] : [];
 
     const total = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM memories WHERE ${scopeCond}`, scopeParams
+      `SELECT COUNT(*) as count FROM memories WHERE ${scopeCond}`,
+      scopeParams
     );
     const active = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`, scopeParams
+      `SELECT COUNT(*) as count FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`,
+      scopeParams
     );
     const oldest = await pool.query<{ oldest: string | null }>(
-      `SELECT MIN(created_at)::text as oldest FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`, scopeParams
+      `SELECT MIN(created_at)::text as oldest FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`,
+      scopeParams
     );
     const newest = await pool.query<{ newest: string | null }>(
-      `SELECT MAX(created_at)::text as newest FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`, scopeParams
+      `SELECT MAX(created_at)::text as newest FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL`,
+      scopeParams
     );
 
     const typeCounts = await pool.query<{ type: string; count: string }>(
       `SELECT COALESCE(type, 'observation') as type, COUNT(*) as count
        FROM memories WHERE ${scopeCond} AND invalidated_by IS NULL
-       GROUP BY type`, scopeParams
+       GROUP BY type`,
+      scopeParams
     );
 
     const by_type: Record<string, number> = {};
@@ -2551,10 +2752,9 @@ export class PostgresBackend {
 
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
     const pool = await this.getPool();
-    const result = await pool.query(
-      'DELETE FROM memories WHERE created_at < $1',
-      [date.toISOString()]
-    );
+    const result = await pool.query('DELETE FROM memories WHERE created_at < $1', [
+      date.toISOString(),
+    ]);
     return result.rowCount ?? 0;
   }
 
@@ -2577,10 +2777,7 @@ export class PostgresBackend {
     if (ids.length === 0) return 0;
     const pool = await this.getPool();
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-    const result = await pool.query(
-      `DELETE FROM memories WHERE id IN (${placeholders})`,
-      ids
-    );
+    const result = await pool.query(`DELETE FROM memories WHERE id IN (${placeholders})`, ids);
     return result.rowCount ?? 0;
   }
 
@@ -2621,7 +2818,11 @@ export class PostgresBackend {
       source: row.source,
       type: row.type as MemoryType,
       quality_score: row.quality_score,
-      quality_factors: row.quality_factors ? (typeof row.quality_factors === 'string' ? JSON.parse(row.quality_factors) : row.quality_factors) : null,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
@@ -2631,12 +2832,14 @@ export class PostgresBackend {
     }));
   }
 
-  async getConsolidationHistory(limit: number = 20): Promise<Array<{
-    mergedMemoryId: number;
-    mergedContent: string;
-    originalIds: number[];
-    mergedAt: string;
-  }>> {
+  async getConsolidationHistory(limit: number = 20): Promise<
+    Array<{
+      mergedMemoryId: number;
+      mergedContent: string;
+      originalIds: number[];
+      mergedAt: string;
+    }>
+  > {
     const pool = await this.getPool();
 
     // Find memories that have 'supersedes' links (merge results)
@@ -2667,7 +2870,7 @@ export class PostgresBackend {
       results.push({
         mergedMemoryId: row.merged_id,
         mergedContent: memory?.content ?? '(deleted)',
-        originalIds: originals.rows.map(o => o.target_id),
+        originalIds: originals.rows.map((o) => o.target_id),
         mergedAt: row.merged_at,
       });
     }
@@ -2679,7 +2882,9 @@ export class PostgresBackend {
   // Retention Operations
   // ============================================================================
 
-  async incrementMemoryAccessBatch(accesses: Array<{ memoryId: number; weight: number }>): Promise<void> {
+  async incrementMemoryAccessBatch(
+    accesses: Array<{ memoryId: number; weight: number }>
+  ): Promise<void> {
     if (accesses.length === 0) return;
     const pool = await this.getPool();
     const client = await pool.connect();
@@ -2733,14 +2938,24 @@ export class PostgresBackend {
   // Backfill — fetch all records with embeddings for Qdrant sync
   // ============================================================================
 
-  async getAllMemoriesWithEmbeddings(): Promise<Array<{
-    id: number; content: string; tags: string[]; source: string | null;
-    type: string | null; projectId: string | null; createdAt: string;
-    validFrom: string | null; validUntil: string | null;
-    invalidatedBy: number | null; accessCount: number;
-    lastAccessed: string | null; qualityScore: number | null;
-    embedding: number[];
-  }>> {
+  async getAllMemoriesWithEmbeddings(): Promise<
+    Array<{
+      id: number;
+      content: string;
+      tags: string[];
+      source: string | null;
+      type: string | null;
+      projectId: string | null;
+      createdAt: string;
+      validFrom: string | null;
+      validUntil: string | null;
+      invalidatedBy: number | null;
+      accessCount: number;
+      lastAccessed: string | null;
+      qualityScore: number | null;
+      embedding: number[];
+    }>
+  > {
     const pool = await this.getPool();
     const scopeCond = this.projectId
       ? 'WHERE LOWER(project_id) = $1 AND invalidated_by IS NULL'
@@ -2776,11 +2991,17 @@ export class PostgresBackend {
     }));
   }
 
-  async getAllDocumentsWithEmbeddings(): Promise<Array<{
-    id: number; filePath: string; content: string;
-    startLine: number; endLine: number; projectId: string;
-    embedding: number[];
-  }>> {
+  async getAllDocumentsWithEmbeddings(): Promise<
+    Array<{
+      id: number;
+      filePath: string;
+      content: string;
+      startLine: number;
+      endLine: number;
+      projectId: string;
+      embedding: number[];
+    }>
+  > {
     const pool = await this.getPool();
     const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
@@ -2838,7 +3059,8 @@ export class PostgresBackend {
     const outgoing = [];
     for (const l of links.outgoing.filter(filterLink)) {
       const targetMem = await pool.query<{ content: string }>(
-        'SELECT content FROM memories WHERE id = $1', [l.target_id]
+        'SELECT content FROM memories WHERE id = $1',
+        [l.target_id]
       );
       outgoing.push({
         target_id: l.target_id,
@@ -2851,7 +3073,8 @@ export class PostgresBackend {
     const incoming = [];
     for (const l of links.incoming.filter(filterLink)) {
       const sourceMem = await pool.query<{ content: string }>(
-        'SELECT content FROM memories WHERE id = $1', [l.source_id]
+        'SELECT content FROM memories WHERE id = $1',
+        [l.source_id]
       );
       incoming.push({
         source_id: l.source_id,
@@ -2893,8 +3116,8 @@ export class PostgresBackend {
         );
 
         const neighbors = [
-          ...outgoing.rows.map(r => r.target_id),
-          ...incoming.rows.map(r => r.source_id),
+          ...outgoing.rows.map((r) => r.target_id),
+          ...incoming.rows.map((r) => r.source_id),
         ];
 
         for (const neighborId of neighbors) {
@@ -2941,7 +3164,7 @@ export class PostgresBackend {
       [memoryId, threshold, maxLinks, this.projectId]
     );
 
-    return result.rows.map(r => ({
+    return result.rows.map((r) => ({
       id: r.id,
       similarity: parseFloat(String(r.similarity)),
     }));
@@ -2965,10 +3188,7 @@ export class PostgresBackend {
     return linksCreated;
   }
 
-  async autoLinkSimilarMemories(
-    threshold: number = 0.75,
-    maxLinks: number = 3
-  ): Promise<number> {
+  async autoLinkSimilarMemories(threshold: number = 0.75, maxLinks: number = 3): Promise<number> {
     const pool = await this.getPool();
 
     const scopeCond = this.projectId
@@ -3077,8 +3297,8 @@ export class PostgresBackend {
         );
 
         const neighbors = [
-          ...outgoing.rows.map(r => r.target_id),
-          ...incoming.rows.map(r => r.source_id),
+          ...outgoing.rows.map((r) => r.target_id),
+          ...incoming.rows.map((r) => r.source_id),
         ];
 
         for (const neighborId of neighbors) {

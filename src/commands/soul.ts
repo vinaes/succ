@@ -88,7 +88,8 @@ Keep each line concise. If uncertain about communication language, default to En
 
   // Replace "About You" + "User Communication Preferences" sections
   // Match from "## About You" through "## User Communication Preferences" (including its content)
-  const sectionsRegex = /## About You[\s\S]*?## User Communication Preferences[\s\S]*?(?=\n---|\n## (?!#)|$)/;
+  const sectionsRegex =
+    /## About You[\s\S]*?## User Communication Preferences[\s\S]*?(?=\n---|\n## (?!#)|$)/;
   const aboutYouOnlyRegex = /## About You[\s\S]*?(?=\n---|\n## |$)/;
 
   if (sectionsRegex.test(soulContent)) {
@@ -101,7 +102,12 @@ Keep each line concise. If uncertain about communication language, default to En
     // Neither exists — append before footer
     const footerIndex = soulContent.lastIndexOf('\n---');
     if (footerIndex !== -1) {
-      soulContent = soulContent.slice(0, footerIndex) + '\n' + generatedSection.trim() + '\n' + soulContent.slice(footerIndex);
+      soulContent =
+        soulContent.slice(0, footerIndex) +
+        '\n' +
+        generatedSection.trim() +
+        '\n' +
+        soulContent.slice(footerIndex);
     } else {
       soulContent += '\n\n' + generatedSection.trim();
     }
@@ -162,7 +168,15 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
   parts.push('```\n');
 
   // Read key config files
-  const configFiles = ['package.json', 'tsconfig.json', 'go.mod', 'pyproject.toml', 'Cargo.toml', '.eslintrc', '.prettierrc'];
+  const configFiles = [
+    'package.json',
+    'tsconfig.json',
+    'go.mod',
+    'pyproject.toml',
+    'Cargo.toml',
+    '.eslintrc',
+    '.prettierrc',
+  ];
   for (const configFile of configFiles) {
     const filePath = path.join(projectRoot, configFile);
     if (fs.existsSync(filePath)) {
@@ -173,7 +187,9 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
 
   // Read a few source files to detect patterns
   const sourceFiles = files
-    .filter((f) => /\.(ts|tsx|js|jsx|go|py|rs)$/.test(f) && !f.includes('test') && !f.includes('spec'))
+    .filter(
+      (f) => /\.(ts|tsx|js|jsx|go|py|rs)$/.test(f) && !f.includes('test') && !f.includes('spec')
+    )
     .slice(0, 3);
 
   for (const sourceFile of sourceFiles) {

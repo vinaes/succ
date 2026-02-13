@@ -103,7 +103,9 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
     });
 
     // Try tree-sitter for symbol extraction
-    let extractSymbols: ((code: string, lang: string) => Promise<Array<{ name: string; type: string }>>) | null = null;
+    let extractSymbols:
+      | ((code: string, lang: string) => Promise<Array<{ name: string; type: string }>>)
+      | null = null;
     try {
       const { extractSymbols: _extract } = await import('../lib/tree-sitter/extractor.js');
       const { parseCode } = await import('../lib/tree-sitter/parser.js');
@@ -118,7 +120,13 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
       // tree-sitter not available
     }
 
-    const langMap: Record<string, string> = { ts: 'typescript', js: 'javascript', py: 'python', go: 'go', rs: 'rust' };
+    const langMap: Record<string, string> = {
+      ts: 'typescript',
+      js: 'javascript',
+      py: 'python',
+      go: 'go',
+      rs: 'rust',
+    };
 
     for (const file of files.slice(0, 20)) {
       const ext = file.split('.').pop() || '';
@@ -130,7 +138,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
           const content = await fs.promises.readFile(path.join(srcDir, file), 'utf-8');
           const symbols = await extractSymbols(content, lang);
           if (symbols.length > 0) {
-            const symbolList = symbols.slice(0, 5).map(s => `${s.type}:${s.name}`).join(', ');
+            const symbolList = symbols
+              .slice(0, 5)
+              .map((s) => `${s.type}:${s.name}`)
+              .join(', ');
             lines.push(`  src/${file} [${symbolList}]`);
             continue;
           }
@@ -161,7 +172,11 @@ async function runDiscoveryAgent(
     // Mode parameter can still override backend if explicitly passed from CLI
     const configOverride: Parameters<typeof callLLM>[2] = mode ? { backend: mode } : undefined;
 
-    const result = await callLLM(prompt, { timeout: 60000, maxTokens: 2048, useSleepAgent: true }, configOverride);
+    const result = await callLLM(
+      prompt,
+      { timeout: 60000, maxTokens: 2048, useSleepAgent: true },
+      configOverride
+    );
     return parseDiscoveries(result);
   } catch (err) {
     log(`[analyze] Error running discovery: ${err}`);
@@ -205,7 +220,7 @@ async function saveDiscoveriesBatch(
   if (discoveries.length === 0) return 0;
 
   // 1. Prepare contents
-  const contents = discoveries.map(d => `${d.title}\n\n${d.content}`);
+  const contents = discoveries.map((d) => `${d.title}\n\n${d.content}`);
 
   // 2. Batch embedding generation (single call for all discoveries)
   const embeddings = await getEmbeddings(contents);
@@ -271,10 +286,7 @@ async function saveDiscoveriesBatch(
 /**
  * Start the analyzer service
  */
-export function startAnalyzer(
-  config: AnalyzerConfig,
-  log: (msg: string) => void
-): AnalyzerState {
+export function startAnalyzer(config: AnalyzerConfig, log: (msg: string) => void): AnalyzerState {
   if (analyzerState?.active) {
     log('[analyze] Already running');
     return analyzerState;
@@ -299,10 +311,7 @@ export function startAnalyzer(
   runAnalysis(mode, log);
 
   // Schedule periodic runs
-  analyzerState.intervalId = setInterval(
-    () => runAnalysis(mode, log),
-    intervalMinutes * 60 * 1000
-  );
+  analyzerState.intervalId = setInterval(() => runAnalysis(mode, log), intervalMinutes * 60 * 1000);
 
   log(`[analyze] Started (interval: ${intervalMinutes} min, mode: ${mode})`);
 
@@ -332,10 +341,7 @@ export function stopAnalyzer(log: (msg: string) => void): void {
 /**
  * Run analysis now
  */
-async function runAnalysis(
-  mode: 'claude' | 'api',
-  log: (msg: string) => void
-): Promise<void> {
+async function runAnalysis(mode: 'claude' | 'api', log: (msg: string) => void): Promise<void> {
   if (!analyzerState || analyzerState.running) {
     return;
   }
@@ -387,10 +393,7 @@ async function runAnalysis(
 /**
  * Queue a file for analysis
  */
-export function queueFileForAnalysis(
-  file: string,
-  mode: 'claude' | 'api' = 'claude'
-): void {
+export function queueFileForAnalysis(file: string, mode: 'claude' | 'api' = 'claude'): void {
   if (!analyzerState) {
     analyzerState = {
       active: false,

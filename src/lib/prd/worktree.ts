@@ -21,8 +21,8 @@ import { logWarn } from '../fault-logger.js';
 
 export interface WorktreeInfo {
   taskId: string;
-  path: string;         // absolute path to worktree directory
-  baseBranch: string;   // the prd/{id} branch it was created from
+  path: string; // absolute path to worktree directory
+  baseBranch: string; // the prd/{id} branch it was created from
 }
 
 export interface MergeResult {
@@ -57,7 +57,7 @@ export function getWorktreesDir(): string {
 export function createWorktree(
   taskId: string,
   prdBranch: string,
-  projectRoot: string,
+  projectRoot: string
 ): WorktreeInfo {
   const wtDir = getWorktreesDir();
   if (!fs.existsSync(wtDir)) {
@@ -72,10 +72,11 @@ export function createWorktree(
   }
 
   // Create detached worktree at the current HEAD of the PRD branch
-  execSync(
-    `git worktree add --detach "${worktreePath}" ${prdBranch}`,
-    { cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
-  );
+  execSync(`git worktree add --detach "${worktreePath}" ${prdBranch}`, {
+    cwd: projectRoot,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
 
   // Symlink node_modules so tools like tsc/vitest work in the worktree
   symlinkDependencies(projectRoot, worktreePath);
@@ -100,7 +101,9 @@ function symlinkDependencies(projectRoot: string, worktreePath: string): void {
       try {
         fs.symlinkSync(source, target, 'junction');
       } catch (err) {
-        logWarn('prd', 'Failed to create node_modules symlink, quality gates may fail', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('prd', 'Failed to create node_modules symlink, quality gates may fail', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -122,7 +125,7 @@ function symlinkDependencies(projectRoot: string, worktreePath: string): void {
 export function mergeWorktreeChanges(
   worktreePath: string,
   projectRoot: string,
-  commitMessage: string,
+  commitMessage: string
 ): MergeResult {
   try {
     // Stage all changes in worktree
@@ -176,7 +179,9 @@ export function mergeWorktreeChanges(
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
         });
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         success: false,
@@ -198,10 +203,7 @@ export function mergeWorktreeChanges(
  * Always does git worktree remove + fallback rmSync + prune.
  * Retries rmSync on Windows (EBUSY / EPERM from delayed file deletion).
  */
-export function removeWorktree(
-  taskId: string,
-  projectRoot: string,
-): void {
+export function removeWorktree(taskId: string, projectRoot: string): void {
   const worktreePath = path.join(getWorktreesDir(), taskId);
 
   // 1. Try git worktree remove
@@ -211,7 +213,9 @@ export function removeWorktree(
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch { /* fallback below */ }
+  } catch {
+    /* fallback below */
+  }
 
   // 2. If directory still exists, force remove with retry for Windows EBUSY
   if (fs.existsSync(worktreePath)) {
@@ -223,7 +227,9 @@ export function removeWorktree(
         if (attempt < 2) {
           // Brief sync delay for Windows file handle release (EBUSY)
           const start = Date.now();
-          while (Date.now() - start < 500) { /* spin wait ~500ms */ }
+          while (Date.now() - start < 500) {
+            /* spin wait ~500ms */
+          }
         }
       }
     }
@@ -236,7 +242,9 @@ export function removeWorktree(
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
 }
 
 /**
@@ -253,7 +261,9 @@ export function cleanupAllWorktrees(projectRoot: string): void {
         removeWorktree(entry, projectRoot);
       }
     }
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
 
   // Final prune to clean git's worktree registry
   try {
@@ -262,7 +272,9 @@ export function cleanupAllWorktrees(projectRoot: string): void {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
 }
 
 // ============================================================================

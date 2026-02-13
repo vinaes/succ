@@ -110,7 +110,10 @@ export function hybridSearchCode(
 
   // 2. Vector search - try sqlite-vec first
   let vectorResults: { docId: number; score: number }[] = [];
-  let rowMap: Map<number, { id: number; file_path: string; content: string; start_line: number; end_line: number }> = new Map();
+  let rowMap: Map<
+    number,
+    { id: number; file_path: string; content: string; start_line: number; end_line: number }
+  > = new Map();
 
   if (sqliteVecAvailable) {
     try {
@@ -128,13 +131,17 @@ export function hybridSearchCode(
 
       if (vecResults.length > 0) {
         // Filter to only code documents
-        const docIds = vecResults.map(r => r.doc_id);
+        const docIds = vecResults.map((r) => r.doc_id);
         const placeholders = docIds.map(() => '?').join(',');
-        const rows = database.prepare(`
+        const rows = database
+          .prepare(
+            `
           SELECT id, file_path, content, start_line, end_line
           FROM documents
           WHERE id IN (${placeholders}) AND file_path LIKE 'code:%'
-        `).all(...docIds) as Array<{
+        `
+          )
+          .all(...docIds) as Array<{
           id: number;
           file_path: string;
           content: string;
@@ -142,8 +149,8 @@ export function hybridSearchCode(
           end_line: number;
         }>;
 
-        rowMap = new Map(rows.map(r => [r.id, r]));
-        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        rowMap = new Map(rows.map((r) => [r.id, r]));
+        const distanceMap = new Map(vecResults.map((r) => [r.doc_id, r.distance]));
 
         for (const row of rows) {
           const distance = distanceMap.get(row.id) ?? 1;
@@ -162,19 +169,31 @@ export function hybridSearchCode(
 
   // Brute-force fallback for vector search (sqlite-vec unavailable or returned 0)
   if (vectorResults.length === 0) {
-    const { count } = cachedPrepare("SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'").get() as { count: number };
+    const { count } = cachedPrepare(
+      "SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'"
+    ).get() as { count: number };
 
     if (count > BRUTE_FORCE_MAX_ROWS) {
       // Too many docs for brute-force — return BM25-only results
       const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
-      const docIds = bm25Results.slice(0, limit).map(r => r.docId);
+      const docIds = bm25Results.slice(0, limit).map((r) => r.docId);
       if (docIds.length === 0) return [];
       const placeholders = docIds.map(() => '?').join(',');
-      const fallbackRows = database.prepare(`
+      const fallbackRows = database
+        .prepare(
+          `
         SELECT id, file_path, content, start_line, end_line
         FROM documents WHERE id IN (${placeholders})
-      `).all(...docIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
-      return fallbackRows.map(row => ({
+      `
+        )
+        .all(...docIds) as Array<{
+        id: number;
+        file_path: string;
+        content: string;
+        start_line: number;
+        end_line: number;
+      }>;
+      return fallbackRows.map((row) => ({
         file_path: row.file_path,
         content: row.content,
         start_line: row.start_line,
@@ -184,7 +203,9 @@ export function hybridSearchCode(
       }));
     }
 
-    const rows = cachedPrepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
+    const rows = cachedPrepare(
+      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?"
+    ).all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
       content: string;
@@ -195,7 +216,7 @@ export function hybridSearchCode(
 
     if (rows.length === 0) return [];
 
-    rowMap = new Map(rows.map(r => [r.id, r]));
+    rowMap = new Map(rows.map((r) => [r.id, r]));
 
     for (const row of rows) {
       const embedding = bufferToFloatArray(row.embedding);
@@ -214,13 +235,17 @@ export function hybridSearchCode(
 
   // 4. Ensure we have all needed rows in the map (for BM25 results that might not be in vec results)
   if (combined.length > 0) {
-    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    const missingIds = combined.filter((c) => !rowMap.has(c.docId)).map((c) => c.docId);
     if (missingIds.length > 0) {
       const placeholders = missingIds.map(() => '?').join(',');
-      const missingRows = getDb().prepare(`
+      const missingRows = getDb()
+        .prepare(
+          `
         SELECT id, file_path, content, start_line, end_line
         FROM documents WHERE id IN (${placeholders})
-      `).all(...missingIds) as Array<{
+      `
+        )
+        .all(...missingIds) as Array<{
         id: number;
         file_path: string;
         content: string;
@@ -237,24 +262,40 @@ export function hybridSearchCode(
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 
   // 5. Symbol name match boost — fetch AST metadata for result set
-  const resultDocIds = combined.map(c => c.docId);
+  const resultDocIds = combined.map((c) => c.docId);
   const symbolMap = new Map<number, { symbol_name: string | null; symbol_type: string | null }>();
   if (resultDocIds.length > 0) {
     const placeholders = resultDocIds.map(() => '?').join(',');
-    const symbolRows = database.prepare(`
+    const symbolRows = database
+      .prepare(
+        `
       SELECT id, symbol_name, symbol_type FROM documents WHERE id IN (${placeholders})
-    `).all(...resultDocIds) as Array<{ id: number; symbol_name: string | null; symbol_type: string | null }>;
+    `
+      )
+      .all(...resultDocIds) as Array<{
+      id: number;
+      symbol_name: string | null;
+      symbol_type: string | null;
+    }>;
     for (const row of symbolRows) {
       symbolMap.set(row.id, { symbol_name: row.symbol_name, symbol_type: row.symbol_type });
     }
   }
 
-  const queryTokens = query.toLowerCase().trim().split(/[\s,]+/).filter(Boolean);
+  const queryTokens = query
+    .toLowerCase()
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean);
 
   // Pre-compile regex filter if provided (limit length to prevent ReDoS)
   let regexFilter: RegExp | null = null;
   if (filters?.regex && filters.regex.length <= 500) {
-    try { regexFilter = new RegExp(filters.regex, 'i'); } catch { /* invalid regex — skip */ }
+    try {
+      regexFilter = new RegExp(filters.regex, 'i');
+    } catch {
+      /* invalid regex — skip */
+    }
   }
 
   const results: HybridSearchResult[] = [];
@@ -321,7 +362,10 @@ export function hybridSearchDocs(
 
   // 2. Vector search — try sqlite-vec first, fall back to brute-force
   let vectorResults: { docId: number; score: number }[] = [];
-  let rowMap: Map<number, { id: number; file_path: string; content: string; start_line: number; end_line: number }> = new Map();
+  let rowMap: Map<
+    number,
+    { id: number; file_path: string; content: string; start_line: number; end_line: number }
+  > = new Map();
 
   if (sqliteVecAvailable) {
     try {
@@ -337,16 +381,26 @@ export function hybridSearchDocs(
       `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
 
       if (vecResults.length > 0) {
-        const docIds = vecResults.map(r => r.doc_id);
+        const docIds = vecResults.map((r) => r.doc_id);
         const placeholders = docIds.map(() => '?').join(',');
-        const rows = database.prepare(`
+        const rows = database
+          .prepare(
+            `
           SELECT id, file_path, content, start_line, end_line
           FROM documents
           WHERE id IN (${placeholders}) AND file_path NOT LIKE 'code:%'
-        `).all(...docIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
+        `
+          )
+          .all(...docIds) as Array<{
+          id: number;
+          file_path: string;
+          content: string;
+          start_line: number;
+          end_line: number;
+        }>;
 
-        rowMap = new Map(rows.map(r => [r.id, r]));
-        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        rowMap = new Map(rows.map((r) => [r.id, r]));
+        const distanceMap = new Map(vecResults.map((r) => [r.doc_id, r.distance]));
         for (const row of rows) {
           const distance = distanceMap.get(row.id) ?? 1;
           const similarity = 1 - distance;
@@ -363,7 +417,9 @@ export function hybridSearchDocs(
 
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
-    const rows = cachedPrepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
+    const rows = cachedPrepare(
+      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?"
+    ).all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
       content: string;
@@ -373,7 +429,7 @@ export function hybridSearchDocs(
     }>;
 
     if (rows.length === 0) return [];
-    rowMap = new Map(rows.map(r => [r.id, r]));
+    rowMap = new Map(rows.map((r) => [r.id, r]));
 
     for (const row of rows) {
       const embedding = bufferToFloatArray(row.embedding);
@@ -391,13 +447,23 @@ export function hybridSearchDocs(
 
   // 4. Ensure we have all needed rows (BM25 results may not be in vec results)
   if (combined.length > 0) {
-    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    const missingIds = combined.filter((c) => !rowMap.has(c.docId)).map((c) => c.docId);
     if (missingIds.length > 0) {
       const placeholders = missingIds.map(() => '?').join(',');
-      const missingRows = database.prepare(`
+      const missingRows = database
+        .prepare(
+          `
         SELECT id, file_path, content, start_line, end_line
         FROM documents WHERE id IN (${placeholders})
-      `).all(...missingIds) as Array<{ id: number; file_path: string; content: string; start_line: number; end_line: number }>;
+      `
+        )
+        .all(...missingIds) as Array<{
+        id: number;
+        file_path: string;
+        content: string;
+        start_line: number;
+        end_line: number;
+      }>;
       for (const row of missingRows) {
         rowMap.set(row.id, row);
       }
@@ -443,9 +509,16 @@ export function hybridSearchMemories(
   // 2. Vector search — try sqlite-vec first
   let vectorResults: { docId: number; score: number }[] = [];
   type MemoryRow = {
-    id: number; content: string; tags: string | null; source: string | null;
-    type: string | null; created_at: string; last_accessed: string | null;
-    access_count: number; valid_from: string | null; valid_until: string | null;
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    type: string | null;
+    created_at: string;
+    last_accessed: string | null;
+    access_count: number;
+    valid_from: string | null;
+    valid_until: string | null;
     quality_score: number | null;
   };
   let rowMap: Map<number, MemoryRow> = new Map();
@@ -464,16 +537,20 @@ export function hybridSearchMemories(
       `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
 
       if (vecResults.length > 0) {
-        const docIds = vecResults.map(r => r.doc_id);
+        const docIds = vecResults.map((r) => r.doc_id);
         const placeholders = docIds.map(() => '?').join(',');
-        const rows = database.prepare(`
+        const rows = database
+          .prepare(
+            `
           SELECT id, content, tags, source, type, created_at,
                  last_accessed, access_count, valid_from, valid_until, quality_score
           FROM memories WHERE id IN (${placeholders})
-        `).all(...docIds) as MemoryRow[];
+        `
+          )
+          .all(...docIds) as MemoryRow[];
 
-        rowMap = new Map(rows.map(r => [r.id, r]));
-        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        rowMap = new Map(rows.map((r) => [r.id, r]));
+        const distanceMap = new Map(vecResults.map((r) => [r.doc_id, r.distance]));
         for (const row of rows) {
           const distance = distanceMap.get(row.id) ?? 1;
           const similarity = 1 - distance;
@@ -497,7 +574,7 @@ export function hybridSearchMemories(
     `).all(BRUTE_FORCE_MAX_ROWS) as Array<MemoryRow & { embedding: Buffer }>;
 
     if (rows.length === 0) return [];
-    rowMap = new Map(rows.map(r => [r.id, r]));
+    rowMap = new Map(rows.map((r) => [r.id, r]));
 
     for (const row of rows) {
       const embedding = bufferToFloatArray(row.embedding);
@@ -515,14 +592,18 @@ export function hybridSearchMemories(
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
-    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    const missingIds = combined.filter((c) => !rowMap.has(c.docId)).map((c) => c.docId);
     if (missingIds.length > 0) {
       const placeholders = missingIds.map(() => '?').join(',');
-      const missingRows = database.prepare(`
+      const missingRows = database
+        .prepare(
+          `
         SELECT id, content, tags, source, type, created_at,
                last_accessed, access_count, valid_from, valid_until, quality_score
         FROM memories WHERE id IN (${placeholders})
-      `).all(...missingIds) as MemoryRow[];
+      `
+        )
+        .all(...missingIds) as MemoryRow[];
       for (const row of missingRows) {
         rowMap.set(row.id, row);
       }
@@ -576,8 +657,12 @@ export function hybridSearchGlobalMemories(
 
   // 2. Vector search — try sqlite-vec first
   type GlobalMemRow = {
-    id: number; content: string; tags: string | null; source: string | null;
-    project: string | null; created_at: string;
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    project: string | null;
+    created_at: string;
   };
   let vectorResults: { docId: number; score: number }[] = [];
   let rowMap: Map<number, GlobalMemRow> = new Map();
@@ -596,7 +681,7 @@ export function hybridSearchGlobalMemories(
       `).all(queryBuffer, candidateLimit) as Array<{ doc_id: number; distance: number }>;
 
       if (vecResults.length > 0) {
-        const docIds = vecResults.map(r => r.doc_id);
+        const docIds = vecResults.map((r) => r.doc_id);
         const placeholders = docIds.map(() => '?').join(',');
 
         let whereClause = `id IN (${placeholders})`;
@@ -606,13 +691,17 @@ export function hybridSearchGlobalMemories(
           params.push(since.toISOString());
         }
 
-        const rows = database.prepare(`
+        const rows = database
+          .prepare(
+            `
           SELECT id, content, tags, source, project, created_at
           FROM memories WHERE ${whereClause}
-        `).all(...params) as GlobalMemRow[];
+        `
+          )
+          .all(...params) as GlobalMemRow[];
 
-        rowMap = new Map(rows.map(r => [r.id, r]));
-        const distanceMap = new Map(vecResults.map(r => [r.doc_id, r.distance]));
+        rowMap = new Map(rows.map((r) => [r.id, r]));
+        const distanceMap = new Map(vecResults.map((r) => [r.doc_id, r.distance]));
         for (const row of rows) {
           const distance = distanceMap.get(row.id) ?? 1;
           const similarity = 1 - distance;
@@ -629,7 +718,8 @@ export function hybridSearchGlobalMemories(
 
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
-    let sqlQuery = 'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+    let sqlQuery =
+      'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
     const params: any[] = [];
     if (since) {
       sqlQuery += ' AND created_at >= ?';
@@ -637,10 +727,12 @@ export function hybridSearchGlobalMemories(
     }
     sqlQuery += ` LIMIT ${BRUTE_FORCE_MAX_ROWS}`;
 
-    const rows = database.prepare(sqlQuery).all(...params) as Array<GlobalMemRow & { embedding: Buffer }>;
+    const rows = database.prepare(sqlQuery).all(...params) as Array<
+      GlobalMemRow & { embedding: Buffer }
+    >;
 
     if (rows.length === 0) return [];
-    rowMap = new Map(rows.map(r => [r.id, r]));
+    rowMap = new Map(rows.map((r) => [r.id, r]));
 
     for (const row of rows) {
       const embedding = bufferToFloatArray(row.embedding);
@@ -658,13 +750,17 @@ export function hybridSearchGlobalMemories(
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
-    const missingIds = combined.filter(c => !rowMap.has(c.docId)).map(c => c.docId);
+    const missingIds = combined.filter((c) => !rowMap.has(c.docId)).map((c) => c.docId);
     if (missingIds.length > 0) {
       const placeholders = missingIds.map(() => '?').join(',');
-      const missingRows = database.prepare(`
+      const missingRows = database
+        .prepare(
+          `
         SELECT id, content, tags, source, project, created_at
         FROM memories WHERE id IN (${placeholders})
-      `).all(...missingIds) as GlobalMemRow[];
+      `
+        )
+        .all(...missingIds) as GlobalMemRow[];
       for (const row of missingRows) {
         rowMap.set(row.id, row);
       }

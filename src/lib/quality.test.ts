@@ -30,7 +30,9 @@ describe('Quality Scoring', () => {
 
     it('should penalize very short content', () => {
       const short = scoreWithHeuristics('fix bug');
-      const longer = scoreWithHeuristics('Fixed authentication bug in the login handler when users provide invalid tokens');
+      const longer = scoreWithHeuristics(
+        'Fixed authentication bug in the login handler when users provide invalid tokens'
+      );
 
       expect(longer.score).toBeGreaterThan(short.score);
     });
@@ -44,7 +46,9 @@ describe('Quality Scoring', () => {
 
     it('should score actionable content higher', () => {
       const passive = scoreWithHeuristics('The feature is nice');
-      const actionable = scoreWithHeuristics('Implement retry logic for failed API calls with exponential backoff');
+      const actionable = scoreWithHeuristics(
+        'Implement retry logic for failed API calls with exponential backoff'
+      );
 
       expect(actionable.score).toBeGreaterThan(passive.score);
     });
@@ -72,7 +76,9 @@ describe('Quality Scoring', () => {
 
     it('should score technical terms positively', () => {
       const noTerms = scoreWithHeuristics('Fixed the thing that was not working');
-      const withTerms = scoreWithHeuristics('Fixed the database connection pooling issue causing function timeout');
+      const withTerms = scoreWithHeuristics(
+        'Fixed the database connection pooling issue causing function timeout'
+      );
 
       expect(withTerms.factors.specificity).toBeGreaterThan(noTerms.factors.specificity);
     });

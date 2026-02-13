@@ -18,17 +18,13 @@ describe('Scheduler', () => {
     it('should sort independent tasks by sequence', () => {
       const tasks = [makeTask(3), makeTask(1), makeTask(2)];
       const sorted = topologicalSort(tasks);
-      expect(sorted.map(t => t.id)).toEqual(['task_003', 'task_001', 'task_002']);
+      expect(sorted.map((t) => t.id)).toEqual(['task_003', 'task_001', 'task_002']);
     });
 
     it('should respect dependencies', () => {
-      const tasks = [
-        makeTask(1),
-        makeTask(2, ['task_001']),
-        makeTask(3, ['task_002']),
-      ];
+      const tasks = [makeTask(1), makeTask(2, ['task_001']), makeTask(3, ['task_002'])];
       const sorted = topologicalSort(tasks);
-      const ids = sorted.map(t => t.id);
+      const ids = sorted.map((t) => t.id);
       expect(ids.indexOf('task_001')).toBeLessThan(ids.indexOf('task_002'));
       expect(ids.indexOf('task_002')).toBeLessThan(ids.indexOf('task_003'));
     });
@@ -41,7 +37,7 @@ describe('Scheduler', () => {
         makeTask(4, ['task_002', 'task_003']),
       ];
       const sorted = topologicalSort(tasks);
-      const ids = sorted.map(t => t.id);
+      const ids = sorted.map((t) => t.id);
       expect(ids.indexOf('task_001')).toBeLessThan(ids.indexOf('task_002'));
       expect(ids.indexOf('task_001')).toBeLessThan(ids.indexOf('task_003'));
       expect(ids.indexOf('task_002')).toBeLessThan(ids.indexOf('task_004'));
@@ -49,10 +45,7 @@ describe('Scheduler', () => {
     });
 
     it('should throw on circular dependency', () => {
-      const tasks = [
-        makeTask(1, ['task_002']),
-        makeTask(2, ['task_001']),
-      ];
+      const tasks = [makeTask(1, ['task_002']), makeTask(2, ['task_001'])];
       expect(() => topologicalSort(tasks)).toThrow('Circular dependency');
     });
   });
@@ -118,16 +111,14 @@ describe('Scheduler', () => {
       ];
       const result = validateTaskGraph(tasks);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('Circular'))).toBe(true);
+      expect(result.errors.some((e) => e.includes('Circular'))).toBe(true);
     });
 
     it('should error on invalid dep reference', () => {
-      const tasks = [
-        makeTask(1, ['task_099'], ['src/a.ts']),
-      ];
+      const tasks = [makeTask(1, ['task_099'], ['src/a.ts'])];
       const result = validateTaskGraph(tasks);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('non-existent'))).toBe(true);
+      expect(result.errors.some((e) => e.includes('non-existent'))).toBe(true);
     });
 
     it('should warn about file overlap without dependency', () => {
@@ -137,7 +128,7 @@ describe('Scheduler', () => {
         makeTask(3, [], ['src/other.ts']),
       ];
       const result = validateTaskGraph(tasks);
-      expect(result.warnings.some(w => w.includes('src/shared.ts'))).toBe(true);
+      expect(result.warnings.some((w) => w.includes('src/shared.ts'))).toBe(true);
     });
 
     it('should not warn about file overlap with dependency', () => {
@@ -146,18 +137,14 @@ describe('Scheduler', () => {
         makeTask(2, ['task_001'], ['src/shared.ts']),
       ];
       const result = validateTaskGraph(tasks);
-      const fileWarnings = result.warnings.filter(w => w.includes('src/shared.ts'));
+      const fileWarnings = result.warnings.filter((w) => w.includes('src/shared.ts'));
       expect(fileWarnings).toHaveLength(0);
     });
 
     it('should warn about tasks with no files_to_modify', () => {
-      const tasks = [
-        makeTask(1),
-        makeTask(2, [], ['src/a.ts']),
-        makeTask(3, [], ['src/b.ts']),
-      ];
+      const tasks = [makeTask(1), makeTask(2, [], ['src/a.ts']), makeTask(3, [], ['src/b.ts'])];
       const result = validateTaskGraph(tasks);
-      expect(result.warnings.some(w => w.includes('no files_to_modify'))).toBe(true);
+      expect(result.warnings.some((w) => w.includes('no files_to_modify'))).toBe(true);
     });
   });
 });
