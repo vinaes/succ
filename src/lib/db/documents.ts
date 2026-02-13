@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDb } from './connection.js';
+import { getDb, cachedPrepare } from './connection.js';
 import { sqliteVecAvailable } from './schema.js';
 import { floatArrayToBuffer, bufferToFloatArray } from './helpers.js';
 import { SearchResult } from './types.js';
@@ -65,8 +65,7 @@ export function upsertDocument(
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
 
   // Get existing doc ID if any (for vec table update)
-  const existing = database
-    .prepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
+  const existing = cachedPrepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
     .get(filePath, chunkIndex) as { id: number } | undefined;
 
   database
@@ -92,20 +91,19 @@ export function upsertDocument(
     try {
       if (existing) {
         // Update existing: delete old mapping and vec entry, insert new
-        const oldMapping = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(existing.id) as { vec_rowid: number } | undefined;
+        const oldMapping = cachedPrepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(existing.id) as { vec_rowid: number } | undefined;
         if (oldMapping) {
-          database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(oldMapping.vec_rowid);
-          database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(existing.id);
+          cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(oldMapping.vec_rowid);
+          cachedPrepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(existing.id);
         }
-        const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
-        database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, existing.id);
+        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
+        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, existing.id);
       } else {
         // New doc - get the inserted ID
-        const newDoc = database
-          .prepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
+        const newDoc = cachedPrepare('SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?')
           .get(filePath, chunkIndex) as { id: number };
-        const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
-        database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newDoc.id);
+        const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
+        cachedPrepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newDoc.id);
       }
     } catch (err) {
       logWarn('documents', 'Vector insert failed for document, semantic search may not find it', { error: err instanceof Error ? err.message : String(err) });
@@ -259,19 +257,16 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
 }
 
 export function deleteDocumentsByPath(filePath: string): void {
-  const database = getDb();
-
   // Also delete from vec_documents using mapping table
   if (sqliteVecAvailable) {
     try {
-      const docIds = database
-        .prepare('SELECT id FROM documents WHERE file_path = ?')
+      const docIds = cachedPrepare('SELECT id FROM documents WHERE file_path = ?')
         .all(filePath) as Array<{ id: number }>;
       for (const { id } of docIds) {
-        const mapping = database.prepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(id) as { vec_rowid: number } | undefined;
+        const mapping = cachedPrepare('SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?').get(id) as { vec_rowid: number } | undefined;
         if (mapping) {
-          database.prepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
-          database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
+          cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
+          cachedPrepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
         }
       }
     } catch (err) {
@@ -279,7 +274,7 @@ export function deleteDocumentsByPath(filePath: string): void {
     }
   }
 
-  const result = database.prepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
+  const result = cachedPrepare('DELETE FROM documents WHERE file_path = ?').run(filePath);
   if (result.changes > 0) {
     logDocDeletion('deleteDocumentsByPath', result.changes, `path="${filePath}"`);
   }
@@ -299,7 +294,7 @@ export function searchDocuments(
       const candidateLimit = Math.max(limit * 3, 30);
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
 
-      const vecResults = database.prepare(`
+      const vecResults = cachedPrepare(`
         SELECT m.doc_id, v.distance
         FROM vec_documents v
         JOIN vec_documents_map m ON m.vec_rowid = v.rowid
@@ -349,7 +344,7 @@ export function searchDocuments(
   }
 
   // Brute-force fallback
-  const rows = database.prepare('SELECT * FROM documents').all() as Array<{
+  const rows = cachedPrepare('SELECT * FROM documents').all() as Array<{
     file_path: string;
     content: string;
     start_line: number;
@@ -387,9 +382,7 @@ export function getRecentDocuments(limit: number = 10): Array<{
   start_line: number;
   end_line: number;
 }> {
-  const database = getDb();
-  const rows = database
-    .prepare(`
+  const rows = cachedPrepare(`
       SELECT file_path, content, start_line, end_line
       FROM documents
       WHERE file_path NOT LIKE 'code:%'
@@ -411,16 +404,12 @@ export function getStats(): {
   total_files: number;
   last_indexed: string | null;
 } {
-  const database = getDb();
-
-  const totalDocs = database.prepare('SELECT COUNT(*) as count FROM documents').get() as {
+  const totalDocs = cachedPrepare('SELECT COUNT(*) as count FROM documents').get() as {
     count: number;
   };
-  const totalFiles = database
-    .prepare('SELECT COUNT(DISTINCT file_path) as count FROM documents')
+  const totalFiles = cachedPrepare('SELECT COUNT(DISTINCT file_path) as count FROM documents')
     .get() as { count: number };
-  const lastIndexed = database
-    .prepare('SELECT MAX(updated_at) as last FROM documents')
+  const lastIndexed = cachedPrepare('SELECT MAX(updated_at) as last FROM documents')
     .get() as { last: string | null };
 
   return {
@@ -435,15 +424,14 @@ export function getStats(): {
  * Used for reindexing after embedding model change.
  */
 export function clearDocuments(): void {
-  const database = getDb();
-  const docCount = (database.prepare('SELECT COUNT(*) as cnt FROM documents').get() as { cnt: number }).cnt;
+  const docCount = (cachedPrepare('SELECT COUNT(*) as cnt FROM documents').get() as { cnt: number }).cnt;
   logDocDeletion('clearDocuments', docCount, 'all documents + file_hashes cleared');
-  database.prepare('DELETE FROM documents').run();
-  database.prepare('DELETE FROM file_hashes').run();
-  database.prepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
+  cachedPrepare('DELETE FROM documents').run();
+  cachedPrepare('DELETE FROM file_hashes').run();
+  cachedPrepare("DELETE FROM metadata WHERE key = 'embedding_model'").run();
   // Reset vec migration flags so next init can re-populate vec tables
-  database.prepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
-  database.prepare("DELETE FROM metadata WHERE key = 'vec_memories_migrated_dims'").run();
+  cachedPrepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
+  cachedPrepare("DELETE FROM metadata WHERE key = 'vec_memories_migrated_dims'").run();
   invalidateCodeBm25Index();
   invalidateDocsBm25Index();
 }
@@ -453,13 +441,12 @@ export function clearDocuments(): void {
  * Used for reindexing code after embedding model change.
  */
 export function clearCodeDocuments(): void {
-  const database = getDb();
-  const codeCount = (database.prepare("SELECT COUNT(*) as cnt FROM documents WHERE file_path LIKE 'code:%'").get() as { cnt: number }).cnt;
+  const codeCount = (cachedPrepare("SELECT COUNT(*) as cnt FROM documents WHERE file_path LIKE 'code:%'").get() as { cnt: number }).cnt;
   logDocDeletion('clearCodeDocuments', codeCount, 'code documents cleared');
-  database.prepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
-  database.prepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
+  cachedPrepare("DELETE FROM documents WHERE file_path LIKE 'code:%'").run();
+  cachedPrepare("DELETE FROM file_hashes WHERE file_path LIKE 'code:%'").run();
   // Reset vec documents migration flag so next init can re-populate
-  database.prepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
+  cachedPrepare("DELETE FROM metadata WHERE key = 'vec_documents_migrated_dims'").run();
   invalidateCodeBm25Index();
 }
 
@@ -468,8 +455,7 @@ export function clearCodeDocuments(): void {
  * Returns null if no documents exist.
  */
 export function getStoredEmbeddingDimension(): number | null {
-  const database = getDb();
-  const row = database.prepare('SELECT embedding FROM documents LIMIT 1').get() as { embedding: Buffer } | undefined;
+  const row = cachedPrepare('SELECT embedding FROM documents LIMIT 1').get() as { embedding: Buffer } | undefined;
   if (!row) return null;
   const embedding = bufferToFloatArray(row.embedding);
   return embedding.length;

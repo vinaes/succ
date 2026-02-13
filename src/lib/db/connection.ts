@@ -8,6 +8,39 @@ let globalDb: Database.Database | null = null;
 // Callbacks invoked when DB is swapped via setDb(). Avoids circular imports.
 const onDbChangeCallbacks: Array<() => void> = [];
 
+// ---------- Prepared statement cache ----------
+
+// Per-database statement caches. Keyed by SQL string.
+const stmtCacheLocal = new Map<string, Database.Statement>();
+const stmtCacheGlobal = new Map<string, Database.Statement>();
+
+/**
+ * Get a cached prepared statement for the local DB.
+ * Avoids re-preparing the same SQL on every function call.
+ * Cache is auto-cleared when setDb()/closeDb() is called.
+ */
+export function cachedPrepare(sql: string): Database.Statement {
+  let stmt = stmtCacheLocal.get(sql);
+  if (!stmt) {
+    stmt = getDb().prepare(sql);
+    stmtCacheLocal.set(sql, stmt);
+  }
+  return stmt;
+}
+
+/**
+ * Get a cached prepared statement for the global DB.
+ * Cache is auto-cleared when closeGlobalDb() is called.
+ */
+export function cachedPrepareGlobal(sql: string): Database.Statement {
+  let stmt = stmtCacheGlobal.get(sql);
+  if (!stmt) {
+    stmt = getGlobalDb().prepare(sql);
+    stmtCacheGlobal.set(sql, stmt);
+  }
+  return stmt;
+}
+
 /**
  * Register a callback to run when setDb() swaps the database.
  * Used by bm25-indexes.ts to flush cached indexes.
@@ -64,6 +97,7 @@ export function getGlobalDb(): Database.Database {
  */
 export function setDb(database: Database.Database): void {
   db = database;
+  stmtCacheLocal.clear();
   for (const cb of onDbChangeCallbacks) cb();
 }
 
@@ -71,6 +105,7 @@ export function setDb(database: Database.Database): void {
  * Close the local database connection
  */
 export function closeDb(): void {
+  stmtCacheLocal.clear();
   if (db) {
     db.close();
     db = null;
@@ -81,6 +116,7 @@ export function closeDb(): void {
  * Close the global database connection
  */
 export function closeGlobalDb(): void {
+  stmtCacheGlobal.clear();
   if (globalDb) {
     globalDb.close();
     globalDb = null;

@@ -1,4 +1,4 @@
-import { getDb, getGlobalDb } from './connection.js';
+import { getDb, getGlobalDb, cachedPrepare, cachedPrepareGlobal } from './connection.js';
 import { cosineSimilarity } from '../embeddings.js';
 import * as bm25 from '../bm25.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
@@ -117,7 +117,7 @@ export function hybridSearchCode(
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
 
-      const vecResults = database.prepare(`
+      const vecResults = cachedPrepare(`
         SELECT m.doc_id, v.distance
         FROM vec_documents v
         JOIN vec_documents_map m ON m.vec_rowid = v.rowid
@@ -162,7 +162,7 @@ export function hybridSearchCode(
 
   // Brute-force fallback for vector search (sqlite-vec unavailable or returned 0)
   if (vectorResults.length === 0) {
-    const { count } = database.prepare("SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'").get() as { count: number };
+    const { count } = cachedPrepare("SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'").get() as { count: number };
 
     if (count > BRUTE_FORCE_MAX_ROWS) {
       // Too many docs for brute-force — return BM25-only results
@@ -184,7 +184,7 @@ export function hybridSearchCode(
       }));
     }
 
-    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
+    const rows = cachedPrepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
       content: string;
@@ -327,7 +327,7 @@ export function hybridSearchDocs(
     try {
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
-      const vecResults = database.prepare(`
+      const vecResults = cachedPrepare(`
         SELECT m.doc_id, v.distance
         FROM vec_documents v
         JOIN vec_documents_map m ON m.vec_rowid = v.rowid
@@ -363,7 +363,7 @@ export function hybridSearchDocs(
 
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
-    const rows = database.prepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
+    const rows = cachedPrepare("SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?").all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
       content: string;
@@ -454,7 +454,7 @@ export function hybridSearchMemories(
     try {
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
-      const vecResults = database.prepare(`
+      const vecResults = cachedPrepare(`
         SELECT m.memory_id AS doc_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
@@ -490,7 +490,7 @@ export function hybridSearchMemories(
 
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
-    const rows = database.prepare(`
+    const rows = cachedPrepare(`
       SELECT id, content, tags, source, type, created_at, embedding,
              last_accessed, access_count, valid_from, valid_until, quality_score
       FROM memories WHERE embedding IS NOT NULL LIMIT ?
@@ -586,7 +586,7 @@ export function hybridSearchGlobalMemories(
     try {
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
-      const vecResults = database.prepare(`
+      const vecResults = cachedPrepareGlobal(`
         SELECT m.memory_id AS doc_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
