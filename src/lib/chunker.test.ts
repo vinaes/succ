@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chunkText, chunkCode, extractFrontmatter, Chunk } from './chunker.js';
+import { chunkText, chunkCode, chunkCodeAsync, extractFrontmatter, getChunkingStats, resetChunkingStats, Chunk } from './chunker.js';
 
 // Mock config
 vi.mock('./config.js', () => ({
@@ -407,6 +407,83 @@ Body`;
 
       expect(frontmatter.url).toBe('https://example.com/path');
       expect(frontmatter.time).toBe('12:30:00');
+    });
+  });
+
+  describe('chunkCodeAsync', () => {
+    beforeEach(() => {
+      resetChunkingStats();
+    });
+
+    it('should return chunks with AST metadata for TypeScript files', async () => {
+      const code = `
+export function greet(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+
+export class Greeter {
+  constructor(private prefix: string) {}
+
+  greet(name: string): string {
+    return \`\${this.prefix} \${name}\`;
+  }
+}
+`;
+      const chunks = await chunkCodeAsync(code, 'greeter.ts');
+
+      expect(chunks.length).toBeGreaterThan(0);
+      // At least one chunk should have AST metadata (symbolName)
+      const withMetadata = chunks.filter(c => c.symbolName);
+      expect(withMetadata.length).toBeGreaterThan(0);
+
+      const stats = getChunkingStats();
+      expect(stats.astFiles).toBe(1);
+      expect(stats.regexFiles).toBe(0);
+    });
+
+    it('should fall back to regex for unsupported extensions', async () => {
+      const code = 'some content\nthat should\nbe chunked';
+      const chunks = await chunkCodeAsync(code, 'data.xyz');
+
+      expect(chunks.length).toBeGreaterThan(0);
+
+      const stats = getChunkingStats();
+      expect(stats.regexFiles).toBe(1);
+      expect(stats.astFiles).toBe(0);
+    });
+
+    it('should handle empty content', async () => {
+      const chunks = await chunkCodeAsync('', 'empty.ts');
+
+      // Empty file still produces a chunk (tree-sitter wraps entire file)
+      expect(chunks.length).toBeLessThanOrEqual(1);
+
+      // Tree-sitter recognized the .ts extension, so it counts as AST
+      const stats = getChunkingStats();
+      expect(stats.astFiles).toBe(1);
+      expect(stats.regexFiles).toBe(0);
+    });
+
+    it('should track stats across multiple files', async () => {
+      const tsCode = `export function foo(): void {}`;
+      const unknownCode = 'some content';
+
+      await chunkCodeAsync(tsCode, 'a.ts');
+      await chunkCodeAsync(unknownCode, 'b.xyz');
+      await chunkCodeAsync(tsCode, 'c.ts');
+
+      const stats = getChunkingStats();
+      expect(stats.astFiles).toBe(2);
+      expect(stats.regexFiles).toBe(1);
+    });
+
+    it('should reset stats correctly', async () => {
+      await chunkCodeAsync('export function x() {}', 'x.ts');
+      expect(getChunkingStats().astFiles).toBe(1);
+
+      resetChunkingStats();
+      expect(getChunkingStats().astFiles).toBe(0);
+      expect(getChunkingStats().regexFiles).toBe(0);
     });
   });
 });
