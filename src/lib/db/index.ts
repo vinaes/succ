@@ -56,6 +56,9 @@ export {
   incrementMemoryAccess,
   incrementMemoryAccessBatch,
   getAllMemoriesForRetention,
+  incrementCorrectionCount,
+  setMemoryInvariant,
+  getPinnedMemories,
 } from './retention.js';
 
 // Re-export document functions and types

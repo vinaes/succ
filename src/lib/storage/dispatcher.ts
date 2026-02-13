@@ -687,18 +687,23 @@ export class StorageDispatcher {
   }
 
   async getRecentMemories(limit: number = 10): Promise<any[]> {
-    // Over-fetch to allow validity filtering and re-ranking
+    // Two-phase fetch: pinned memories + over-fetched recent
     const overfetchLimit = limit * 3;
     let raw: any[];
+    let pinned: any[];
     if (this.backend === 'postgresql' && this.postgres) {
-      raw = await this.postgres.getRecentMemories(overfetchLimit);
+      [raw, pinned] = await Promise.all([
+        this.postgres.getRecentMemories(overfetchLimit),
+        this.postgres.getPinnedMemories(),
+      ]);
     } else {
       const sqlite = await this.getSqliteFns();
       raw = sqlite.getRecentMemories(overfetchLimit);
+      pinned = sqlite.getPinnedMemories();
     }
-    // Apply working memory pipeline: validity filter → score → rank
+    // Apply working memory pipeline: pinned first → validity filter → score → rank
     const { applyWorkingMemoryPipeline } = await import('../working-memory-pipeline.js');
-    return applyWorkingMemoryPipeline(raw, limit);
+    return applyWorkingMemoryPipeline(raw, limit, new Date(), pinned);
   }
 
   async findSimilarMemory(
@@ -1299,6 +1304,31 @@ export class StorageDispatcher {
     }
     const sqlite = await this.getSqliteFns();
     sqlite.incrementMemoryAccessBatch(accesses);
+  }
+
+  async incrementCorrectionCount(memoryId: number): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.incrementCorrectionCount(memoryId);
+      return;
+    }
+    const sqlite = await this.getSqliteFns();
+    sqlite.incrementCorrectionCount(memoryId);
+  }
+
+  async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.setMemoryInvariant(memoryId, isInvariant);
+      return;
+    }
+    const sqlite = await this.getSqliteFns();
+    sqlite.setMemoryInvariant(memoryId, isInvariant);
+  }
+
+  async getPinnedMemories(threshold?: number): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getPinnedMemories(threshold);
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getPinnedMemories(threshold);
   }
 
   async getAllMemoriesForRetention(): Promise<any[]> {

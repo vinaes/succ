@@ -2,11 +2,13 @@
  * Working Memory Pipeline
  *
  * Filters and scores memories for session startup context loading.
- * Takes raw memories (ordered by created_at DESC from backend) and applies:
+ * Implements two-phase fetch: pinned memories first, then scored recent.
+ *
  * 1. Validity filtering (via isValidAt from temporal.ts)
- * 2. Effective score ranking (via calculateEffectiveScore from retention.ts)
- * 3. Fallback to recency if scoring data is missing
- * 4. Telemetry for anomalies
+ * 2. Pinned memories always included (correction_count >= 2 OR is_invariant)
+ * 3. Remaining slots filled by effectiveScore ranking
+ * 4. Fallback to recency if scoring data is missing
+ * 5. Telemetry for anomalies
  */
 
 import { isValidAt } from './temporal.js';
@@ -15,6 +17,9 @@ import type { MemoryForRetention } from './storage/types.js';
 import { logWarn, logInfo } from './fault-logger.js';
 
 const COMPONENT = 'working-memory';
+
+/** Pinning threshold: memories with correction_count >= this are Tier 1 pins */
+export const PIN_THRESHOLD = 2;
 
 /** Minimum fields needed from a raw memory row */
 export interface WorkingMemoryCandidate {
@@ -26,40 +31,115 @@ export interface WorkingMemoryCandidate {
   last_accessed: string | null;
   valid_from: string | null;
   valid_until: string | null;
+  correction_count: number;
+  is_invariant: boolean;
 }
 
 /**
- * Apply the working memory pipeline: validity filter → score → rank → trim.
+ * Detect if memory content contains invariant language (rules, constraints).
+ * Used to auto-set is_invariant on new memories.
+ *
+ * Matches imperative patterns: "always X", "never X", "must X", "MUST NOT",
+ * "do not X", "required", "mandatory", "forbidden", "prohibited".
+ */
+export function detectInvariant(content: string): boolean {
+  // Normalize: lowercase, collapse whitespace
+  const text = content.toLowerCase().replace(/\s+/g, ' ');
+
+  // Patterns indicating invariant rules/constraints
+  const patterns = [
+    /\b(?:always|never|must|shall)\s+\w/,           // "always use", "never commit", "must validate"
+    /\b(?:must not|shall not|do not|don't)\s+\w/,    // "must not push", "don't use"
+    /\b(?:required|mandatory|forbidden|prohibited)\b/, // standalone keywords
+    /\b(?:critical|important)\s*:/,                    // "CRITICAL:" prefix patterns
+    /\bnever\b.*\bwithout\b/,                          // "never X without Y"
+    /\balways\b.*\bbefore\b/,                           // "always X before Y"
+  ];
+
+  return patterns.some((p) => p.test(text));
+}
+
+/**
+ * Check if a memory is pinned (Tier 1 working memory).
+ */
+export function isPinned(memory: WorkingMemoryCandidate): boolean {
+  return memory.is_invariant || memory.correction_count >= PIN_THRESHOLD;
+}
+
+/**
+ * Apply the working memory pipeline with two-phase fetch:
+ * Phase 1: Include all pinned memories (correction_count >= 2 OR is_invariant)
+ * Phase 2: Fill remaining slots with scored recent memories
  *
  * @param memories - Raw memories from backend (pre-sorted by created_at DESC)
- * @param limit - Max memories to return
+ * @param pinned - Pinned memories from getPinnedMemories() — may overlap with memories
+ * @param limit - Max total memories to return
  * @param now - Current time (injectable for testing)
- * @returns Scored and filtered memories, up to `limit`
+ * @returns Pinned + scored memories, up to `limit`
  */
 export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
   memories: T[],
   limit: number,
-  now: Date = new Date()
+  now: Date = new Date(),
+  pinned?: T[]
 ): T[] {
-  const totalBefore = memories.length;
+  const totalBefore = memories.length + (pinned?.length ?? 0);
 
-  // Step 1: Filter by temporal validity
-  const valid = memories.filter((m) =>
-    isValidAt(m.valid_from, m.valid_until, now)
-  );
+  // Step 1: Collect and deduplicate pinned memories
+  const pinnedIds = new Set<number>();
+  const pinnedValid: T[] = [];
 
-  const filteredOut = totalBefore - valid.length;
-  const filteredPercent = totalBefore > 0 ? (filteredOut / totalBefore) * 100 : 0;
+  if (pinned && pinned.length > 0) {
+    for (const m of pinned) {
+      if (isValidAt(m.valid_from, m.valid_until, now) && !pinnedIds.has(m.id)) {
+        pinnedIds.add(m.id);
+        pinnedValid.push(m);
+      }
+    }
+  }
 
-  if (filteredPercent > 10) {
-    logInfo(COMPONENT, `Validity filter removed ${filteredOut}/${totalBefore} candidates (${filteredPercent.toFixed(1)}%)`, {
-      total: totalBefore,
-      filtered: filteredOut,
+  // Also check memories array for any that are pinned (in case no separate fetch)
+  for (const m of memories) {
+    if (isPinned(m) && isValidAt(m.valid_from, m.valid_until, now) && !pinnedIds.has(m.id)) {
+      pinnedIds.add(m.id);
+      pinnedValid.push(m);
+    }
+  }
+
+  if (pinnedValid.length > 0) {
+    logInfo(COMPONENT, `${pinnedValid.length} pinned memories included (Tier 1)`, {
+      pinned: pinnedValid.length,
+      invariant: pinnedValid.filter((m) => m.is_invariant).length,
+      corrected: pinnedValid.filter((m) => m.correction_count >= PIN_THRESHOLD).length,
     });
   }
 
-  // Early exit: nothing survived validity filter
-  if (valid.length === 0) {
+  // If pinned already fills limit, just return them
+  if (pinnedValid.length >= limit) {
+    return pinnedValid.slice(0, limit);
+  }
+
+  // Step 2: Filter remaining memories by validity, excluding already-pinned
+  const remainingSlots = limit - pinnedValid.length;
+  const candidates = memories.filter(
+    (m) => !pinnedIds.has(m.id) && isValidAt(m.valid_from, m.valid_until, now)
+  );
+
+  const pinnedFromMemories = memories.filter((m) => pinnedIds.has(m.id)).length;
+  const filteredOut = memories.length - candidates.length - pinnedFromMemories;
+  const filteredPercent =
+    memories.length > 0 ? (filteredOut / memories.length) * 100 : 0;
+
+  if (filteredPercent > 10) {
+    logInfo(
+      COMPONENT,
+      `Validity filter removed ${filteredOut}/${memories.length} candidates (${filteredPercent.toFixed(1)}%)`,
+      { total: memories.length, filtered: filteredOut }
+    );
+  }
+
+  if (candidates.length === 0) {
+    if (pinnedValid.length > 0) return pinnedValid;
     if (totalBefore > 0) {
       logWarn(COMPONENT, 'Pipeline returned 0 memories from non-empty input', {
         totalBefore,
@@ -69,19 +149,17 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
     return [];
   }
 
-  // Step 2: Score and rank
-  const hasAnyQuality = valid.some((m) => m.quality_score !== null);
+  // Step 3: Score and rank remaining candidates
+  const hasAnyQuality = candidates.some((m) => m.quality_score !== null);
 
   if (!hasAnyQuality) {
-    // Fallback: no quality data at all — keep recency order from backend
     logWarn(COMPONENT, 'All candidates lack quality_score — falling back to recency order', {
-      count: valid.length,
+      count: candidates.length,
     });
-    return valid.slice(0, limit);
+    return [...pinnedValid, ...candidates.slice(0, remainingSlots)];
   }
 
-  // Score each memory using retention formula
-  const scored = valid.map((m) => {
+  const scored = candidates.map((m) => {
     const retentionInput: MemoryForRetention = {
       id: m.id,
       content: m.content,
@@ -95,13 +173,11 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
       const result = calculateEffectiveScore(retentionInput);
       return { memory: m, score: result.effectiveScore };
     } catch {
-      // Individual scoring failure — use 0 so it sorts to bottom
       return { memory: m, score: 0 };
     }
   });
 
-  // Sort by score descending (stable sort preserves recency for equal scores)
   scored.sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, limit).map((s) => s.memory);
+  return [...pinnedValid, ...scored.slice(0, remainingSlots).map((s) => s.memory)];
 }

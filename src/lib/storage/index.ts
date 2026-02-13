@@ -443,6 +443,21 @@ export async function getRecentMemories(limit?: number): Promise<any[]> {
   return d.getRecentMemories(limit);
 }
 
+export async function incrementCorrectionCount(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.incrementCorrectionCount(memoryId);
+}
+
+export async function setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.setMemoryInvariant(memoryId, isInvariant);
+}
+
+export async function getPinnedMemories(threshold?: number): Promise<any[]> {
+  const d = await getStorageDispatcher();
+  return d.getPinnedMemories(threshold);
+}
+
 export async function deleteMemory(id: number): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.deleteMemory(id);

@@ -51,6 +51,9 @@ export interface Memory {
   // Temporal validity
   valid_from: string | null; // When fact became valid (null = always valid)
   valid_until: string | null; // When fact expires (null = never expires)
+  // Working memory pins
+  correction_count: number; // How many times user corrected AI on this topic
+  is_invariant: boolean; // Auto-detected invariant rule (always/never/must)
   created_at: string;
 }
 
@@ -560,7 +563,7 @@ export function searchMemories(
  */
 export function getRecentMemories(limit: number = 10): Memory[] {
   const rows = cachedPrepare(`
-      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at
+      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, created_at
       FROM memories
       WHERE invalidated_by IS NULL
       ORDER BY created_at DESC
@@ -576,6 +579,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     last_accessed: string | null;
     valid_from: string | null;
     valid_until: string | null;
+    correction_count: number | null;
+    is_invariant: number | null;
     created_at: string;
   }>;
 
@@ -590,6 +595,8 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
     valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!(row.is_invariant),
     created_at: row.created_at,
   }));
 }
@@ -856,7 +863,7 @@ export function deleteMemoriesByTag(tag: string): number {
  */
 export function getMemoryById(id: number): Memory | null {
   const row = cachedPrepare(
-    'SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at FROM memories WHERE id = ?'
+    'SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, created_at FROM memories WHERE id = ?'
   ).get(id) as
     | {
         id: number;
@@ -869,6 +876,8 @@ export function getMemoryById(id: number): Memory | null {
         last_accessed: string | null;
         valid_from: string | null;
         valid_until: string | null;
+        correction_count: number | null;
+        is_invariant: number | null;
         created_at: string;
       }
     | undefined;
@@ -886,6 +895,8 @@ export function getMemoryById(id: number): Memory | null {
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
     valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!(row.is_invariant),
     created_at: row.created_at,
   };
 }

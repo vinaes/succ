@@ -249,6 +249,31 @@ export function initDb(database: Database.Database): void {
     // Index already exists, ignore
   }
 
+  // Migration: add correction_count and is_invariant columns for working memory pins
+  try {
+    database
+      .prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`)
+      .run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database
+      .prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`)
+      .run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database
+      .prepare(
+        `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`
+      )
+      .run();
+  } catch {
+    // Index already exists, ignore
+  }
+
   // Migration: add AST metadata columns to documents table (tree-sitter integration)
   for (const col of ['symbol_name TEXT', 'symbol_type TEXT', 'signature TEXT']) {
     try {
@@ -720,6 +745,31 @@ export function initGlobalDb(database: Database.Database): void {
     database
       .prepare(
         `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`
+      )
+      .run();
+  } catch {
+    // Index already exists, ignore
+  }
+
+  // Migration: add correction_count and is_invariant columns for working memory pins
+  try {
+    database
+      .prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`)
+      .run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database
+      .prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`)
+      .run();
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    database
+      .prepare(
+        `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`
       )
       .run();
   } catch {
