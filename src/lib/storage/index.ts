@@ -458,6 +458,16 @@ export async function getPinnedMemories(threshold?: number): Promise<any[]> {
   return d.getPinnedMemories(threshold);
 }
 
+export async function updatePriorityScore(memoryId: number, score: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.updatePriorityScore(memoryId, score);
+}
+
+export async function recomputePriorityScore(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.recomputePriorityScore(memoryId);
+}
+
 export async function deleteMemory(id: number): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.deleteMemory(id);

@@ -73,6 +73,14 @@ export function setMemoryInvariant(memoryId: number, isInvariant: boolean): void
 }
 
 /**
+ * Update the precomputed priority_score for a memory.
+ */
+export function updatePriorityScore(memoryId: number, score: number): void {
+  const database = getDb();
+  database.prepare(`UPDATE memories SET priority_score = ? WHERE id = ?`).run(score, memoryId);
+}
+
+/**
  * Get all pinned memories (correction_count >= threshold OR is_invariant).
  * Used for Tier 1 working memory — always loaded regardless of age.
  */
@@ -81,6 +89,7 @@ export function getPinnedMemories(threshold: number = 2): Array<{
   content: string;
   tags: string | null;
   source: string | null;
+  type: string | null;
   quality_score: number | null;
   quality_factors: string | null;
   access_count: number;
@@ -89,15 +98,16 @@ export function getPinnedMemories(threshold: number = 2): Array<{
   valid_until: string | null;
   correction_count: number;
   is_invariant: boolean;
+  priority_score: number | null;
   created_at: string;
 }> {
   const database = getDb();
   const rows = database
     .prepare(
       `
-      SELECT id, content, tags, source, quality_score, quality_factors,
+      SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, created_at
+             correction_count, is_invariant, priority_score, created_at
       FROM memories
       WHERE invalidated_by IS NULL
         AND (correction_count >= ? OR is_invariant = 1)
@@ -110,6 +120,7 @@ export function getPinnedMemories(threshold: number = 2): Array<{
     access_count: row.access_count ?? 0,
     correction_count: row.correction_count ?? 0,
     is_invariant: !!(row.is_invariant),
+    priority_score: row.priority_score ?? null,
   }));
 }
 

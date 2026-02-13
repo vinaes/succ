@@ -44,6 +44,7 @@ export interface Memory {
   content: string;
   tags: string[];
   source: string | null;
+  type?: string | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
   access_count: number;
@@ -54,6 +55,7 @@ export interface Memory {
   // Working memory pins
   correction_count: number; // How many times user corrected AI on this topic
   is_invariant: boolean; // Auto-detected invariant rule (always/never/must)
+  priority_score: number | null; // Precomputed priority for working memory ranking
   created_at: string;
 }
 
@@ -563,32 +565,19 @@ export function searchMemories(
  */
 export function getRecentMemories(limit: number = 10): Memory[] {
   const rows = cachedPrepare(`
-      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, created_at
+      SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, created_at
       FROM memories
       WHERE invalidated_by IS NULL
       ORDER BY created_at DESC
       LIMIT ?
-    `).all(limit) as Array<{
-    id: number;
-    content: string;
-    tags: string | null;
-    source: string | null;
-    quality_score: number | null;
-    quality_factors: string | null;
-    access_count: number | null;
-    last_accessed: string | null;
-    valid_from: string | null;
-    valid_until: string | null;
-    correction_count: number | null;
-    is_invariant: number | null;
-    created_at: string;
-  }>;
+    `).all(limit) as Array<Record<string, any>>;
 
   return rows.map((row) => ({
     id: row.id,
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
+    type: row.type ?? null,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
@@ -597,6 +586,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     valid_until: row.valid_until,
     correction_count: row.correction_count ?? 0,
     is_invariant: !!(row.is_invariant),
+    priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   }));
 }
@@ -863,24 +853,8 @@ export function deleteMemoriesByTag(tag: string): number {
  */
 export function getMemoryById(id: number): Memory | null {
   const row = cachedPrepare(
-    'SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, created_at FROM memories WHERE id = ?'
-  ).get(id) as
-    | {
-        id: number;
-        content: string;
-        tags: string | null;
-        source: string | null;
-        quality_score: number | null;
-        quality_factors: string | null;
-        access_count: number | null;
-        last_accessed: string | null;
-        valid_from: string | null;
-        valid_until: string | null;
-        correction_count: number | null;
-        is_invariant: number | null;
-        created_at: string;
-      }
-    | undefined;
+    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, created_at FROM memories WHERE id = ?'
+  ).get(id) as Record<string, any> | undefined;
 
   if (!row) return null;
 
@@ -889,6 +863,7 @@ export function getMemoryById(id: number): Memory | null {
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
+    type: row.type ?? null,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
@@ -897,6 +872,7 @@ export function getMemoryById(id: number): Memory | null {
     valid_until: row.valid_until,
     correction_count: row.correction_count ?? 0,
     is_invariant: !!(row.is_invariant),
+    priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   };
 }

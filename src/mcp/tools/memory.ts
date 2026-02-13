@@ -1258,27 +1258,42 @@ export function registerMemoryTools(server: McpServer) {
             };
           }
 
-          const deleted = await deleteMemory(id);
+          try {
+            const deleted = await deleteMemory(id);
 
-          if (deleted) {
+            if (deleted) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Forgot memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                  },
+                ],
+              };
+            }
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `✓ Forgot memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                  text: `Failed to delete memory ${id}`,
                 },
               ],
+              isError: true,
             };
+          } catch (err: any) {
+            if (err?.name === 'PinnedMemoryError') {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Cannot delete memory ${id}: it is pinned (Tier 1 — invariant rule or corrected memory). Pinned memories are protected from deletion. To force-delete, first unpin it with setMemoryInvariant(${id}, false) and reset correction_count.`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+            throw err;
           }
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Failed to delete memory ${id}`,
-              },
-            ],
-            isError: true,
-          };
         }
 
         // Delete older than date
