@@ -38,6 +38,14 @@ coverage/
 # Temp files
 tmp/
 temp/
+temp_*
+
+# Working notes (not for version control)
+TOOL_*.md
+SUCC_SYMBOLS_EXAMPLE.ts
+
+# LaTeX paper build
+paper/
 
 # LaTeX artifacts
 *.aux
