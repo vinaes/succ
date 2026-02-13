@@ -169,6 +169,11 @@ export type {
   DebugSessionIndexEntry,
 } from './debug/types.js';
 
+// --- Tree-sitter symbols ---
+export { extractSymbolsFromFile } from './tree-sitter/public.js';
+export type { ExtractSymbolsOptions, ExtractSymbolsResult } from './tree-sitter/public.js';
+export type { SymbolInfo, SymbolType } from './tree-sitter/types.js';
+
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
 export type { LinkRelation, MemoryType } from './storage/types.js';
