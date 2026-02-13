@@ -66,6 +66,7 @@ registerDebugTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
+  process.stderr.write(`[succ-mcp] UNHANDLED REJECTION: ${error instanceof Error ? error.message : String(error)}\n`);
   logError('mcp', 'Unhandled promise rejection', error instanceof Error ? error : new Error(String(error)));
   cleanupEmbeddings();
   closeDb();
@@ -87,33 +88,49 @@ function resetIdleTimer() {
   if (idleTimer.unref) idleTimer.unref();
 }
 
+// stderr logger for MCP startup diagnostics (Claude Code reads stderr)
+function mcpLog(msg: string) {
+  process.stderr.write(`[succ-mcp] ${msg}\n`);
+}
+
 // Start server with stdio transport
 async function main() {
+  mcpLog('Starting...');
   setupGracefulShutdown();
 
   // Stdin close detection: when parent process dies, stdin closes
   process.stdin.on('end', () => {
+    mcpLog('stdin closed, shutting down');
     logInfo('mcp', 'Shutting down (stdin closed)');
     process.exit(0);
   });
-  process.stdin.on('error', () => {
+  process.stdin.on('error', (err) => {
+    mcpLog(`stdin error: ${err.message}`);
     process.exit(0);
   });
 
+  mcpLog('Initializing storage...');
   await initStorageDispatcher();
+  mcpLog('Storage ready');
+
   setCurrentProject(getProjectRoot());
+  mcpLog(`Project: ${getProjectRoot()}`);
+
   const transport = new StdioServerTransport();
+  mcpLog('Connecting transport...');
   await server.connect(transport);
+  mcpLog('Transport connected — server ready');
 
   // Reset idle timer on any stdin data (MCP messages)
   process.stdin.on('data', () => resetIdleTimer());
   resetIdleTimer();
 
-  // Use stderr for logging (stdout is for MCP protocol)
   logInfo('mcp', `Server started (project: ${getProjectRoot()}, cwd: ${process.cwd()})`);
 }
 
 main().catch(async (error) => {
+  mcpLog(`FATAL: ${error instanceof Error ? error.message : String(error)}`);
+  if (error instanceof Error && error.stack) mcpLog(error.stack);
   logError('mcp', 'Failed to start MCP server', error instanceof Error ? error : new Error(String(error)));
   await closeStorageDispatcher();
   cleanupEmbeddings();
