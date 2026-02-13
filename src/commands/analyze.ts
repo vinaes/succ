@@ -330,6 +330,10 @@ function getAgents(brainDir: string, projectName: string): Agent[] {
     '- **Callouts**: > [!note], > [!warning], > [!tip]',
     '- **Bold** for key terms, `inline code` for file paths and identifiers',
     '',
+    'CRITICAL MERMAID RULE: NEVER use [[wikilinks]] inside ```mermaid blocks — Mermaid does not support them and they break rendering.',
+    'Inside mermaid: use plain text labels like A["Storage System"] not A[[Storage System]].',
+    'Wikilinks like [[Storage System]] are ONLY for regular markdown text outside of code blocks.',
+    '',
     'Be thorough and visual. Prefer diagrams over walls of text.',
     'Reference REAL file paths from the codebase — never guess or hallucinate paths.',
     '',
@@ -499,6 +503,7 @@ function buildItemPrompt(
     'OUTPUT FORMAT: Obsidian-compatible markdown.',
     'Use [[wikilinks]] to link to other docs. Use ```mermaid for diagrams.',
     'Use > [!note], > [!warning] for callouts.',
+    'CRITICAL: NEVER put [[wikilinks]] inside ```mermaid blocks — they break rendering. Use plain text labels like A["Storage System"] instead.',
   ].join('\n');
 
   if (type === 'systems') {
