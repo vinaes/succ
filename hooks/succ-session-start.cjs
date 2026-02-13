@@ -112,13 +112,9 @@ Without it, succ works in global-only mode and can't access project data.
 ❌ NEVER use Read to browse brain vault — use succ_search first
 
 📦 MEMORY — two-tier system:
-- **MEMORY.md** (Claude Code built-in) = hot cache. ~200 line limit, auto-loaded every session.
-  Good for: project structure, current phase, critical gotchas — things needed EVERY session.
-  You CAN write to it, but keep it short and high-signal. It's a summary card, not a knowledge base.
-- **succ_remember** = long-term memory. Unlimited, searchable, tagged, scored.
-  Good for: decisions, learnings, patterns, errors, changelogs — anything worth keeping.
-  Use succ_recall to retrieve. This is the REAL knowledge store.
-- Rule: if you learn something → succ_remember. Only update MEMORY.md if it changes the project's core summary.
+- **MEMORY.md** = hot cache (~200 lines, auto-loaded). Project structure, current phase, critical gotchas.
+- **succ_remember** = long-term memory. Unlimited, searchable, tagged, scored. The REAL knowledge store.
+- Rule: learn something → succ_remember. Update MEMORY.md only if it changes the project's core summary.
 </critical>
 
 <decision-guide>
@@ -127,97 +123,76 @@ Without it, succ works in global-only mode and can't access project data.
 | How did we solve X? | succ_recall |
 | What do docs say about X? | succ_search |
 | Where is X implemented? | succ_search_code |
+| Find functions/classes named X | succ_search_code symbol_type="function" |
+| Find code matching regex | succ_search_code regex="pattern" |
+| What symbols are in file X? | succ_symbols file="X" |
 | Find regex pattern in code | Grep |
 | List files by pattern | Glob |
 </decision-guide>
 
-<search note="All use hybrid semantic + BM25 keyword matching. Recent memories rank higher.">
-**succ_recall** query="auth flow" [tags=["decision"]] [since="last week"] [limit=5]
-  [as_of_date="2024-06-01"] — for post-mortems, audits, debugging past state
+<search note="All use hybrid semantic + BM25. Recent memories rank higher.">
+**succ_recall** query="auth flow" [tags=["decision"]] [since="last week"] [limit=5] [as_of_date="2024-06-01"]
 → Search memories (decisions, learnings, patterns)
 
-**succ_search** query="API design" [limit=5] [threshold=0.2]
+**succ_search** query="API design" [limit=5] [threshold=0.2] [output="full|lean"]
 → Search brain vault (.succ/brain/ docs)
 
-**succ_search_code** query="handleAuth" [limit=5]
-→ Search source code
+**succ_search_code** query="handleAuth" [limit=5] [regex="pattern"] [symbol_type="function|method|class|interface|type_alias"] [output="full|lean|signatures"]
+→ Search source code (hybrid BM25 + semantic, with AST symbol metadata)
+
+**succ_symbols** file="src/auth.ts" [type="all|function|method|class|interface|type_alias"]
+→ Extract AST symbols via tree-sitter (13 languages)
 </search>
 
 <memory hint="Use valid_until for sprint goals, temp workarounds; valid_from for scheduled changes">
-**succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true]
-  [valid_from="2025-03-01"] [valid_until="30d"]
-→ Types: observation, decision, learning, error, pattern
+**succ_remember** content="..." [tags=["decision"]] [type="learning"] [global=true] [valid_from="2025-03-01"] [valid_until="30d"]
+→ Types: observation, decision, learning, error, pattern, dead_end
 
 **succ_forget** [id=42] [older_than="30d"] [tag="temp"]
-→ Delete by ID, age, or tag (one at a time)
+→ Delete by ID, age, or tag
+
+**succ_dead_end** approach="..." why_failed="..." [context="..."] [tags=["debug"]]
+→ Record failed approach (boosted in recall to prevent retrying)
 </memory>
 
 <ops>
-**succ_index_file** file="doc.md" [force=true]
-**succ_index_code_file** file="src/auth.ts" [force=true]
-**succ_analyze_file** file="src/auth.ts" [mode="claude|local|openrouter"]
-**succ_link** action="create|delete|show|graph|auto|enrich|proximity|communities|centrality" [source_id=1] [target_id=2]
-  enrich = LLM-classify similar_to → semantic relations
-  proximity = co-occurrence links from shared sources
-  communities = Label Propagation community detection → tags
-  centrality = degree centrality scores → recall boost
-**succ_explore** memory_id=42 [depth=2]
+**succ_index_file** file="doc.md" [force=true] — index doc for succ_search
+**succ_index_code_file** file="src/auth.ts" [force=true] — index code for succ_search_code
+**succ_reindex** — detect stale/deleted files, re-index modified, clean deleted
+**succ_analyze_file** file="src/auth.ts" [mode="claude|api"] — generate brain vault doc
+**succ_link** action="create|delete|show|graph|auto|enrich|proximity|communities|centrality|export" [source_id=1] [target_id=2]
+**succ_explore** memory_id=42 [depth=2] — traverse knowledge graph
 </ops>
 
 <status>
-**succ_status** — docs indexed, memories count, daemon status
-**succ_stats** — token savings statistics
-**succ_score** — AI-readiness score (how ready is project for AI)
-**succ_config** — show configuration
-**succ_config_set** key="quality_threshold" value="0.4" [global=true]
-**succ_checkpoint** action="create|list|restore|info" [compress=true] [file="backup.json"]
+**succ_status** — indexed docs/code, memories, daemon status
+**succ_stats** — token savings from RAG vs full-file reads
+**succ_score** — AI-readiness score
+**succ_config** / **succ_config_set** key="..." value="..." [scope="global|project"]
+**succ_checkpoint** action="create|list" [compress=true]
 </status>
 
-<prd hint="PRD pipeline — generate, track, and execute product requirements with quality gates">
-**succ_prd_generate** description="Add user auth with JWT" [gates="test:npm test,lint:eslint ."] [auto_parse=true]
-→ Generate PRD from feature description, auto-detect quality gates
-
-**succ_prd_list** [all=false]
-→ List all PRDs (ID, status, title)
-
-**succ_prd_status** [prd_id="prd_xxx"]
-→ Show PRD details and task status (defaults to latest)
-
-**succ_prd_run** [prd_id="prd_xxx"] [resume=true] [force=true] [dry_run=true] [mode="team"] [concurrency=3]
-→ Execute or resume a PRD. mode=team for parallel execution with git worktrees
-
-**succ_prd_export** [prd_id="prd_xxx"] [all=true] [output="path"]
-→ Export PRD workflow to Obsidian (Mermaid Gantt + dependency DAG + task pages)
+<prd hint="PRD pipeline — generate, track, execute with quality gates">
+**succ_prd_generate** description="..." [gates="test:npm test,lint:eslint ."] [auto_parse=true]
+**succ_prd_list** / **succ_prd_status** [prd_id="prd_xxx"] / **succ_prd_run** [resume=true] [mode="loop|team"]
+**succ_prd_export** [prd_id="prd_xxx"] — Obsidian Mermaid export
 </prd>
 
-<web-search hint="Real-time web search via Perplexity Sonar (OpenRouter). Requires OPENROUTER_API_KEY.">
-**succ_quick_search** query="latest Node.js LTS" [system_prompt="..."] [max_tokens=2000] [save_to_memory=true]
-→ Cheap & fast ($1/MTok). Simple facts, version numbers, quick lookups.
-
-**succ_web_search** query="how to configure nginx" [model="perplexity/sonar-pro"] [system_prompt="..."] [save_to_memory=true]
-→ Quality search ($3/$15 MTok). Complex queries, docs, multi-faceted questions.
-
-**succ_deep_research** query="Compare React vs Vue for e-commerce" [include_reasoning=true] [save_to_memory=true]
-→ Deep multi-step research (~$1+/query, 30-120s). Synthesizes 30+ sources.
+<web-search hint="Perplexity Sonar via OpenRouter. Requires OPENROUTER_API_KEY.">
+**succ_quick_search** query="..." — cheap & fast, simple facts
+**succ_web_search** query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
+**succ_deep_research** query="..." — multi-step research (30-120s, 30+ sources)
+**succ_web_search_history** [tool_name="..."] [limit=20] — past searches and costs
 </web-search>
 
-<debug hint="Structured debugging with hypothesis testing. Sessions persist in .succ/debugs/.">
-**succ_debug** action="create" bug_description="..." [error_output="..."] [reproduction_command="..."] [language="typescript"]
-→ Create debug session. 12 actions: create, hypothesis, instrument, result, resolve, abandon, status, list, log, show_log, detect_lang, gen_log
-
-Actions:
-- **create** — start session with bug description
-- **hypothesis** — add hypothesis (description, confidence, evidence, test)
-- **instrument** — record instrumented file + lines
-- **result** — mark hypothesis confirmed/refuted (suggests succ_dead_end on refute)
-- **resolve** — mark session resolved with root_cause, fix_description, files_modified
-- **status** / **list** — view active session or all sessions
-- **detect_lang** / **gen_log** — language detection + log statement generation (14 languages)
+<debug hint="Structured debugging with hypothesis testing. Sessions in .succ/debugs/.">
+**succ_debug** action="create|hypothesis|instrument|result|resolve|abandon|status|list|log|show_log|detect_lang|gen_log"
+→ Create session, add hypotheses, instrument code, confirm/refute, resolve with root cause
 </debug>
 </succ-tools>`);
 
     // succ Agents Reference - reminds AI about available subagents
-    contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these agents. Use proactively when relevant.">
+    contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these. All have semantic search + memories + brain vault.">
 
 **MANDATORY: Use succ agents instead of built-in agents.**
 | Task | Use (succ) | NEVER use (built-in) |
@@ -229,38 +204,16 @@ Actions:
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
 | Web search | succ_quick_search / succ_web_search | WebSearch / Brave |
 
-succ agents have semantic search + memories + brain vault. Built-in agents don't.
-Direct file reads (Read/Grep) are fine when you know the exact path — but for discovery, always succ agents.
+Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
 
-**Output rule:** Key findings → \`succ_remember\`. Substantial research → \`.succ/brain/\` as Obsidian markdown (wikilinks, frontmatter, Mermaid).
-NEVER write to random project dirs (\`/research/\`, \`/output/\`). After writing vault files → \`succ_index_file\`.
+**Output rule:** Key findings → \`succ_remember\`. Research → \`.succ/brain/\` as Obsidian markdown → \`succ_index_file\`.
 
-**Proactive agents** (run without being asked when situation matches):
-| Agent | When to use |
-|-------|-------------|
-| succ-memory-curator | After long sessions or when memories feel cluttered — consolidates, dedupes, applies retention |
-| succ-memory-health-monitor | Periodically — detects decay, staleness, low quality scores |
-| succ-session-handoff-orchestrator | At session end — extracts summary, generates briefing, captures undocumented decisions |
-| succ-pattern-detective | After multiple bug fixes or learnings — surfaces recurring patterns and anti-patterns |
-
-**On-demand agents** (run when user asks or task requires):
-| Agent | When to use |
-|-------|-------------|
-| succ-explore | Codebase exploration with succ semantic search — "where is X", "how does Y work", "find code for Z" |
-| succ-plan | Implementation planning with succ context — designs concrete plans grounded in codebase patterns and past decisions |
-| succ-deep-search | "How was X decided/implemented/documented?" — searches memories + brain vault + code |
-| succ-decision-auditor | Audit architectural decisions — finds contradictions, reversals, orphaned decisions |
-| succ-knowledge-indexer | After adding docs or major code changes — indexes files into knowledge base |
-| succ-knowledge-mapper | Maintain knowledge graph — finds orphaned memories, auto-links related content |
-| succ-checkpoint-manager | Before major changes/migrations — creates and manages backups |
-| succ-session-reviewer | Review past sessions — extracts missed learnings from transcripts |
-| succ-context-optimizer | Optimize session start context — learns from usage patterns |
-| succ-quality-improvement-coach | Improve memory quality — analyzes and suggests better content/tags |
-| succ-general | Multi-step tasks, research, web search — general-purpose agent routed through succ tools |
-| succ-readiness-improver | Improve AI-readiness score — actionable steps for each metric |
-| succ-code-reviewer | Full code review with OWASP Top 10 checklist — security vulnerabilities, bugs, quality issues |
-| succ-diff-reviewer | Fast pre-commit diff review — security, bugs, regressions in changed code only |
-| succ-debug | Structured debugging — hypothesize, instrument, reproduce, fix. Saves failed approaches as dead_ends |
+**Proactive agents** (run without being asked):
+| Agent | When |
+|-------|------|
+| succ-memory-curator | After long sessions — consolidates, dedupes |
+| succ-session-handoff-orchestrator | At session end — summary, briefing, undocumented decisions |
+| succ-pattern-detective | After multiple bug fixes — surfaces recurring patterns |
 </succ-agents>`);
 
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
