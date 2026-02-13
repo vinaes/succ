@@ -184,9 +184,9 @@ export class StorageDispatcher {
     return this._sqliteFns;
   }
 
-  /** Check if Qdrant is available with hybrid schema for a collection */
-  private hasQdrantHybrid(collection: 'documents' | 'memories' | 'global_memories' = 'documents'): boolean {
-    return this.vectorBackend === 'qdrant' && this.qdrant !== null && this.qdrant.hasHybridSearch(collection);
+  /** Check if Qdrant is configured and available */
+  private hasQdrant(): boolean {
+    return this.vectorBackend === 'qdrant' && this.qdrant !== null;
   }
 
   // ===========================================================================
@@ -200,16 +200,12 @@ export class StorageDispatcher {
   ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const id = await this.postgres.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding);
-      if (this.vectorBackend === 'qdrant' && this.qdrant) {
+      if (this.hasQdrant()) {
         try {
-          if (this.qdrant.hasHybridSearch('documents')) {
-            await this.qdrant.upsertDocumentWithPayload(id, embedding, {
-              filePath, content, startLine, endLine,
-              projectId: this.qdrant.getProjectId() ?? '',
-            });
-          } else {
-            await this.qdrant.upsertDocumentVector(id, embedding);
-          }
+          await this.qdrant!.upsertDocumentWithPayload(id, embedding, {
+            filePath, content, startLine, endLine,
+            projectId: this.qdrant!.getProjectId() ?? '',
+          });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync document vector ${id}`, error);
         }
@@ -223,17 +219,13 @@ export class StorageDispatcher {
   async upsertDocumentsBatch(documents: any[]): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const ids = await this.postgres.upsertDocumentsBatch(documents);
-      if (this.vectorBackend === 'qdrant' && this.qdrant && ids.length > 0) {
+      if (this.hasQdrant() && ids.length > 0) {
         try {
-          if (this.qdrant.hasHybridSearch('documents')) {
-            const items = documents.map((doc, idx) => ({
-              id: ids[idx], embedding: doc.embedding,
-              meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
-            }));
-            await this.qdrant.upsertDocumentsBatchWithPayload(items);
-          } else {
-            await this.qdrant.upsertDocumentVectorsBatch(documents.map((doc, idx) => ({ id: ids[idx], embedding: doc.embedding })));
-          }
+          const items = documents.map((doc, idx) => ({
+            id: ids[idx], embedding: doc.embedding,
+            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
+          }));
+          await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync ${ids.length} document vectors`, error);
         }
@@ -247,17 +239,13 @@ export class StorageDispatcher {
   async upsertDocumentsBatchWithHashes(documents: any[]): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const ids = await this.postgres.upsertDocumentsBatchWithHashes(documents);
-      if (this.vectorBackend === 'qdrant' && this.qdrant && ids.length > 0) {
+      if (this.hasQdrant() && ids.length > 0) {
         try {
-          if (this.qdrant.hasHybridSearch('documents')) {
-            const items = documents.map((doc, idx) => ({
-              id: ids[idx], embedding: doc.embedding,
-              meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
-            }));
-            await this.qdrant.upsertDocumentsBatchWithPayload(items);
-          } else {
-            await this.qdrant.upsertDocumentVectorsBatch(documents.map((doc, idx) => ({ id: ids[idx], embedding: doc.embedding })));
-          }
+          const items = documents.map((doc, idx) => ({
+            id: ids[idx], embedding: doc.embedding,
+            meta: { filePath: doc.filePath, content: doc.content, startLine: doc.startLine, endLine: doc.endLine, projectId: this.qdrant!.getProjectId() ?? '' } as DocumentUpsertMeta,
+          }));
+          await this.qdrant!.upsertDocumentsBatchWithPayload(items);
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync ${ids.length} document vectors`, error);
         }
@@ -284,25 +272,23 @@ export class StorageDispatcher {
   async searchDocuments(
     queryEmbedding: number[], limit: number = 5, threshold: number = 0.5
   ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
-    if (this.vectorBackend === 'qdrant' && this.qdrant) {
+    if (this.hasQdrant()) {
       try {
-        if (this.qdrant.hasHybridSearch('documents')) {
-          const client = await (this.qdrant as any).getClient();
-          const name = (this.qdrant as any).collectionName('documents');
-          const qResults = await client.query(name, {
-            query: queryEmbedding, using: 'dense', limit, score_threshold: threshold,
-            params: { hnsw_ef: 128, exact: false }, with_payload: true,
-          });
-          const points = qResults.points ?? qResults;
-          if (points.length > 0 && points[0].payload?.content) {
-            return points.map((p: any) => ({
-              file_path: p.payload?.file_path ?? '', content: p.payload?.content ?? '',
-              start_line: p.payload?.start_line ?? 0, end_line: p.payload?.end_line ?? 0, similarity: p.score,
-            }));
-          }
+        const client = await (this.qdrant as any).getClient();
+        const name = (this.qdrant as any).collectionName('documents');
+        const qResults = await client.query(name, {
+          query: queryEmbedding, using: 'dense', limit, score_threshold: threshold,
+          params: { hnsw_ef: 128, exact: false }, with_payload: true,
+        });
+        const points = qResults.points ?? qResults;
+        if (points.length > 0 && points[0].payload?.content) {
+          return points.map((p: any) => ({
+            file_path: p.payload?.file_path ?? '', content: p.payload?.content ?? '',
+            start_line: p.payload?.start_line ?? 0, end_line: p.payload?.end_line ?? 0, similarity: p.score,
+          }));
         }
         if (this.backend === 'postgresql' && this.postgres) {
-          const results = await this.qdrant.searchDocuments(queryEmbedding, limit * 3, threshold);
+          const results = await this.qdrant!.searchDocuments(queryEmbedding, limit * 3, threshold);
           if (results.length > 0) {
             const pgRows = await this.postgres.getDocumentsByIds(results.map(r => r.id));
             return pgRows.map(row => {
@@ -375,16 +361,12 @@ export class StorageDispatcher {
       const id = await this.postgres.saveMemory(content, embedding, tags, source, type, qualityScore, qualityFactors, validFrom, validUntil);
 
       // Sync to Qdrant with full payload
-      if (this.vectorBackend === 'qdrant' && this.qdrant) {
+      if (this.hasQdrant()) {
         try {
-          if (this.qdrant.hasHybridSearch('memories')) {
-            await this.qdrant.upsertMemoryWithPayload(id, embedding, {
-              content, tags, source, type, projectId: this.qdrant.getProjectId(),
-              createdAt: new Date().toISOString(), validFrom, validUntil,
-            });
-          } else {
-            await this.qdrant.upsertMemoryVector(id, embedding);
-          }
+          await this.qdrant!.upsertMemoryWithPayload(id, embedding, {
+            content, tags, source, type, projectId: this.qdrant!.getProjectId(),
+            createdAt: new Date().toISOString(), validFrom, validUntil,
+          });
         } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${id}`, error); }
       }
       this._sessionCounters.memoriesCreated++;
@@ -400,16 +382,12 @@ export class StorageDispatcher {
     });
 
     // SQLite + Qdrant: sync memory
-    if (this.vectorBackend === 'qdrant' && this.qdrant && !result.isDuplicate) {
+    if (this.hasQdrant() && !result.isDuplicate) {
       try {
-        if (this.qdrant.hasHybridSearch('memories')) {
-          await this.qdrant.upsertMemoryWithPayload(result.id, embedding, {
-            content, tags, source, type, projectId: this.qdrant.getProjectId(),
-            createdAt: new Date().toISOString(), validFrom, validUntil,
-          });
-        } else {
-          await this.qdrant.upsertMemoryVector(result.id, embedding);
-        }
+        await this.qdrant!.upsertMemoryWithPayload(result.id, embedding, {
+          content, tags, source, type, projectId: this.qdrant!.getProjectId(),
+          createdAt: new Date().toISOString(), validFrom, validUntil,
+        });
       } catch (error) { this._warnQdrantFailure(`Failed to sync memory vector ${result.id}`, error); }
     }
 
@@ -431,7 +409,7 @@ export class StorageDispatcher {
     queryEmbedding: number[], limit: number = 5, threshold: number = 0.3,
     tags?: string[], since?: Date, options?: { includeExpired?: boolean; asOfDate?: Date }
   ): Promise<any[]> {
-    if (this.hasQdrantHybrid('memories')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchMemories(
           '', queryEmbedding, limit, threshold,
@@ -511,10 +489,10 @@ export class StorageDispatcher {
     }
 
     // Sync newly saved memories to Qdrant
-    if (this.vectorBackend === 'qdrant' && this.qdrant && result?.results?.length > 0) {
+    if (this.hasQdrant() && result?.results?.length > 0) {
       try {
         const saved = result.results.filter((r: any) => !r.isDuplicate && r.id != null);
-        if (saved.length > 0 && this.qdrant.hasHybridSearch('memories')) {
+        if (saved.length > 0) {
           const items = saved.map((r: any) => {
             const mem = memories[r.index];
             return {
@@ -532,7 +510,7 @@ export class StorageDispatcher {
               },
             };
           });
-          await this.qdrant.upsertMemoriesBatchWithPayload(items);
+          await this.qdrant!.upsertMemoriesBatchWithPayload(items);
         }
       } catch (error) {
         this._warnQdrantFailure(`Failed to sync ${result.saved} batch memories`, error);
@@ -587,7 +565,7 @@ export class StorageDispatcher {
   async searchMemoriesAsOf(queryEmbedding: number[], asOfDate: Date, limit?: number, threshold?: number): Promise<any[]> {
     const lim = limit ?? 5;
     const thresh = threshold ?? 0.3;
-    if (this.hasQdrantHybrid('memories')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchMemories('', queryEmbedding, lim, thresh, { createdBefore: asOfDate, asOfDate, includeExpired: false });
         if (results.length > 0) return results;
@@ -957,7 +935,7 @@ export class StorageDispatcher {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    if (this.hasQdrantHybrid('documents')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { codeOnly: true });
         if (results.length > 0) return results;
@@ -974,7 +952,7 @@ export class StorageDispatcher {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    if (this.hasQdrantHybrid('documents')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { docsOnly: true });
         if (results.length > 0) return results;
@@ -991,7 +969,7 @@ export class StorageDispatcher {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    if (this.hasQdrantHybrid('memories')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchMemories(query, queryEmbedding, lim, thresh, { projectId: this.qdrant!.getProjectId() });
         if (results.length > 0) return results;
@@ -1005,7 +983,7 @@ export class StorageDispatcher {
   async hybridSearchGlobalMemories(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, tags?: string[], since?: Date): Promise<any[]> {
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    if (this.hasQdrantHybrid('global_memories')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories(query, queryEmbedding, lim, thresh, { tags, since });
         if (results.length > 0) return results;
@@ -1036,13 +1014,9 @@ export class StorageDispatcher {
       }
       const id = await this.postgres.saveGlobalMemory(content, embedding, tags, source, type, qualityScore, qualityFactors);
 
-      if (this.vectorBackend === 'qdrant' && this.qdrant) {
+      if (this.hasQdrant()) {
         try {
-          if (this.qdrant.hasHybridSearch('global_memories')) {
-            await this.qdrant.upsertGlobalMemoryWithPayload(id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
-          } else {
-            await this.qdrant.upsertGlobalMemoryVector(id, embedding);
-          }
+          await this.qdrant!.upsertGlobalMemoryWithPayload(id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
         } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error); }
       }
       this._sessionCounters.globalMemoriesCreated++;
@@ -1052,13 +1026,9 @@ export class StorageDispatcher {
     const sqlite = await this.getSqliteFns();
     const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, { type, deduplicate });
 
-    if (this.vectorBackend === 'qdrant' && this.qdrant && !result.isDuplicate) {
+    if (this.hasQdrant() && !result.isDuplicate) {
       try {
-        if (this.qdrant.hasHybridSearch('global_memories')) {
-          await this.qdrant.upsertGlobalMemoryWithPayload(result.id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
-        } else {
-          await this.qdrant.upsertGlobalMemoryVector(result.id, embedding);
-        }
+        await this.qdrant!.upsertGlobalMemoryWithPayload(result.id, embedding, { content, tags, source, type, createdAt: new Date().toISOString() });
       } catch (error) { this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error); }
     }
 
@@ -1074,7 +1044,7 @@ export class StorageDispatcher {
   }
 
   async searchGlobalMemories(queryEmbedding: number[], limit: number = 5, threshold: number = 0.3, tags?: string[]): Promise<any[]> {
-    if (this.hasQdrantHybrid('global_memories')) {
+    if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories('', queryEmbedding, limit, threshold, { tags });
         if (results.length > 0) return results;
@@ -1994,8 +1964,8 @@ export class StorageDispatcher {
   }
 
   private async backfillMemories(log: (msg: string) => void, dryRun: boolean): Promise<number> {
-    if (!this.qdrant?.hasHybridSearch('memories')) {
-      log('Skipping memories: Qdrant hybrid schema not available');
+    if (!this.qdrant) {
+      log('Skipping memories: Qdrant not configured');
       return 0;
     }
 
@@ -2061,8 +2031,8 @@ export class StorageDispatcher {
   }
 
   private async backfillGlobalMemories(log: (msg: string) => void, dryRun: boolean): Promise<number> {
-    if (!this.qdrant?.hasHybridSearch('global_memories')) {
-      log('Skipping global memories: Qdrant hybrid schema not available');
+    if (!this.qdrant) {
+      log('Skipping global memories: Qdrant not configured');
       return 0;
     }
 
@@ -2169,8 +2139,8 @@ export class StorageDispatcher {
   }
 
   private async backfillDocuments(log: (msg: string) => void, dryRun: boolean): Promise<number> {
-    if (!this.qdrant?.hasHybridSearch('documents')) {
-      log('Skipping documents: Qdrant hybrid schema not available');
+    if (!this.qdrant) {
+      log('Skipping documents: Qdrant not configured');
       return 0;
     }
 
