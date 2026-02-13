@@ -8,7 +8,10 @@
 import { describe, it, expect } from 'vitest';
 import { MEMORY_TYPES } from './storage/index.js';
 import type { MemoryType } from './storage/index.js';
-import { FACT_EXTRACTION_PROMPT, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/extraction.js';
+import {
+  FACT_EXTRACTION_PROMPT,
+  SESSION_PROGRESS_EXTRACTION_PROMPT,
+} from '../prompts/extraction.js';
 
 describe('Dead-End Tracking', () => {
   describe('Memory type registration', () => {
@@ -23,7 +26,14 @@ describe('Dead-End Tracking', () => {
 
     it('should have 6 memory types total', () => {
       expect(MEMORY_TYPES).toHaveLength(6);
-      expect(MEMORY_TYPES).toEqual(['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end']);
+      expect(MEMORY_TYPES).toEqual([
+        'observation',
+        'decision',
+        'learning',
+        'error',
+        'pattern',
+        'dead_end',
+      ]);
     });
   });
 
@@ -75,7 +85,7 @@ describe('Dead-End Tracking', () => {
       const userTags = ['dead-end', 'auth'];
       const allTags = [...new Set([...userTags, 'dead-end'])];
 
-      expect(allTags.filter(t => t === 'dead-end')).toHaveLength(1);
+      expect(allTags.filter((t) => t === 'dead-end')).toHaveLength(1);
     });
 
     it('should work with empty user tags', () => {
@@ -95,7 +105,7 @@ describe('Dead-End Tracking', () => {
         { similarity: 0.6, type: 'learning', tags: ['auth'] },
       ];
 
-      const boosted = results.map(r => {
+      const boosted = results.map((r) => {
         const isDeadEnd = r.type === 'dead_end' || r.tags.includes('dead-end');
         return {
           ...r,
@@ -108,7 +118,7 @@ describe('Dead-End Tracking', () => {
 
       // Dead-end (0.65 + 0.15 = 0.80) should now be first
       expect(boosted[0]._isDeadEnd).toBe(true);
-      expect(boosted[0].similarity).toBe(0.80);
+      expect(boosted[0].similarity).toBe(0.8);
     });
 
     it('should not boost non-dead-end results', () => {
@@ -116,7 +126,9 @@ describe('Dead-End Tracking', () => {
       const result = { similarity: 0.7, type: 'observation', tags: ['auth'] };
 
       const isDeadEnd = result.type === 'dead_end' || result.tags.includes('dead-end');
-      const finalSimilarity = isDeadEnd ? Math.min(1.0, result.similarity + deadEndBoost) : result.similarity;
+      const finalSimilarity = isDeadEnd
+        ? Math.min(1.0, result.similarity + deadEndBoost)
+        : result.similarity;
 
       expect(finalSimilarity).toBe(0.7);
     });
@@ -160,7 +172,8 @@ describe('Dead-End Tracking', () => {
 
   describe('Dead-end deduplication', () => {
     it('should detect duplicate dead-ends by content prefix', () => {
-      const existingContent = 'DEAD END: Tried "Using Redis for sessions" — Failed because: too much memory';
+      const existingContent =
+        'DEAD END: Tried "Using Redis for sessions" — Failed because: too much memory';
       const isExistingDeadEnd = existingContent.startsWith('DEAD END:');
 
       expect(isExistingDeadEnd).toBe(true);

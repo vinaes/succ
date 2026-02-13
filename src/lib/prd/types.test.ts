@@ -187,8 +187,32 @@ describe('PRD Types', () => {
     it('should count total attempts', () => {
       const task = createTask({ prd_id: 'p', sequence: 1, title: 'A', description: '' });
       task.attempts = [
-        { attempt_number: 1, started_at: '2024-01-01T00:00:00Z', completed_at: '2024-01-01T00:05:00Z', status: 'failed', gate_results: [], files_actually_modified: [], memories_recalled: 0, memories_created: 0, dead_ends_recorded: 0, error: null, output_log: '' },
-        { attempt_number: 2, started_at: '2024-01-01T00:06:00Z', completed_at: '2024-01-01T00:10:00Z', status: 'passed', gate_results: [], files_actually_modified: [], memories_recalled: 0, memories_created: 0, dead_ends_recorded: 0, error: null, output_log: '' },
+        {
+          attempt_number: 1,
+          started_at: '2024-01-01T00:00:00Z',
+          completed_at: '2024-01-01T00:05:00Z',
+          status: 'failed',
+          gate_results: [],
+          files_actually_modified: [],
+          memories_recalled: 0,
+          memories_created: 0,
+          dead_ends_recorded: 0,
+          error: null,
+          output_log: '',
+        },
+        {
+          attempt_number: 2,
+          started_at: '2024-01-01T00:06:00Z',
+          completed_at: '2024-01-01T00:10:00Z',
+          status: 'passed',
+          gate_results: [],
+          files_actually_modified: [],
+          memories_recalled: 0,
+          memories_created: 0,
+          dead_ends_recorded: 0,
+          error: null,
+          output_log: '',
+        },
       ];
 
       const stats = computeStats([task]);

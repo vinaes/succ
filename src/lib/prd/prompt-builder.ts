@@ -16,29 +16,28 @@ import type { TaskContext } from './context.js';
 /**
  * Build the full prompt for executing a task.
  */
-export function buildTaskPrompt(
-  task: Task,
-  prd: Prd,
-  context: TaskContext,
-): string {
-  const acceptanceCriteria = task.acceptance_criteria.length > 0
-    ? task.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')
-    : '(No specific acceptance criteria — use your best judgment)';
+export function buildTaskPrompt(task: Task, prd: Prd, context: TaskContext): string {
+  const acceptanceCriteria =
+    task.acceptance_criteria.length > 0
+      ? task.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')
+      : '(No specific acceptance criteria — use your best judgment)';
 
-  const filesToModify = task.files_to_modify.length > 0
-    ? task.files_to_modify.map(f => `- ${f}`).join('\n')
-    : '(No specific files predicted — determine from context)';
+  const filesToModify =
+    task.files_to_modify.length > 0
+      ? task.files_to_modify.map((f) => `- ${f}`).join('\n')
+      : '(No specific files predicted — determine from context)';
 
-  const relevantFiles = task.relevant_files.length > 0
-    ? task.relevant_files.map(f => `- ${f}`).join('\n')
-    : '(None specified)';
+  const relevantFiles =
+    task.relevant_files.length > 0
+      ? task.relevant_files.map((f) => `- ${f}`).join('\n')
+      : '(None specified)';
 
-  const qualityGates = prd.quality_gates.length > 0
-    ? prd.quality_gates.map(g => `   - ${g.type}: \`${g.command}\``).join('\n')
-    : '   (No quality gates configured)';
+  const qualityGates =
+    prd.quality_gates.length > 0
+      ? prd.quality_gates.map((g) => `   - ${g.type}: \`${g.command}\``).join('\n')
+      : '   (No quality gates configured)';
 
-  return TASK_EXECUTION_PROMPT
-    .replace('{task_title}', `${task.id}: ${task.title}`)
+  return TASK_EXECUTION_PROMPT.replace('{task_title}', `${task.id}: ${task.title}`)
     .replace('{task_description}', task.description)
     .replace('{acceptance_criteria}', acceptanceCriteria)
     .replace('{files_to_modify}', filesToModify)
@@ -57,14 +56,16 @@ export function appendFailureContext(
   prompt: string,
   attemptNumber: number,
   gateOutput: string,
-  agentOutput: string,
+  agentOutput: string
 ): string {
   // Strip any previous failure context to prevent prompt bloat across retries
   const stripped = prompt.replace(/\n\n## Previous Attempt.*$/s, '');
   const truncatedGate = gateOutput.slice(-2000) || '(No gate output)';
   const truncatedAgent = agentOutput.slice(-1000) || '(No output)';
 
-  return stripped + `\n\n## Previous Attempt (${attemptNumber}) Failed
+  return (
+    stripped +
+    `\n\n## Previous Attempt (${attemptNumber}) Failed
 
 ### Gate Failures
 ${truncatedGate}
@@ -76,5 +77,6 @@ ${truncatedAgent}
 - Fix the issues identified above
 - Do NOT repeat the same approach if it clearly failed
 - If the task seems impossible, explain why with "BLOCKED:" prefix
-`;
+`
+  );
 }

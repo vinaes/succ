@@ -6,10 +6,12 @@
 /**
  * Format symbol map from tree-sitter extraction for LLM context
  */
-export function formatSymbolMap(symbols: Array<{ name: string; type: string; signature?: string; startRow: number }>): string {
+export function formatSymbolMap(
+  symbols: Array<{ name: string; type: string; signature?: string; startRow: number }>
+): string {
   if (symbols.length === 0) return '(no symbols extracted)';
   return symbols
-    .map(s => `  ${s.type} ${s.name}${s.signature ? s.signature : ''} (line ${s.startRow + 1})`)
+    .map((s) => `  ${s.type} ${s.name}${s.signature ? s.signature : ''} (line ${s.startRow + 1})`)
     .join('\n');
 }
 

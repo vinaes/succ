@@ -51,21 +51,25 @@ export function findSimilarGlobalMemory(
   if (sqliteVecAvailable) {
     try {
       const queryBuffer = floatArrayToBuffer(embedding);
-      const vecResults = database.prepare(`
+      const vecResults = database
+        .prepare(
+          `
         SELECT m.memory_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
           AND k = 5
         ORDER BY v.distance
-      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+      `
+        )
+        .all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
 
       for (const result of vecResults) {
         const similarity = 1 - result.distance;
         if (similarity >= threshold) {
-          const memory = database.prepare(
-            'SELECT id, content FROM memories WHERE id = ?'
-          ).get(result.memory_id) as { id: number; content: string } | undefined;
+          const memory = database
+            .prepare('SELECT id, content FROM memories WHERE id = ?')
+            .get(result.memory_id) as { id: number; content: string } | undefined;
           if (memory) {
             return { id: memory.id, content: memory.content, similarity };
           }
@@ -121,10 +125,12 @@ export function saveGlobalMemory(
   const tagsJson = tags.length > 0 ? JSON.stringify(tags) : null;
 
   const result = database
-    .prepare(`
+    .prepare(
+      `
       INSERT INTO memories (content, tags, source, project, type, embedding)
       VALUES (?, ?, ?, ?, ?, ?)
-    `)
+    `
+    )
     .run(content, tagsJson, source ?? null, project ?? null, type, embeddingBlob);
 
   const memoryId = result.lastInsertRowid as number;
@@ -208,22 +214,24 @@ export function searchGlobalMemories(
 export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
   const database = getGlobalDb();
   const rows = database
-    .prepare(`
+    .prepare(
+      `
       SELECT id, content, tags, source, project, quality_score, quality_factors, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
-    `)
+    `
+    )
     .all(limit) as Array<{
-      id: number;
-      content: string;
-      tags: string | null;
-      source: string | null;
-      project: string | null;
-      quality_score: number | null;
-      quality_factors: string | null;
-      created_at: string;
-    }>;
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    project: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
+    created_at: string;
+  }>;
 
   return rows.map((row) => ({
     id: row.id,
@@ -261,12 +269,12 @@ export function getGlobalMemoryStats(): {
   const total = database.prepare('SELECT COUNT(*) as count FROM memories').get() as {
     count: number;
   };
-  const oldest = database
-    .prepare('SELECT MIN(created_at) as oldest FROM memories')
-    .get() as { oldest: string | null };
-  const newest = database
-    .prepare('SELECT MAX(created_at) as newest FROM memories')
-    .get() as { newest: string | null };
+  const oldest = database.prepare('SELECT MIN(created_at) as oldest FROM memories').get() as {
+    oldest: string | null;
+  };
+  const newest = database.prepare('SELECT MAX(created_at) as newest FROM memories').get() as {
+    newest: string | null;
+  };
   const projects = database
     .prepare('SELECT DISTINCT project FROM memories WHERE project IS NOT NULL')
     .all() as Array<{ project: string }>;

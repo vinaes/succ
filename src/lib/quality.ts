@@ -20,7 +20,10 @@ const CLASSIFIER_MODEL = 'Xenova/nli-deberta-v3-xsmall';
 // Using single classification with optimized labels (31pp separation in benchmark)
 const QUALITY_LABELS = {
   // Primary quality indicator - best performing labels from benchmark
-  quality: ['specific technical detail with code or file references', 'vague statement without concrete details'],
+  quality: [
+    'specific technical detail with code or file references',
+    'vague statement without concrete details',
+  ],
   // Secondary checks for additional signal
   relevance: ['relevant to software development', 'not related to programming'],
 };
@@ -81,26 +84,46 @@ function calculateSpecificity(content: string): number {
   // Code patterns (universal)
   const hasNumbers = /\d+/.test(content);
   const hasCodeReference = /`[^`]+`|```[\s\S]*?```/.test(content);
-  const hasFilePath = /\.(ts|js|tsx|jsx|py|go|rs|java|cpp|c|h|md|json|yaml|yml|sql|sh|bash|css|scss|html)\b/.test(content);
+  const hasFilePath =
+    /\.(ts|js|tsx|jsx|py|go|rs|java|cpp|c|h|md|json|yaml|yml|sql|sh|bash|css|scss|html)\b/.test(
+      content
+    );
   const hasLineReference = /:\d+/.test(content); // file:line references
   const hasProperNouns = /[A-Z][a-z]+(?:[A-Z][a-z]+)+/.test(content); // CamelCase
   const hasSnakeCase = /[a-z]+_[a-z]+/.test(content); // snake_case identifiers
 
   // Technical terms - English
-  const hasEnglishTechnicalTerms = /\b(function|class|method|variable|parameter|return|error|bug|fix|feature|api|endpoint|database|table|column|component|module|service|handler|controller|config|deploy|server|client|request|response|query|mutation|schema|model|view|route|middleware|hook|callback|promise|async|await)\b/i.test(content);
+  const hasEnglishTechnicalTerms =
+    /\b(function|class|method|variable|parameter|return|error|bug|fix|feature|api|endpoint|database|table|column|component|module|service|handler|controller|config|deploy|server|client|request|response|query|mutation|schema|model|view|route|middleware|hook|callback|promise|async|await)\b/i.test(
+      content
+    );
 
   // Technical terms - Russian
-  const hasRussianTechnicalTerms = /\b(функция|класс|метод|переменная|параметр|ошибка|баг|фикс|исправлен|фича|апи|эндпоинт|база данных|таблица|колонка|компонент|модуль|сервис|хендлер|контроллер|конфиг|деплой|сервер|клиент|запрос|ответ|схема|модель|роут|миддлвар|хук|коллбэк|промис)\b/i.test(content);
+  const hasRussianTechnicalTerms =
+    /\b(функция|класс|метод|переменная|параметр|ошибка|баг|фикс|исправлен|фича|апи|эндпоинт|база данных|таблица|колонка|компонент|модуль|сервис|хендлер|контроллер|конфиг|деплой|сервер|клиент|запрос|ответ|схема|модель|роут|миддлвар|хук|коллбэк|промис)\b/i.test(
+      content
+    );
 
   // Actionable verbs - English
-  const hasEnglishActionableVerbs = /\b(implement|create|add|remove|fix|update|refactor|migrate|configure|deploy|test|resolve|optimize|integrate|delete|modify|change|setup|install|build|run|execute|debug|trace|log|handle|process|validate|parse|serialize|fetch|send|receive|connect|disconnect)\b/i.test(content);
+  const hasEnglishActionableVerbs =
+    /\b(implement|create|add|remove|fix|update|refactor|migrate|configure|deploy|test|resolve|optimize|integrate|delete|modify|change|setup|install|build|run|execute|debug|trace|log|handle|process|validate|parse|serialize|fetch|send|receive|connect|disconnect)\b/i.test(
+      content
+    );
 
   // Actionable verbs - Russian
-  const hasRussianActionableVerbs = /\b(реализовать|создать|добавить|удалить|исправить|обновить|рефакторить|мигрировать|настроить|задеплоить|тестировать|решить|оптимизировать|интегрировать|изменить|установить|собрать|запустить|выполнить|дебажить|отладить|логировать|обработать|валидировать|парсить|сериализовать|отправить|получить|подключить)\b/i.test(content);
+  const hasRussianActionableVerbs =
+    /\b(реализовать|создать|добавить|удалить|исправить|обновить|рефакторить|мигрировать|настроить|задеплоить|тестировать|решить|оптимизировать|интегрировать|изменить|установить|собрать|запустить|выполнить|дебажить|отладить|логировать|обработать|валидировать|парсить|сериализовать|отправить|получить|подключить)\b/i.test(
+      content
+    );
 
   // Preference/personal facts — short but high-value for recall
-  const isPreferenceFact = /\b(user|i|he|she|they|we)\s+(use[sd]?|like[sd]?|prefer[sd]?|has|have|had|want[sd]?|chose|always|never|switch)/i.test(content) ||
-    /\b(пользователь|юзер|я|он|она|мы)\s+(использу[еюёт]|предпочита[еюёт]|любит|хоч[еу]т|выбрал|всегда|никогда)/i.test(content);
+  const isPreferenceFact =
+    /\b(user|i|he|she|they|we)\s+(use[sd]?|like[sd]?|prefer[sd]?|has|have|had|want[sd]?|chose|always|never|switch)/i.test(
+      content
+    ) ||
+    /\b(пользователь|юзер|я|он|она|мы)\s+(использу[еюёт]|предпочита[еюёт]|любит|хоч[еу]т|выбрал|всегда|никогда)/i.test(
+      content
+    );
 
   if (hasNumbers) score += 0.1;
   if (hasCodeReference) score += 0.2;
@@ -114,26 +137,46 @@ function calculateSpecificity(content: string): number {
   // === NEGATIVE SIGNALS (multilingual) ===
 
   // Vague words - English
-  const isVagueEnglish = /\b(maybe|perhaps|somehow|something|stuff|things|whatever|somewhere|anyone|anything|some|kinda|sorta)\b/i.test(content);
+  const isVagueEnglish =
+    /\b(maybe|perhaps|somehow|something|stuff|things|whatever|somewhere|anyone|anything|some|kinda|sorta)\b/i.test(
+      content
+    );
 
   // Vague words - Russian
-  const isVagueRussian = /\b(может быть|возможно|как-то|что-то|где-то|кто-то|как-нибудь|где-нибудь|что-нибудь|какой-то|некий|вроде|типа|наверное)\b/i.test(content);
+  const isVagueRussian =
+    /\b(может быть|возможно|как-то|что-то|где-то|кто-то|как-нибудь|где-нибудь|что-нибудь|какой-то|некий|вроде|типа|наверное)\b/i.test(
+      content
+    );
 
   // Length checks
   const isTooShort = charCount < 30 || wordCount < 5;
   const isVeryShort = charCount < 15 || wordCount < 3;
 
   // Generic praise - English
-  const isGenericEnglish = /\b(good|bad|nice|cool|great|interesting|awesome|works|fine|ok|okay|perfect|excellent)\b/i.test(content) &&
-    !/\b(good practice|bad pattern|nice feature|works well because|works by|good for)\b/i.test(content);
+  const isGenericEnglish =
+    /\b(good|bad|nice|cool|great|interesting|awesome|works|fine|ok|okay|perfect|excellent)\b/i.test(
+      content
+    ) &&
+    !/\b(good practice|bad pattern|nice feature|works well because|works by|good for)\b/i.test(
+      content
+    );
 
   // Generic praise - Russian (include adjective forms: хороший/хорошая/хорошее, плохой/плохая/плохое, etc.)
-  const isGenericRussian = /\b(хорош[иоеая]{1,2}|плох[оиеая]{1,2}|отлично|отличн[ыоеая]{1,2}|круто|крут[оыеая]{1,2}|класс|классн[оыеая]{1,2}|супер|норм|нормальн[оыеая]{1,2}|работает|ок|окей|идеальн[оыеая]{1,2}|прекрасн[оыеая]{1,2})\b/i.test(content) &&
+  const isGenericRussian =
+    /\b(хорош[иоеая]{1,2}|плох[оиеая]{1,2}|отлично|отличн[ыоеая]{1,2}|круто|крут[оыеая]{1,2}|класс|классн[оыеая]{1,2}|супер|норм|нормальн[оыеая]{1,2}|работает|ок|окей|идеальн[оыеая]{1,2}|прекрасн[оыеая]{1,2})\b/i.test(
+      content
+    ) &&
     !/\b(хорошая практика|плохой паттерн|работает потому что|работает за счёт)\b/i.test(content);
 
   // Only generic praise patterns
-  const isOnlyGenericPraiseEnglish = /^(the )?(code|it|this|that)?\s*(is|are|was|were)?\s*(good|nice|great|fine|ok|cool|awesome|works|working)/i.test(content.trim());
-  const isOnlyGenericPraiseRussian = /^(код|это|оно|всё)?\s*(хорош[иоеая]{0,2}|отлично|работает|норм|класс|супер)/i.test(content.trim());
+  const isOnlyGenericPraiseEnglish =
+    /^(the )?(code|it|this|that)?\s*(is|are|was|were)?\s*(good|nice|great|fine|ok|cool|awesome|works|working)/i.test(
+      content.trim()
+    );
+  const isOnlyGenericPraiseRussian =
+    /^(код|это|оно|всё)?\s*(хорош[иоеая]{0,2}|отлично|работает|норм|класс|супер)/i.test(
+      content.trim()
+    );
 
   const lacksSubstance = wordCount < 8 && !hasCodeReference && !hasFilePath && !hasNumbers;
 
@@ -161,7 +204,7 @@ function calculateClarity(content: string): number {
   let score = 0.5;
 
   // Positive signals
-  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 0);
   const avgSentenceLength = content.length / Math.max(sentences.length, 1);
   const hasGoodLength = avgSentenceLength >= 30 && avgSentenceLength <= 150;
 
@@ -221,7 +264,10 @@ export function cleanupQualityScoring(): void {
  * - ONNX is good at detecting technical content with code references
  * - Heuristics act as a "gate" - if content fails basic quality checks, cap the score
  */
-export async function scoreWithLocal(content: string, existingSimilarity?: number): Promise<QualityScore> {
+export async function scoreWithLocal(
+  content: string,
+  existingSimilarity?: number
+): Promise<QualityScore> {
   try {
     // First, run quick heuristic checks
     const heuristicResult = scoreWithHeuristics(content, existingSimilarity);
@@ -241,8 +287,10 @@ export async function scoreWithLocal(content: string, existingSimilarity?: numbe
     ]);
 
     // Extract ONNX scores
-    const onnxQuality = qualityResult.scores[qualityResult.labels.indexOf(QUALITY_LABELS.quality[0])];
-    const onnxRelevance = relevanceResult.scores[relevanceResult.labels.indexOf(QUALITY_LABELS.relevance[0])];
+    const onnxQuality =
+      qualityResult.scores[qualityResult.labels.indexOf(QUALITY_LABELS.quality[0])];
+    const onnxRelevance =
+      relevanceResult.scores[relevanceResult.labels.indexOf(QUALITY_LABELS.relevance[0])];
 
     // Uniqueness from similarity if provided
     const uniqueness = existingSimilarity !== undefined ? 1 - existingSimilarity : 0.5;
@@ -260,10 +308,10 @@ export async function scoreWithLocal(content: string, existingSimilarity?: numbe
 
     // Weighted average for overall score
     const score =
-      factors.specificity * 0.35 +  // Hybrid specificity
-      factors.clarity * 0.15 +       // Heuristic clarity
-      factors.relevance * 0.25 +     // ONNX relevance
-      factors.uniqueness * 0.25;     // Similarity-based uniqueness
+      factors.specificity * 0.35 + // Hybrid specificity
+      factors.clarity * 0.15 + // Heuristic clarity
+      factors.relevance * 0.25 + // ONNX relevance
+      factors.uniqueness * 0.25; // Similarity-based uniqueness
 
     return {
       score: clamp(score, 0, 1),
@@ -273,7 +321,9 @@ export async function scoreWithLocal(content: string, existingSimilarity?: numbe
     };
   } catch (error) {
     // Fall back to heuristics if model fails
-    logWarn('quality', 'Local ONNX scoring failed, falling back to heuristics', { error: String(error) });
+    logWarn('quality', 'Local ONNX scoring failed, falling back to heuristics', {
+      error: String(error),
+    });
     return scoreWithHeuristics(content, existingSimilarity);
   }
 }
@@ -432,12 +482,7 @@ export async function scoreMemory(
         logWarn('quality', 'API scoring requires llm.quality.model');
         return scoreWithHeuristics(content, existingSimilarity);
       }
-      return scoreWithApi(
-        content,
-        taskCfg.api_url,
-        taskCfg.model,
-        taskCfg.api_key
-      );
+      return scoreWithApi(content, taskCfg.api_url, taskCfg.model, taskCfg.api_key);
 
     default:
       return scoreWithHeuristics(content, existingSimilarity);
@@ -447,10 +492,7 @@ export async function scoreMemory(
 /**
  * Check if memory passes quality threshold
  */
-export function passesQualityThreshold(
-  score: QualityScore,
-  threshold?: number
-): boolean {
+export function passesQualityThreshold(score: QualityScore, threshold?: number): boolean {
   const config = getConfig();
   const minScore = threshold ?? config.quality_scoring_threshold ?? 0;
   return score.score >= minScore;

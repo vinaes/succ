@@ -11,7 +11,12 @@
 import fs from 'fs';
 import path from 'path';
 import { getStorageInfo } from '../lib/storage/index.js';
-import { exportData, exportToFile, importFromFile, getExportStats } from '../lib/storage/migration/export-import.js';
+import {
+  exportData,
+  exportToFile,
+  importFromFile,
+  getExportStats,
+} from '../lib/storage/migration/export-import.js';
 import { logError } from '../lib/fault-logger.js';
 
 interface MigrateOptions {

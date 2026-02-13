@@ -61,7 +61,7 @@ export function appendObservations(sessionId: string, observations: Observation[
   if (observations.length === 0) return;
 
   const filePath = getObservationFile(sessionId);
-  const lines = observations.map(obs => JSON.stringify(obs)).join('\n') + '\n';
+  const lines = observations.map((obs) => JSON.stringify(obs)).join('\n') + '\n';
 
   fs.appendFileSync(filePath, lines, 'utf-8');
 }
@@ -74,15 +74,17 @@ export function readObservations(sessionId: string): Observation[] {
   if (!fs.existsSync(filePath)) return [];
 
   const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim().length > 0);
+  const lines = content.split('\n').filter((line) => line.trim().length > 0);
 
-  return lines.map(line => {
-    try {
-      return JSON.parse(line) as Observation;
-    } catch {
-      return null;
-    }
-  }).filter((obs): obs is Observation => obs !== null);
+  return lines
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Observation;
+      } catch {
+        return null;
+      }
+    })
+    .filter((obs): obs is Observation => obs !== null);
 }
 
 /**
@@ -93,7 +95,7 @@ export function getObservationCount(sessionId: string): number {
   if (!fs.existsSync(filePath)) return 0;
 
   const content = fs.readFileSync(filePath, 'utf-8');
-  return content.split('\n').filter(line => line.trim().length > 0).length;
+  return content.split('\n').filter((line) => line.trim().length > 0).length;
 }
 
 /**
@@ -104,9 +106,7 @@ export function getObservationContext(sessionId: string): string {
   const observations = readObservations(sessionId);
   if (observations.length === 0) return '';
 
-  return observations
-    .map((obs, i) => `${i + 1}. [${obs.type}] ${obs.content}`)
-    .join('\n');
+  return observations.map((obs, i) => `${i + 1}. [${obs.type}] ${obs.content}`).join('\n');
 }
 
 /**

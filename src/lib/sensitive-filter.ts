@@ -36,36 +36,83 @@ const CUSTOM_PATTERNS: { type: string; pattern: RegExp; redactPrefix: string }[]
   { type: 'aws_access_key', pattern: /AKIA[0-9A-Z]{16}/g, redactPrefix: '[AWS_KEY]' },
   { type: 'github_token', pattern: /gh[pousr]_[a-zA-Z0-9]{36}/g, redactPrefix: '[GITHUB_TOKEN]' },
   { type: 'gitlab_token', pattern: /glpat-[a-zA-Z0-9-]{20,}/g, redactPrefix: '[GITLAB_TOKEN]' },
-  { type: 'slack_token', pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}/g, redactPrefix: '[SLACK_TOKEN]' },
-  { type: 'stripe_key', pattern: /[sp]k_(?:live|test)_[a-zA-Z0-9]{24,}/g, redactPrefix: '[STRIPE_KEY]' },
+  {
+    type: 'slack_token',
+    pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}/g,
+    redactPrefix: '[SLACK_TOKEN]',
+  },
+  {
+    type: 'stripe_key',
+    pattern: /[sp]k_(?:live|test)_[a-zA-Z0-9]{24,}/g,
+    redactPrefix: '[STRIPE_KEY]',
+  },
   { type: 'google_api_key', pattern: /AIza[0-9A-Za-z-_]{35}/g, redactPrefix: '[GOOGLE_KEY]' },
-  { type: 'sendgrid_key', pattern: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/g, redactPrefix: '[SENDGRID_KEY]' },
+  {
+    type: 'sendgrid_key',
+    pattern: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/g,
+    redactPrefix: '[SENDGRID_KEY]',
+  },
   { type: 'npm_token', pattern: /npm_[a-zA-Z0-9]{36}/g, redactPrefix: '[NPM_TOKEN]' },
   { type: 'twilio_sid', pattern: /AC[a-z0-9]{32}/gi, redactPrefix: '[TWILIO_SID]' },
 
   // Generic secrets (in config-like contexts)
-  { type: 'password_assignment', pattern: /(?:password|passwd|pwd|secret|api_key|apikey|auth_token)['"]?\s*[:=]\s*['"]([^'"\s]{8,})['"]?/gi, redactPrefix: '[REDACTED]' },
+  {
+    type: 'password_assignment',
+    pattern:
+      /(?:password|passwd|pwd|secret|api_key|apikey|auth_token)['"]?\s*[:=]\s*['"]([^'"\s]{8,})['"]?/gi,
+    redactPrefix: '[REDACTED]',
+  },
 
   // International phone numbers (RU/BY - not covered by redactpii)
-  { type: 'phone_ru', pattern: /\b[78][-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g, redactPrefix: '[PHONE]' },
-  { type: 'phone_by', pattern: /\b375[-.\s]?\d{2}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g, redactPrefix: '[PHONE]' },
-  { type: 'phone_intl', pattern: /\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g, redactPrefix: '[PHONE]' },
+  {
+    type: 'phone_ru',
+    pattern: /\b[78][-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g,
+    redactPrefix: '[PHONE]',
+  },
+  {
+    type: 'phone_by',
+    pattern: /\b375[-.\s]?\d{2}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g,
+    redactPrefix: '[PHONE]',
+  },
+  {
+    type: 'phone_intl',
+    pattern: /\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}/g,
+    redactPrefix: '[PHONE]',
+  },
 
   // Generic long digit sequences (9-15 digits) - potential phone/account numbers
   // Exclude Unix timestamps (1600000000-1900000000 range)
   { type: 'long_number', pattern: /\b(?!1[6-8]\d{8}\b)\d{9,15}\b/g, redactPrefix: '[NUMBER]' },
 
   // IP addresses (internal)
-  { type: 'ipv4_private', pattern: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/g, redactPrefix: '[PRIVATE_IP]' },
+  {
+    type: 'ipv4_private',
+    pattern:
+      /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/g,
+    redactPrefix: '[PRIVATE_IP]',
+  },
 
   // JWT tokens
-  { type: 'jwt', pattern: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g, redactPrefix: '[JWT]' },
+  {
+    type: 'jwt',
+    pattern: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g,
+    redactPrefix: '[JWT]',
+  },
 
   // Private keys
-  { type: 'private_key', pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g, redactPrefix: '[PRIVATE_KEY]' },
+  {
+    type: 'private_key',
+    pattern:
+      /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g,
+    redactPrefix: '[PRIVATE_KEY]',
+  },
 
   // UUID (often used as API keys) - require version bits to avoid false positives
-  { type: 'uuid', pattern: /[a-f0-9]{8}-[a-f0-9]{4}-[14][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}/gi, redactPrefix: '[UUID]' },
+  {
+    type: 'uuid',
+    pattern: /[a-f0-9]{8}-[a-f0-9]{4}-[14][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}/gi,
+    redactPrefix: '[UUID]',
+  },
 ];
 
 /**
@@ -168,14 +215,20 @@ export function scanSensitive(text: string): FilterResult {
   try {
     const redactPiiResult = redactPiiRedactor.redact(text);
     // Parse the redacted tokens to find what was replaced
-    const tokenTypes = ['PERSON_NAME', 'EMAIL_ADDRESS', 'PHONE_NUMBER', 'CREDIT_CARD_NUMBER', 'SSN'];
+    const tokenTypes = [
+      'PERSON_NAME',
+      'EMAIL_ADDRESS',
+      'PHONE_NUMBER',
+      'CREDIT_CARD_NUMBER',
+      'SSN',
+    ];
     for (const tokenType of tokenTypes) {
       const tokenPattern = new RegExp(tokenType, 'g');
       while (tokenPattern.exec(redactPiiResult) !== null) {
         // Find the original value by position mapping (approximate)
         // Since redactpii changes positions, we need to find the original
         // This is a simplified approach - we mark the text as having PII
-        if (!matches.some(m => m.type === `redactpii_${tokenType.toLowerCase()}`)) {
+        if (!matches.some((m) => m.type === `redactpii_${tokenType.toLowerCase()}`)) {
           matches.push({
             type: `redactpii_${tokenType.toLowerCase()}`,
             value: tokenType,
@@ -195,8 +248,7 @@ export function scanSensitive(text: string): FilterResult {
   for (const em of entropyMatches) {
     // Don't add if already covered by a specific pattern
     const alreadyCovered = matches.some(
-      m => (em.start >= m.start && em.start < m.end) ||
-           (em.end > m.start && em.end <= m.end)
+      (m) => (em.start >= m.start && em.start < m.end) || (em.end > m.start && em.end <= m.end)
     );
     if (!alreadyCovered) {
       matches.push(em);
@@ -215,9 +267,11 @@ export function scanSensitive(text: string): FilterResult {
       continue;
     }
     const overlaps = uniqueMatches.some(
-      m => m.start !== 0 && m.end !== 0 &&
-           ((match.start >= m.start && match.start < m.end) ||
-            (match.end > m.start && match.end <= m.end))
+      (m) =>
+        m.start !== 0 &&
+        m.end !== 0 &&
+        ((match.start >= m.start && match.start < m.end) ||
+          (match.end > m.start && match.end <= m.end))
     );
     if (!overlaps) {
       uniqueMatches.push(match);
@@ -228,16 +282,20 @@ export function scanSensitive(text: string): FilterResult {
   let redactedText = text;
   for (const match of uniqueMatches) {
     if (match.start !== 0 || match.end !== 0) {
-      redactedText = redactedText.slice(0, match.start) + match.redacted + redactedText.slice(match.end);
+      redactedText =
+        redactedText.slice(0, match.start) + match.redacted + redactedText.slice(match.end);
     }
   }
 
   // If redactpii found something, also use its redacted version
-  if (uniqueMatches.some(m => m.type.startsWith('redactpii_'))) {
+  if (uniqueMatches.some((m) => m.type.startsWith('redactpii_'))) {
     try {
       redactedText = redactPiiRedactor.redact(redactedText);
     } catch (err) {
-      logWarn('sensitive-filter', err instanceof Error ? err.message : 'redactpii redaction failed');
+      logWarn(
+        'sensitive-filter',
+        err instanceof Error ? err.message : 'redactpii redaction failed'
+      );
     }
   }
 
@@ -258,20 +316,24 @@ export function scanSensitive(text: string): FilterResult {
 export function formatMatches(matches: SensitiveMatch[]): string {
   if (matches.length === 0) return '';
 
-  const grouped = matches.reduce((acc, m) => {
-    const category = getCategoryForType(m.type);
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(m);
-    return acc;
-  }, {} as Record<string, SensitiveMatch[]>);
+  const grouped = matches.reduce(
+    (acc, m) => {
+      const category = getCategoryForType(m.type);
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(m);
+      return acc;
+    },
+    {} as Record<string, SensitiveMatch[]>
+  );
 
   const lines: string[] = [];
   for (const [category, items] of Object.entries(grouped)) {
     lines.push(`  ${category}: ${items.length} found`);
     for (const item of items.slice(0, 3)) {
-      const preview = item.value.length > 25
-        ? item.value.slice(0, 12) + '...' + item.value.slice(-8)
-        : item.value;
+      const preview =
+        item.value.length > 25
+          ? item.value.slice(0, 12) + '...' + item.value.slice(-8)
+          : item.value;
       lines.push(`    - ${item.type}: ${preview}`);
     }
     if (items.length > 3) {
@@ -283,16 +345,32 @@ export function formatMatches(matches: SensitiveMatch[]): string {
 }
 
 function getCategoryForType(type: string): string {
-  if (type.includes('key') || type.includes('token') || type.includes('secret') || type.includes('entropy')) {
+  if (
+    type.includes('key') ||
+    type.includes('token') ||
+    type.includes('secret') ||
+    type.includes('entropy')
+  ) {
     return 'API Keys & Secrets';
   }
-  if (type.includes('email') || type.includes('phone') || type.includes('ssn') || type.includes('card') || type.includes('name')) {
+  if (
+    type.includes('email') ||
+    type.includes('phone') ||
+    type.includes('ssn') ||
+    type.includes('card') ||
+    type.includes('name')
+  ) {
     return 'PII';
   }
   if (type.includes('password') || type.includes('redacted')) {
     return 'Credentials';
   }
-  if (type.includes('ip') || type.includes('jwt') || type.includes('private_key') || type.includes('uuid')) {
+  if (
+    type.includes('ip') ||
+    type.includes('jwt') ||
+    type.includes('private_key') ||
+    type.includes('uuid')
+  ) {
     return 'Security';
   }
   if (type.includes('number')) {

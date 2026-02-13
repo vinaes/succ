@@ -45,15 +45,35 @@ export interface DaemonClient {
 
   // Session management
   registerSession(sessionId: string, transcriptPath: string, isService?: boolean): Promise<boolean>;
-  unregisterSession(sessionId: string, runReflection?: boolean): Promise<{ success: boolean; remaining_sessions: number }>;
-  sessionActivity(sessionId: string, type: 'user_prompt' | 'stop', transcriptPath?: string, isService?: boolean): Promise<boolean>;
+  unregisterSession(
+    sessionId: string,
+    runReflection?: boolean
+  ): Promise<{ success: boolean; remaining_sessions: number }>;
+  sessionActivity(
+    sessionId: string,
+    type: 'user_prompt' | 'stop',
+    transcriptPath?: string,
+    isService?: boolean
+  ): Promise<boolean>;
   getSessions(includeService?: boolean): Promise<Record<string, SessionInfo>>;
 
   // Data operations
   search(query: string, limit?: number, threshold?: number): Promise<any[]>;
   searchCode(query: string, limit?: number): Promise<any[]>;
-  recall(query: string, options?: { tags?: string[]; since?: string; limit?: number; as_of_date?: string }): Promise<any[]>;
-  remember(content: string, options?: { tags?: string[]; type?: string; global?: boolean; valid_from?: string; valid_until?: string }): Promise<{ success: boolean; id?: number; isDuplicate?: boolean }>;
+  recall(
+    query: string,
+    options?: { tags?: string[]; since?: string; limit?: number; as_of_date?: string }
+  ): Promise<any[]>;
+  remember(
+    content: string,
+    options?: {
+      tags?: string[];
+      type?: string;
+      global?: boolean;
+      valid_from?: string;
+      valid_until?: string;
+    }
+  ): Promise<{ success: boolean; id?: number; isDuplicate?: boolean }>;
 
   // Reflection
   triggerReflection(sessionId?: string, force?: boolean): Promise<boolean>;
@@ -97,7 +117,9 @@ export function getDaemonPort(projectDir?: string): number | null {
     }
     return port;
   } catch (err) {
-    logWarn('daemon-client', 'Failed to read daemon port file', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('daemon-client', 'Failed to read daemon port file', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -193,7 +215,9 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
         const health = await httpGet(port, '/health');
         return health?.status === 'ok';
       } catch (err) {
-        logWarn('daemon-client', 'Daemon health check failed (isRunning)', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon health check failed (isRunning)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return false;
       }
     },
@@ -205,42 +229,70 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         return await httpGet(port, '/health');
       } catch (err) {
-        logWarn('daemon-client', 'Daemon call failed: getHealth', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon call failed: getHealth', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return null;
       }
     },
 
     // Session management
-    async registerSession(sessionId: string, transcriptPath: string, isService = false): Promise<boolean> {
+    async registerSession(
+      sessionId: string,
+      transcriptPath: string,
+      isService = false
+    ): Promise<boolean> {
       const port = getDaemonPort(resolvedProjectDir);
       if (!port) return false;
 
       try {
-        const result = await httpPost(port, '/api/session/register', { session_id: sessionId, transcript_path: transcriptPath, is_service: isService });
+        const result = await httpPost(port, '/api/session/register', {
+          session_id: sessionId,
+          transcript_path: transcriptPath,
+          is_service: isService,
+        });
         return result?.success === true;
       } catch (err) {
-        logWarn('daemon-client', 'Daemon call failed: registerSession', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon call failed: registerSession', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return false;
       }
     },
 
-    async unregisterSession(sessionId: string, runReflection = false): Promise<{ success: boolean; remaining_sessions: number }> {
+    async unregisterSession(
+      sessionId: string,
+      runReflection = false
+    ): Promise<{ success: boolean; remaining_sessions: number }> {
       const port = getDaemonPort(resolvedProjectDir);
       if (!port) return { success: false, remaining_sessions: -1 };
 
       try {
-        return await httpPost(port, '/api/session/unregister', { session_id: sessionId, run_reflection: runReflection });
+        return await httpPost(port, '/api/session/unregister', {
+          session_id: sessionId,
+          run_reflection: runReflection,
+        });
       } catch {
         return { success: false, remaining_sessions: -1 };
       }
     },
 
-    async sessionActivity(sessionId: string, type: 'user_prompt' | 'stop', transcriptPath?: string, isService = false): Promise<boolean> {
+    async sessionActivity(
+      sessionId: string,
+      type: 'user_prompt' | 'stop',
+      transcriptPath?: string,
+      isService = false
+    ): Promise<boolean> {
       const port = getDaemonPort(resolvedProjectDir);
       if (!port) return false;
 
       try {
-        const result = await httpPost(port, '/api/session/activity', { session_id: sessionId, type, transcript_path: transcriptPath, is_service: isService });
+        const result = await httpPost(port, '/api/session/activity', {
+          session_id: sessionId,
+          type,
+          transcript_path: transcriptPath,
+          is_service: isService,
+        });
         return result?.success === true;
       } catch {
         return false;
@@ -293,19 +345,26 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
         const result = await httpPost(port, '/api/recall', { query, ...options });
         return result?.results || [];
       } catch (err) {
-        logWarn('daemon-client', 'Daemon call failed: recall', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon call failed: recall', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return [];
       }
     },
 
-    async remember(content: string, options = {}): Promise<{ success: boolean; id?: number; isDuplicate?: boolean }> {
+    async remember(
+      content: string,
+      options = {}
+    ): Promise<{ success: boolean; id?: number; isDuplicate?: boolean }> {
       const port = getDaemonPort(resolvedProjectDir);
       if (!port) return { success: false };
 
       try {
         return await httpPost(port, '/api/remember', { content, ...options });
       } catch (err) {
-        logWarn('daemon-client', 'Daemon call failed: remember', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon call failed: remember', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return { success: false };
       }
     },
@@ -331,7 +390,9 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         return await httpGet(port, '/api/status');
       } catch (err) {
-        logWarn('daemon-client', 'Daemon call failed: getStatus', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon-client', 'Daemon call failed: getStatus', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         return null;
       }
     },

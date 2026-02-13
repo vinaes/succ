@@ -8,10 +8,7 @@
  */
 
 import fs from 'fs';
-import {
-  getDb,
-  getGlobalDb,
-} from '../../db/connection.js';
+import { getDb, getGlobalDb } from '../../db/connection.js';
 /**
  * Export format version for compatibility checking
  */
@@ -125,13 +122,19 @@ export function exportData(): ExportData {
   }
 
   // Get embedding model from metadata
-  const embeddingModelRow = db.prepare("SELECT value FROM metadata WHERE key = 'embedding_model'").get() as { value: string } | undefined;
+  const embeddingModelRow = db
+    .prepare("SELECT value FROM metadata WHERE key = 'embedding_model'")
+    .get() as { value: string } | undefined;
 
   // Export documents
-  const documents = db.prepare(`
+  const documents = db
+    .prepare(
+      `
     SELECT id, file_path, chunk_index, content, start_line, end_line, embedding, created_at, updated_at
     FROM documents
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     id: number;
     file_path: string;
     chunk_index: number;
@@ -144,21 +147,29 @@ export function exportData(): ExportData {
   }>;
 
   // Export file hashes
-  const fileHashes = db.prepare(`
+  const fileHashes = db
+    .prepare(
+      `
     SELECT file_path, content_hash, indexed_at
     FROM file_hashes
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     file_path: string;
     content_hash: string;
     indexed_at: string;
   }>;
 
   // Export memories
-  const memories = db.prepare(`
+  const memories = db
+    .prepare(
+      `
     SELECT id, content, tags, source, type, quality_score, quality_factors, embedding,
            access_count, last_accessed, valid_from, valid_until, created_at
     FROM memories
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     id: number;
     content: string;
     tags: string | null;
@@ -175,10 +186,14 @@ export function exportData(): ExportData {
   }>;
 
   // Export memory links
-  const memoryLinks = db.prepare(`
+  const memoryLinks = db
+    .prepare(
+      `
     SELECT id, source_id, target_id, relation, weight, valid_from, valid_until, created_at
     FROM memory_links
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     id: number;
     source_id: number;
     target_id: number;
@@ -204,27 +219,39 @@ export function exportData(): ExportData {
   }> = [];
 
   if (globalDb) {
-    globalMemories = globalDb.prepare(`
+    globalMemories = globalDb
+      .prepare(
+        `
       SELECT id, content, tags, source, project, type, quality_score, quality_factors, embedding, created_at
       FROM memories
-    `).all() as typeof globalMemories;
+    `
+      )
+      .all() as typeof globalMemories;
   }
 
   // Export token frequencies
-  const tokenFrequencies = db.prepare(`
+  const tokenFrequencies = db
+    .prepare(
+      `
     SELECT token, frequency
     FROM token_frequencies
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     token: string;
     frequency: number;
   }>;
 
   // Export token stats
-  const tokenStats = db.prepare(`
+  const tokenStats = db
+    .prepare(
+      `
     SELECT event_type, query, returned_tokens, full_source_tokens, savings_tokens,
            files_count, chunks_count, model, estimated_cost, created_at
     FROM token_stats
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     event_type: string;
     query: string | null;
     returned_tokens: number;
@@ -244,12 +271,12 @@ export function exportData(): ExportData {
       backend: 'sqlite',
       embeddingModel: embeddingModelRow?.value,
     },
-    documents: documents.map(d => ({
+    documents: documents.map((d) => ({
       ...d,
       embedding: bufferToArray(d.embedding),
     })),
     fileHashes,
-    memories: memories.map(m => ({
+    memories: memories.map((m) => ({
       ...m,
       tags: m.tags ? JSON.parse(m.tags) : null,
       quality_factors: m.quality_factors ? JSON.parse(m.quality_factors) : null,
@@ -257,7 +284,7 @@ export function exportData(): ExportData {
       access_count: m.access_count ?? 0,
     })),
     memoryLinks,
-    globalMemories: globalMemories.map(m => ({
+    globalMemories: globalMemories.map((m) => ({
       ...m,
       tags: m.tags ? JSON.parse(m.tags) : null,
       quality_factors: m.quality_factors ? JSON.parse(m.quality_factors) : null,
@@ -321,7 +348,17 @@ export function importData(data: ExportData): {
 
   for (const doc of data.documents) {
     const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
-    docStmt.run(doc.id, doc.file_path, doc.chunk_index, doc.content, doc.start_line, doc.end_line, embeddingBlob, doc.created_at, doc.updated_at);
+    docStmt.run(
+      doc.id,
+      doc.file_path,
+      doc.chunk_index,
+      doc.content,
+      doc.start_line,
+      doc.end_line,
+      embeddingBlob,
+      doc.created_at,
+      doc.updated_at
+    );
   }
 
   // Import file hashes
@@ -366,7 +403,16 @@ export function importData(data: ExportData): {
   `);
 
   for (const link of data.memoryLinks) {
-    linkStmt.run(link.id, link.source_id, link.target_id, link.relation, link.weight, link.valid_from, link.valid_until, link.created_at);
+    linkStmt.run(
+      link.id,
+      link.source_id,
+      link.target_id,
+      link.relation,
+      link.weight,
+      link.valid_from,
+      link.valid_until,
+      link.created_at
+    );
   }
 
   // Import global memories
@@ -430,7 +476,9 @@ export function importData(data: ExportData): {
 
   // Update embedding model metadata
   if (data.metadata.embeddingModel) {
-    db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_model', ?)").run(data.metadata.embeddingModel);
+    db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_model', ?)").run(
+      data.metadata.embeddingModel
+    );
   }
 
   return {

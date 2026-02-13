@@ -1,6 +1,11 @@
 import path from 'path';
 import { getProjectRoot } from '../lib/config.js';
-import { getStaleFiles, deleteDocumentsByPath, deleteFileHash, closeDb } from '../lib/storage/index.js';
+import {
+  getStaleFiles,
+  deleteDocumentsByPath,
+  deleteFileHash,
+  closeDb,
+} from '../lib/storage/index.js';
 import { indexDocFile } from './index.js';
 import { indexCodeFile } from './index-code.js';
 

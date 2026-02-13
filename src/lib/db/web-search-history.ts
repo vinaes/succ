@@ -64,7 +64,9 @@ export function getWebSearchHistory(filter: WebSearchHistoryFilter): WebSearchHi
 
   const rows = database
     .prepare(`SELECT * FROM web_search_history ${where} ORDER BY created_at DESC LIMIT ?`)
-    .all(...params, limit) as Array<Omit<WebSearchHistoryRecord, 'has_reasoning'> & { has_reasoning: number }>;
+    .all(...params, limit) as Array<
+    Omit<WebSearchHistoryRecord, 'has_reasoning'> & { has_reasoning: number }
+  >;
 
   return rows.map((row) => ({
     ...row,

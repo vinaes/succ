@@ -22,7 +22,14 @@ export function loadSqliteVec(database: Database.Database): boolean {
 }
 
 // Valid memory types
-export const MEMORY_TYPES = ['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'] as const;
+export const MEMORY_TYPES = [
+  'observation',
+  'decision',
+  'learning',
+  'error',
+  'pattern',
+  'dead_end',
+] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 /**
@@ -156,7 +163,9 @@ export function initDb(database: Database.Database): void {
     // Column already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)`)
+      .run();
   } catch {
     // Index may already exist
   }
@@ -219,7 +228,9 @@ export function initDb(database: Database.Database): void {
     // Column already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
@@ -231,7 +242,9 @@ export function initDb(database: Database.Database): void {
     // Column already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
@@ -245,12 +258,16 @@ export function initDb(database: Database.Database): void {
     }
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
@@ -262,17 +279,23 @@ export function initDb(database: Database.Database): void {
     // Index already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_until ON memories(valid_until)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_until ON memories(valid_until)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at)`)
+      .run();
   } catch {
     // Index already exists, ignore
   }
@@ -358,12 +381,21 @@ function checkModelCompatibility(database: Database.Database): void {
 
     // Different dimensions = incompatible, must reindex
     if (currentDim && storedDim && currentDim !== storedDim) {
-      logWarn('db-schema', `Embedding model changed: ${stored.value} (dim=${storedDim}) -> ${currentModel} (dim=${currentDim})`);
-      logWarn('db-schema', 'Dimensions are incompatible — existing embeddings will not work correctly');
+      logWarn(
+        'db-schema',
+        `Embedding model changed: ${stored.value} (dim=${storedDim}) -> ${currentModel} (dim=${currentDim})`
+      );
+      logWarn(
+        'db-schema',
+        'Dimensions are incompatible — existing embeddings will not work correctly'
+      );
       logWarn('db-schema', 'Run "succ reindex" to regenerate all embeddings with the new model');
     } else if (stored.value !== currentModel) {
       // Same dimension but different model - still should reindex for accuracy
-      logWarn('db-schema', `Embedding model changed: ${stored.value} -> ${currentModel} (same dimension=${currentDim})`);
+      logWarn(
+        'db-schema',
+        `Embedding model changed: ${stored.value} -> ${currentModel} (same dimension=${currentDim})`
+      );
       logWarn('db-schema', 'Run "succ reindex" to regenerate embeddings for best accuracy');
     }
   }
@@ -405,13 +437,20 @@ export function initVecTables(database: Database.Database): void {
   if (vecMemoriesExists) {
     if (vecMemoriesMigrated && Number(vecMemoriesMigrated.value) !== dims) {
       // Dimensions changed — recreate vec table (old embeddings are incompatible)
-      logWarn('sqlite-vec', `vec_memories dimension change: ${vecMemoriesMigrated.value} -> ${dims}. Recreating. Re-indexing required.`);
+      logWarn(
+        'sqlite-vec',
+        `vec_memories dimension change: ${vecMemoriesMigrated.value} -> ${dims}. Recreating. Re-indexing required.`
+      );
       needsMemoriesMigration = true;
       memoriesDimChange = true;
     } else if (!vecMemoriesMigrated) {
       try {
-        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
-        const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
+        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as {
+          cnt: number;
+        };
+        const memCount = database
+          .prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL')
+          .get() as { cnt: number };
         needsMemoriesMigration = vecCount.cnt === 0 && memCount.cnt > 0;
       } catch {
         needsMemoriesMigration = false;
@@ -428,19 +467,27 @@ export function initVecTables(database: Database.Database): void {
       }
 
       // Create vec0 virtual table for memories (simple schema, rowid auto-assigned)
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
           embedding float[${dims}] distance_metric=cosine
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Create mapping table: vec rowid -> memory id
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE TABLE IF NOT EXISTS vec_memories_map (
           vec_rowid INTEGER PRIMARY KEY,
           memory_id INTEGER NOT NULL UNIQUE
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Migrate existing embeddings (only if same dimensions — skip on dim change)
       if (!memoriesDimChange) {
@@ -450,7 +497,9 @@ export function initVecTables(database: Database.Database): void {
 
         if (memories.length > 0) {
           const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
-          const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+          const insertMap = database.prepare(
+            'INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)'
+          );
 
           const migrate = database.transaction(() => {
             for (const mem of memories) {
@@ -464,7 +513,9 @@ export function initVecTables(database: Database.Database): void {
 
       // Store persistent migration flag to prevent re-running
       database
-        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)")
+        .prepare(
+          "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
+        )
         .run(String(dims));
     } catch {
       // sqlite-vec may not support this syntax or other error
@@ -488,13 +539,20 @@ export function initVecTables(database: Database.Database): void {
   let documentsDimChange = false;
   if (vecDocumentsExists && sqliteVecAvailable) {
     if (vecDocumentsMigrated && Number(vecDocumentsMigrated.value) !== dims) {
-      logWarn('sqlite-vec', `vec_documents dimension change: ${vecDocumentsMigrated.value} -> ${dims}. Recreating. Re-indexing required.`);
+      logWarn(
+        'sqlite-vec',
+        `vec_documents dimension change: ${vecDocumentsMigrated.value} -> ${dims}. Recreating. Re-indexing required.`
+      );
       needsDocumentsMigration = true;
       documentsDimChange = true;
     } else if (!vecDocumentsMigrated) {
       try {
-        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as { cnt: number };
-        const docCount = database.prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL').get() as { cnt: number };
+        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as {
+          cnt: number;
+        };
+        const docCount = database
+          .prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL')
+          .get() as { cnt: number };
         needsDocumentsMigration = vecCount.cnt === 0 && docCount.cnt > 0;
       } catch {
         needsDocumentsMigration = false;
@@ -510,19 +568,27 @@ export function initVecTables(database: Database.Database): void {
       }
 
       // Create vec0 virtual table for documents
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_documents USING vec0(
           embedding float[${dims}] distance_metric=cosine
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Create mapping table: vec rowid -> document id
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE TABLE IF NOT EXISTS vec_documents_map (
           vec_rowid INTEGER PRIMARY KEY,
           doc_id INTEGER NOT NULL UNIQUE
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Migrate existing embeddings (only if same dimensions — skip on dim change)
       if (!documentsDimChange) {
@@ -532,7 +598,9 @@ export function initVecTables(database: Database.Database): void {
 
         if (docs.length > 0) {
           const insertVec = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)');
-          const insertMap = database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)');
+          const insertMap = database.prepare(
+            'INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)'
+          );
 
           const migrate = database.transaction(() => {
             for (const doc of docs) {
@@ -546,7 +614,9 @@ export function initVecTables(database: Database.Database): void {
 
       // Store persistent migration flag to prevent re-running
       database
-        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_documents_migrated_dims', ?)")
+        .prepare(
+          "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_documents_migrated_dims', ?)"
+        )
         .run(String(dims));
     } catch {
       // Ignore errors for documents table
@@ -609,7 +679,9 @@ export function initGlobalDb(database: Database.Database): void {
     // Column already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`).run();
+    database
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`)
+      .run();
   } catch {
     // Index may already exist
   }
@@ -645,7 +717,11 @@ export function initGlobalDb(database: Database.Database): void {
     // Column already exists, ignore
   }
   try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`).run();
+    database
+      .prepare(
+        `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`
+      )
+      .run();
   } catch {
     // Index already exists, ignore
   }
@@ -676,8 +752,12 @@ export function initGlobalVecTable(database: Database.Database): void {
   let needsMigration = false;
   if (vecMemoriesExists && !vecMigrated) {
     try {
-      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
-      const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
+      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as {
+        cnt: number;
+      };
+      const memCount = database
+        .prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL')
+        .get() as { cnt: number };
       needsMigration = vecCount.cnt === 0 && memCount.cnt > 0;
     } catch {
       needsMigration = false;
@@ -692,19 +772,27 @@ export function initGlobalVecTable(database: Database.Database): void {
       }
 
       // Create vec0 virtual table (simple schema)
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
           embedding float[${dims}] distance_metric=cosine
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Create mapping table
-      database.prepare(`
+      database
+        .prepare(
+          `
         CREATE TABLE IF NOT EXISTS vec_memories_map (
           vec_rowid INTEGER PRIMARY KEY,
           memory_id INTEGER NOT NULL UNIQUE
         )
-      `).run();
+      `
+        )
+        .run();
 
       // Migrate existing embeddings
       const memories = database
@@ -713,7 +801,9 @@ export function initGlobalVecTable(database: Database.Database): void {
 
       if (memories.length > 0) {
         const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
-        const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+        const insertMap = database.prepare(
+          'INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)'
+        );
 
         const migrate = database.transaction(() => {
           for (const mem of memories) {
@@ -726,7 +816,9 @@ export function initGlobalVecTable(database: Database.Database): void {
 
       // Store persistent migration flag
       database
-        .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)")
+        .prepare(
+          "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
+        )
         .run(String(dims));
     } catch {
       // sqlite-vec may not be available for global db

@@ -78,8 +78,7 @@ export async function classifyRelation(
   memoryA: MemoryInfo,
   memoryB: MemoryInfo
 ): Promise<ClassifyResult> {
-  const prompt = CLASSIFY_PROMPT_SINGLE
-    .replace('{typeA}', memoryA.type)
+  const prompt = CLASSIFY_PROMPT_SINGLE.replace('{typeA}', memoryA.type)
     .replace('{contentA}', memoryA.content.substring(0, 500))
     .replace('{typeB}', memoryB.type)
     .replace('{contentB}', memoryB.content.substring(0, 500));
@@ -101,11 +100,13 @@ export async function classifyRelationsBatch(
   if (pairs.length === 0) return [];
 
   // Build pairs text
-  const pairsText = pairs.map((p, i) => {
-    return `Pair ${i + 1}:
+  const pairsText = pairs
+    .map((p, i) => {
+      return `Pair ${i + 1}:
   Memory A (type: ${p.a.type}): ${p.a.content.substring(0, 300)}
   Memory B (type: ${p.b.type}): ${p.b.content.substring(0, 300)}`;
-  }).join('\n\n');
+    })
+    .join('\n\n');
 
   const prompt = CLASSIFY_PROMPT_BATCH.replace('{pairs}', pairsText);
 
@@ -117,7 +118,11 @@ export async function classifyRelationsBatch(
     return parseBatchResponse(response, pairs);
   } catch {
     // Fallback: keep all as similar_to
-    return pairs.map(p => ({ linkId: p.linkId, relation: 'similar_to' as LinkRelation, confidence: 0 }));
+    return pairs.map((p) => ({
+      linkId: p.linkId,
+      relation: 'similar_to' as LinkRelation,
+      confidence: 0,
+    }));
   }
 }
 
@@ -137,12 +142,12 @@ export async function enrichExistingLinks(
   const allLinks = await getAllMemoryLinksForExport();
 
   // Filter to similar_to links, optionally unenriched only
-  let links = allLinks.filter(l => l.relation === 'similar_to');
+  let links = allLinks.filter((l) => l.relation === 'similar_to');
   if (!force) {
     interface LinkWithEnrichment {
       llm_enriched?: boolean;
     }
-    links = links.filter(l => !(l as LinkWithEnrichment).llm_enriched);
+    links = links.filter((l) => !(l as LinkWithEnrichment).llm_enriched);
   }
   if (limit) {
     links = links.slice(0, limit);
@@ -163,8 +168,17 @@ export async function enrichExistingLinks(
   for (const id of memoryIds) {
     const mem = await getMemoryById(id);
     if (mem) {
-      const tags: string[] = Array.isArray(mem.tags) ? mem.tags :
-        (typeof mem.tags === 'string' ? (() => { try { return JSON.parse(mem.tags as string); } catch { return []; } })() : []);
+      const tags: string[] = Array.isArray(mem.tags)
+        ? mem.tags
+        : typeof mem.tags === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(mem.tags as string);
+              } catch {
+                return [];
+              }
+            })()
+          : [];
       memories.set(id, { id: mem.id, content: mem.content, type: mem.type || 'observation', tags });
     }
   }
@@ -178,7 +192,7 @@ export async function enrichExistingLinks(
     const batch = links.slice(i, i + batchSize);
 
     const pairs = batch
-      .map(link => {
+      .map((link) => {
         const a = memories.get(link.source_id);
         const b = memories.get(link.target_id);
         if (!a || !b) return null;
@@ -196,7 +210,9 @@ export async function enrichExistingLinks(
     if (pairs.length === 1) {
       // Single pair: use direct classification
       const result = await classifyRelation(pairs[0].a, pairs[0].b);
-      results = [{ linkId: pairs[0].linkId, relation: result.relation, confidence: result.confidence }];
+      results = [
+        { linkId: pairs[0].linkId, relation: result.relation, confidence: result.confidence },
+      ];
     } else {
       // Batch classification
       results = await classifyRelationsBatch(pairs);
@@ -253,9 +269,8 @@ function parseClassifyResponse(response: string): ClassifyResult {
 
     const parsed = JSON.parse(jsonMatch[0]);
     const relation = validateRelation(parsed.relation);
-    const confidence = typeof parsed.confidence === 'number'
-      ? Math.max(0, Math.min(1, parsed.confidence))
-      : 0.5;
+    const confidence =
+      typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5;
 
     return { relation, confidence };
   } catch {
@@ -271,27 +286,37 @@ function parseBatchResponse(
     // Extract JSON array from response
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      return pairs.map(p => ({ linkId: p.linkId, relation: 'similar_to' as LinkRelation, confidence: 0 }));
+      return pairs.map((p) => ({
+        linkId: p.linkId,
+        relation: 'similar_to' as LinkRelation,
+        confidence: 0,
+      }));
     }
 
     const parsed = JSON.parse(jsonMatch[0]) as Array<{
-      pair: number; relation: string; confidence: number;
+      pair: number;
+      relation: string;
+      confidence: number;
     }>;
 
     return pairs.map((p, i) => {
-      const result = parsed.find(r => r.pair === i + 1) || parsed[i];
-      if (!result) return { linkId: p.linkId, relation: 'similar_to' as LinkRelation, confidence: 0 };
+      const result = parsed.find((r) => r.pair === i + 1) || parsed[i];
+      if (!result)
+        return { linkId: p.linkId, relation: 'similar_to' as LinkRelation, confidence: 0 };
 
       return {
         linkId: p.linkId,
         relation: validateRelation(result.relation),
-        confidence: typeof result.confidence === 'number'
-          ? Math.max(0, Math.min(1, result.confidence))
-          : 0.5,
+        confidence:
+          typeof result.confidence === 'number' ? Math.max(0, Math.min(1, result.confidence)) : 0.5,
       };
     });
   } catch {
-    return pairs.map(p => ({ linkId: p.linkId, relation: 'similar_to' as LinkRelation, confidence: 0 }));
+    return pairs.map((p) => ({
+      linkId: p.linkId,
+      relation: 'similar_to' as LinkRelation,
+      confidence: 0,
+    }));
   }
 }
 

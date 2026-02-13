@@ -29,30 +29,32 @@ describe('PRD Parser', () => {
   });
 
   it('should parse valid LLM JSON response into tasks', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      {
-        sequence: 1,
-        title: 'Add schema',
-        description: 'Add schema column to database',
-        priority: 'high',
-        depends_on: [],
-        acceptance_criteria: ['Column exists', 'Migration works'],
-        files_to_modify: ['src/db/schema.ts'],
-        relevant_files: ['src/db/connection.ts'],
-        context_queries: ['database schema'],
-      },
-      {
-        sequence: 2,
-        title: 'Add API endpoint',
-        description: 'Create REST endpoint',
-        priority: 'medium',
-        depends_on: ['task_001'],
-        acceptance_criteria: ['Endpoint returns 200'],
-        files_to_modify: ['src/api/routes.ts'],
-        relevant_files: [],
-        context_queries: [],
-      },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([
+        {
+          sequence: 1,
+          title: 'Add schema',
+          description: 'Add schema column to database',
+          priority: 'high',
+          depends_on: [],
+          acceptance_criteria: ['Column exists', 'Migration works'],
+          files_to_modify: ['src/db/schema.ts'],
+          relevant_files: ['src/db/connection.ts'],
+          context_queries: ['database schema'],
+        },
+        {
+          sequence: 2,
+          title: 'Add API endpoint',
+          description: 'Create REST endpoint',
+          priority: 'medium',
+          depends_on: ['task_001'],
+          acceptance_criteria: ['Endpoint returns 200'],
+          files_to_modify: ['src/api/routes.ts'],
+          relevant_files: [],
+          context_queries: [],
+        },
+      ])
+    );
 
     const result = await parsePrd('# PRD\n\nSome content', 'prd_test1234', 'test feature');
 
@@ -68,7 +70,9 @@ describe('PRD Parser', () => {
   });
 
   it('should handle JSON wrapped in markdown code blocks', async () => {
-    mockCallLLM.mockResolvedValue('```json\n[\n  {\n    "sequence": 1,\n    "title": "Task 1",\n    "description": "Do thing"\n  }\n]\n```');
+    mockCallLLM.mockResolvedValue(
+      '```json\n[\n  {\n    "sequence": 1,\n    "title": "Task 1",\n    "description": "Do thing"\n  }\n]\n```'
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks).toHaveLength(1);
@@ -76,64 +80,76 @@ describe('PRD Parser', () => {
   });
 
   it('should normalize sequence-based depends_on to task IDs', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'First', description: 'First task' },
-      { sequence: 2, title: 'Second', description: 'Second task', depends_on: [1] },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([
+        { sequence: 1, title: 'First', description: 'First task' },
+        { sequence: 2, title: 'Second', description: 'Second task', depends_on: [1] },
+      ])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks[1].depends_on).toEqual(['task_001']);
   });
 
   it('should warn about missing files_to_modify', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Vague task', description: 'Do something' },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([{ sequence: 1, title: 'Vague task', description: 'Do something' }])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
-    expect(result.warnings.some(w => w.includes('no files_to_modify'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('no files_to_modify'))).toBe(true);
   });
 
   it('should warn about too few tasks', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Only one', description: 'Single task' },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([{ sequence: 1, title: 'Only one', description: 'Single task' }])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
-    expect(result.warnings.some(w => w.includes('under-decomposed'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('under-decomposed'))).toBe(true);
   });
 
   it('should warn about file overlap without dependency', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Task A', description: 'A', files_to_modify: ['src/shared.ts'] },
-      { sequence: 2, title: 'Task B', description: 'B', files_to_modify: ['src/shared.ts'] },
-      { sequence: 3, title: 'Task C', description: 'C', files_to_modify: ['src/other.ts'] },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([
+        { sequence: 1, title: 'Task A', description: 'A', files_to_modify: ['src/shared.ts'] },
+        { sequence: 2, title: 'Task B', description: 'B', files_to_modify: ['src/shared.ts'] },
+        { sequence: 3, title: 'Task C', description: 'C', files_to_modify: ['src/other.ts'] },
+      ])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
-    const overlapWarning = result.warnings.find(w => w.includes('potential conflict'));
+    const overlapWarning = result.warnings.find((w) => w.includes('potential conflict'));
     expect(overlapWarning).toBeTruthy();
     expect(overlapWarning).toContain('src/shared.ts');
   });
 
   it('should not warn about file overlap when dependency exists', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Task A', description: 'A', files_to_modify: ['src/shared.ts'] },
-      { sequence: 2, title: 'Task B', description: 'B', files_to_modify: ['src/shared.ts'], depends_on: ['task_001'] },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([
+        { sequence: 1, title: 'Task A', description: 'A', files_to_modify: ['src/shared.ts'] },
+        {
+          sequence: 2,
+          title: 'Task B',
+          description: 'B',
+          files_to_modify: ['src/shared.ts'],
+          depends_on: ['task_001'],
+        },
+      ])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
-    const overlapWarning = result.warnings.find(w => w.includes('potential conflict'));
+    const overlapWarning = result.warnings.find((w) => w.includes('potential conflict'));
     expect(overlapWarning).toBeUndefined();
   });
 
   it('should warn about invalid dependency references', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Task A', description: 'A', depends_on: ['task_099'] },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([{ sequence: 1, title: 'Task A', description: 'A', depends_on: ['task_099'] }])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
-    expect(result.warnings.some(w => w.includes('non-existent task task_099'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('non-existent task task_099'))).toBe(true);
   });
 
   it('should throw on completely invalid LLM response after retry and escalation', async () => {
@@ -146,8 +162,9 @@ describe('PRD Parser', () => {
       .mockResolvedValueOnce('openrouter garbage')
       .mockResolvedValueOnce('claude garbage');
 
-    await expect(parsePrd('# PRD', 'prd_test1234', 'test'))
-      .rejects.toThrow('Failed to parse LLM response');
+    await expect(parsePrd('# PRD', 'prd_test1234', 'test')).rejects.toThrow(
+      'Failed to parse LLM response'
+    );
 
     expect(mockCallLLM).toHaveBeenCalledTimes(2);
     // Escalation tried openrouter + claude
@@ -155,9 +172,9 @@ describe('PRD Parser', () => {
   });
 
   it('should apply default priority and max_attempts', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify([
-      { sequence: 1, title: 'Basic', description: 'No priority specified' },
-    ]));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify([{ sequence: 1, title: 'Basic', description: 'No priority specified' }])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks[0].priority).toBe('medium');
@@ -169,11 +186,11 @@ describe('PRD Parser', () => {
   // ============================================================================
 
   it('should extract tasks from object wrapper like {"tasks":[...]}', async () => {
-    mockCallLLM.mockResolvedValue(JSON.stringify({
-      tasks: [
-        { sequence: 1, title: 'Wrapped task', description: 'Inside object' },
-      ],
-    }));
+    mockCallLLM.mockResolvedValue(
+      JSON.stringify({
+        tasks: [{ sequence: 1, title: 'Wrapped task', description: 'Inside object' }],
+      })
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks).toHaveLength(1);
@@ -220,7 +237,8 @@ Hope this helps!`;
   });
 
   it('should handle object wrapper inside markdown code block', async () => {
-    const response = '```json\n{"tasks": [{"sequence": 1, "title": "Wrapped in block", "description": "test"}]}\n```';
+    const response =
+      '```json\n{"tasks": [{"sequence": 1, "title": "Wrapped in block", "description": "test"}]}\n```';
     mockCallLLM.mockResolvedValue(response);
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
@@ -235,9 +253,11 @@ Hope this helps!`;
   it('should retry and succeed when first response is invalid but retry works', async () => {
     mockCallLLM
       .mockResolvedValueOnce('Not JSON — here is my analysis...')
-      .mockResolvedValueOnce(JSON.stringify([
-        { sequence: 1, title: 'Retry success', description: 'Worked on second try' },
-      ]));
+      .mockResolvedValueOnce(
+        JSON.stringify([
+          { sequence: 1, title: 'Retry success', description: 'Worked on second try' },
+        ])
+      );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks).toHaveLength(1);
@@ -249,9 +269,7 @@ Hope this helps!`;
     const badResponse = 'Here are the stories for your PRD...';
     mockCallLLM
       .mockResolvedValueOnce(badResponse)
-      .mockResolvedValueOnce(JSON.stringify([
-        { sequence: 1, title: 'OK', description: 'OK' },
-      ]));
+      .mockResolvedValueOnce(JSON.stringify([{ sequence: 1, title: 'OK', description: 'OK' }]));
 
     await parsePrd('# PRD', 'prd_test1234', 'test');
 
@@ -267,9 +285,9 @@ Hope this helps!`;
       .mockResolvedValueOnce('Markdown story...')
       .mockResolvedValueOnce('Still markdown...');
     // Escalation to openrouter succeeds
-    mockCallLLMDirect.mockResolvedValueOnce(JSON.stringify([
-      { sequence: 1, title: 'Escalated task', description: 'From openrouter' },
-    ]));
+    mockCallLLMDirect.mockResolvedValueOnce(
+      JSON.stringify([{ sequence: 1, title: 'Escalated task', description: 'From openrouter' }])
+    );
 
     const result = await parsePrd('# PRD', 'prd_test1234', 'test');
     expect(result.tasks).toHaveLength(1);

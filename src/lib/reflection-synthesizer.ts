@@ -51,7 +51,7 @@ export async function synthesizeFromCommunities(
   const result: SynthesisResult = { clustersProcessed: 0, patternsCreated: 0, errors: [] };
 
   // Filter to clusters large enough to synthesize
-  const eligibleClusters = communityResult.communities.filter(c => c.size >= MIN_CLUSTER_SIZE);
+  const eligibleClusters = communityResult.communities.filter((c) => c.size >= MIN_CLUSTER_SIZE);
 
   if (eligibleClusters.length === 0) {
     log('[synthesizer] No clusters large enough for synthesis');
@@ -65,8 +65,11 @@ export async function synthesizeFromCommunities(
       for (const memId of cluster.members.slice(0, MAX_OBSERVATIONS_PER_SYNTHESIS)) {
         const mem = await getMemoryById(memId);
         if (mem && mem.type === 'observation') {
-          const tags = Array.isArray(mem.tags) ? mem.tags
-            : (typeof mem.tags === 'string' ? JSON.parse(mem.tags || '[]') : []);
+          const tags = Array.isArray(mem.tags)
+            ? mem.tags
+            : typeof mem.tags === 'string'
+              ? JSON.parse(mem.tags || '[]')
+              : [];
           // Skip already-reflected observations
           if (!tags.includes('reflected')) {
             memories.push({ id: mem.id, content: mem.content, tags, type: mem.type });
@@ -77,9 +80,7 @@ export async function synthesizeFromCommunities(
       if (memories.length < MIN_CLUSTER_SIZE) continue;
 
       // Build observation text
-      const observationText = memories
-        .map((m, i) => `${i + 1}. ${m.content}`)
-        .join('\n');
+      const observationText = memories.map((m, i) => `${i + 1}. ${m.content}`).join('\n');
 
       const prompt = SYNTHESIS_PROMPT.replace('{observations}', observationText);
 
@@ -111,10 +112,16 @@ export async function synthesizeFromCommunities(
         if (!dryRun) {
           const embedding = await getEmbedding(pattern.content);
           const memType = pattern.type === 'learning' ? 'learning' : 'pattern';
-          await saveMemory(pattern.content, embedding, ['reflection', 'synthesized'], 'reflection', {
-            qualityScore: { score: 0.7, factors: { synthesized: 1 } },
-            type: memType,
-          });
+          await saveMemory(
+            pattern.content,
+            embedding,
+            ['reflection', 'synthesized'],
+            'reflection',
+            {
+              qualityScore: { score: 0.7, factors: { synthesized: 1 } },
+              type: memType,
+            }
+          );
           result.patternsCreated++;
           log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
         }

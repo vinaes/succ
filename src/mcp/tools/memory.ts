@@ -29,14 +29,27 @@ import {
   closeGlobalDb,
 } from '../../lib/storage/index.js';
 import type { MemoryBatchInput, HybridMemoryResult } from '../../lib/storage/index.js';
-import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig, getReadinessGateConfig, getRetrievalConfig } from '../../lib/config.js';
+import {
+  getConfig,
+  getProjectRoot,
+  isGlobalOnlyMode,
+  getIdleReflectionConfig,
+  getReadinessGateConfig,
+  getRetrievalConfig,
+} from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
 import { parseDuration, applyTemporalScoring, getTemporalConfig } from '../../lib/temporal.js';
 import { extractFactsWithLLM } from '../../lib/session-summary.js';
 import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
-import { trackTokenSavings, trackMemoryAccess, parseRelativeDate, projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  trackTokenSavings,
+  trackMemoryAccess,
+  parseRelativeDate,
+  projectPathParam,
+  applyProjectPath,
+} from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
 
 /**
@@ -118,7 +131,7 @@ async function rememberWithLLMExtraction(params: {
 
     // Phase 1: Pre-process all facts (sensitive filter, embedding, quality scoring)
     const prepared: Array<{
-      fact: typeof facts[0];
+      fact: (typeof facts)[0];
       content: string;
       embedding: number[];
       tags: string[];
@@ -135,7 +148,9 @@ async function rememberWithLLMExtraction(params: {
           if (config.sensitive_auto_redact) {
             factContent = scanResult.redactedText;
           } else {
-            results.push(`⚠ [${fact.type}] Skipped (sensitive): "${fact.content.substring(0, 40)}..."`);
+            results.push(
+              `⚠ [${fact.type}] Skipped (sensitive): "${fact.content.substring(0, 40)}..."`
+            );
             skipped++;
             continue;
           }
@@ -151,7 +166,9 @@ async function rememberWithLLMExtraction(params: {
         if (config.quality_scoring_enabled !== false) {
           qualityScore = await scoreMemory(factContent);
           if (!passesQualityThreshold(qualityScore)) {
-            results.push(`⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 40)}..."`);
+            results.push(
+              `⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 40)}..."`
+            );
             skipped++;
             continue;
           }
@@ -170,24 +187,37 @@ async function rememberWithLLMExtraction(params: {
       // Global memories don't have batch API — save individually
       for (const item of prepared) {
         const projectName = path.basename(getProjectRoot());
-        const result = await saveGlobalMemory(item.content, item.embedding, item.tags, source || 'extraction', projectName, { type: item.fact.type });
+        const result = await saveGlobalMemory(
+          item.content,
+          item.embedding,
+          item.tags,
+          source || 'extraction',
+          projectName,
+          { type: item.fact.type }
+        );
         if (result.isDuplicate) {
-          results.push(`⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`);
+          results.push(
+            `⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`
+          );
           skipped++;
         } else {
-          results.push(`✓ [${item.fact.type}] id:${result.id} "${item.fact.content.substring(0, 50)}..."`);
+          results.push(
+            `✓ [${item.fact.type}] id:${result.id} "${item.fact.content.substring(0, 50)}..."`
+          );
           saved++;
         }
       }
     } else if (prepared.length > 0) {
       // Local memories — use batch save (single dedup check + transaction)
-      const batchInputs: MemoryBatchInput[] = prepared.map(item => ({
+      const batchInputs: MemoryBatchInput[] = prepared.map((item) => ({
         content: item.content,
         embedding: item.embedding,
         tags: item.tags,
         type: item.fact.type,
         source: source || 'extraction',
-        qualityScore: item.qualityScore ? { score: item.qualityScore.score, factors: item.qualityScore.factors } : undefined,
+        qualityScore: item.qualityScore
+          ? { score: item.qualityScore.score, factors: item.qualityScore.factors }
+          : undefined,
         validFrom: validFromDate,
         validUntil: validUntilDate,
       }));
@@ -198,10 +228,14 @@ async function rememberWithLLMExtraction(params: {
         const r = batchResult.results[i];
         const item = prepared[r.index];
         if (r.isDuplicate) {
-          results.push(`⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`);
+          results.push(
+            `⚠ [${item.fact.type}] Duplicate: "${item.fact.content.substring(0, 40)}..."`
+          );
           skipped++;
         } else {
-          results.push(`✓ [${item.fact.type}] id:${r.id} "${item.fact.content.substring(0, 50)}..."`);
+          results.push(
+            `✓ [${item.fact.type}] id:${r.id} "${item.fact.content.substring(0, 50)}..."`
+          );
           saved++;
         }
       }
@@ -210,7 +244,8 @@ async function rememberWithLLMExtraction(params: {
     // Log learning delta if any memories were saved
     if (saved > 0 && snapshotBefore) {
       try {
-        const { takeMemorySnapshot, calculateLearningDelta } = await import('../../lib/learning-delta.js');
+        const { takeMemorySnapshot, calculateLearningDelta } =
+          await import('../../lib/learning-delta.js');
         const { appendProgressEntry } = await import('../../lib/progress-log.js');
         const snapshotAfter = await takeMemorySnapshot();
         const delta = calculateLearningDelta(snapshotBefore, snapshotAfter, 'mcp-remember');
@@ -221,10 +256,12 @@ async function rememberWithLLMExtraction(params: {
     }
 
     return {
-      content: [{
-        type: 'text' as const,
-        text: `Extracted ${facts.length} facts:\n${results.join('\n')}\n\nSummary: ${saved} saved, ${skipped} skipped`,
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Extracted ${facts.length} facts:\n${results.join('\n')}\n\nSummary: ${saved} saved, ${skipped} skipped`,
+        },
+      ],
     };
   } catch (error) {
     // If extraction fails, fall back to saving original content
@@ -260,7 +297,17 @@ async function saveSingleMemory(params: {
   config: ReturnType<typeof getConfig>;
   fallbackReason?: string;
 }): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
-  const { content, tags, source, type, useGlobal, valid_from, valid_until, config, fallbackReason } = params;
+  const {
+    content,
+    tags,
+    source,
+    type,
+    useGlobal,
+    valid_from,
+    valid_until,
+    config,
+    fallbackReason,
+  } = params;
 
   // Check for sensitive information
   let processedContent = content;
@@ -271,10 +318,12 @@ async function saveSingleMemory(params: {
         processedContent = scanResult.redactedText;
       } else {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved.`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `⚠ Sensitive information detected:\n${formatMatches(scanResult.matches)}\n\nMemory not saved.`,
+            },
+          ],
         };
       }
     }
@@ -297,10 +346,12 @@ async function saveSingleMemory(params: {
     qualityScore = await scoreMemory(processedContent);
     if (!passesQualityThreshold(qualityScore)) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
+          },
+        ],
       };
     }
   }
@@ -309,28 +360,36 @@ async function saveSingleMemory(params: {
 
   if (useGlobal) {
     const projectName = path.basename(getProjectRoot());
-    const result = await saveGlobalMemory(processedContent, embedding, tags, source, projectName, { type });
+    const result = await saveGlobalMemory(processedContent, embedding, tags, source, projectName, {
+      type,
+    });
     closeGlobalDb();
 
     if (result.isDuplicate) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
+          },
+        ],
       };
     }
     return {
-      content: [{
-        type: 'text' as const,
-        text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+        },
+      ],
     };
   }
 
   const result = await saveMemory(processedContent, embedding, tags, source, {
     type,
-    qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+    qualityScore: qualityScore
+      ? { score: qualityScore.score, factors: qualityScore.factors }
+      : undefined,
     validFrom: validFromDate,
     validUntil: validUntilDate,
   });
@@ -338,17 +397,21 @@ async function saveSingleMemory(params: {
 
   if (result.isDuplicate) {
     return {
-      content: [{
-        type: 'text' as const,
-        text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
-      }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
+        },
+      ],
     };
   }
   return {
-    content: [{
-      type: 'text' as const,
-      text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
-    }],
+    content: [
+      {
+        type: 'text' as const,
+        text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+      },
+    ],
   };
 }
 
@@ -372,27 +435,47 @@ export function registerMemoryTools(server: McpServer) {
         .enum(['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'])
         .optional()
         .default('observation')
-        .describe('Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes), dead_end (failed approaches)'),
+        .describe(
+          'Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes), dead_end (failed approaches)'
+        ),
       global: z
         .boolean()
         .optional()
         .default(false)
-        .describe('Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'),
+        .describe(
+          'Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'
+        ),
       valid_from: z
         .string()
         .optional()
-        .describe('When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'),
+        .describe(
+          'When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'
+        ),
       valid_until: z
         .string()
         .optional()
-        .describe('When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'),
+        .describe(
+          'When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'
+        ),
       extract: z
         .boolean()
         .optional()
-        .describe('Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'),
+        .describe(
+          'Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'
+        ),
       project_path: projectPathParam,
     },
-    async ({ content, tags, source, type, global: useGlobal, valid_from, valid_until, extract, project_path }) => {
+    async ({
+      content,
+      tags,
+      source,
+      type,
+      global: useGlobal,
+      valid_from,
+      valid_until,
+      extract,
+      project_path,
+    }) => {
       await applyProjectPath(project_path);
       // Force global mode if project not initialized
       const globalOnlyMode = isGlobalOnlyMode();
@@ -452,10 +535,12 @@ export function registerMemoryTools(server: McpServer) {
           } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Invalid valid_from: ${errorMsg}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Invalid valid_from: ${errorMsg}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
+                },
+              ],
               isError: true,
             };
           }
@@ -467,10 +552,12 @@ export function registerMemoryTools(server: McpServer) {
           } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Invalid valid_until: ${errorMsg}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Invalid valid_until: ${errorMsg}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
+                },
+              ],
               isError: true,
             };
           }
@@ -495,13 +582,16 @@ export function registerMemoryTools(server: McpServer) {
         }
 
         // Format validity period for display
-        const validityStr = (validFromDate || validUntilDate)
-          ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
-          : '';
+        const validityStr =
+          validFromDate || validUntilDate
+            ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
+            : '';
 
         if (useGlobal) {
           const projectName = path.basename(getProjectRoot());
-          const result = await saveGlobalMemory(content, embedding, tags, source, projectName, { type });
+          const result = await saveGlobalMemory(content, embedding, tags, source, projectName, {
+            type,
+          });
 
           const tagStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
           const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
@@ -527,7 +617,9 @@ export function registerMemoryTools(server: McpServer) {
 
         const result = await saveMemory(content, embedding, tags, source, {
           type,
-          qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+          qualityScore: qualityScore
+            ? { score: qualityScore.score, factors: qualityScore.factors }
+            : undefined,
           validFrom: validFromDate,
           validUntil: validUntilDate,
         });
@@ -549,7 +641,9 @@ export function registerMemoryTools(server: McpServer) {
         // Log to progress file (fire-and-forget)
         try {
           const { appendRawEntry } = await import('../../lib/progress-log.js');
-          await appendRawEntry(`manual | +1 fact (${type}) | topics: ${tags.join(', ') || 'untagged'}`);
+          await appendRawEntry(
+            `manual | +1 fact (${type}) | topics: ${tags.join(', ') || 'untagged'}`
+          );
         } catch {
           // Progress logging is optional
         }
@@ -586,11 +680,11 @@ export function registerMemoryTools(server: McpServer) {
     'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.',
     {
       query: z.string().describe('What to recall (semantic search)'),
-      limit: z.number().optional().describe('Maximum number of memories (default: from config, typically 10)'),
-      tags: z
-        .array(z.string())
+      limit: z
+        .number()
         .optional()
-        .describe('Filter by tags (e.g., ["decision"])'),
+        .describe('Maximum number of memories (default: from config, typically 10)'),
+      tags: z.array(z.string()).optional().describe('Filter by tags (e.g., ["decision"])'),
       since: z
         .string()
         .optional()
@@ -598,7 +692,9 @@ export function registerMemoryTools(server: McpServer) {
       as_of_date: z
         .string()
         .optional()
-        .describe('Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'),
+        .describe(
+          'Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'
+        ),
       project_path: projectPathParam,
     },
     async ({ query, limit: rawLimit, tags, since, as_of_date, project_path }) => {
@@ -660,7 +756,10 @@ export function registerMemoryTools(server: McpServer) {
           const parseTags = (t: string | string[] | null): string[] => {
             if (!t) return [];
             if (Array.isArray(t)) return t;
-            return t.split(',').map((s) => s.trim()).filter(Boolean);
+            return t
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
           };
 
           const allRecent = [
@@ -670,12 +769,14 @@ export function registerMemoryTools(server: McpServer) {
 
           if (allRecent.length === 0) {
             return {
-              content: [{
-                type: 'text' as const,
-                text: globalOnlyMode
-                  ? 'No global memories found.'
-                  : 'No memories found. Use succ_remember to save memories.',
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: globalOnlyMode
+                    ? 'No global memories found.'
+                    : 'No memories found. Use succ_remember to save memories.',
+                },
+              ],
             };
           }
 
@@ -683,20 +784,26 @@ export function registerMemoryTools(server: McpServer) {
           const globalCount = filteredGlobal.length;
           const formatted = allRecent
             .map((m, i) => {
-              const tagStr = m.tags.length > 0 ? ` [[${m.tags.map((t: string) => `"${t}"`).join(', ')}]]` : '';
+              const tagStr =
+                m.tags.length > 0 ? ` [[${m.tags.map((t: string) => `"${t}"`).join(', ')}]]` : '';
               const date = new Date(m.created_at).toLocaleDateString();
               const scope = m.isGlobal ? '[GLOBAL] ' : '';
               const source = m.source ? ` (from: ${m.source})` : '';
-              const matchPct = 'similarity' in m && m.similarity ? ` (${Math.round(m.similarity * 100)}% match)` : '';
+              const matchPct =
+                'similarity' in m && m.similarity
+                  ? ` (${Math.round(m.similarity * 100)}% match)`
+                  : '';
               return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
             })
             .join('\n---\n\n');
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Found ${allRecent.length} recent memories (${localCount} local, ${globalCount} global):\n\n${formatted}`,
-            }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${allRecent.length} recent memories (${localCount} local, ${globalCount} global):\n\n${formatted}`,
+              },
+            ],
           };
         }
 
@@ -704,8 +811,12 @@ export function registerMemoryTools(server: McpServer) {
 
         // ── Temporal query decomposition: multi-pass retrieval for time-spanning questions ──
         const isTemporalQuery =
-          /\b(between|after|before|days|weeks|months|since|how long|how many days|when did|first time|last time|started|ended|began|stopped)\b/i.test(query) ||
-          /\b(между|после|до|перед|дней|недель|месяцев|с тех пор|сколько дней|сколько времени|когда|впервые|в первый раз|в последний раз|начал[аиось]?|закончил[аиось]?|прекратил[аиось]?)\b/i.test(query);
+          /\b(between|after|before|days|weeks|months|since|how long|how many days|when did|first time|last time|started|ended|began|stopped)\b/i.test(
+            query
+          ) ||
+          /\b(между|после|до|перед|дней|недель|месяцев|с тех пор|сколько дней|сколько времени|когда|впервые|в первый раз|в последний раз|начал[аиось]?|закончил[аиось]?|прекратил[аиось]?)\b/i.test(
+            query
+          );
 
         let localResults: any[];
 
@@ -720,7 +831,13 @@ export function registerMemoryTools(server: McpServer) {
             const allSubResults = new Map<number, any>();
             for (const subQuery of subQueries) {
               const subEmbedding = await getEmbedding(subQuery);
-              const subResults = await hybridSearchMemories(subQuery, subEmbedding, limit, 0.2, retrievalConfig.bm25_alpha);
+              const subResults = await hybridSearchMemories(
+                subQuery,
+                subEmbedding,
+                limit,
+                0.2,
+                retrievalConfig.bm25_alpha
+              );
               for (const r of subResults) {
                 if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
                   allSubResults.set(r.id, r);
@@ -729,7 +846,13 @@ export function registerMemoryTools(server: McpServer) {
             }
 
             // Also include results from the original query
-            const originalResults = await hybridSearchMemories(query, queryEmbedding, limit, 0.3, retrievalConfig.bm25_alpha);
+            const originalResults = await hybridSearchMemories(
+              query,
+              queryEmbedding,
+              limit,
+              0.3,
+              retrievalConfig.bm25_alpha
+            );
             for (const r of originalResults) {
               if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
                 allSubResults.set(r.id, r);
@@ -740,30 +863,54 @@ export function registerMemoryTools(server: McpServer) {
               .sort((a, b) => b.similarity - a.similarity)
               .slice(0, limit * 2);
           } else {
-            localResults = await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3, retrievalConfig.bm25_alpha);
+            localResults = await hybridSearchMemories(
+              query,
+              queryEmbedding,
+              limit * 2,
+              0.3,
+              retrievalConfig.bm25_alpha
+            );
           }
         } else {
           // Standard single-pass search
-          localResults = globalOnlyMode ? [] : await hybridSearchMemories(query, queryEmbedding, limit * 2, 0.3, retrievalConfig.bm25_alpha);
+          localResults = globalOnlyMode
+            ? []
+            : await hybridSearchMemories(
+                query,
+                queryEmbedding,
+                limit * 2,
+                0.3,
+                retrievalConfig.bm25_alpha
+              );
         }
 
         // ── Query expansion: LLM-generated alternative queries for broader recall ──
-        if (retrievalConfig.query_expansion_enabled && !globalOnlyMode && query.split(/\s+/).length > 5) {
+        if (
+          retrievalConfig.query_expansion_enabled &&
+          !globalOnlyMode &&
+          query.split(/\s+/).length > 5
+        ) {
           try {
             const { expandQuery } = await import('../../lib/query-expansion.js');
             const expandedQueries = await expandQuery(query, retrievalConfig.query_expansion_mode);
             if (expandedQueries.length > 0) {
-              const existingIds = new Set(localResults.map(r => r.id));
+              const existingIds = new Set(localResults.map((r) => r.id));
               for (const eq of expandedQueries) {
                 const eqEmbedding = await getEmbedding(eq);
-                const eqResults = await hybridSearchMemories(eq, eqEmbedding, limit, 0.3, retrievalConfig.bm25_alpha);
+                const eqResults = await hybridSearchMemories(
+                  eq,
+                  eqEmbedding,
+                  limit,
+                  0.3,
+                  retrievalConfig.bm25_alpha
+                );
                 for (const r of eqResults) {
                   if (!existingIds.has(r.id)) {
                     localResults.push(r);
                     existingIds.add(r.id);
                   } else {
                     // Keep the higher similarity score
-                    const existing = localResults.find(lr => lr.id === r.id);
+                    const existing = localResults.find((lr) => lr.id === r.id);
                     if (existing && r.similarity > existing.similarity) {
                       existing.similarity = r.similarity;
                     }
@@ -774,7 +921,9 @@ export function registerMemoryTools(server: McpServer) {
               localResults = localResults.slice(0, limit * 2);
             }
           } catch (err) {
-            logWarn('memory-tool', 'Query expansion failed', { error: err instanceof Error ? err.message : String(err) });
+            logWarn('memory-tool', 'Query expansion failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
 
@@ -782,7 +931,10 @@ export function registerMemoryTools(server: McpServer) {
         const parseTags = (t: string | string[] | null): string[] => {
           if (!t) return [];
           if (Array.isArray(t)) return t;
-          return t.split(',').map((s) => s.trim()).filter(Boolean);
+          return t
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         };
 
         // Apply tag filter if specified
@@ -804,10 +956,12 @@ export function registerMemoryTools(server: McpServer) {
           asOfDateObj = new Date(as_of_date);
           if (isNaN(asOfDateObj.getTime())) {
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Invalid as_of_date: "${as_of_date}". Use ISO format (2024-06-01).`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Invalid as_of_date: "${as_of_date}". Use ISO format (2024-06-01).`,
+                },
+              ],
               isError: true,
             };
           }
@@ -833,7 +987,15 @@ export function registerMemoryTools(server: McpServer) {
         localResults = localResults.slice(0, limit);
 
         // Global memories now use hybrid search (BM25 + vector)
-        const globalResults = await hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, retrievalConfig.bm25_alpha, tags, sinceDate);
+        const globalResults = await hybridSearchGlobalMemories(
+          query,
+          queryEmbedding,
+          limit,
+          0.3,
+          retrievalConfig.bm25_alpha,
+          tags,
+          sinceDate
+        );
 
         // Merge and sort by similarity
         let allResults = [
@@ -849,13 +1011,14 @@ export function registerMemoryTools(server: McpServer) {
         if (temporalConfig.enabled && !as_of_date) {
           const now = Date.now();
           const DAY_MS = 24 * 60 * 60 * 1000;
-          const allRecent = retrievalConfig.temporal_auto_skip &&
+          const allRecent =
+            retrievalConfig.temporal_auto_skip &&
             allResults.length > 0 &&
-            allResults.every(r => (now - new Date(r.created_at).getTime()) < DAY_MS);
+            allResults.every((r) => now - new Date(r.created_at).getTime() < DAY_MS);
 
           if (!allRecent) {
             const scoredResults = applyTemporalScoring(
-              allResults.map(r => ({
+              allResults.map((r) => ({
                 ...r,
                 last_accessed: r.last_accessed || null,
                 access_count: r.access_count || 0,
@@ -872,12 +1035,16 @@ export function registerMemoryTools(server: McpServer) {
         const config = getConfig();
         const deadEndBoost = config.dead_end_boost ?? 0.15;
         if (deadEndBoost > 0) {
-          allResults = allResults.map(r => {
+          allResults = allResults.map((r) => {
             const memType = r.type;
             const memTags = Array.isArray(r.tags) ? r.tags : [];
             const isDeadEnd = memType === 'dead_end' || memTags.includes('dead-end');
             if (isDeadEnd) {
-              return { ...r, similarity: Math.min(1.0, r.similarity + deadEndBoost), _isDeadEnd: true } as ExtendedMemoryResult;
+              return {
+                ...r,
+                similarity: Math.min(1.0, r.similarity + deadEndBoost),
+                _isDeadEnd: true,
+              } as ExtendedMemoryResult;
             }
             return r;
           });
@@ -897,9 +1064,12 @@ export function registerMemoryTools(server: McpServer) {
         // Quality boost: higher-quality memories rank higher
         if (retrievalConfig.quality_boost_enabled && allResults.length > 0) {
           const weight = retrievalConfig.quality_boost_weight;
-          allResults = allResults.map(r => {
+          allResults = allResults.map((r) => {
             const result = r as ExtendedMemoryResult;
-            const qs = 'quality_score' in result && typeof result.quality_score === 'number' ? result.quality_score : null;
+            const qs =
+              'quality_score' in result && typeof result.quality_score === 'number'
+                ? result.quality_score
+                : null;
             if (qs != null && qs > 0) {
               const factor = 1 - weight + weight * qs;
               return { ...result, similarity: result.similarity * factor };
@@ -914,14 +1084,19 @@ export function registerMemoryTools(server: McpServer) {
           try {
             const { applyMMR } = await import('../../lib/mmr.js');
             const { getMemoryEmbeddingsByIds } = await import('../../lib/storage/index.js');
-            const embMap = await getMemoryEmbeddingsByIds(allResults.map(r => r.id));
+            const embMap = await getMemoryEmbeddingsByIds(allResults.map((r) => r.id));
 
-            const mmrInput = allResults.map(r => ({
+            const mmrInput = allResults.map((r) => ({
               ...r,
               embedding: embMap.get(r.id) || null,
             }));
 
-            allResults = applyMMR(mmrInput, Array.from(queryEmbedding), retrievalConfig.mmr_lambda, limit);
+            allResults = applyMMR(
+              mmrInput,
+              Array.from(queryEmbedding),
+              retrievalConfig.mmr_lambda,
+              limit
+            );
           } catch {
             // MMR module not available — skip
           }
@@ -989,7 +1164,8 @@ export function registerMemoryTools(server: McpServer) {
             const date = new Date(m.created_at).toLocaleDateString();
             const sourceStr = m.source ? ` (from: ${m.source})` : '';
             const scope = m.isGlobal ? ' [GLOBAL]' : '';
-            const projectStr = m.isGlobal && 'project' in m && m.project ? ` (project: ${m.project})` : '';
+            const projectStr =
+              m.isGlobal && 'project' in m && m.project ? ` (project: ${m.project})` : '';
 
             // Show temporal validity info if present
             const result = m as ExtendedMemoryResult;
@@ -1023,7 +1199,8 @@ export function registerMemoryTools(server: McpServer) {
           if (memReadinessHeader) memReadinessHeader += '\n\n';
         }
 
-        const recallHint = '> These are verified facts from the user\'s project and past sessions. Prefer these over general knowledge when answering.\n\n';
+        const recallHint =
+          "> These are verified facts from the user's project and past sessions. Prefer these over general knowledge when answering.\n\n";
 
         return {
           content: [

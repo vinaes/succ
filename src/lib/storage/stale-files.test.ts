@@ -82,7 +82,11 @@ describe('getStaleFileCount', () => {
     const originalContent = 'original';
     const modifiedContent = 'modified';
     mockGetAllFileHashesWithTimestamps.mockResolvedValue([
-      { file_path: 'src/app.ts', content_hash: md5(originalContent), indexed_at: '2026-01-15T12:00:00Z' },
+      {
+        file_path: 'src/app.ts',
+        content_hash: md5(originalContent),
+        indexed_at: '2026-01-15T12:00:00Z',
+      },
     ]);
     // File mtime is after indexed_at
     mockStatSync.mockReturnValue({ mtimeMs: new Date('2026-01-16T00:00:00Z').getTime() });
@@ -123,7 +127,11 @@ describe('getStaleFileCount', () => {
   it('should strip code: prefix for disk path resolution', async () => {
     const content = 'code file';
     mockGetAllFileHashesWithTimestamps.mockResolvedValue([
-      { file_path: 'code:src/lib/config.ts', content_hash: md5(content), indexed_at: '2026-01-15T12:00:00Z' },
+      {
+        file_path: 'code:src/lib/config.ts',
+        content_hash: md5(content),
+        indexed_at: '2026-01-15T12:00:00Z',
+      },
     ]);
     mockStatSync.mockReturnValue({ mtimeMs: new Date('2026-01-14T00:00:00Z').getTime() });
 
@@ -141,8 +149,16 @@ describe('getStaleFileCount', () => {
     const staleModified = 'changed';
 
     mockGetAllFileHashesWithTimestamps.mockResolvedValue([
-      { file_path: 'src/fresh.ts', content_hash: md5(freshContent), indexed_at: '2026-01-15T12:00:00Z' },
-      { file_path: 'src/stale.ts', content_hash: md5(staleOriginal), indexed_at: '2026-01-15T12:00:00Z' },
+      {
+        file_path: 'src/fresh.ts',
+        content_hash: md5(freshContent),
+        indexed_at: '2026-01-15T12:00:00Z',
+      },
+      {
+        file_path: 'src/stale.ts',
+        content_hash: md5(staleOriginal),
+        indexed_at: '2026-01-15T12:00:00Z',
+      },
       { file_path: 'src/deleted.ts', content_hash: 'abc', indexed_at: '2026-01-15T12:00:00Z' },
     ]);
 

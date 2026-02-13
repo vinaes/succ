@@ -21,7 +21,12 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { closeDb, closeGlobalDb, initStorageDispatcher, closeStorageDispatcher } from '../lib/storage/index.js';
+import {
+  closeDb,
+  closeGlobalDb,
+  initStorageDispatcher,
+  closeStorageDispatcher,
+} from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { getProjectRoot } from '../lib/config.js';
@@ -66,8 +71,14 @@ registerDebugTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
-  process.stderr.write(`[succ-mcp] UNHANDLED REJECTION: ${error instanceof Error ? error.message : String(error)}\n`);
-  logError('mcp', 'Unhandled promise rejection', error instanceof Error ? error : new Error(String(error)));
+  process.stderr.write(
+    `[succ-mcp] UNHANDLED REJECTION: ${error instanceof Error ? error.message : String(error)}\n`
+  );
+  logError(
+    'mcp',
+    'Unhandled promise rejection',
+    error instanceof Error ? error : new Error(String(error))
+  );
   cleanupEmbeddings();
   closeDb();
   closeGlobalDb();
@@ -131,7 +142,11 @@ async function main() {
 main().catch(async (error) => {
   mcpLog(`FATAL: ${error instanceof Error ? error.message : String(error)}`);
   if (error instanceof Error && error.stack) mcpLog(error.stack);
-  logError('mcp', 'Failed to start MCP server', error instanceof Error ? error : new Error(String(error)));
+  logError(
+    'mcp',
+    'Failed to start MCP server',
+    error instanceof Error ? error : new Error(String(error))
+  );
   await closeStorageDispatcher();
   cleanupEmbeddings();
   cleanupQualityScoring();

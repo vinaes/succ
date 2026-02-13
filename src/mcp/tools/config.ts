@@ -55,9 +55,21 @@ export function registerConfigTools(server: McpServer) {
     'succ_config_set',
     'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: llm.type (claude/api), llm.model, llm.api_key, llm.api_url, llm.embeddings.mode (local/api), llm.embeddings.model, llm.analyze.mode (claude/api), llm.analyze.model, llm.quality.mode (local/api), quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled, retrieval.quality_boost_enabled, retrieval.quality_boost_weight, retrieval.mmr_enabled, retrieval.mmr_lambda, retrieval.query_expansion_enabled, retrieval.query_expansion_mode, error_reporting.enabled, error_reporting.level, error_reporting.max_file_size_mb, error_reporting.webhook_url, error_reporting.sentry_dsn, error_reporting.sentry_environment, error_reporting.sentry_sample_rate',
     {
-      key: z.string().describe('Config key to set (e.g., "llm.api_key", "llm.embeddings.mode", "idle_reflection.enabled")'),
-      value: z.string().describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
-      scope: z.enum(['global', 'project']).optional().default('global').describe('Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'),
+      key: z
+        .string()
+        .describe(
+          'Config key to set (e.g., "llm.api_key", "llm.embeddings.mode", "idle_reflection.enabled")'
+        ),
+      value: z
+        .string()
+        .describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
+      scope: z
+        .enum(['global', 'project'])
+        .optional()
+        .default('global')
+        .describe(
+          'Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'
+        ),
       project_path: projectPathParam,
     },
     async ({ key, value, scope, project_path }) => {
@@ -152,20 +164,22 @@ export function registerConfigTools(server: McpServer) {
     'succ_checkpoint',
     'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).',
     {
-      action: z.enum(['create', 'list']).describe('Action: create (new checkpoint) or list (show available)'),
+      action: z
+        .enum(['create', 'list'])
+        .describe('Action: create (new checkpoint) or list (show available)'),
       compress: z.boolean().optional().describe('Compress with gzip (default: false)'),
       include_brain: z.boolean().optional().describe('Include brain vault files (default: true)'),
-      include_documents: z.boolean().optional().describe('Include indexed documents (default: true)'),
+      include_documents: z
+        .boolean()
+        .optional()
+        .describe('Include indexed documents (default: true)'),
       project_path: projectPathParam,
     },
     async ({ action, compress, include_brain, include_documents, project_path }) => {
       await applyProjectPath(project_path);
       try {
-        const {
-          createCheckpoint,
-          listCheckpoints,
-          formatSize,
-        } = await import('../../lib/checkpoint.js');
+        const { createCheckpoint, listCheckpoints, formatSize } =
+          await import('../../lib/checkpoint.js');
 
         if (action === 'create') {
           const { checkpoint: cp, outputPath } = await createCheckpoint({
@@ -178,9 +192,10 @@ export function registerConfigTools(server: McpServer) {
           const stat = fs.statSync(outputPath);
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Checkpoint created successfully!
+            content: [
+              {
+                type: 'text' as const,
+                text: `Checkpoint created successfully!
 
 File: ${outputPath}
 Project: ${cp.project_name}
@@ -194,7 +209,8 @@ Contents:
   Brain files: ${cp.stats.brain_files_count}
 
 To restore: succ checkpoint restore "${outputPath}"`,
-            }],
+              },
+            ],
           };
         } else {
           // list
@@ -202,10 +218,12 @@ To restore: succ checkpoint restore "${outputPath}"`,
 
           if (checkpoints.length === 0) {
             return {
-              content: [{
-                type: 'text' as const,
-                text: 'No checkpoints found. Create one with: succ_checkpoint action="create"',
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'No checkpoints found. Create one with: succ_checkpoint action="create"',
+                },
+              ],
             };
           }
 
@@ -221,18 +239,22 @@ To restore: succ checkpoint restore "${outputPath}"`,
           lines.push(`Total: ${checkpoints.length} checkpoint(s)`);
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: lines.join('\n'),
-            }],
+            content: [
+              {
+                type: 'text' as const,
+                text: lines.join('\n'),
+              },
+            ],
           };
         }
       } catch (error: any) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error: ${error.message}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: ${error.message}`,
+            },
+          ],
           isError: true,
         };
       } finally {

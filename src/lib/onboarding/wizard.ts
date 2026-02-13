@@ -63,7 +63,12 @@ export async function runStaticWizard(): Promise<void> {
     // Screen 2: Project type discovery
     console.clear();
     console.log(WIZARD_DISCOVERY_PROJECT);
-    const projectOptions = ['Web application', 'CLI tool / library', 'Mobile app', 'Something else'];
+    const projectOptions = [
+      'Web application',
+      'CLI tool / library',
+      'Mobile app',
+      'Something else',
+    ];
     const projectChoice = await selectOption(rl, projectOptions);
     const projectType = projectOptions[projectChoice - 1];
 
@@ -116,7 +121,6 @@ export async function runStaticWizard(): Promise<void> {
 
     // Mark completed
     markOnboardingCompleted('wizard');
-
   } finally {
     rl.close();
   }

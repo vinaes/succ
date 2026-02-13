@@ -63,14 +63,16 @@ describe('PostgreSQL Backend Integration', async () => {
     it('should upsert and search documents', async () => {
       const embedding = new Array(384).fill(0).map(() => Math.random());
 
-      await backend.upsertDocumentsBatch([{
-        filePath: '/test/file.ts',
-        chunkIndex: 0,
-        content: 'const x = 1;',
-        startLine: 1,
-        endLine: 5,
-        embedding,
-      }]);
+      await backend.upsertDocumentsBatch([
+        {
+          filePath: '/test/file.ts',
+          chunkIndex: 0,
+          content: 'const x = 1;',
+          startLine: 1,
+          endLine: 5,
+          embedding,
+        },
+      ]);
 
       const results = await backend.searchDocuments(embedding, 10, 0.0);
       expect(results.length).toBeGreaterThan(0);
@@ -106,18 +108,20 @@ describe('PostgreSQL Backend Integration', async () => {
     it('should delete documents by path', async () => {
       const embedding = new Array(384).fill(0.3);
 
-      await backend.upsertDocumentsBatch([{
-        filePath: '/test/delete-target.ts',
-        chunkIndex: 0,
-        content: 'to delete',
-        startLine: 1,
-        endLine: 1,
-        embedding,
-      }]);
+      await backend.upsertDocumentsBatch([
+        {
+          filePath: '/test/delete-target.ts',
+          chunkIndex: 0,
+          content: 'to delete',
+          startLine: 1,
+          endLine: 1,
+          embedding,
+        },
+      ]);
 
       // Verify it was inserted by searching with the same embedding
       const searchResults = await backend.searchDocuments(embedding, 10, 0.0);
-      const inserted = searchResults.some(r => r.file_path === '/test/delete-target.ts');
+      const inserted = searchResults.some((r) => r.file_path === '/test/delete-target.ts');
       expect(inserted).toBe(true);
 
       const deleted = await backend.deleteDocumentsByPath('/test/delete-target.ts');
@@ -236,12 +240,7 @@ describe('PostgreSQL Backend Integration', async () => {
       const id1 = await backend.saveMemory('Memory A', embedding);
       const id2 = await backend.saveMemory('Memory B', embedding);
 
-      const linkResult = await backend.createMemoryLink(
-        id1,
-        id2,
-        'related',
-        0.8
-      );
+      const linkResult = await backend.createMemoryLink(id1, id2, 'related', 0.8);
 
       expect(linkResult.id).toBeGreaterThan(0);
       expect(linkResult.created).toBe(true);
@@ -326,7 +325,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
       const results = await backend.searchGlobalMemories(embedding, 5, 0.0);
       expect(results.length).toBeGreaterThan(0);
-      expect(results.some(r => r.content.includes('TypeScript patterns'))).toBe(true);
+      expect(results.some((r) => r.content.includes('TypeScript patterns'))).toBe(true);
 
       // Cleanup
       await backend.deleteGlobalMemory(id);
@@ -355,7 +354,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
       // Verify it's gone from recent
       const recent = await backend.getRecentGlobalMemories(100);
-      expect(recent.some(r => r.id === id)).toBe(false);
+      expect(recent.some((r) => r.id === id)).toBe(false);
     });
 
     it('should get global memory stats', async () => {
@@ -381,7 +380,9 @@ describe('PostgreSQL Backend Integration', async () => {
 
     afterAll(async () => {
       // Clean up test skill
-      try { await backend.deleteSkill(testSkillName); } catch {
+      try {
+        await backend.deleteSkill(testSkillName);
+      } catch {
         // intentional
       }
     });
@@ -394,7 +395,7 @@ describe('PostgreSQL Backend Integration', async () => {
       });
 
       const skills = await backend.getAllSkills();
-      const found = skills.find(s => s.name === testSkillName);
+      const found = skills.find((s) => s.name === testSkillName);
       expect(found).toBeDefined();
       expect(found!.description).toContain('test skill');
     });
@@ -420,13 +421,13 @@ describe('PostgreSQL Backend Integration', async () => {
     it('should track skill usage', async () => {
       // Get usage before tracking
       const beforeSkills = await backend.getAllSkills();
-      const before = beforeSkills.find(s => s.name === testSkillName);
+      const before = beforeSkills.find((s) => s.name === testSkillName);
       const beforeCount = before?.usageCount ?? 0;
 
       await backend.trackSkillUsage(testSkillName);
 
       const afterSkills = await backend.getAllSkills();
-      const after = afterSkills.find(s => s.name === testSkillName);
+      const after = afterSkills.find((s) => s.name === testSkillName);
       // Usage count should have increased by 1
       expect(after!.usageCount).toBeGreaterThan(beforeCount);
     });
@@ -490,14 +491,16 @@ describe('PostgreSQL Backend Integration', async () => {
     it('should clear all documents', async () => {
       const embedding = new Array(384).fill(0.1);
 
-      await backend.upsertDocumentsBatch([{
-        filePath: '/test/clear.ts',
-        chunkIndex: 0,
-        content: 'to be cleared',
-        startLine: 1,
-        endLine: 1,
-        embedding,
-      }]);
+      await backend.upsertDocumentsBatch([
+        {
+          filePath: '/test/clear.ts',
+          chunkIndex: 0,
+          content: 'to be cleared',
+          startLine: 1,
+          endLine: 1,
+          embedding,
+        },
+      ]);
 
       await backend.clearDocuments();
 

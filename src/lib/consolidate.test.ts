@@ -196,7 +196,8 @@ describe('Consolidation Logic', () => {
         if (c1Lower.includes(c2Lower) || c2Lower.includes(c1Lower)) {
           return {
             action: 'delete_duplicate',
-            reason: content1.length > content2.length ? 'Keep longer (first)' : 'Keep longer (second)',
+            reason:
+              content1.length > content2.length ? 'Keep longer (first)' : 'Keep longer (second)',
           };
         }
 
@@ -245,7 +246,7 @@ describe('Consolidation Logic', () => {
 
     it('should delete shorter when one content contains the other', () => {
       const result = determineActionLogic(
-        0.90,
+        0.9,
         0.7,
         0.7,
         'This is a longer memory with more details',
@@ -260,7 +261,7 @@ describe('Consolidation Logic', () => {
 
     it('should suggest merge for high similarity with unique content', () => {
       const result = determineActionLogic(
-        0.90,
+        0.9,
         0.7,
         0.7,
         'Memory about authentication flow',
@@ -303,15 +304,15 @@ describe('Consolidation Logic', () => {
       const isMergeCandidate = (s: number) =>
         s > SIMILARITY_MERGE_CANDIDATE && s <= SIMILARITY_EXACT_DUPLICATE;
 
-      expect(isMergeCandidate(0.90)).toBe(true);
+      expect(isMergeCandidate(0.9)).toBe(true);
       expect(isMergeCandidate(0.87)).toBe(true);
       expect(isMergeCandidate(0.96)).toBe(false); // too similar
-      expect(isMergeCandidate(0.80)).toBe(false); // too different
+      expect(isMergeCandidate(0.8)).toBe(false); // too different
     });
 
     it('should classify <0.85 as keep both', () => {
       expect(0.84 <= SIMILARITY_MERGE_CANDIDATE).toBe(true);
-      expect(0.70 <= SIMILARITY_MERGE_CANDIDATE).toBe(true);
+      expect(0.7 <= SIMILARITY_MERGE_CANDIDATE).toBe(true);
     });
   });
 
@@ -363,7 +364,7 @@ describe('Consolidation Logic', () => {
         { source_id: deletedId, target_id: keptId, relation: 'relates_to', weight: 0.9 }, // Would be self-ref
       ];
 
-      const validOutgoing = outgoingLinks.filter(link => link.target_id !== keptId);
+      const validOutgoing = outgoingLinks.filter((link) => link.target_id !== keptId);
       expect(validOutgoing).toHaveLength(1);
       expect(validOutgoing[0].target_id).toBe(3);
 
@@ -373,7 +374,7 @@ describe('Consolidation Logic', () => {
         { source_id: keptId, target_id: deletedId, relation: 'leads_to', weight: 0.6 }, // Would be self-ref
       ];
 
-      const validIncoming = incomingLinks.filter(link => link.source_id !== keptId);
+      const validIncoming = incomingLinks.filter((link) => link.source_id !== keptId);
       expect(validIncoming).toHaveLength(1);
       expect(validIncoming[0].source_id).toBe(4);
     });
@@ -386,7 +387,9 @@ describe('Consolidation Logic', () => {
         { id: 2, quality_score: 0.6 },
       ];
 
-      const sorted = [...memories].sort((a, b) => (b.quality_score ?? 0.5) - (a.quality_score ?? 0.5));
+      const sorted = [...memories].sort(
+        (a, b) => (b.quality_score ?? 0.5) - (a.quality_score ?? 0.5)
+      );
       expect(sorted[0].id).toBe(1);
     });
 
@@ -398,7 +401,8 @@ describe('Consolidation Logic', () => {
         { id: 2, quality_score: 0.7 },
       ];
 
-      const getQuality = (m: { quality_score: number | null }) => m.quality_score ?? DEFAULT_QUALITY;
+      const getQuality = (m: { quality_score: number | null }) =>
+        m.quality_score ?? DEFAULT_QUALITY;
 
       expect(getQuality(memories[0])).toBe(0.5);
       expect(getQuality(memories[1])).toBe(0.7);
@@ -427,11 +431,7 @@ describe('Consolidation Logic', () => {
       // 3. invalidateMemory(deleteId, keepId)
       // NO deleteMemory() call
 
-      const actions = [
-        'transferLinks',
-        'createMemoryLink_supersedes',
-        'invalidateMemory',
-      ];
+      const actions = ['transferLinks', 'createMemoryLink_supersedes', 'invalidateMemory'];
 
       expect(actions).not.toContain('deleteMemory');
       expect(actions).toContain('invalidateMemory');
@@ -459,8 +459,8 @@ describe('Consolidation Logic', () => {
       ];
 
       expect(actions).not.toContain('deleteMemory');
-      expect(actions.filter(a => a.startsWith('invalidateMemory'))).toHaveLength(2);
-      expect(actions.filter(a => a.includes('supersedes'))).toHaveLength(2);
+      expect(actions.filter((a) => a.startsWith('invalidateMemory'))).toHaveLength(2);
+      expect(actions.filter((a) => a.includes('supersedes'))).toHaveLength(2);
     });
 
     it('should wrap merge operations in transaction', () => {
@@ -527,15 +527,15 @@ describe('Consolidation Logic', () => {
       // This prevents already-consolidated memories from being re-processed
 
       const allMemories = [
-        { id: 1, invalidated_by: null },    // active
-        { id: 2, invalidated_by: 100 },     // invalidated
-        { id: 3, invalidated_by: null },    // active
-        { id: 4, invalidated_by: 101 },     // invalidated
+        { id: 1, invalidated_by: null }, // active
+        { id: 2, invalidated_by: 100 }, // invalidated
+        { id: 3, invalidated_by: null }, // active
+        { id: 4, invalidated_by: 101 }, // invalidated
       ];
 
-      const candidates = allMemories.filter(m => m.invalidated_by === null);
+      const candidates = allMemories.filter((m) => m.invalidated_by === null);
       expect(candidates).toHaveLength(2);
-      expect(candidates.map(m => m.id)).toEqual([1, 3]);
+      expect(candidates.map((m) => m.id)).toEqual([1, 3]);
     });
   });
 
@@ -547,7 +547,7 @@ describe('Consolidation Logic', () => {
         { source_id: 100, target_id: 43, relation: 'supersedes' },
       ];
 
-      const originalIds = supersededLinks.map(l => l.target_id);
+      const originalIds = supersededLinks.map((l) => l.target_id);
       expect(originalIds).toEqual([42, 43]);
     });
 
@@ -578,7 +578,7 @@ describe('Consolidation Logic', () => {
       ];
 
       expect(undoSteps[0]).toBe('find_supersedes_links');
-      expect(undoSteps.filter(s => s.startsWith('restore_')).length).toBe(2);
+      expect(undoSteps.filter((s) => s.startsWith('restore_')).length).toBe(2);
     });
   });
 
@@ -587,13 +587,33 @@ describe('Consolidation Logic', () => {
       // Rule: consolidation = globalConsolidation === true && mergedValue !== false
 
       const cases = [
-        { global: true,      project: undefined, expected: true,  desc: 'global true, project default' },
-        { global: true,      project: false,     expected: false, desc: 'global true, project disables' },
-        { global: true,      project: true,      expected: true,  desc: 'global true, project also true' },
-        { global: false,     project: true,      expected: false, desc: 'global false, project tries to enable' },
-        { global: undefined, project: true,      expected: false, desc: 'global unset, project tries to enable' },
-        { global: undefined, project: undefined, expected: false, desc: 'both unset (default false)' },
-        { global: false,     project: undefined, expected: false, desc: 'global false, project default' },
+        { global: true, project: undefined, expected: true, desc: 'global true, project default' },
+        { global: true, project: false, expected: false, desc: 'global true, project disables' },
+        { global: true, project: true, expected: true, desc: 'global true, project also true' },
+        {
+          global: false,
+          project: true,
+          expected: false,
+          desc: 'global false, project tries to enable',
+        },
+        {
+          global: undefined,
+          project: true,
+          expected: false,
+          desc: 'global unset, project tries to enable',
+        },
+        {
+          global: undefined,
+          project: undefined,
+          expected: false,
+          desc: 'both unset (default false)',
+        },
+        {
+          global: false,
+          project: undefined,
+          expected: false,
+          desc: 'global false, project default',
+        },
       ];
 
       for (const { global: g, project: p, expected, desc } of cases) {

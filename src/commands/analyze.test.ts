@@ -300,7 +300,12 @@ describe('Recursive File Analysis Helpers', () => {
   describe('formatSymbolMap', () => {
     it('should format symbols with signatures', () => {
       const symbols = [
-        { name: 'calculateTotal', type: 'function', signature: '(items: Item[]): number', startRow: 10 },
+        {
+          name: 'calculateTotal',
+          type: 'function',
+          signature: '(items: Item[]): number',
+          startRow: 10,
+        },
         { name: 'UserService', type: 'class', signature: undefined, startRow: 50 },
       ];
       const result = formatSymbolMap(symbols);
@@ -313,9 +318,7 @@ describe('Recursive File Analysis Helpers', () => {
     });
 
     it('should handle symbols without signatures', () => {
-      const symbols = [
-        { name: 'MAX_SIZE', type: 'variable', startRow: 0 },
-      ];
+      const symbols = [{ name: 'MAX_SIZE', type: 'variable', startRow: 0 }];
       const result = formatSymbolMap(symbols);
       expect(result).toBe('  variable MAX_SIZE (line 1)');
     });
@@ -364,9 +367,7 @@ describe('Recursive File Analysis Helpers', () => {
     });
 
     it('should handle single chunk larger than maxChars', () => {
-      const chunks = [
-        { content: 'a'.repeat(10000), startLine: 1, endLine: 100 },
-      ];
+      const chunks = [{ content: 'a'.repeat(10000), startLine: 1, endLine: 100 }];
       const batches = batchChunks(chunks, 8000);
       expect(batches.length).toBe(1);
       expect(batches[0].length).toBe(1);
@@ -378,9 +379,9 @@ describe('Recursive File Analysis Helpers', () => {
         startLine: i * 10 + 1,
         endLine: (i + 1) * 10,
       }));
-      const batches = batchChunks(chunks, 30);  // ~3 chunks per batch
+      const batches = batchChunks(chunks, 30); // ~3 chunks per batch
       const flat = batches.flat();
-      expect(flat.map(c => c.content)).toEqual(chunks.map(c => c.content));
+      expect(flat.map((c) => c.content)).toEqual(chunks.map((c) => c.content));
     });
   });
 });
@@ -467,7 +468,11 @@ describe('Concurrent Access', () => {
     };
 
     // Run 10 concurrent increments
-    await Promise.all(Array(10).fill(null).map(() => increment()));
+    await Promise.all(
+      Array(10)
+        .fill(null)
+        .map(() => increment())
+    );
 
     const finalData = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
     expect(finalData.count).toBe(10);

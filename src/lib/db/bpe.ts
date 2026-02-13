@@ -39,7 +39,7 @@ export function saveBPEVocabToDb(
   vocabJson: string,
   vocabSize: number,
   corpusSize: number,
-  trainedAt: string,
+  trainedAt: string
 ): void {
   initBPESchema();
   const db = getDb();
@@ -51,7 +51,7 @@ export function saveBPEVocabToDb(
 
   db.prepare('INSERT OR REPLACE INTO bpe_metadata (key, value) VALUES (?, ?)').run(
     'last_trained',
-    trainedAt,
+    trainedAt
   );
 }
 
@@ -59,18 +59,16 @@ export function loadBPEVocabFromDb(): BPEVocabRow | null {
   initBPESchema();
   const db = getDb();
 
-  return db
-    .prepare('SELECT * FROM bpe_vocab ORDER BY id DESC LIMIT 1')
-    .get() as BPEVocabRow | null;
+  return db.prepare('SELECT * FROM bpe_vocab ORDER BY id DESC LIMIT 1').get() as BPEVocabRow | null;
 }
 
 export function getLastBPETrainTimeFromDb(): string | null {
   initBPESchema();
   const db = getDb();
 
-  const row = db
-    .prepare('SELECT value FROM bpe_metadata WHERE key = ?')
-    .get('last_trained') as { value: string } | null;
+  const row = db.prepare('SELECT value FROM bpe_metadata WHERE key = ?').get('last_trained') as {
+    value: string;
+  } | null;
 
   return row?.value ?? null;
 }

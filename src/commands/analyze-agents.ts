@@ -5,7 +5,12 @@ import { spawnClaudeCLI } from '../lib/llm.js';
 import { getLLMTaskConfig } from '../lib/config.js';
 import { NetworkError } from '../lib/errors.js';
 import { logError } from '../lib/fault-logger.js';
-import { writeAgentOutput, formatDuration, printTimingSummary, type AgentTiming } from './analyze-utils.js';
+import {
+  writeAgentOutput,
+  formatDuration,
+  printTimingSummary,
+  type AgentTiming,
+} from './analyze-utils.js';
 
 export interface Agent {
   name: string;
@@ -111,7 +116,6 @@ Based on the codebase, describe:
 
 If this is a library/tool, focus on its use cases. Output ONLY markdown.`,
     },
-
   ];
 
   return agents;
@@ -157,7 +161,11 @@ export async function runAgentsSequential(agents: Agent[], context: string): Pro
       spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
       timings.push({ name: agent.name, durationMs: elapsed, success: true });
     } catch (error) {
-      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
+      logError(
+        'analyze',
+        `Agent ${agent.name} failed`,
+        error instanceof Error ? error : new Error(String(error))
+      );
       const elapsed = Date.now() - agentStart;
       spinner.fail(`${agent.name}: ${error}`);
       timings.push({ name: agent.name, durationMs: elapsed, success: false });
@@ -217,8 +225,8 @@ export async function runAgentsApi(
 
     // Multi-file agents (systems-overview, features) need more output tokens
     const isMultiFile = agent.prompt.includes('===FILE:');
-    const agentMaxTokens = cfg.max_tokens
-      ?? (isMultiFile ? (fast ? 4096 : 32768) : (fast ? 2048 : 8192));
+    const agentMaxTokens =
+      cfg.max_tokens ?? (isMultiFile ? (fast ? 4096 : 32768) : fast ? 2048 : 8192);
 
     try {
       const headers: Record<string, string> = {
@@ -251,7 +259,8 @@ export async function runAgentsApi(
           messages: [
             {
               role: 'system',
-              content: 'You are an expert software documentation writer. Analyze the provided code and generate high-quality technical documentation in markdown format. Be precise and thorough.',
+              content:
+                'You are an expert software documentation writer. Analyze the provided code and generate high-quality technical documentation in markdown format. Be precise and thorough.',
             },
             {
               role: 'user',
@@ -286,7 +295,11 @@ export async function runAgentsApi(
         timings.push({ name: agent.name, durationMs: elapsed, success: false });
       }
     } catch (error) {
-      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
+      logError(
+        'analyze',
+        `Agent ${agent.name} failed`,
+        error instanceof Error ? error : new Error(String(error))
+      );
       const elapsed = Date.now() - agentStart;
       spinner.fail(`${agent.name}: ${error}`);
       timings.push({ name: agent.name, durationMs: elapsed, success: false });
@@ -301,7 +314,7 @@ export async function runAgentsApi(
  */
 export function createLLMCaller(
   mode: 'api' | 'claude',
-  maxTokens: number,
+  maxTokens: number
 ): (prompt: string, context: string) => Promise<string> {
   return async (prompt: string, context: string) => {
     const fullPrompt = `You are analyzing a software project. Here is the project context:\n\n${context}\n\n---\n\n${prompt}`;

@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { extractSymbols, extractFunctions, extractClasses, extractIdentifiers, resetQueryCache } from './extractor.js';
+import {
+  extractSymbols,
+  extractFunctions,
+  extractClasses,
+  extractIdentifiers,
+  resetQueryCache,
+} from './extractor.js';
 import { parseCode, resetParserState } from './parser.js';
 
 afterEach(() => {
@@ -22,7 +28,7 @@ function calculateTotal(items: Item[]): number {
       tree!.delete();
 
       expect(symbols.length).toBeGreaterThanOrEqual(1);
-      const fn = symbols.find(s => s.name === 'calculateTotal');
+      const fn = symbols.find((s) => s.name === 'calculateTotal');
       expect(fn).toBeDefined();
       expect(fn!.type).toBe('function');
       expect(fn!.signature).toContain('(items: Item[])');
@@ -40,7 +46,7 @@ const greet = (name: string): string => {
       const symbols = await extractSymbols(tree!, code, 'typescript');
       tree!.delete();
 
-      const fn = symbols.find(s => s.name === 'greet');
+      const fn = symbols.find((s) => s.name === 'greet');
       expect(fn).toBeDefined();
       expect(fn!.type).toBe('function');
     }, 30_000);
@@ -70,15 +76,15 @@ class UserService {
       const symbols = await extractSymbols(tree!, code, 'typescript');
       tree!.delete();
 
-      const iface = symbols.find(s => s.name === 'IUser');
+      const iface = symbols.find((s) => s.name === 'IUser');
       expect(iface).toBeDefined();
       expect(iface!.type).toBe('interface');
 
-      const cls = symbols.find(s => s.name === 'UserService');
+      const cls = symbols.find((s) => s.name === 'UserService');
       expect(cls).toBeDefined();
       expect(cls!.type).toBe('class');
 
-      const methods = symbols.filter(s => s.type === 'method');
+      const methods = symbols.filter((s) => s.type === 'method');
       expect(methods.length).toBeGreaterThanOrEqual(2);
     }, 30_000);
 
@@ -99,11 +105,11 @@ enum Direction {
       const symbols = await extractSymbols(tree!, code, 'typescript');
       tree!.delete();
 
-      const typeAlias = symbols.find(s => s.name === 'Status');
+      const typeAlias = symbols.find((s) => s.name === 'Status');
       expect(typeAlias).toBeDefined();
       expect(typeAlias!.type).toBe('type_alias');
 
-      const enumDef = symbols.find(s => s.name === 'Direction');
+      const enumDef = symbols.find((s) => s.name === 'Direction');
       expect(enumDef).toBeDefined();
       expect(enumDef!.type).toBe('type_alias');
     }, 30_000);
@@ -132,16 +138,16 @@ class ShoppingCart:
       const symbols = await extractSymbols(tree!, code, 'python');
       tree!.delete();
 
-      const fn = symbols.find(s => s.name === 'calculate_total');
+      const fn = symbols.find((s) => s.name === 'calculate_total');
       expect(fn).toBeDefined();
       expect(fn!.type).toBe('function');
 
-      const cls = symbols.find(s => s.name === 'ShoppingCart');
+      const cls = symbols.find((s) => s.name === 'ShoppingCart');
       expect(cls).toBeDefined();
       expect(cls!.type).toBe('class');
 
       // Methods inside the class
-      const methods = symbols.filter(s => s.type === 'function' && s.name !== 'calculate_total');
+      const methods = symbols.filter((s) => s.type === 'function' && s.name !== 'calculate_total');
       expect(methods.length).toBeGreaterThanOrEqual(2);
     }, 30_000);
   });
@@ -175,18 +181,18 @@ type Handler interface {
       const symbols = await extractSymbols(tree!, code, 'go');
       tree!.delete();
 
-      const fn = symbols.find(s => s.name === 'NewServer');
+      const fn = symbols.find((s) => s.name === 'NewServer');
       expect(fn).toBeDefined();
       expect(fn!.type).toBe('function');
 
-      const method = symbols.find(s => s.name === 'Start');
+      const method = symbols.find((s) => s.name === 'Start');
       expect(method).toBeDefined();
       expect(method!.type).toBe('method');
 
-      const structDef = symbols.find(s => s.name === 'Server' && s.type === 'class');
+      const structDef = symbols.find((s) => s.name === 'Server' && s.type === 'class');
       expect(structDef).toBeDefined();
 
-      const iface = symbols.find(s => s.name === 'Handler');
+      const iface = symbols.find((s) => s.name === 'Handler');
       expect(iface).toBeDefined();
       expect(iface!.type).toBe('interface');
     }, 30_000);
@@ -221,14 +227,14 @@ impl Point {
       const symbols = await extractSymbols(tree!, code, 'rust');
       tree!.delete();
 
-      const struct_ = symbols.find(s => s.name === 'Point' && s.type === 'class');
+      const struct_ = symbols.find((s) => s.name === 'Point' && s.type === 'class');
       expect(struct_).toBeDefined();
 
-      const trait_ = symbols.find(s => s.name === 'Drawable');
+      const trait_ = symbols.find((s) => s.name === 'Drawable');
       expect(trait_).toBeDefined();
       expect(trait_!.type).toBe('interface');
 
-      const fns = symbols.filter(s => s.type === 'function');
+      const fns = symbols.filter((s) => s.type === 'function');
       expect(fns.length).toBeGreaterThanOrEqual(1);
     }, 30_000);
   });
@@ -247,7 +253,7 @@ interface IFoo {}
     const fns = await extractFunctions(tree!, code, 'typescript');
     tree!.delete();
 
-    expect(fns.every(f => f.type === 'function' || f.type === 'method')).toBe(true);
+    expect(fns.every((f) => f.type === 'function' || f.type === 'method')).toBe(true);
     expect(fns.length).toBeGreaterThanOrEqual(2);
   }, 30_000);
 });
@@ -263,7 +269,7 @@ interface IFoo {}
     const classes = await extractClasses(tree!, code, 'typescript');
     tree!.delete();
 
-    expect(classes.every(c => c.type === 'class')).toBe(true);
+    expect(classes.every((c) => c.type === 'class')).toBe(true);
     expect(classes.length).toBe(1);
     expect(classes[0].name).toBe('MyClass');
   }, 30_000);

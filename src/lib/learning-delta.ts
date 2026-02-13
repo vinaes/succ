@@ -22,7 +22,7 @@ export interface LearningDelta {
   newMemories: number;
   typesAdded: Record<string, number>;
   avgQualityOfNew?: number;
-  source: string;  // "session-summary", "manual", "remember"
+  source: string; // "session-summary", "manual", "remember"
 }
 
 /**

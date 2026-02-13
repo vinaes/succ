@@ -5,11 +5,7 @@
  * Replaces the previous file-based progress.log approach.
  */
 
-import {
-  appendLearningDelta,
-  appendRawLearningDelta,
-  getLearningDeltas,
-} from './storage/index.js';
+import { appendLearningDelta, appendRawLearningDelta, getLearningDeltas } from './storage/index.js';
 import type { LearningDelta } from './learning-delta.js';
 
 /**
@@ -52,25 +48,29 @@ export async function appendRawEntry(text: string): Promise<void> {
 /**
  * Read progress log entries, most recent first
  */
-export async function readProgressLog(options: {
-  limit?: number;
-  since?: string;  // ISO date or relative: "7d", "1w", "1m"
-} = {}): Promise<string[]> {
+export async function readProgressLog(
+  options: {
+    limit?: number;
+    since?: string; // ISO date or relative: "7d", "1w", "1m"
+  } = {}
+): Promise<string[]> {
   const rows = await getLearningDeltas({
     limit: options.limit,
     since: options.since,
   });
 
-  return rows.map(row => formatRow(row));
+  return rows.map((row) => formatRow(row));
 }
 
 /**
  * Get raw progress entries as structured data
  */
-export async function getProgressEntries(options: {
-  limit?: number;
-  since?: string;
-} = {}): Promise<LearningDeltaRow[]> {
+export async function getProgressEntries(
+  options: {
+    limit?: number;
+    since?: string;
+  } = {}
+): Promise<LearningDeltaRow[]> {
   const rows = await getLearningDeltas({
     limit: options.limit,
     since: options.since,

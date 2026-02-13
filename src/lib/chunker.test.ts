@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chunkText, chunkCode, chunkCodeAsync, enrichForEmbedding, extractFrontmatter, getChunkingStats, resetChunkingStats, Chunk } from './chunker.js';
+import {
+  chunkText,
+  chunkCode,
+  chunkCodeAsync,
+  enrichForEmbedding,
+  extractFrontmatter,
+  getChunkingStats,
+  resetChunkingStats,
+  Chunk,
+} from './chunker.js';
 
 // Mock config
 vi.mock('./config.js', () => ({
@@ -39,7 +48,9 @@ describe('Chunker Module', () => {
 
     it('should create overlapping chunks', () => {
       // Create text that will require multiple chunks
-      const lines = Array.from({ length: 200 }, (_, i) => `Line ${i + 1}: Some content here`).join('\n');
+      const lines = Array.from({ length: 200 }, (_, i) => `Line ${i + 1}: Some content here`).join(
+        '\n'
+      );
       const chunks = chunkText(lines, 'test.md');
 
       if (chunks.length >= 2) {
@@ -433,7 +444,7 @@ export class Greeter {
 
       expect(chunks.length).toBeGreaterThan(0);
       // At least one chunk should have AST metadata (symbolName)
-      const withMetadata = chunks.filter(c => c.symbolName);
+      const withMetadata = chunks.filter((c) => c.symbolName);
       expect(withMetadata.length).toBeGreaterThan(0);
 
       const stats = getChunkingStats();
@@ -496,8 +507,10 @@ export class Greeter {
     it('should prepend symbol type and name', () => {
       const chunk: Chunk = {
         content: 'function hello() { return "hi"; }',
-        startLine: 1, endLine: 1,
-        symbolName: 'hello', symbolType: 'function',
+        startLine: 1,
+        endLine: 1,
+        symbolName: 'hello',
+        symbolType: 'function',
       };
       expect(enrichForEmbedding(chunk)).toBe(
         '[function: hello]\nfunction hello() { return "hi"; }'
@@ -507,8 +520,10 @@ export class Greeter {
     it('should include signature when present', () => {
       const chunk: Chunk = {
         content: 'function add(a: number, b: number): number { return a + b; }',
-        startLine: 1, endLine: 1,
-        symbolName: 'add', symbolType: 'function',
+        startLine: 1,
+        endLine: 1,
+        symbolName: 'add',
+        symbolType: 'function',
         signature: 'a: number, b: number): number',
       };
       const result = enrichForEmbedding(chunk);
@@ -519,7 +534,9 @@ export class Greeter {
 
     it('should use "symbol" as default type when symbolType is missing', () => {
       const chunk: Chunk = {
-        content: 'code', startLine: 1, endLine: 1,
+        content: 'code',
+        startLine: 1,
+        endLine: 1,
         symbolName: 'Foo',
       };
       expect(enrichForEmbedding(chunk)).toBe('[symbol: Foo]\ncode');

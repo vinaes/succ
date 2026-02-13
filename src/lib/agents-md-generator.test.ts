@@ -25,7 +25,8 @@ describe('AGENTS.md Generator', () => {
 
   describe('Dead-end formatting', () => {
     it('should extract approach and reason from DEAD END format', () => {
-      const content = 'DEAD END: Tried "Using Redis for sessions" — Failed because: Memory usage too high';
+      const content =
+        'DEAD END: Tried "Using Redis for sessions" — Failed because: Memory usage too high';
       const match = content.match(/DEAD END: Tried "([^"]+)" — Failed because: (.+)/s);
 
       expect(match).not.toBeNull();
@@ -34,7 +35,8 @@ describe('AGENTS.md Generator', () => {
     });
 
     it('should handle multi-line dead-end content', () => {
-      const content = 'DEAD END: Tried "Worker threads for parsing" — Failed because: Serialization overhead\nContext: tested with 1000 files';
+      const content =
+        'DEAD END: Tried "Worker threads for parsing" — Failed because: Serialization overhead\nContext: tested with 1000 files';
       const match = content.match(/DEAD END: Tried "([^"]+)" — Failed because: (.+)/s);
 
       expect(match).not.toBeNull();
@@ -54,7 +56,8 @@ describe('AGENTS.md Generator', () => {
   describe('Entry truncation', () => {
     it('should truncate long entries at 200 chars', () => {
       const longContent = 'A'.repeat(250);
-      const truncated = longContent.length > 200 ? longContent.substring(0, 200) + '...' : longContent;
+      const truncated =
+        longContent.length > 200 ? longContent.substring(0, 200) + '...' : longContent;
 
       expect(truncated.length).toBe(203); // 200 + "..."
       expect(truncated.endsWith('...')).toBe(true);
@@ -62,7 +65,8 @@ describe('AGENTS.md Generator', () => {
 
     it('should not truncate short entries', () => {
       const shortContent = 'Short memory content';
-      const truncated = shortContent.length > 200 ? shortContent.substring(0, 200) + '...' : shortContent;
+      const truncated =
+        shortContent.length > 200 ? shortContent.substring(0, 200) + '...' : shortContent;
 
       expect(truncated).toBe(shortContent);
     });
@@ -77,8 +81,9 @@ describe('AGENTS.md Generator', () => {
         learning: 3,
       };
 
-      const sorted = ['learning', 'dead_end', 'decision', 'pattern']
-        .sort((a, b) => (typeOrder[a] ?? 4) - (typeOrder[b] ?? 4));
+      const sorted = ['learning', 'dead_end', 'decision', 'pattern'].sort(
+        (a, b) => (typeOrder[a] ?? 4) - (typeOrder[b] ?? 4)
+      );
 
       expect(sorted[0]).toBe('dead_end');
       expect(sorted[1]).toBe('decision');

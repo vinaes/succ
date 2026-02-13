@@ -17,13 +17,15 @@ export function getFileHash(filePath: string): string | null {
 export function setFileHash(filePath: string, hash: string): void {
   const database = getDb();
   database
-    .prepare(`
+    .prepare(
+      `
       INSERT INTO file_hashes (file_path, content_hash, indexed_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(file_path) DO UPDATE SET
         content_hash = excluded.content_hash,
         indexed_at = CURRENT_TIMESTAMP
-    `)
+    `
+    )
     .run(filePath, hash);
 }
 
@@ -40,9 +42,10 @@ export function deleteFileHash(filePath: string): void {
  */
 export function getAllFileHashes(): Map<string, string> {
   const database = getDb();
-  const rows = database
-    .prepare('SELECT file_path, content_hash FROM file_hashes')
-    .all() as Array<{ file_path: string; content_hash: string }>;
+  const rows = database.prepare('SELECT file_path, content_hash FROM file_hashes').all() as Array<{
+    file_path: string;
+    content_hash: string;
+  }>;
 
   const map = new Map<string, string>();
   for (const row of rows) {
@@ -55,7 +58,11 @@ export function getAllFileHashes(): Map<string, string> {
  * Get all stored file hashes with indexed_at timestamps.
  * Used for freshness checks — compare file mtime against indexed_at.
  */
-export function getAllFileHashesWithTimestamps(): Array<{ file_path: string; content_hash: string; indexed_at: string }> {
+export function getAllFileHashesWithTimestamps(): Array<{
+  file_path: string;
+  content_hash: string;
+  indexed_at: string;
+}> {
   const database = getDb();
   return database
     .prepare('SELECT file_path, content_hash, indexed_at FROM file_hashes')

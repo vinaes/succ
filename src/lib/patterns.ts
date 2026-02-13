@@ -12,19 +12,40 @@
  */
 export const CODE_EXTENSIONS = new Set([
   // JavaScript/TypeScript ecosystem
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.mjs',
+  '.cjs',
+  '.mts',
+  '.cts',
 
   // Python
-  '.py', '.pyw', '.pyi',
+  '.py',
+  '.pyw',
+  '.pyi',
 
   // Java/JVM languages
-  '.java', '.kt', '.kts', '.scala', '.groovy',
+  '.java',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.groovy',
 
   // C/C++
-  '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hh',
+  '.c',
+  '.h',
+  '.cpp',
+  '.cc',
+  '.cxx',
+  '.hpp',
+  '.hh',
 
   // C#/.NET
-  '.cs', '.fs', '.vb',
+  '.cs',
+  '.fs',
+  '.vb',
 
   // Go
   '.go',
@@ -33,7 +54,8 @@ export const CODE_EXTENSIONS = new Set([
   '.rs',
 
   // Ruby
-  '.rb', '.rake',
+  '.rb',
+  '.rake',
 
   // PHP
   '.php',
@@ -45,13 +67,17 @@ export const CODE_EXTENSIONS = new Set([
   '.dart',
 
   // Shell
-  '.sh', '.bash', '.zsh',
+  '.sh',
+  '.bash',
+  '.zsh',
 
   // Lua
   '.lua',
 
   // Elixir/Erlang
-  '.ex', '.exs', '.erl',
+  '.ex',
+  '.exs',
+  '.erl',
 
   // Haskell
   '.hs',
@@ -60,17 +86,22 @@ export const CODE_EXTENSIONS = new Set([
   '.sql',
 
   // GraphQL
-  '.graphql', '.gql',
+  '.graphql',
+  '.gql',
 ]);
 
 /**
  * Documentation file extensions to index/watch.
  */
 export const DOC_EXTENSIONS = new Set([
-  '.md', '.mdx', '.markdown',
-  '.txt', '.text',
+  '.md',
+  '.mdx',
+  '.markdown',
+  '.txt',
+  '.text',
   '.rst',
-  '.adoc', '.asciidoc',
+  '.adoc',
+  '.asciidoc',
 ]);
 
 /**
@@ -78,21 +109,47 @@ export const DOC_EXTENSIONS = new Set([
  */
 export const DEFAULT_CODE_PATTERNS = [
   // JavaScript/TypeScript
-  '**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '**/*.mjs', '**/*.cjs', '**/*.mts', '**/*.cts',
+  '**/*.js',
+  '**/*.jsx',
+  '**/*.ts',
+  '**/*.tsx',
+  '**/*.mjs',
+  '**/*.cjs',
+  '**/*.mts',
+  '**/*.cts',
 
   // Python
-  '**/*.py', '**/*.pyw', '**/*.pyi',
+  '**/*.py',
+  '**/*.pyw',
+  '**/*.pyi',
 
   // Java/JVM
-  '**/*.java', '**/*.kt', '**/*.kts', '**/*.scala', '**/*.groovy', '**/*.gradle',
-  '**/*.clj', '**/*.cljs', '**/*.cljc',
+  '**/*.java',
+  '**/*.kt',
+  '**/*.kts',
+  '**/*.scala',
+  '**/*.groovy',
+  '**/*.gradle',
+  '**/*.clj',
+  '**/*.cljs',
+  '**/*.cljc',
 
   // C/C++
-  '**/*.c', '**/*.h', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.hpp', '**/*.hh', '**/*.hxx',
+  '**/*.c',
+  '**/*.h',
+  '**/*.cpp',
+  '**/*.cc',
+  '**/*.cxx',
+  '**/*.hpp',
+  '**/*.hh',
+  '**/*.hxx',
   '**/*.ino',
 
   // C#/.NET
-  '**/*.cs', '**/*.fs', '**/*.fsx', '**/*.vb',
+  '**/*.cs',
+  '**/*.fs',
+  '**/*.fsx',
+  '**/*.vb',
 
   // Go
   '**/*.go',
@@ -101,7 +158,9 @@ export const DEFAULT_CODE_PATTERNS = [
   '**/*.rs',
 
   // Ruby
-  '**/*.rb', '**/*.rake', '**/*.gemspec',
+  '**/*.rb',
+  '**/*.rake',
+  '**/*.gemspec',
 
   // PHP
   '**/*.php',
@@ -113,13 +172,17 @@ export const DEFAULT_CODE_PATTERNS = [
   '**/*.dart',
 
   // Shell
-  '**/*.sh', '**/*.bash', '**/*.zsh',
+  '**/*.sh',
+  '**/*.bash',
+  '**/*.zsh',
 
   // Lua
   '**/*.lua',
 
   // Elixir/Erlang
-  '**/*.ex', '**/*.exs', '**/*.erl',
+  '**/*.ex',
+  '**/*.exs',
+  '**/*.erl',
 
   // Haskell
   '**/*.hs',

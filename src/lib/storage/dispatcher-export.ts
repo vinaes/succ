@@ -56,7 +56,7 @@ function parsePgVector(str: string | null): number[] | null {
   if (!str || typeof str !== 'string') return null;
   const inner = str.slice(1, -1);
   if (!inner) return [];
-  return inner.split(',').map(s => parseFloat(s.trim()));
+  return inner.split(',').map((s) => parseFloat(s.trim()));
 }
 
 // Helper to get getSqliteFns() from dispatcher
@@ -68,19 +68,35 @@ async function getSqliteFns(d: StorageDispatcher): Promise<typeof import('../db/
 // Export Methods
 // =============================================================================
 
-export async function getAllMemoriesForExportImpl(d: StorageDispatcher): Promise<Array<{
-  id: number; content: string; tags: string[]; source: string | null;
-  embedding: number[] | null; type: string | null;
-  quality_score: number | null; quality_factors: Record<string, number> | null;
-  access_count: number; last_accessed: string | null; created_at: string;
-  invalidated_by: number | null;
-}>> {
+export async function getAllMemoriesForExportImpl(d: StorageDispatcher): Promise<
+  Array<{
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    embedding: number[] | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: Record<string, number> | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
+    invalidated_by: number | null;
+  }>
+> {
   interface MemoryExportRow {
-    id: number; content: string; tags: string | null; source: string | null;
-    embedding: string | Buffer | null; type: string | null;
-    quality_score: number | null; quality_factors: string | null;
-    access_count: number; last_accessed: string | null;
-    created_at: string; invalidated_by: number | null;
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    embedding: string | Buffer | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
+    invalidated_by: number | null;
   }
 
   const backend = (d as any).backend as 'sqlite' | 'postgresql';
@@ -103,13 +119,18 @@ export async function getAllMemoriesForExportImpl(d: StorageDispatcher): Promise
     );
     const rows = result.rows as MemoryExportRow[];
     return rows.map((r) => ({
-      id: r.id, content: r.content,
+      id: r.id,
+      content: r.content,
       tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : (r.tags ?? []),
       source: r.source ?? null,
       embedding: typeof r.embedding === 'string' ? parsePgVector(r.embedding) : null,
       type: r.type ?? null,
       quality_score: r.quality_score ?? null,
-      quality_factors: r.quality_factors ? (typeof r.quality_factors === 'string' ? JSON.parse(r.quality_factors) : r.quality_factors) : null,
+      quality_factors: r.quality_factors
+        ? typeof r.quality_factors === 'string'
+          ? JSON.parse(r.quality_factors)
+          : r.quality_factors
+        : null,
       access_count: r.access_count ?? 0,
       last_accessed: r.last_accessed ?? null,
       created_at: r.created_at ?? new Date().toISOString(),
@@ -118,40 +139,74 @@ export async function getAllMemoriesForExportImpl(d: StorageDispatcher): Promise
   }
 
   interface SqliteMemoryRow {
-    id: number; content: string; tags: string | null; source: string | null;
-    embedding: Buffer | null; type: string | null;
-    quality_score: number | null; quality_factors: string | null;
-    access_count: number; last_accessed: string | null; created_at: string;
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    embedding: Buffer | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
     invalidated_by: number | null;
   }
 
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  const rows = db.prepare(
-    `SELECT id, content, tags, source, embedding, type,
+  const rows = db
+    .prepare(
+      `SELECT id, content, tags, source, embedding, type,
             quality_score, quality_factors, access_count, last_accessed, created_at, invalidated_by
      FROM memories ORDER BY id ASC`
-  ).all() as SqliteMemoryRow[];
+    )
+    .all() as SqliteMemoryRow[];
   return rows.map((row) => ({
-    id: row.id, content: row.content,
+    id: row.id,
+    content: row.content,
     tags: row.tags ? JSON.parse(row.tags) : [],
-    source: row.source, type: row.type,
-    embedding: row.embedding ? Array.from(new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4)) : null,
+    source: row.source,
+    type: row.type,
+    embedding: row.embedding
+      ? Array.from(
+          new Float32Array(
+            row.embedding.buffer,
+            row.embedding.byteOffset,
+            row.embedding.byteLength / 4
+          )
+        )
+      : null,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
-    access_count: row.access_count ?? 0, last_accessed: row.last_accessed,
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
     created_at: row.created_at,
     invalidated_by: row.invalidated_by ?? null,
   }));
 }
 
-export async function getAllDocumentsForExportImpl(d: StorageDispatcher): Promise<Array<{
-  id: number; file_path: string; chunk_index: number; content: string;
-  start_line: number; end_line: number; embedding: number[] | null; created_at: string;
-}>> {
+export async function getAllDocumentsForExportImpl(d: StorageDispatcher): Promise<
+  Array<{
+    id: number;
+    file_path: string;
+    chunk_index: number;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: number[] | null;
+    created_at: string;
+  }>
+> {
   interface DocumentExportRow {
-    id: number; file_path: string; chunk_index: number; content: string;
-    start_line: number; end_line: number; embedding: string | Buffer | null; created_at: string;
+    id: number;
+    file_path: string;
+    chunk_index: number;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: string | Buffer | null;
+    created_at: string;
   }
 
   const backend = (d as any).backend as 'sqlite' | 'postgresql';
@@ -172,40 +227,74 @@ export async function getAllDocumentsForExportImpl(d: StorageDispatcher): Promis
     );
     const rows = result.rows as DocumentExportRow[];
     return rows.map((r) => ({
-      id: r.id, file_path: r.file_path, chunk_index: r.chunk_index ?? 0,
-      content: r.content, start_line: r.start_line ?? 0, end_line: r.end_line ?? 0,
+      id: r.id,
+      file_path: r.file_path,
+      chunk_index: r.chunk_index ?? 0,
+      content: r.content,
+      start_line: r.start_line ?? 0,
+      end_line: r.end_line ?? 0,
       embedding: typeof r.embedding === 'string' ? parsePgVector(r.embedding) : null,
       created_at: r.created_at ?? new Date().toISOString(),
     }));
   }
 
   interface SqliteDocumentRow {
-    id: number; file_path: string; chunk_index: number; content: string;
-    start_line: number; end_line: number; embedding: Buffer | null; created_at: string;
+    id: number;
+    file_path: string;
+    chunk_index: number;
+    content: string;
+    start_line: number;
+    end_line: number;
+    embedding: Buffer | null;
+    created_at: string;
   }
 
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  const rows = db.prepare(
-    `SELECT id, file_path, chunk_index, content, start_line, end_line, embedding, created_at
+  const rows = db
+    .prepare(
+      `SELECT id, file_path, chunk_index, content, start_line, end_line, embedding, created_at
      FROM documents ORDER BY id ASC`
-  ).all() as SqliteDocumentRow[];
+    )
+    .all() as SqliteDocumentRow[];
   return rows.map((row) => ({
-    id: row.id, file_path: row.file_path, chunk_index: row.chunk_index,
-    content: row.content, start_line: row.start_line, end_line: row.end_line,
-    embedding: row.embedding ? Array.from(new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4)) : null,
+    id: row.id,
+    file_path: row.file_path,
+    chunk_index: row.chunk_index,
+    content: row.content,
+    start_line: row.start_line,
+    end_line: row.end_line,
+    embedding: row.embedding
+      ? Array.from(
+          new Float32Array(
+            row.embedding.buffer,
+            row.embedding.byteOffset,
+            row.embedding.byteLength / 4
+          )
+        )
+      : null,
     created_at: row.created_at,
   }));
 }
 
-export async function getAllMemoryLinksForExportImpl(d: StorageDispatcher): Promise<Array<{
-  id: number; source_id: number; target_id: number;
-  relation: string; weight: number; created_at: string;
-  llm_enriched: boolean;
-}>> {
+export async function getAllMemoryLinksForExportImpl(d: StorageDispatcher): Promise<
+  Array<{
+    id: number;
+    source_id: number;
+    target_id: number;
+    relation: string;
+    weight: number;
+    created_at: string;
+    llm_enriched: boolean;
+  }>
+> {
   interface LinkRow {
-    id: number; source_id: number; target_id: number;
-    relation: string; weight: number; created_at: string;
+    id: number;
+    source_id: number;
+    target_id: number;
+    relation: string;
+    weight: number;
+    created_at: string;
     llm_enriched: number | boolean;
   }
 
@@ -233,19 +322,29 @@ export async function getAllMemoryLinksForExportImpl(d: StorageDispatcher): Prom
 
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  const rows = db.prepare(
-    `SELECT id, source_id, target_id, relation, weight, created_at,
+  const rows = db
+    .prepare(
+      `SELECT id, source_id, target_id, relation, weight, created_at,
             COALESCE(llm_enriched, 0) as llm_enriched
      FROM memory_links ORDER BY id ASC`
-  ).all() as LinkRow[];
+    )
+    .all() as LinkRow[];
   return rows.map((r) => ({ ...r, llm_enriched: !!r.llm_enriched }));
 }
 
-export async function getAllCentralityForExportImpl(d: StorageDispatcher): Promise<Array<{
-  memory_id: number; degree: number; normalized_degree: number; updated_at: string;
-}>> {
+export async function getAllCentralityForExportImpl(d: StorageDispatcher): Promise<
+  Array<{
+    memory_id: number;
+    degree: number;
+    normalized_degree: number;
+    updated_at: string;
+  }>
+> {
   interface CentralityRow {
-    memory_id: number; degree: number; normalized_degree: number; updated_at: string;
+    memory_id: number;
+    degree: number;
+    normalized_degree: number;
+    updated_at: string;
   }
 
   const backend = (d as any).backend as 'sqlite' | 'postgresql';
@@ -271,10 +370,12 @@ export async function getAllCentralityForExportImpl(d: StorageDispatcher): Promi
 
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  return db.prepare(
-    `SELECT memory_id, degree, normalized_degree, updated_at
+  return db
+    .prepare(
+      `SELECT memory_id, degree, normalized_degree, updated_at
      FROM memory_centrality ORDER BY memory_id ASC`
-  ).all() as CentralityRow[];
+    )
+    .all() as CentralityRow[];
 }
 
 // =============================================================================
@@ -285,23 +386,40 @@ export async function bulkRestoreImpl(
   d: StorageDispatcher,
   data: {
     memories: Array<{
-      id: number; content: string; tags: string[]; source: string | null;
-      embedding: number[] | null; type: string | null;
-      quality_score: number | null; quality_factors: Record<string, number> | null;
-      access_count: number; last_accessed: string | null; created_at: string;
+      id: number;
+      content: string;
+      tags: string[];
+      source: string | null;
+      embedding: number[] | null;
+      type: string | null;
+      quality_score: number | null;
+      quality_factors: Record<string, number> | null;
+      access_count: number;
+      last_accessed: string | null;
+      created_at: string;
     }>;
     memoryLinks: Array<{
-      source_id: number; target_id: number; relation: string;
-      weight: number; created_at: string; llm_enriched?: boolean;
+      source_id: number;
+      target_id: number;
+      relation: string;
+      weight: number;
+      created_at: string;
+      llm_enriched?: boolean;
     }>;
     centrality: Array<{
-      memory_id: number; degree: number;
-      normalized_degree: number; updated_at: string;
+      memory_id: number;
+      degree: number;
+      normalized_degree: number;
+      updated_at: string;
     }>;
     documents: Array<{
-      file_path: string; chunk_index: number; content: string;
-      start_line: number; end_line: number;
-      embedding: number[] | null; created_at: string;
+      file_path: string;
+      chunk_index: number;
+      content: string;
+      start_line: number;
+      end_line: number;
+      embedding: number[] | null;
+      created_at: string;
     }>;
     overwrite: boolean;
     restoreDocuments: boolean;
@@ -330,7 +448,10 @@ export async function bulkRestoreImpl(
       await client.query('BEGIN');
 
       if (data.overwrite) {
-        await client.query('DELETE FROM memory_centrality WHERE memory_id IN (SELECT id FROM memories WHERE LOWER(project_id) = $1)', [projectId]);
+        await client.query(
+          'DELETE FROM memory_centrality WHERE memory_id IN (SELECT id FROM memories WHERE LOWER(project_id) = $1)',
+          [projectId]
+        );
         await client.query('DELETE FROM memory_links WHERE LOWER(project_id) = $1', [projectId]);
         await client.query('DELETE FROM memories WHERE LOWER(project_id) = $1', [projectId]);
         if (data.restoreDocuments) {
@@ -344,10 +465,19 @@ export async function bulkRestoreImpl(
           `INSERT INTO memories (project_id, content, tags, source, embedding, type, quality_score, quality_factors, access_count, last_accessed, created_at)
            VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8, $9, $10, $11)
            RETURNING id`,
-          [projectId, memory.content, JSON.stringify(memory.tags), memory.source,
-           embeddingStr, memory.type, memory.quality_score,
-           memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
-           memory.access_count, memory.last_accessed, memory.created_at]
+          [
+            projectId,
+            memory.content,
+            JSON.stringify(memory.tags),
+            memory.source,
+            embeddingStr,
+            memory.type,
+            memory.quality_score,
+            memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
+            memory.access_count,
+            memory.last_accessed,
+            memory.created_at,
+          ]
         );
         const returnedId = (result.rows[0] as { id: number }).id;
         memoryIdMap.set(memory.id, returnedId);
@@ -361,7 +491,15 @@ export async function bulkRestoreImpl(
           await client.query(
             `INSERT INTO memory_links (project_id, source_id, target_id, relation, weight, created_at, llm_enriched)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [projectId, newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0]
+            [
+              projectId,
+              newSourceId,
+              newTargetId,
+              link.relation,
+              link.weight,
+              link.created_at,
+              link.llm_enriched ? 1 : 0,
+            ]
           );
           linksRestored++;
         }
@@ -387,8 +525,16 @@ export async function bulkRestoreImpl(
           await client.query(
             `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)`,
-            [projectId, doc.file_path, doc.chunk_index, doc.content,
-             doc.start_line, doc.end_line, embeddingStr, doc.created_at]
+            [
+              projectId,
+              doc.file_path,
+              doc.chunk_index,
+              doc.content,
+              doc.start_line,
+              doc.end_line,
+              embeddingStr,
+              doc.created_at,
+            ]
           );
           documentsRestored++;
         }
@@ -439,10 +585,16 @@ export async function bulkRestoreImpl(
           : null;
 
         const result = insertMemory.run(
-          memory.content, JSON.stringify(memory.tags), memory.source,
-          embedding, memory.type, memory.quality_score,
+          memory.content,
+          JSON.stringify(memory.tags),
+          memory.source,
+          embedding,
+          memory.type,
+          memory.quality_score,
           memory.quality_factors ? JSON.stringify(memory.quality_factors) : null,
-          memory.access_count, memory.last_accessed, memory.created_at
+          memory.access_count,
+          memory.last_accessed,
+          memory.created_at
         );
 
         memoryIdMap.set(memory.id, result.lastInsertRowid as number);
@@ -454,7 +606,14 @@ export async function bulkRestoreImpl(
         const newTargetId = memoryIdMap.get(link.target_id);
 
         if (newSourceId && newTargetId) {
-          insertLink.run(newSourceId, newTargetId, link.relation, link.weight, link.created_at, link.llm_enriched ? 1 : 0);
+          insertLink.run(
+            newSourceId,
+            newTargetId,
+            link.relation,
+            link.weight,
+            link.created_at,
+            link.llm_enriched ? 1 : 0
+          );
           linksRestored++;
         }
       }
@@ -462,7 +621,12 @@ export async function bulkRestoreImpl(
       for (const entry of data.centrality) {
         const newMemoryId = memoryIdMap.get(entry.memory_id);
         if (newMemoryId) {
-          insertCentrality.run(newMemoryId, entry.degree, entry.normalized_degree, entry.updated_at);
+          insertCentrality.run(
+            newMemoryId,
+            entry.degree,
+            entry.normalized_degree,
+            entry.updated_at
+          );
         }
       }
 
@@ -473,8 +637,13 @@ export async function bulkRestoreImpl(
             : null;
 
           insertDocument.run(
-            doc.file_path, doc.chunk_index, doc.content,
-            doc.start_line, doc.end_line, embedding, doc.created_at
+            doc.file_path,
+            doc.chunk_index,
+            doc.content,
+            doc.start_line,
+            doc.end_line,
+            embedding,
+            doc.created_at
           );
           documentsRestored++;
         }
@@ -521,7 +690,11 @@ export async function backfillQdrantImpl(
   return stats;
 }
 
-async function backfillMemoriesImpl(d: StorageDispatcher, log: (msg: string) => void, dryRun: boolean): Promise<number> {
+async function backfillMemoriesImpl(
+  d: StorageDispatcher,
+  log: (msg: string) => void,
+  dryRun: boolean
+): Promise<number> {
   const qdrant = (d as any).qdrant;
 
   if (!qdrant) {
@@ -551,8 +724,9 @@ async function backfillMemoriesImpl(d: StorageDispatcher, log: (msg: string) => 
   // SQLite path
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  const rows = db.prepare(
-    `SELECT m.id, m.content, m.tags, m.source, m.type,
+  const rows = db
+    .prepare(
+      `SELECT m.id, m.content, m.tags, m.source, m.type,
             m.quality_score, m.access_count, m.created_at, m.last_accessed,
             m.valid_from, m.valid_until, m.invalidated_by,
             v.embedding
@@ -560,7 +734,8 @@ async function backfillMemoriesImpl(d: StorageDispatcher, log: (msg: string) => 
      LEFT JOIN memory_vec_mapping mv ON mv.memory_id = m.id
      LEFT JOIN memory_vec v ON v.rowid = mv.vec_rowid
      ORDER BY m.id`
-  ).all() as SqlMemoryRow[];
+    )
+    .all() as SqlMemoryRow[];
 
   log(`Found ${rows.length} memories in SQLite`);
   if (dryRun || rows.length === 0) return rows.length;
@@ -592,7 +767,11 @@ async function backfillMemoriesImpl(d: StorageDispatcher, log: (msg: string) => 
   return items.length;
 }
 
-async function backfillGlobalMemoriesImpl(d: StorageDispatcher, log: (msg: string) => void, dryRun: boolean): Promise<number> {
+async function backfillGlobalMemoriesImpl(
+  d: StorageDispatcher,
+  log: (msg: string) => void,
+  dryRun: boolean
+): Promise<number> {
   const qdrant = (d as any).qdrant;
 
   if (!qdrant) {
@@ -654,8 +833,9 @@ async function backfillGlobalMemoriesImpl(d: StorageDispatcher, log: (msg: strin
   // Check if vec tables exist (they may not if sqlite-vec was never initialized)
   let rows: any[];
   try {
-    rows = gdb.prepare(
-      `SELECT m.id, m.content, m.tags, m.source, m.type,
+    rows = gdb
+      .prepare(
+        `SELECT m.id, m.content, m.tags, m.source, m.type,
               m.quality_score, m.access_count, m.created_at, m.last_accessed,
               m.valid_from, m.valid_until, m.invalidated_by,
               v.embedding
@@ -663,16 +843,19 @@ async function backfillGlobalMemoriesImpl(d: StorageDispatcher, log: (msg: strin
        LEFT JOIN memory_vec_mapping mv ON mv.memory_id = m.id
        LEFT JOIN memory_vec v ON v.rowid = mv.vec_rowid
        ORDER BY m.id`
-    ).all() as SqlMemoryRow[];
+      )
+      .all() as SqlMemoryRow[];
   } catch {
     // sqlite-vec tables may not exist — fall back to memory-only query (no embeddings)
     log('Global DB has no vector tables — fetching memories without embeddings');
-    rows = gdb.prepare(
-      `SELECT id, content, tags, source, type,
+    rows = gdb
+      .prepare(
+        `SELECT id, content, tags, source, type,
               quality_score, access_count, created_at, last_accessed,
               valid_from, valid_until, invalidated_by
        FROM memories ORDER BY id`
-    ).all() as SqlMemoryRow[];
+      )
+      .all() as SqlMemoryRow[];
   }
 
   log(`Found ${rows.length} global memories in SQLite`);
@@ -705,7 +888,11 @@ async function backfillGlobalMemoriesImpl(d: StorageDispatcher, log: (msg: strin
   return items.length;
 }
 
-async function backfillDocumentsImpl(d: StorageDispatcher, log: (msg: string) => void, dryRun: boolean): Promise<number> {
+async function backfillDocumentsImpl(
+  d: StorageDispatcher,
+  log: (msg: string) => void,
+  dryRun: boolean
+): Promise<number> {
   const qdrant = (d as any).qdrant;
 
   if (!qdrant) {
@@ -735,14 +922,16 @@ async function backfillDocumentsImpl(d: StorageDispatcher, log: (msg: string) =>
   // SQLite path
   const sqlite = await getSqliteFns(d);
   const db = sqlite.getDb();
-  const rows = db.prepare(
-    `SELECT d.id, d.file_path, d.content, d.start_line, d.end_line,
+  const rows = db
+    .prepare(
+      `SELECT d.id, d.file_path, d.content, d.start_line, d.end_line,
             v.embedding
      FROM documents d
      LEFT JOIN document_vec_mapping dm ON dm.document_id = d.id
      LEFT JOIN document_vec v ON v.rowid = dm.vec_rowid
      ORDER BY d.id`
-  ).all() as SqlDocumentRow[];
+    )
+    .all() as SqlDocumentRow[];
 
   log(`Found ${rows.length} documents in SQLite`);
   if (dryRun || rows.length === 0) return rows.length;

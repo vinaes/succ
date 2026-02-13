@@ -108,7 +108,7 @@ function saveIndex(entries: PrdIndexEntry[]): void {
  */
 function upsertIndex(entry: PrdIndexEntry): void {
   const entries = loadIndex();
-  const idx = entries.findIndex(e => e.id === entry.id);
+  const idx = entries.findIndex((e) => e.id === entry.id);
   if (idx >= 0) {
     entries[idx] = entry;
   } else {
@@ -121,7 +121,7 @@ function upsertIndex(entry: PrdIndexEntry): void {
  * Remove an entry from the index
  */
 function removeFromIndex(prdId: string): void {
-  const entries = loadIndex().filter(e => e.id !== prdId);
+  const entries = loadIndex().filter((e) => e.id !== prdId);
   saveIndex(entries);
 }
 
@@ -167,14 +167,14 @@ export function deletePrd(prdId: string): void {
 export function listPrds(includeArchived = false): PrdIndexEntry[] {
   const entries = loadIndex();
   if (includeArchived) return entries;
-  return entries.filter(e => e.status !== 'archived');
+  return entries.filter((e) => e.status !== 'archived');
 }
 
 /**
  * Find the most recent PRD (for commands without explicit ID)
  */
 export function findLatestPrd(): PrdIndexEntry | null {
-  const entries = loadIndex().filter(e => e.status !== 'archived');
+  const entries = loadIndex().filter((e) => e.status !== 'archived');
   if (entries.length === 0) return null;
   return entries.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
 }

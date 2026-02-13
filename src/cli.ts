@@ -15,14 +15,17 @@ program
   .name('succ')
   .version(VERSION)
   .configureHelp({ sortSubcommands: true })
-  .addHelpText('beforeAll', `
+  .addHelpText(
+    'beforeAll',
+    `
   \x1b[32m●\x1b[0m succ
 
   Semantic Understanding for Code Contexts
   Claude Code · Cursor · Windsurf · Continue.dev
 
   ─────────────────────────────────────────────────────────
-`);
+`
+  );
 
 program
   .command('init')
@@ -297,7 +300,8 @@ program
   .option('--history', 'List benchmark history')
   .option('--history-limit <n>', 'Number of history entries to show', '10')
   .action(async (options) => {
-    const { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } = await import('./commands/benchmark.js');
+    const { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } =
+      await import('./commands/benchmark.js');
     if (options.history) {
       return listBenchmarkHistory({
         limit: parseInt(options.historyLimit, 10),
@@ -398,7 +402,9 @@ program
 
 program
   .command('graph <action>')
-  .description('Knowledge graph: export, stats, auto-link, enrich-relations, proximity, communities, centrality')
+  .description(
+    'Knowledge graph: export, stats, auto-link, enrich-relations, proximity, communities, centrality'
+  )
   .option('-f, --format <format>', 'Export format: obsidian or json', 'obsidian')
   .option('-t, --threshold <number>', 'Similarity threshold for auto-link', '0.75')
   .option('-o, --output <path>', 'Output directory for export')
@@ -409,7 +415,14 @@ program
   .action(async (action, options) => {
     const { graph } = await import('./commands/graph.js');
     return graph({
-      action: action as 'export' | 'stats' | 'auto-link' | 'enrich-relations' | 'proximity' | 'communities' | 'centrality',
+      action: action as
+        | 'export'
+        | 'stats'
+        | 'auto-link'
+        | 'enrich-relations'
+        | 'proximity'
+        | 'communities'
+        | 'centrality',
       format: options.format,
       threshold: parseFloat(options.threshold),
       output: options.output,

@@ -75,7 +75,8 @@ vi.mock('./state.js', () => ({
   saveExecution: (exec: unknown) => mockSaveExecution(exec),
   loadExecution: (id: string) => mockLoadExecution(id),
   appendProgress: (id: string, msg: string) => mockAppendProgress(id, msg),
-  appendTaskLog: (id: string, taskId: string, chunk: string) => mockAppendTaskLog(id, taskId, chunk),
+  appendTaskLog: (id: string, taskId: string, chunk: string) =>
+    mockAppendTaskLog(id, taskId, chunk),
   getTaskLogPath: (id: string, taskId: string) => mockGetTaskLogPath(id, taskId),
 }));
 
@@ -207,8 +208,9 @@ describe('runPrd resume', () => {
     mockLoadTasks.mockReturnValue([makeTask()]);
     mockLoadExecution.mockReturnValue(null);
 
-    await expect(runPrd('prd_test1234', { resume: true, noBranch: true }))
-      .rejects.toThrow('No execution state');
+    await expect(runPrd('prd_test1234', { resume: true, noBranch: true })).rejects.toThrow(
+      'No execution state'
+    );
   });
 
   it('should throw when PRD is already completed', async () => {
@@ -216,8 +218,9 @@ describe('runPrd resume', () => {
     mockLoadTasks.mockReturnValue([makeTask()]);
     mockLoadExecution.mockReturnValue(makeExecution());
 
-    await expect(runPrd('prd_test1234', { resume: true, noBranch: true }))
-      .rejects.toThrow('already completed');
+    await expect(runPrd('prd_test1234', { resume: true, noBranch: true })).rejects.toThrow(
+      'already completed'
+    );
   });
 
   it('should throw when PRD is archived', async () => {
@@ -225,8 +228,9 @@ describe('runPrd resume', () => {
     mockLoadTasks.mockReturnValue([makeTask()]);
     mockLoadExecution.mockReturnValue(makeExecution());
 
-    await expect(runPrd('prd_test1234', { resume: true, noBranch: true }))
-      .rejects.toThrow('archived');
+    await expect(runPrd('prd_test1234', { resume: true, noBranch: true })).rejects.toThrow(
+      'archived'
+    );
   });
 
   it('should throw when branch does not exist', async () => {
@@ -239,8 +243,9 @@ describe('runPrd resume', () => {
       return '';
     });
 
-    await expect(runPrd('prd_test1234', { resume: true }))
-      .rejects.toThrow('not found. Cannot resume');
+    await expect(runPrd('prd_test1234', { resume: true })).rejects.toThrow(
+      'not found. Cannot resume'
+    );
   });
 
   it('should throw when another runner is active (without --force)', async () => {
@@ -268,28 +273,30 @@ describe('runPrd resume', () => {
     await runPrd('prd_test1234', { resume: true, noBranch: true });
 
     // task_002 should have been reset to pending
-    expect(tasks[0].status).toBe('completed');  // stays completed
-    expect(tasks[1].status).not.toBe('in_progress');  // was reset
-    expect(tasks[2].status).not.toBe('in_progress');  // was pending, might be completed now
+    expect(tasks[0].status).toBe('completed'); // stays completed
+    expect(tasks[1].status).not.toBe('in_progress'); // was reset
+    expect(tasks[2].status).not.toBe('in_progress'); // was pending, might be completed now
   });
 
   it('should reset failed tasks to pending on resume', async () => {
     const failedTask = makeTask({
       id: 'task_001',
       status: 'failed',
-      attempts: [{
-        attempt_number: 1,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        status: 'failed',
-        gate_results: [],
-        files_actually_modified: [],
-        memories_recalled: 0,
-        memories_created: 0,
-        dead_ends_recorded: 0,
-        error: 'gate failed',
-        output_log: '/fake/log',
-      }],
+      attempts: [
+        {
+          attempt_number: 1,
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          status: 'failed',
+          gate_results: [],
+          files_actually_modified: [],
+          memories_recalled: 0,
+          memories_created: 0,
+          dead_ends_recorded: 0,
+          error: 'gate failed',
+          output_log: '/fake/log',
+        },
+      ],
     });
 
     mockLoadPrd.mockReturnValue(makePrd());

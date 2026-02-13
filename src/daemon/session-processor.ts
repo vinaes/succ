@@ -80,7 +80,10 @@ export function getProgressFilePath(sessionId: string): string {
  * Returns the last maxBytes of the file, starting from a complete line
  * @internal Exported for testing
  */
-export function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 * 1024): string {
+export function readTailTranscript(
+  transcriptPath: string,
+  maxBytes: number = 2 * 1024 * 1024
+): string {
   if (!fs.existsSync(transcriptPath)) {
     return '';
   }
@@ -115,7 +118,7 @@ export function parseTranscript(transcriptPath: string): TranscriptEntry[] {
   }
 
   const content = fs.readFileSync(transcriptPath, 'utf8');
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content.split('\n').filter((line) => line.trim());
   const entries: TranscriptEntry[] = [];
 
   for (const line of lines) {
@@ -138,16 +141,18 @@ function formatEntries(entries: TranscriptEntry[]): string {
 
   for (const entry of entries) {
     if (entry.type === 'user' && entry.message?.content) {
-      const content = typeof entry.message.content === 'string'
-        ? entry.message.content
-        : entry.message.content.map(c => c.text || '').join('\n');
+      const content =
+        typeof entry.message.content === 'string'
+          ? entry.message.content
+          : entry.message.content.map((c) => c.text || '').join('\n');
       if (content.trim()) {
         parts.push(`USER: ${content.slice(0, 500)}`);
       }
     } else if (entry.type === 'assistant' && entry.message?.content) {
-      const content = typeof entry.message.content === 'string'
-        ? entry.message.content
-        : entry.message.content.map(c => c.text || '').join('\n');
+      const content =
+        typeof entry.message.content === 'string'
+          ? entry.message.content
+          : entry.message.content.map((c) => c.text || '').join('\n');
       if (content.trim()) {
         parts.push(`ASSISTANT: ${content.slice(0, 1000)}`);
       }
@@ -168,7 +173,10 @@ function formatEntries(entries: TranscriptEntry[]): string {
  * Split entries into chunks of approximately targetTokens each
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function chunkEntries(entries: TranscriptEntry[], targetTokens: number = 25000): TranscriptEntry[][] {
+function chunkEntries(
+  entries: TranscriptEntry[],
+  targetTokens: number = 25000
+): TranscriptEntry[][] {
   if (entries.length === 0) return [];
 
   const chunks: TranscriptEntry[][] = [];
@@ -216,7 +224,11 @@ async function runLLM(prompt: string, timeoutMs: number = 60000): Promise<string
  * Summarize a single chunk of transcript
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function summarizeChunk(entries: TranscriptEntry[], chunkIndex: number, totalChunks: number): Promise<string> {
+async function summarizeChunk(
+  entries: TranscriptEntry[],
+  chunkIndex: number,
+  totalChunks: number
+): Promise<string> {
   const formatted = formatEntries(entries);
 
   if (!formatted.trim()) {
@@ -252,7 +264,7 @@ Output a bullet-point summary (5-15 bullets).`;
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function combineSummaries(summaries: string[]): Promise<string> {
-  const validSummaries = summaries.filter(s => s.trim());
+  const validSummaries = summaries.filter((s) => s.trim());
 
   if (validSummaries.length === 0) {
     return '';
@@ -287,7 +299,11 @@ ${validSummaries.map((s, i) => `### Part ${i + 1}\n${s}`).join('\n\n')}`;
   try {
     return await runLLM(prompt, 60000);
   } catch (err) {
-    logError('daemon', 'Failed to combine session summaries', err instanceof Error ? err : undefined);
+    logError(
+      'daemon',
+      'Failed to combine session summaries',
+      err instanceof Error ? err : undefined
+    );
     // Fallback: just concatenate
     return validSummaries.join('\n\n---\n\n');
   }
@@ -329,14 +345,18 @@ ${summary}
     // Parse bullet points
     const learnings = result
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.startsWith('-') || line.startsWith('•'))
-      .map(line => line.replace(/^[-•]\s*/, '').trim())
-      .filter(line => line.length > 10);
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('-') || line.startsWith('•'))
+      .map((line) => line.replace(/^[-•]\s*/, '').trim())
+      .filter((line) => line.length > 10);
 
     return learnings;
   } catch (err) {
-    logError('daemon', 'Failed to extract learnings from summary', err instanceof Error ? err : undefined);
+    logError(
+      'daemon',
+      'Failed to extract learnings from summary',
+      err instanceof Error ? err : undefined
+    );
     return [];
   }
 }
@@ -389,11 +409,12 @@ export function parseFactsResponse(response: string): ExtractedFact[] {
 
   // Validate and normalize facts
   return parsed
-    .filter((f: any) =>
-      f.content &&
-      typeof f.content === 'string' &&
-      f.content.length >= 50 &&
-      ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
+    .filter(
+      (f: any) =>
+        f.content &&
+        typeof f.content === 'string' &&
+        f.content.length >= 50 &&
+        ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
     )
     .map((f: any) => ({
       content: f.content.trim(),
@@ -463,10 +484,14 @@ async function saveFactsAsMemories(
     return { saved: 0, skipped: skippedSensitive + skippedQuality };
   }
 
-  log(`[session-processor] Batch saving ${batch.length} memories (skipped ${skippedSensitive} sensitive, ${skippedQuality} low-quality)`);
+  log(
+    `[session-processor] Batch saving ${batch.length} memories (skipped ${skippedSensitive} sensitive, ${skippedQuality} low-quality)`
+  );
   const result = await saveMemoriesBatch(batch, 0.92); // 0.92 = duplicate threshold
 
-  log(`[session-processor] Batch save complete: ${result.saved} saved, ${result.skipped} duplicates`);
+  log(
+    `[session-processor] Batch save complete: ${result.saved} saved, ${result.skipped} duplicates`
+  );
 
   return {
     saved: result.saved,
@@ -561,11 +586,11 @@ export async function processSessionEnd(
 
     // Build learnings list from saved facts
     result.learnings = facts
-      .filter(f => f.type === 'learning' || f.type === 'decision')
-      .map(f => f.content);
+      .filter((f) => f.type === 'learning' || f.type === 'decision')
+      .map((f) => f.content);
 
     // Build summary from all facts
-    result.summary = facts.map(f => `[${f.type}] ${f.content}`).join('\n\n');
+    result.summary = facts.map((f) => `[${f.type}] ${f.content}`).join('\n\n');
 
     // 4. Generate next-session-context.md
     await generateNextSessionContext(content, result.learnings);
@@ -580,7 +605,6 @@ export async function processSessionEnd(
         log(`[session-processor] Failed to cleanup progress file: ${err}`);
       }
     }
-
   } catch (err) {
     log(`[session-processor] Error processing session: ${err}`);
   }
@@ -659,7 +683,7 @@ async function generateNextSessionContext(content: string, learnings: string[]):
 
   if (learnings.length > 0) {
     sessionSection += '\n\n### Key Learnings\n\n';
-    sessionSection += learnings.map(l => `- ${l}`).join('\n');
+    sessionSection += learnings.map((l) => `- ${l}`).join('\n');
   }
 
   sessionSection += '\n\n---\n\n';
@@ -676,6 +700,8 @@ async function generateNextSessionContext(content: string, learnings: string[]):
       fs.appendFileSync(contextPath, sessionSection);
     }
   } catch (err) {
-    logWarn('session', 'Failed to write session handoff file', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('session', 'Failed to write session handoff file', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }

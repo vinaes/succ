@@ -22,10 +22,10 @@ import type { CodebaseContext } from './types.js';
 const CHARS_PER_TOKEN = 4;
 
 const BUDGET = {
-  file_tree: 2000 * CHARS_PER_TOKEN,        // ~8000 chars
-  code_search: 3000 * CHARS_PER_TOKEN,       // ~12000 chars
-  memories: 2000 * CHARS_PER_TOKEN,          // ~8000 chars
-  brain_docs: 1500 * CHARS_PER_TOKEN,        // ~6000 chars
+  file_tree: 2000 * CHARS_PER_TOKEN, // ~8000 chars
+  code_search: 3000 * CHARS_PER_TOKEN, // ~12000 chars
+  memories: 2000 * CHARS_PER_TOKEN, // ~8000 chars
+  brain_docs: 1500 * CHARS_PER_TOKEN, // ~6000 chars
 };
 
 // ============================================================================
@@ -108,7 +108,9 @@ async function gatherCodeSearch(description: string): Promise<string> {
         const score = (r.similarity * 100).toFixed(0);
         // Compact format: file path + first few lines (signature-like)
         const firstLines = r.content.split('\n').slice(0, 5).join('\n');
-        results.push(`--- ${filePath}:${r.start_line}-${r.end_line} (${score}%) ---\n${firstLines}\n`);
+        results.push(
+          `--- ${filePath}:${r.start_line}-${r.end_line} (${score}%) ---\n${firstLines}\n`
+        );
       }
     }
   } catch {
@@ -117,7 +119,20 @@ async function gatherCodeSearch(description: string): Promise<string> {
 
   // 2. Supplement with AST symbol extraction for keyword-matched files
   if (results.length < 5) {
-    let extractSymbolsFn: ((code: string, lang: string) => Promise<Array<{ name: string; type: string; signature?: string; startRow: number; endRow: number }>>) | null = null;
+    let extractSymbolsFn:
+      | ((
+          code: string,
+          lang: string
+        ) => Promise<
+          Array<{
+            name: string;
+            type: string;
+            signature?: string;
+            startRow: number;
+            endRow: number;
+          }>
+        >)
+      | null = null;
     try {
       const { extractSymbols: _extract } = await import('../tree-sitter/extractor.js');
       const { parseCode } = await import('../tree-sitter/parser.js');
@@ -151,15 +166,28 @@ async function gatherCodeSearch(description: string): Promise<string> {
         // Use AST symbols if available — compact and informative
         if (extractSymbolsFn) {
           const ext = path.extname(match).slice(1);
-          const langMap: Record<string, string> = { ts: 'typescript', tsx: 'tsx', js: 'javascript', py: 'python', go: 'go', rs: 'rust', java: 'java' };
+          const langMap: Record<string, string> = {
+            ts: 'typescript',
+            tsx: 'tsx',
+            js: 'javascript',
+            py: 'python',
+            go: 'go',
+            rs: 'rust',
+            java: 'java',
+          };
           const lang = langMap[ext];
           if (lang) {
             const symbols = await extractSymbolsFn(content, lang);
             if (symbols.length > 0) {
-              const symbolLines = symbols.slice(0, 15).map(s =>
-                `  ${s.type} ${s.name}${s.signature ? `: ${s.signature}` : ''} (L${s.startRow + 1})`
+              const symbolLines = symbols
+                .slice(0, 15)
+                .map(
+                  (s) =>
+                    `  ${s.type} ${s.name}${s.signature ? `: ${s.signature}` : ''} (L${s.startRow + 1})`
+                );
+              results.push(
+                `--- ${match} (${symbols.length} symbols) ---\n${symbolLines.join('\n')}\n`
               );
-              results.push(`--- ${match} (${symbols.length} symbols) ---\n${symbolLines.join('\n')}\n`);
               continue;
             }
           }
@@ -320,27 +348,121 @@ export function formatContext(ctx: CodebaseContext): string {
  */
 function extractKeywords(description: string): string[] {
   const stopWords = new Set([
-    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
-    'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
-    'before', 'after', 'above', 'below', 'between', 'and', 'but', 'or',
-    'not', 'no', 'nor', 'so', 'yet', 'both', 'either', 'neither',
-    'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other',
-    'some', 'such', 'than', 'too', 'very', 'just', 'also', 'add',
-    'implement', 'create', 'make', 'build', 'update', 'fix', 'change',
-    'new', 'feature', 'support', 'system', 'module', 'function',
+    'a',
+    'an',
+    'the',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'can',
+    'shall',
+    'to',
+    'of',
+    'in',
+    'for',
+    'on',
+    'with',
+    'at',
+    'by',
+    'from',
+    'as',
+    'into',
+    'through',
+    'during',
+    'before',
+    'after',
+    'above',
+    'below',
+    'between',
+    'and',
+    'but',
+    'or',
+    'not',
+    'no',
+    'nor',
+    'so',
+    'yet',
+    'both',
+    'either',
+    'neither',
+    'each',
+    'every',
+    'all',
+    'any',
+    'few',
+    'more',
+    'most',
+    'other',
+    'some',
+    'such',
+    'than',
+    'too',
+    'very',
+    'just',
+    'also',
+    'add',
+    'implement',
+    'create',
+    'make',
+    'build',
+    'update',
+    'fix',
+    'change',
+    'new',
+    'feature',
+    'support',
+    'system',
+    'module',
+    'function',
     // Russian stop words
-    'в', 'на', 'с', 'и', 'не', 'для', 'из', 'по', 'что', 'как',
-    'это', 'все', 'они', 'мы', 'он', 'она', 'его', 'её', 'их',
-    'добавить', 'создать', 'сделать', 'новый', 'систему', 'модуль',
+    'в',
+    'на',
+    'с',
+    'и',
+    'не',
+    'для',
+    'из',
+    'по',
+    'что',
+    'как',
+    'это',
+    'все',
+    'они',
+    'мы',
+    'он',
+    'она',
+    'его',
+    'её',
+    'их',
+    'добавить',
+    'создать',
+    'сделать',
+    'новый',
+    'систему',
+    'модуль',
   ]);
 
   return description
     .toLowerCase()
     .replace(/[^\w\s-]/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length >= 3 && !stopWords.has(w))
+    .filter((w) => w.length >= 3 && !stopWords.has(w))
     .slice(0, 10);
 }
 

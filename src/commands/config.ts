@@ -2,7 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import inquirer from 'inquirer';
-import { LOCAL_MODEL, getConfigDisplay, formatConfigDisplay, getSuccDir, invalidateConfigCache } from '../lib/config.js';
+import {
+  LOCAL_MODEL,
+  getConfigDisplay,
+  formatConfigDisplay,
+  getSuccDir,
+  invalidateConfigCache,
+} from '../lib/config.js';
 
 interface ConfigData {
   llm?: {
@@ -123,7 +129,10 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
         type: 'input',
         name: 'apiUrl',
         message: 'API URL (e.g., https://openrouter.ai/api/v1 or http://localhost:11434/v1):',
-        default: (existingEmbeddings.api_url as string) || (existingLlm.api_url as string) || 'https://openrouter.ai/api/v1',
+        default:
+          (existingEmbeddings.api_url as string) ||
+          (existingLlm.api_url as string) ||
+          'https://openrouter.ai/api/v1',
         validate: (input: string) => {
           try {
             new URL(input);
@@ -191,12 +200,24 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
 /**
  * Deep merge two objects (target wins on conflicts)
  */
-function deepMerge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>
+): Record<string, unknown> {
   const result = { ...base };
   for (const key of Object.keys(override)) {
-    if (override[key] && typeof override[key] === 'object' && !Array.isArray(override[key]) &&
-        result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])) {
-      result[key] = deepMerge(result[key] as Record<string, unknown>, override[key] as Record<string, unknown>);
+    if (
+      override[key] &&
+      typeof override[key] === 'object' &&
+      !Array.isArray(override[key]) &&
+      result[key] &&
+      typeof result[key] === 'object' &&
+      !Array.isArray(result[key])
+    ) {
+      result[key] = deepMerge(
+        result[key] as Record<string, unknown>,
+        override[key] as Record<string, unknown>
+      );
     } else if (override[key] !== undefined && override[key] !== '') {
       result[key] = override[key];
     }
@@ -211,7 +232,11 @@ function deepMerge(base: Record<string, unknown>, override: Record<string, unkno
  *   succ config set <key> <value>
  *   succ config set <key> <value> --project
  */
-export async function configSet(key: string, value: string, options: ConfigSetOptions = {}): Promise<void> {
+export async function configSet(
+  key: string,
+  value: string,
+  options: ConfigSetOptions = {}
+): Promise<void> {
   // Determine config path
   let configDir: string;
   let configPath: string;
@@ -219,7 +244,9 @@ export async function configSet(key: string, value: string, options: ConfigSetOp
   if (options.project) {
     const succDir = getSuccDir();
     if (!fs.existsSync(succDir)) {
-      console.error('Project not initialized. Run `succ init` first or omit --project for global config.');
+      console.error(
+        'Project not initialized. Run `succ init` first or omit --project for global config.'
+      );
       process.exitCode = 1;
       return;
     }

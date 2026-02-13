@@ -35,7 +35,7 @@ describe('Integration Tests', () => {
       // Create a child process running MCP server
       const proc = spawn('npx', ['tsx', 'src/mcp-server.ts'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-              });
+      });
 
       // Send initialize request
       const initRequest = JSON.stringify({
@@ -88,7 +88,7 @@ describe('Integration Tests', () => {
     it('should handle succ_status tool call', async () => {
       const proc = spawn('npx', ['tsx', 'src/mcp-server.ts'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-              });
+      });
 
       let stdout = '';
       let initialized = false;
@@ -163,7 +163,10 @@ describe('Integration Tests', () => {
       // Initialize git repo
       try {
         spawnSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
-        spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tempDir, stdio: 'ignore' });
+        spawnSync('git', ['config', 'user.email', 'test@test.com'], {
+          cwd: tempDir,
+          stdio: 'ignore',
+        });
         spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir, stdio: 'ignore' });
         spawnSync('git', ['add', '.'], { cwd: tempDir, stdio: 'ignore' });
         spawnSync('git', ['commit', '-m', 'init'], { cwd: tempDir, stdio: 'ignore' });
@@ -173,7 +176,11 @@ describe('Integration Tests', () => {
     });
 
     afterEach(async () => {
-      try { process.chdir(originalCwd); } catch { /* vmThreads doesn't support chdir */ }
+      try {
+        process.chdir(originalCwd);
+      } catch {
+        /* vmThreads doesn't support chdir */
+      }
 
       // Clean up
       if (fs.existsSync(tempDir)) {
@@ -193,29 +200,37 @@ describe('Integration Tests', () => {
             fs.rmSync(tempDir, { recursive: true, force: true });
             break;
           } catch {
-            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
           }
         }
       }
     });
 
     it('should show daemon status when not running', () => {
-      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'status'], {
-        encoding: 'utf-8',
-        cwd: tempDir,
-        timeout: 30000,
-      });
+      const result = spawnSync(
+        'npx',
+        ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'status'],
+        {
+          encoding: 'utf-8',
+          cwd: tempDir,
+          timeout: 30000,
+        }
+      );
 
       expect(result.stdout).toContain('Daemon Status');
       expect(result.stdout).toContain('Not running');
     });
 
     it('should handle stop when not running', () => {
-      const result = spawnSync('npx', ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'stop'], {
-        encoding: 'utf-8',
-        cwd: tempDir,
-        timeout: 30000,
-      });
+      const result = spawnSync(
+        'npx',
+        ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'stop'],
+        {
+          encoding: 'utf-8',
+          cwd: tempDir,
+          timeout: 30000,
+        }
+      );
 
       expect(result.stdout).toContain('not running');
     });
@@ -239,7 +254,7 @@ describe('Integration Tests', () => {
             fs.rmSync(tempDir, { recursive: true, force: true });
             break;
           } catch {
-            if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
           }
         }
       }

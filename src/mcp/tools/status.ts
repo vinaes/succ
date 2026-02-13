@@ -19,7 +19,13 @@ import {
   closeDb,
   type TokenEventType,
 } from '../../lib/storage/index.js';
-import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig, getProjectRoot } from '../../lib/config.js';
+import {
+  getDaemonStatuses,
+  isGlobalOnlyMode,
+  getIdleReflectionConfig,
+  getRetentionConfig,
+  getProjectRoot,
+} from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
@@ -62,11 +68,13 @@ export function registerStatusTools(server: McpServer) {
           .join('\n');
 
         // Format daemon statuses
-        const daemonLines = daemons.map(d => {
-          const statusIcon = d.running ? '🟢' : '⚫';
-          const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
-          return `  ${statusIcon} ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`;
-        }).join('\n');
+        const daemonLines = daemons
+          .map((d) => {
+            const statusIcon = d.running ? '🟢' : '⚫';
+            const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
+            return `  ${statusIcon} ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`;
+          })
+          .join('\n');
 
         const status = [
           '## Documents',
@@ -77,9 +85,15 @@ export function registerStatusTools(server: McpServer) {
           '## Memories',
           `  Total: ${memStats.total_memories}`,
           typeBreakdown ? `  By type:\n${typeBreakdown}` : '',
-          memStats.oldest_memory ? `  Oldest: ${new Date(memStats.oldest_memory).toLocaleDateString()}` : '',
-          memStats.newest_memory ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}` : '',
-          memStats.stale_count > 0 ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget` : '',
+          memStats.oldest_memory
+            ? `  Oldest: ${new Date(memStats.oldest_memory).toLocaleDateString()}`
+            : '',
+          memStats.newest_memory
+            ? `  Newest: ${new Date(memStats.newest_memory).toLocaleDateString()}`
+            : '',
+          memStats.stale_count > 0
+            ? `  ⚠ Stale (>30 days): ${memStats.stale_count} - consider cleanup with succ_forget`
+            : '',
         ];
 
         // Index freshness (only show if stale files detected)
@@ -92,8 +106,10 @@ export function registerStatusTools(server: McpServer) {
               '## Index Freshness',
               `  Indexed files: ${freshness.total}`,
               freshness.stale > 0 ? `  Stale (modified since indexing): ${freshness.stale}` : '',
-              freshness.deleted > 0 ? `  Missing (deleted since indexing): ${freshness.deleted}` : '',
-              '  Run `succ reindex` to refresh',
+              freshness.deleted > 0
+                ? `  Missing (deleted since indexing): ${freshness.deleted}`
+                : '',
+              '  Run `succ reindex` to refresh'
             );
           }
         } catch {
@@ -115,10 +131,12 @@ export function registerStatusTools(server: McpServer) {
               '',
               '## Retention Health',
               `  Keep: ${retStats.keepCount} | Warn: ${retStats.warnCount} | Cleanup: ${retStats.deleteCount}`,
-              `  Avg effective score: ${retStats.avgEffectiveScore}`,
+              `  Avg effective score: ${retStats.avgEffectiveScore}`
             );
             if (retStats.deleteCount > 0) {
-              status.push(`  ⚠ ${retStats.deleteCount} memories below threshold - run \`succ retention --auto-cleanup --dry-run\``);
+              status.push(
+                `  ⚠ ${retStats.deleteCount} memories below threshold - run \`succ retention --auto-cleanup --dry-run\``
+              );
             }
           }
         } catch {
@@ -129,9 +147,17 @@ export function registerStatusTools(server: McpServer) {
         try {
           const d = await getStorageDispatcher();
           const sc = d.getSessionCounters();
-          const totalOps = sc.memoriesCreated + sc.globalMemoriesCreated + sc.memoriesDuplicated + sc.recallQueries + sc.searchQueries + sc.codeSearchQueries;
+          const totalOps =
+            sc.memoriesCreated +
+            sc.globalMemoriesCreated +
+            sc.memoriesDuplicated +
+            sc.recallQueries +
+            sc.searchQueries +
+            sc.codeSearchQueries;
           if (totalOps > 0) {
-            const typesList = Object.entries(sc.typesCreated).map(([t, n]) => `${t} (${n})`).join(', ');
+            const typesList = Object.entries(sc.typesCreated)
+              .map(([t, n]) => `${t} (${n})`)
+              .join(', ');
             status.push(
               '',
               '## Current Session',
@@ -140,12 +166,16 @@ export function registerStatusTools(server: McpServer) {
               `  Recall queries: ${sc.recallQueries}`,
               `  Search queries: ${sc.searchQueries}`,
               sc.codeSearchQueries > 0 ? `  Code search queries: ${sc.codeSearchQueries}` : '',
-              sc.webSearchQueries > 0 ? `  Web searches: ${sc.webSearchQueries} ($${(sc.webSearchCostUsd || 0).toFixed(4)})` : '',
+              sc.webSearchQueries > 0
+                ? `  Web searches: ${sc.webSearchQueries} ($${(sc.webSearchCostUsd || 0).toFixed(4)})`
+                : '',
               typesList ? `  Types: ${typesList}` : '',
-              `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`,
+              `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`
             );
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         // Web search history
         try {
@@ -155,16 +185,14 @@ export function registerStatusTools(server: McpServer) {
               '',
               '## Web Searches',
               `  Total: ${wsSummary.total_searches} ($${wsSummary.total_cost_usd.toFixed(4)})`,
-              `  Today: ${wsSummary.today_searches} ($${wsSummary.today_cost_usd.toFixed(4)})`,
+              `  Today: ${wsSummary.today_searches} ($${wsSummary.today_cost_usd.toFixed(4)})`
             );
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
-        status.push(
-          '',
-          '## Daemons',
-          daemonLines,
-        );
+        status.push('', '## Daemons', daemonLines);
 
         const statusText = status.filter(Boolean).join('\n');
 
@@ -266,11 +294,17 @@ export function registerStatusTools(server: McpServer) {
             lines.push('\n### Web Searches');
             for (const [tool, stats] of Object.entries(wsSummary.by_tool)) {
               const shortName = tool.replace('succ_', '');
-              lines.push(`  ${shortName.padEnd(16)}: ${stats.count} queries, $${stats.cost.toFixed(4)}`);
+              lines.push(
+                `  ${shortName.padEnd(16)}: ${stats.count} queries, $${stats.cost.toFixed(4)}`
+              );
             }
-            lines.push(`  Today: ${wsSummary.today_searches} searches, $${wsSummary.today_cost_usd.toFixed(4)}`);
+            lines.push(
+              `  Today: ${wsSummary.today_searches} searches, $${wsSummary.today_cost_usd.toFixed(4)}`
+            );
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         // Total — compute from aggregated data (same logic as CLI stats.ts)
         const sessionSaved = sessionStats?.total_savings_tokens || 0;
@@ -281,7 +315,7 @@ export function registerStatusTools(server: McpServer) {
           lines.push(`  Total saved: ${formatTokens(totalSaved)} tokens`);
         } else if (ragTotalQueries > 0) {
           lines.push(`  Queries: ${ragTotalQueries}, ${formatTokens(ragTotalReturned)} returned`);
-          lines.push('  No token savings yet (recall-only queries don\'t compute savings).');
+          lines.push("  No token savings yet (recall-only queries don't compute savings).");
         } else {
           lines.push('  No stats recorded yet.');
         }
@@ -320,20 +354,25 @@ export function registerStatusTools(server: McpServer) {
     async ({ project_path }) => {
       await applyProjectPath(project_path);
       try {
-        const { calculateAIReadinessScore, formatAIReadinessScore } = await import('../../lib/ai-readiness.js');
+        const { calculateAIReadinessScore, formatAIReadinessScore } =
+          await import('../../lib/ai-readiness.js');
         const result = await calculateAIReadinessScore();
         return {
-          content: [{
-            type: 'text' as const,
-            text: formatAIReadinessScore(result),
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: formatAIReadinessScore(result),
+            },
+          ],
         };
       } catch (error: any) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error calculating score: ${error.message}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error calculating score: ${error.message}`,
+            },
+          ],
           isError: true,
         };
       } finally {

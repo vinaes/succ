@@ -87,7 +87,7 @@ describe('PRD State', () => {
 
       const entries = listPrds();
       expect(entries).toHaveLength(2);
-      expect(entries.map(e => e.title).sort()).toEqual(['PRD 1', 'PRD 2']);
+      expect(entries.map((e) => e.title).sort()).toEqual(['PRD 1', 'PRD 2']);
     });
 
     it('should remove from index on delete', () => {

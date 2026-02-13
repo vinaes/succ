@@ -38,9 +38,7 @@ export async function runAiOnboarding(): Promise<void> {
     console.log('Type "done", "skip", or "exit" at any time to finish.\n');
     console.log('---\n');
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: ONBOARDING_SYSTEM_PROMPT },
-    ];
+    const messages: ChatMessage[] = [{ role: 'system', content: ONBOARDING_SYSTEM_PROMPT }];
 
     // Get initial greeting from AI
     try {
@@ -48,7 +46,11 @@ export async function runAiOnboarding(): Promise<void> {
       console.log(`succ: ${greeting}\n`);
       messages.push({ role: 'assistant', content: greeting });
     } catch (error) {
-      logError('onboarding', 'Failed to connect to LLM, falling back to static wizard', error instanceof Error ? error : undefined);
+      logError(
+        'onboarding',
+        'Failed to connect to LLM, falling back to static wizard',
+        error instanceof Error ? error : undefined
+      );
       rl.close();
       // Import dynamically to avoid circular dependency
       const { runStaticWizard } = await import('./wizard.js');
@@ -81,7 +83,11 @@ export async function runAiOnboarding(): Promise<void> {
         console.log(`\nsucc: ${response}\n`);
         messages.push({ role: 'assistant', content: response });
       } catch (error) {
-        logError('onboarding', 'Error getting response', error instanceof Error ? error : undefined);
+        logError(
+          'onboarding',
+          'Error getting response',
+          error instanceof Error ? error : undefined
+        );
       }
 
       turnCount++;
@@ -93,7 +99,6 @@ export async function runAiOnboarding(): Promise<void> {
 
     // Mark completed
     markOnboardingCompleted('ai-chat');
-
   } finally {
     rl.close();
   }

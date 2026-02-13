@@ -17,7 +17,13 @@
  */
 
 import type { VectorStore } from './interface.js';
-import type { VectorSearchResult, VectorItem, StorageConfig, Memory, MemoryType } from '../types.js';
+import type {
+  VectorSearchResult,
+  VectorItem,
+  StorageConfig,
+  Memory,
+  MemoryType,
+} from '../types.js';
 import { DependencyError } from '../../errors.js';
 
 // Lazy-load qdrant client
@@ -34,7 +40,7 @@ async function loadQdrant(): Promise<any> {
   } catch {
     throw new DependencyError(
       'Qdrant support requires the "@qdrant/js-client-rest" package. ' +
-      'Install it with: npm install @qdrant/js-client-rest'
+        'Install it with: npm install @qdrant/js-client-rest'
     );
   }
 }
@@ -184,7 +190,9 @@ export class QdrantVectorStore implements VectorStore {
     return `${this.prefix}${type}`;
   }
 
-  private initKey(type: 'documents' | 'memories' | 'global_memories'): 'documents' | 'memories' | 'globalMemories' {
+  private initKey(
+    type: 'documents' | 'memories' | 'global_memories'
+  ): 'documents' | 'memories' | 'globalMemories' {
     return type === 'global_memories' ? 'globalMemories' : type;
   }
 
@@ -201,7 +209,9 @@ export class QdrantVectorStore implements VectorStore {
   // Collection Management — Multi-Vector Schema
   // ==========================================================================
 
-  private async ensureCollection(type: 'documents' | 'memories' | 'global_memories'): Promise<void> {
+  private async ensureCollection(
+    type: 'documents' | 'memories' | 'global_memories'
+  ): Promise<void> {
     const client = await this.getClient();
     const name = this.collectionName(type);
     const key = this.initKey(type);
@@ -218,12 +228,18 @@ export class QdrantVectorStore implements VectorStore {
         }
         const storedSize = (vectors as VectorsWithDense).dense?.size;
         if (storedSize != null && storedSize !== this.dimensions) {
-          logWarn('qdrant', `Collection "${name}" has ${storedSize} dims, need ${this.dimensions}. Recreating. Re-indexing required.`);
+          logWarn(
+            'qdrant',
+            `Collection "${name}" has ${storedSize} dims, need ${this.dimensions}. Recreating. Re-indexing required.`
+          );
           await client.deleteCollection(name);
           await this.createMultiVectorCollection(name, type);
         }
       } else {
-        logWarn('qdrant', `Collection "${name}" uses old single-vector schema. Recreating with multi-vector schema. Re-indexing required.`);
+        logWarn(
+          'qdrant',
+          `Collection "${name}" uses old single-vector schema. Recreating with multi-vector schema. Re-indexing required.`
+        );
         await client.deleteCollection(name);
         await this.createMultiVectorCollection(name, type);
       }
@@ -291,7 +307,10 @@ export class QdrantVectorStore implements VectorStore {
     } else {
       // memories + global_memories
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
-      await client.createPayloadIndex(name, { field_name: 'invalidated_by', field_schema: 'integer' });
+      await client.createPayloadIndex(name, {
+        field_name: 'invalidated_by',
+        field_schema: 'integer',
+      });
       await client.createPayloadIndex(name, { field_name: 'created_at', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'tags', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'type', field_schema: 'keyword' });
@@ -316,11 +335,13 @@ export class QdrantVectorStore implements VectorStore {
     const name = this.collectionName('documents');
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: { dense: embedding },
-        payload: { doc_type: 'doc', project_id: this.projectId ?? '' },
-      }],
+      points: [
+        {
+          id,
+          vector: { dense: embedding },
+          payload: { doc_type: 'doc', project_id: this.projectId ?? '' },
+        },
+      ],
     });
   }
 
@@ -334,7 +355,7 @@ export class QdrantVectorStore implements VectorStore {
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => ({
+        points: batch.map((item) => ({
           id: item.id,
           vector: { dense: item.embedding },
           payload: { doc_type: 'doc', project_id: this.projectId ?? '' },
@@ -354,7 +375,11 @@ export class QdrantVectorStore implements VectorStore {
     await client.delete(this.collectionName('documents'), { points: docIds });
   }
 
-  async searchDocuments(query: number[], limit: number, threshold: number): Promise<VectorSearchResult[]> {
+  async searchDocuments(
+    query: number[],
+    limit: number,
+    threshold: number
+  ): Promise<VectorSearchResult[]> {
     const client = await this.getClient();
     const name = this.collectionName('documents');
 
@@ -382,11 +407,13 @@ export class QdrantVectorStore implements VectorStore {
     const pid = projectId ?? this.projectId;
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: { dense: embedding },
-        payload: { project_id: pid, type: 'memory' },
-      }],
+      points: [
+        {
+          id,
+          vector: { dense: embedding },
+          payload: { project_id: pid, type: 'memory' },
+        },
+      ],
     });
   }
 
@@ -446,11 +473,13 @@ export class QdrantVectorStore implements VectorStore {
     const name = this.collectionName('global_memories');
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: { dense: embedding },
-        payload: { type: 'global_memory' },
-      }],
+      points: [
+        {
+          id,
+          vector: { dense: embedding },
+          payload: { type: 'global_memory' },
+        },
+      ],
     });
   }
 
@@ -459,7 +488,11 @@ export class QdrantVectorStore implements VectorStore {
     await client.delete(this.collectionName('global_memories'), { points: [id] });
   }
 
-  async searchGlobalMemories(query: number[], limit: number, threshold: number): Promise<VectorSearchResult[]> {
+  async searchGlobalMemories(
+    query: number[],
+    limit: number,
+    threshold: number
+  ): Promise<VectorSearchResult[]> {
     const client = await this.getClient();
     const name = this.collectionName('global_memories');
 
@@ -493,7 +526,9 @@ export class QdrantVectorStore implements VectorStore {
         filter: { must: [{ key: 'doc_type', match: { value: 'doc' } }] },
       });
     } catch (err) {
-      logWarn('qdrant', 'Pre-upsert delete failed (documents)', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('qdrant', 'Pre-upsert delete failed (documents)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     await this.upsertDocumentVectorsBatch(items);
@@ -505,17 +540,19 @@ export class QdrantVectorStore implements VectorStore {
 
     try {
       await client.delete(name, {
-        filter: { must: [{ has_id: items.map(i => i.id) }] },
+        filter: { must: [{ has_id: items.map((i) => i.id) }] },
       });
     } catch (err) {
-      logWarn('qdrant', 'Pre-upsert delete failed', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('qdrant', 'Pre-upsert delete failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const batchSize = 100;
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => ({
+        points: batch.map((item) => ({
           id: item.id,
           vector: { dense: item.embedding },
           payload: { type: 'memory' },
@@ -530,17 +567,19 @@ export class QdrantVectorStore implements VectorStore {
 
     try {
       await client.delete(name, {
-        filter: { must: [{ has_id: items.map(i => i.id) }] },
+        filter: { must: [{ has_id: items.map((i) => i.id) }] },
       });
     } catch (err) {
-      logWarn('qdrant', 'Pre-upsert delete failed', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('qdrant', 'Pre-upsert delete failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const batchSize = 100;
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => ({
+        points: batch.map((item) => ({
           id: item.id,
           vector: { dense: item.embedding },
           payload: { type: 'global_memory' },
@@ -567,24 +606,26 @@ export class QdrantVectorStore implements VectorStore {
     const docType = meta.filePath.startsWith('code:') ? 'code' : 'doc';
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: {
-          dense: embedding,
-          bm25: { text: meta.content, model: 'Qdrant/bm25' },
+      points: [
+        {
+          id,
+          vector: {
+            dense: embedding,
+            bm25: { text: meta.content, model: 'Qdrant/bm25' },
+          },
+          payload: {
+            doc_type: docType,
+            file_path: meta.filePath,
+            content: meta.content,
+            start_line: meta.startLine,
+            end_line: meta.endLine,
+            project_id: meta.projectId,
+            symbol_name: meta.symbolName ?? null,
+            symbol_type: meta.symbolType ?? null,
+            signature: meta.signature ?? null,
+          } satisfies DocumentPayload,
         },
-        payload: {
-          doc_type: docType,
-          file_path: meta.filePath,
-          content: meta.content,
-          start_line: meta.startLine,
-          end_line: meta.endLine,
-          project_id: meta.projectId,
-          symbol_name: meta.symbolName ?? null,
-          symbol_type: meta.symbolType ?? null,
-          signature: meta.signature ?? null,
-        } satisfies DocumentPayload,
-      }],
+      ],
     });
   }
 
@@ -603,7 +644,7 @@ export class QdrantVectorStore implements VectorStore {
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => {
+        points: batch.map((item) => {
           const docType = item.meta.filePath.startsWith('code:') ? 'code' : 'doc';
           return {
             id: item.id,
@@ -640,27 +681,29 @@ export class QdrantVectorStore implements VectorStore {
     const name = this.collectionName('memories');
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: {
-          dense: embedding,
-          bm25: { text: meta.content, model: 'Qdrant/bm25' },
+      points: [
+        {
+          id,
+          vector: {
+            dense: embedding,
+            bm25: { text: meta.content, model: 'Qdrant/bm25' },
+          },
+          payload: {
+            content: meta.content,
+            tags: meta.tags,
+            source: meta.source ?? null,
+            type: meta.type ?? null,
+            project_id: meta.projectId ?? null,
+            created_at: meta.createdAt,
+            valid_from: meta.validFrom ?? null,
+            valid_until: meta.validUntil ?? null,
+            invalidated_by: null,
+            access_count: 0,
+            last_accessed: null,
+            quality_score: null,
+          } satisfies MemoryPayload,
         },
-        payload: {
-          content: meta.content,
-          tags: meta.tags,
-          source: meta.source ?? null,
-          type: meta.type ?? null,
-          project_id: meta.projectId ?? null,
-          created_at: meta.createdAt,
-          valid_from: meta.validFrom ?? null,
-          valid_until: meta.validUntil ?? null,
-          invalidated_by: null,
-          access_count: 0,
-          last_accessed: null,
-          quality_score: null,
-        } satisfies MemoryPayload,
-      }],
+      ],
     });
   }
 
@@ -676,27 +719,29 @@ export class QdrantVectorStore implements VectorStore {
     const name = this.collectionName('global_memories');
 
     await client.upsert(name, {
-      points: [{
-        id,
-        vector: {
-          dense: embedding,
-          bm25: { text: meta.content, model: 'Qdrant/bm25' },
+      points: [
+        {
+          id,
+          vector: {
+            dense: embedding,
+            bm25: { text: meta.content, model: 'Qdrant/bm25' },
+          },
+          payload: {
+            content: meta.content,
+            tags: meta.tags,
+            source: meta.source ?? null,
+            type: meta.type ?? null,
+            project_id: null,
+            created_at: meta.createdAt,
+            valid_from: meta.validFrom ?? null,
+            valid_until: meta.validUntil ?? null,
+            invalidated_by: null,
+            access_count: 0,
+            last_accessed: null,
+            quality_score: null,
+          } satisfies MemoryPayload,
         },
-        payload: {
-          content: meta.content,
-          tags: meta.tags,
-          source: meta.source ?? null,
-          type: meta.type ?? null,
-          project_id: null,
-          created_at: meta.createdAt,
-          valid_from: meta.validFrom ?? null,
-          valid_until: meta.validUntil ?? null,
-          invalidated_by: null,
-          access_count: 0,
-          last_accessed: null,
-          quality_score: null,
-        } satisfies MemoryPayload,
-      }],
+      ],
     });
   }
 
@@ -715,7 +760,7 @@ export class QdrantVectorStore implements VectorStore {
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => ({
+        points: batch.map((item) => ({
           id: item.id,
           vector: {
             dense: item.embedding,
@@ -755,7 +800,7 @@ export class QdrantVectorStore implements VectorStore {
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
       await client.upsert(name, {
-        points: batch.map(item => ({
+        points: batch.map((item) => ({
           id: item.id,
           vector: {
             dense: item.embedding,
@@ -803,7 +848,8 @@ export class QdrantVectorStore implements VectorStore {
     if (options?.codeOnly) must.push({ key: 'doc_type', match: { value: 'code' } });
     if (options?.docsOnly) must.push({ key: 'doc_type', match: { value: 'doc' } });
     if (options?.projectId) must.push({ key: 'project_id', match: { value: options.projectId } });
-    if (options?.symbolType) must.push({ key: 'symbol_type', match: { value: options.symbolType } });
+    if (options?.symbolType)
+      must.push({ key: 'symbol_type', match: { value: options.symbolType } });
 
     const filter = must.length > 0 ? { must } : undefined;
 
@@ -836,7 +882,7 @@ export class QdrantVectorStore implements VectorStore {
       start_line: p.payload?.start_line ?? 0,
       end_line: p.payload?.end_line ?? 0,
       similarity: p.score,
-      bm25Score: 0,      // RRF doesn't expose individual scores
+      bm25Score: 0, // RRF doesn't expose individual scores
       vectorScore: 0,
       symbol_name: p.payload?.symbol_name ?? null,
       symbol_type: p.payload?.symbol_type ?? null,
