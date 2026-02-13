@@ -58,8 +58,8 @@ export type { SkillsConfig } from './config.js';
 interface LLMConfig {
   backend: LLMBackend;
   model: string;
-  localEndpoint?: string;
-  openrouterModel?: string;
+  endpoint?: string;
+  apiKey?: string;
 }
 
 // ============================================================================
@@ -173,8 +173,8 @@ async function callLLM(prompt: string, config: LLMConfig, timeout: number = 1500
   return sharedCallLLM(prompt, { timeout, maxTokens: 500 }, {
     backend: config.backend,
     model: config.model,
-    localEndpoint: config.localEndpoint,
-    openrouterModel: config.openrouterModel,
+    endpoint: config.endpoint,
+    apiKey: config.apiKey,
   });
 }
 
@@ -289,16 +289,13 @@ export async function rankSkillsWithLLM(
 
   // Use lightweight models for ranking (simple task)
   const rankingConfig = { ...config };
-  if (config.backend === 'local') {
-    // Prefer smaller, faster model for ranking
+  if (config.backend === 'api') {
+    // Prefer smaller, faster model for ranking if using local Ollama
     rankingConfig.model = config.model?.includes('qwen') ? 'qwen2.5:0.5b' : config.model;
-  } else if (config.backend === 'openrouter') {
-    // Prefer Haiku for ranking (5x cheaper than Sonnet)
-    rankingConfig.openrouterModel = 'anthropic/claude-3-haiku';
   }
 
   try {
-    console.log(`[skills] Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model || rankingConfig.openrouterModel})`);
+    console.log(`[skills] Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`);
     const result = await callLLM(llmPrompt, rankingConfig, 30000);
     console.log(`[skills] Ranking result: ${result.slice(0, 300)}`);
 
@@ -360,19 +357,19 @@ export async function suggestSkills(
     return cached;
   }
 
-  // Get unified LLM config
+  // Get unified LLM config for skills
   const llmConfig = getLLMConfig();
 
   // Build LLM config from unified llm.* settings
   const baseLlmConfig: LLMConfig = {
     backend: llmConfig.backend,
     model: llmConfig.model,
-    localEndpoint: llmConfig.localEndpoint,
-    openrouterModel: llmConfig.openrouterModel,
+    endpoint: llmConfig.endpoint,
+    apiKey: llmConfig.apiKey,
   };
 
-  // Fallback chain - local first to avoid ToS issues
-  const backends: LLMBackend[] = ['local', 'openrouter', 'claude'];
+  // Fallback chain - api first, then claude
+  const backends: LLMBackend[] = ['api', 'claude'];
   const orderedBackends = [
     llmConfig.backend,
     ...backends.filter((b) => b !== llmConfig.backend),

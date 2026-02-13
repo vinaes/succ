@@ -16,8 +16,9 @@ import { scanSensitive } from './sensitive-filter.js';
 import { logError, logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
-import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
+import { callLLM, type LLMBackend } from './llm.js';
 import { FACT_EXTRACTION_PROMPT } from '../prompts/index.js';
+import { getLLMTaskConfig } from './config.js';
 
 /**
  * Extracted fact from session
@@ -52,7 +53,7 @@ export interface SessionSummaryResult {
 export async function extractFactsWithLLM(
   transcript: string,
   options: {
-    mode: 'claude' | 'local' | 'openrouter';
+    mode: LLMBackend;
     model?: string;
     apiUrl?: string;
     apiKey?: string;
@@ -60,33 +61,20 @@ export async function extractFactsWithLLM(
 ): Promise<ExtractedFact[]> {
   const prompt = FACT_EXTRACTION_PROMPT.replace('{transcript}', transcript);
 
-  // Map legacy mode to new backend
-  const backend: LLMBackend = options.mode;
-  const llmConfig = getLLMConfig();
-
-  // Build config override
-  const configOverride: Parameters<typeof callLLM>[2] = { backend };
-
-  if (options.model) {
-    if (backend === 'claude') {
-      configOverride.model = options.model;
-    } else if (backend === 'openrouter') {
-      configOverride.openrouterModel = options.model;
-    } else if (backend === 'local') {
-      configOverride.model = options.model;
-    }
-  }
-
-  if (options.apiUrl) {
-    configOverride.localEndpoint = options.apiUrl;
-  }
-
   try {
-    // Use sleep agent for background extraction if enabled
-    const result = await callLLM(prompt, { timeout: 30000, maxTokens: 2000, useSleepAgent: true }, configOverride);
+    const result = await callLLM(
+      prompt,
+      { timeout: 30000, maxTokens: 2000, useSleepAgent: true },
+      {
+        backend: options.mode,
+        model: options.model,
+        endpoint: options.apiUrl,
+        apiKey: options.apiKey,
+      }
+    );
     return parseFactsResponse(result);
   } catch (error) {
-    logWarn('session-summary', `LLM extraction failed (${backend})`, { error: String(error) });
+    logWarn('session-summary', `LLM extraction failed (${options.mode})`, { error: String(error) });
     return [];
   }
 }
@@ -204,8 +192,7 @@ export async function extractSessionSummary(
     dryRun?: boolean;
     onProgress?: (current: number, total: number, action: string) => void;
     // CLI overrides for LLM selection
-    local?: boolean;
-    openrouter?: boolean;
+    api?: boolean;
     apiUrl?: string;
     model?: string;
   } = {}
@@ -224,39 +211,34 @@ export async function extractSessionSummary(
   };
 
   // Determine which agent to use
-  // CLI flags take priority over config
+  // CLI --api flag takes priority, then config
   let llmOptions: {
-    mode: 'claude' | 'local' | 'openrouter';
+    mode: LLMBackend;
     model?: string;
     apiUrl?: string;
     apiKey?: string;
   };
 
-  if (options.local) {
-    // CLI: --local flag
+  if (options.api) {
+    const sleepCfg = getLLMTaskConfig('sleep');
     llmOptions = {
-      mode: 'local',
-      model: options.model || config.sleep_agent?.model || 'qwen2.5-coder:14b',
-      apiUrl: options.apiUrl || config.sleep_agent?.api_url || 'http://localhost:11434/v1',
-    };
-  } else if (options.openrouter) {
-    // CLI: --openrouter flag
-    llmOptions = {
-      mode: 'openrouter',
-      model: options.model || config.sleep_agent?.model || 'anthropic/claude-3-haiku',
-      apiKey: config.sleep_agent?.api_key || globalConfig.openrouter_api_key,
+      mode: 'api',
+      model: options.model || sleepCfg.model,
+      apiUrl: options.apiUrl || sleepCfg.api_url,
+      apiKey: sleepCfg.api_key,
     };
   } else {
     // Use config-based selection
     const sleepAgent = config.sleep_agent;
-    const useSleepAgent = sleepAgent.enabled && sleepAgent.model && sleepAgent.handle_operations?.session_summary;
+    const useSleepAgent = sleepAgent.enabled && sleepAgent.handle_operations?.session_summary;
 
     if (useSleepAgent) {
+      const sleepCfg = getLLMTaskConfig('sleep');
       llmOptions = {
-        mode: sleepAgent.mode as 'local' | 'openrouter',
-        model: sleepAgent.model,
-        apiUrl: sleepAgent.api_url,
-        apiKey: sleepAgent.api_key || globalConfig.openrouter_api_key,
+        mode: sleepCfg.mode as LLMBackend,
+        model: sleepCfg.model,
+        apiUrl: sleepCfg.api_url,
+        apiKey: sleepCfg.api_key,
       };
     } else {
       llmOptions = {
@@ -338,8 +320,7 @@ export async function sessionSummary(
   options: {
     dryRun?: boolean;
     verbose?: boolean;
-    local?: boolean;
-    openrouter?: boolean;
+    api?: boolean;
     apiUrl?: string;
     model?: string;
   } = {}
@@ -405,8 +386,7 @@ export async function sessionSummary(
   const result = await extractSessionSummary(transcript, {
     dryRun: options.dryRun,
     verbose: options.verbose ?? true,
-    local: options.local,
-    openrouter: options.openrouter,
+    api: options.api,
     apiUrl: options.apiUrl,
     model: options.model,
   });

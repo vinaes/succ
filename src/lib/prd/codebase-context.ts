@@ -83,17 +83,32 @@ async function gatherFileTree(): Promise<string> {
 
 /**
  * Search for relevant code using succ's indexed code.
- * Falls back to simple glob+read if code index unavailable.
- *
- * This function searches for keywords extracted from the description
- * in the project's source files.
+ * Uses tree-sitter for AST-based symbol extraction when available,
+ * falls back to simple glob+read.
  */
 async function gatherCodeSearch(description: string): Promise<string> {
   const root = getProjectRoot();
   const keywords = extractKeywords(description);
   const results: string[] = [];
+  const seenFiles = new Set<string>();
 
-  // Simple approach: find files matching keywords in name
+  // Try AST-based symbol extraction for matched files
+  let extractSymbols: ((code: string, lang: string) => Promise<Array<{ name: string; type: string; signature?: string; startRow: number; endRow: number }>>) | null = null;
+  try {
+    const { extractSymbols: _extract } = await import('../tree-sitter/extractor.js');
+    const { parseCode } = await import('../tree-sitter/parser.js');
+    extractSymbols = async (code: string, lang: string) => {
+      const tree = await parseCode(code, lang);
+      if (!tree) return [];
+      const symbols = await _extract(tree, code, lang);
+      tree.delete();
+      return symbols;
+    };
+  } catch {
+    // tree-sitter not available, will use fallback
+  }
+
+  // Search by filename match
   for (const keyword of keywords.slice(0, 5)) {
     const matches = await glob(`src/**/*${keyword.toLowerCase()}*`, {
       cwd: root,
@@ -102,19 +117,37 @@ async function gatherCodeSearch(description: string): Promise<string> {
     });
 
     for (const match of matches.slice(0, 3)) {
+      if (seenFiles.has(match)) continue;
+      seenFiles.add(match);
       const fullPath = path.join(root, match);
       if (!fs.existsSync(fullPath)) continue;
 
       const content = fs.readFileSync(fullPath, 'utf-8');
-      const lines = content.split('\n');
 
-      // Extract exports and key structure (first 50 lines or less)
-      const preview = lines.slice(0, 50).join('\n');
-      results.push(`--- ${match} ---\n${preview}\n`);
+      // Use AST symbols if available — much more compact and informative
+      if (extractSymbols) {
+        const ext = path.extname(match).slice(1);
+        const langMap: Record<string, string> = { ts: 'typescript', tsx: 'tsx', js: 'javascript', py: 'python', go: 'go', rs: 'rust', java: 'java' };
+        const lang = langMap[ext];
+        if (lang) {
+          const symbols = await extractSymbols(content, lang);
+          if (symbols.length > 0) {
+            const symbolLines = symbols.slice(0, 15).map(s =>
+              `  ${s.type} ${s.name}${s.signature ? `: ${s.signature}` : ''} (L${s.startRow + 1})`
+            );
+            results.push(`--- ${match} (${symbols.length} symbols) ---\n${symbolLines.join('\n')}\n`);
+            continue;
+          }
+        }
+      }
+
+      // Fallback: first 50 lines
+      const lines = content.split('\n');
+      results.push(`--- ${match} ---\n${lines.slice(0, 50).join('\n')}\n`);
     }
   }
 
-  // Also search for files containing the keywords in content
+  // Search for files containing keywords in content
   const srcFiles = await glob('src/**/*.ts', {
     cwd: root,
     nodir: true,
@@ -124,27 +157,25 @@ async function gatherCodeSearch(description: string): Promise<string> {
   for (const keyword of keywords.slice(0, 3)) {
     for (const file of srcFiles) {
       if (results.length >= 8) break;
+      if (seenFiles.has(file)) continue;
       const fullPath = path.join(root, file);
       if (!fs.existsSync(fullPath)) continue;
 
       const content = fs.readFileSync(fullPath, 'utf-8');
       if (content.toLowerCase().includes(keyword.toLowerCase())) {
-        // Only add if not already included
-        if (!results.some(r => r.includes(file))) {
-          const lines = content.split('\n');
-          // Find the relevant lines
-          const matchingLines: string[] = [];
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].toLowerCase().includes(keyword.toLowerCase())) {
-              const start = Math.max(0, i - 2);
-              const end = Math.min(lines.length, i + 3);
-              matchingLines.push(`  L${i + 1}: ${lines.slice(start, end).join('\n  ')}`);
-              if (matchingLines.length >= 3) break;
-            }
+        seenFiles.add(file);
+        const lines = content.split('\n');
+        const matchingLines: string[] = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase().includes(keyword.toLowerCase())) {
+            const start = Math.max(0, i - 2);
+            const end = Math.min(lines.length, i + 3);
+            matchingLines.push(`  L${i + 1}: ${lines.slice(start, end).join('\n  ')}`);
+            if (matchingLines.length >= 3) break;
           }
-          if (matchingLines.length > 0) {
-            results.push(`--- ${file} (matches: "${keyword}") ---\n${matchingLines.join('\n')}\n`);
-          }
+        }
+        if (matchingLines.length > 0) {
+          results.push(`--- ${file} (matches: "${keyword}") ---\n${matchingLines.join('\n')}\n`);
         }
       }
     }

@@ -3,10 +3,10 @@ import path from 'path';
 import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
-import { chunkCode } from '../lib/chunker.js';
+import { chunkCode, chunkCodeAsync } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
-import { tokenizeCode } from '../lib/bm25.js';
+import { tokenizeCode, tokenizeCodeWithAST } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
 import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';
 import { DEFAULT_CODE_PATTERNS, DEFAULT_IGNORE_PATTERNS } from '../lib/patterns.js';
@@ -53,10 +53,11 @@ export async function indexCode(
     const currentDimension = testEmbedding.length;
 
     if (storedDimension !== currentDimension) {
-      const config = getConfig();
+      const { getLLMTaskConfig } = await import('../lib/config.js');
+      const embModel = getLLMTaskConfig('embeddings').model;
       console.log(`\n⚠️  Embedding dimension mismatch detected!`);
       console.log(`   Stored embeddings: ${storedDimension} dimensions`);
-      console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
+      console.log(`   Current model (${embModel}): ${currentDimension} dimensions\n`);
 
       // Determine mode: interactive (TTY), explicit auto-reindex, or non-interactive
       const isInteractive = process.stdout.isTTY && !autoReindex;
@@ -122,7 +123,7 @@ export async function indexCode(
     batchSize: 5, // Smaller batches for code (larger chunks)
     maxFileSize,
     pathPrefix: 'code:', // Distinguish from brain docs
-    chunker: chunkCode,
+    chunker: chunkCodeAsync,
     // Only clean up code files
     cleanupFilter: (filePath) => filePath.startsWith('code:'),
     // Skip cleanup for partial indexing (custom patterns or subdirectory)
@@ -205,8 +206,8 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
     }
   }
 
-  // Chunk the code
-  const chunks = chunkCode(content, absolutePath);
+  // Chunk the code (tree-sitter with fallback to regex)
+  const chunks = await chunkCodeAsync(content, absolutePath);
   if (chunks.length === 0) {
     return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
   }
@@ -215,7 +216,7 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
   const texts = chunks.map(c => c.content);
   const embeddings = await getEmbeddings(texts);
 
-  // Prepare documents for upsert (with hash for each document)
+  // Prepare documents for upsert (with hash for each document, including AST metadata)
   const documents = chunks.map((chunk, i) => ({
     filePath: storedPath,
     chunkIndex: i,
@@ -224,16 +225,25 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
     endLine: chunk.endLine,
     embedding: embeddings[i],
     hash: contentHash,
+    symbolName: chunk.symbolName,
+    symbolType: chunk.symbolType,
+    signature: chunk.signature,
   }));
 
   // Upsert to database
   await upsertDocumentsBatchWithHashes(documents);
 
-  // Update token frequencies for Ronin-style segmentation
+  // Update token frequencies (boost AST identifiers when available)
   const allTokens: string[] = [];
   for (const chunk of chunks) {
-    const tokens = tokenizeCode(chunk.content);
-    allTokens.push(...tokens);
+    if (chunk.symbolName || chunk.signature) {
+      const sigTokens = chunk.signature ? tokenizeCode(chunk.signature) : [];
+      const tokens = tokenizeCodeWithAST(chunk.content, sigTokens, chunk.symbolName ?? undefined);
+      allTokens.push(...tokens);
+    } else {
+      const tokens = tokenizeCode(chunk.content);
+      allTokens.push(...tokens);
+    }
   }
   await updateTokenFrequencies(allTokens);
 

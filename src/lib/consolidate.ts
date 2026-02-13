@@ -27,9 +27,9 @@ import {
   isPostgresBackend,
 } from './storage/index.js';
 import { cosineSimilarity, getEmbedding } from './embeddings.js';
-import { getIdleReflectionConfig, getConfig, SuccConfig } from './config.js';
+import { getIdleReflectionConfig, getConfig, getLLMTaskConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
-import { callLLM, getLLMConfig, type LLMBackend } from './llm.js';
+import { callLLM, type LLMBackend } from './llm.js';
 import { MEMORY_MERGE_PROMPT } from '../prompts/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -500,7 +500,7 @@ export async function undoConsolidation(mergedMemoryId: number): Promise<{
  * LLM merge configuration options
  */
 export interface LLMMergeOptions {
-  mode: 'claude' | 'local' | 'openrouter';
+  mode: LLMBackend;
   model?: string;
   apiUrl?: string;
   apiKey?: string;
@@ -518,77 +518,51 @@ export async function llmMergeContent(
 ): Promise<string | null> {
   const prompt = MEMORY_MERGE_PROMPT.replace('{memory1}', content1).replace('{memory2}', content2);
 
-  // Map legacy mode to new backend
-  const backend: LLMBackend = options.mode;
-
-  // Build config override
-  const configOverride: Parameters<typeof callLLM>[2] = { backend };
-
-  if (options.model) {
-    if (backend === 'claude') {
-      configOverride.model = options.model;
-    } else if (backend === 'openrouter') {
-      configOverride.openrouterModel = options.model;
-    } else if (backend === 'local') {
-      configOverride.model = options.model;
-    }
-  }
-
-  if (options.apiUrl) {
-    configOverride.localEndpoint = options.apiUrl;
-  }
-
   try {
-    // Use sleep agent for background consolidation if enabled
     const result = await callLLM(
       prompt,
       { timeout: options.timeoutMs || 30000, maxTokens: 500, useSleepAgent: true },
-      configOverride
+      {
+        backend: options.mode,
+        model: options.model,
+        endpoint: options.apiUrl,
+        apiKey: options.apiKey,
+      }
     );
     return result?.trim() || null;
   } catch (error) {
-    logWarn('consolidate', `LLM merge failed (${backend})`, { error: String(error) });
+    logWarn('consolidate', `LLM merge failed (${options.mode})`, { error: String(error) });
     return null;
   }
 }
 
 /**
- * Get LLM merge options from config
+ * Get LLM merge options from config.
+ * Resolution: llm.sleep → llm.analyze → llm → claude default
  */
 export function getLLMMergeOptionsFromConfig(): LLMMergeOptions {
-  const config = getConfig();
   const reflectionConfig = getIdleReflectionConfig();
 
   // Check if sleep agent is configured for memory consolidation
   const sleepAgent = reflectionConfig.sleep_agent;
   if (sleepAgent?.enabled && sleepAgent.handle_operations?.memory_consolidation) {
-    if (sleepAgent.mode === 'local' && sleepAgent.api_url && sleepAgent.model) {
-      return {
-        mode: 'local',
-        model: sleepAgent.model,
-        apiUrl: sleepAgent.api_url,
-      };
-    } else if (sleepAgent.mode === 'openrouter') {
-      return {
-        mode: 'openrouter',
-        model: sleepAgent.model || 'anthropic/claude-3-haiku',
-        apiKey: sleepAgent.api_key || config.openrouter_api_key,
-      };
-    }
+    const sleepCfg = getLLMTaskConfig('sleep');
+    return {
+      mode: sleepCfg.mode as LLMBackend,
+      model: sleepCfg.model,
+      apiUrl: sleepCfg.api_url,
+      apiKey: sleepCfg.api_key,
+    };
   }
 
-  // Check analyze mode settings
-  if (config.analyze_mode === 'local' && config.analyze_api_url && config.analyze_model) {
+  // Fall back to analyze config
+  const analyzeCfg = getLLMTaskConfig('analyze');
+  if (analyzeCfg.mode === 'api' && (analyzeCfg.api_key || analyzeCfg.api_url)) {
     return {
-      mode: 'local',
-      model: config.analyze_model,
-      apiUrl: config.analyze_api_url,
-    };
-  } else if (config.analyze_mode === 'openrouter' && config.openrouter_api_key) {
-    return {
-      mode: 'openrouter',
-      model: config.analyze_model || 'anthropic/claude-3-haiku',
-      apiKey: config.openrouter_api_key,
+      mode: 'api',
+      model: analyzeCfg.model,
+      apiUrl: analyzeCfg.api_url,
+      apiKey: analyzeCfg.api_key,
     };
   }
 

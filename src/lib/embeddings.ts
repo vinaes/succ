@@ -1,4 +1,4 @@
-import { getConfig, getConfigWithOverride } from './config.js';
+import { getConfig, getConfigWithOverride, getLLMTaskConfig, LOCAL_MODEL } from './config.js';
 import { createHash } from 'crypto';
 import { logWarn } from './fault-logger.js';
 import os from 'os';
@@ -184,6 +184,15 @@ async function withRetry<T>(
 }
 
 /**
+ * Get the resolved embedding model name.
+ * Reads from llm.embeddings.model → LOCAL_MODEL for local mode.
+ */
+function getEmbeddingModel(): string {
+  const taskCfg = getLLMTaskConfig('embeddings');
+  return taskCfg.model || LOCAL_MODEL;
+}
+
+/**
  * Get native ORT session (lazy loaded)
  * Auto-detects GPU provider per platform: DirectML (Windows), CoreML (macOS arm64),
  * CUDA (Linux), CPU (all). Uses onnxruntime-node for 4-17x speedup over WASM.
@@ -191,6 +200,7 @@ async function withRetry<T>(
 async function getNativeSession(): Promise<NativeOrtSession> {
   if (!nativeSession) {
     const config = getConfigWithOverride();
+    const embeddingModel = getEmbeddingModel();
 
     const providerResult = detectExecutionProvider(process.platform, {
       gpu_enabled: config.gpu_enabled,
@@ -204,12 +214,12 @@ async function getNativeSession(): Promise<NativeOrtSession> {
 
     gpuBackend = providerResult.provider;
     console.log(
-      `Loading native ORT session: ${config.embedding_model} ` +
+      `Loading native ORT session: ${embeddingModel} ` +
       `(${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})...`
     );
 
     nativeSession = new NativeOrtSession({
-      model: config.embedding_model,
+      model: embeddingModel,
       providers: providerResult.fallbackChain,
     });
 
@@ -221,7 +231,7 @@ async function getNativeSession(): Promise<NativeOrtSession> {
       nativeSession = null;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Failed to load embedding model '${config.embedding_model}'. ` +
+        `Failed to load embedding model '${embeddingModel}'. ` +
           `This may be due to network issues, disk space, or invalid model name. ` +
           `Error: ${message}`
       );
@@ -251,7 +261,7 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
     if (!embeddingPool) {
       const poolSize = config.embedding_worker_pool_size ?? undefined;
       const maxWorkers = config.embedding_worker_pool_max ?? 8;
-      embeddingPool = new EmbeddingPool({ poolSize, maxWorkers, model: config.embedding_model });
+      embeddingPool = new EmbeddingPool({ poolSize, maxWorkers, model: getEmbeddingModel() });
       console.log(`Initializing embedding worker pool (${embeddingPool.size} workers)...`);
       await embeddingPool.init();
       console.log('Worker pool ready.');
@@ -283,7 +293,7 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
   const poolResult = await tryPoolEmbeddings(texts, config);
   if (poolResult) {
     for (const embedding of poolResult) {
-      validateEmbedding(embedding, config.embedding_model);
+      validateEmbedding(embedding, getEmbeddingModel());
     }
     return poolResult;
   }
@@ -302,66 +312,23 @@ async function getLocalEmbeddings(texts: string[]): Promise<number[][]> {
 
   // Validate all embeddings
   for (const embedding of results) {
-    validateEmbedding(embedding, config.embedding_model);
+    validateEmbedding(embedding, getEmbeddingModel());
   }
 
   return results;
 }
 
 /**
- * Get embeddings from OpenRouter API (with retry and timeout)
- */
-async function getOpenRouterEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfigWithOverride();
-  if (!config.openrouter_api_key) {
-    throw new Error('OpenRouter API key required');
-  }
-
-  return withRetry(async () => {
-    const response = await fetchWithTimeout('https://openrouter.ai/api/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.openrouter_api_key}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/vinaes/succ',
-        'X-Title': 'succ',
-      },
-      body: JSON.stringify({
-        model: config.embedding_model,
-        input: texts,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
-    }
-
-    const data = (await response.json()) as EmbeddingResponse;
-    const embeddings = data.data.map((d) => d.embedding);
-
-    // Validate all embeddings
-    for (const embedding of embeddings) {
-      validateEmbedding(embedding, config.embedding_model);
-    }
-
-    return embeddings;
-  });
-}
-
-/**
- * Check if custom API (llama.cpp, LM Studio, Ollama) is available
+ * Check if embedding API endpoint is available
  * Returns true if server responds, false otherwise
  */
-export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: string }> {
-  const config = getConfigWithOverride();
-  if (!config.embedding_api_url) {
-    return { ok: false, error: 'Custom API URL not configured' };
-  }
+export async function checkApiHealth(): Promise<{ ok: boolean; error?: string }> {
+  const taskCfg = getLLMTaskConfig('embeddings');
+  const apiUrl = taskCfg.api_url;
 
   try {
     // Try to get the base URL (without /embeddings) for health check
-    const baseUrl = config.embedding_api_url.replace(/\/embeddings\/?$/, '');
+    const baseUrl = apiUrl.replace(/\/embeddings\/?$/, '');
     const healthUrl = `${baseUrl}/health`;
 
     const response = await fetchWithTimeout(healthUrl, { method: 'GET' }, 5000);
@@ -372,17 +339,22 @@ export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: str
 
     // Some servers don't have /health, try a minimal embedding request
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (config.embedding_api_key) {
-      headers['Authorization'] = `Bearer ${config.embedding_api_key}`;
+    if (taskCfg.api_key) {
+      headers['Authorization'] = `Bearer ${taskCfg.api_key}`;
+    }
+    // Auto-add OpenRouter headers when URL contains openrouter.ai
+    if (apiUrl.includes('openrouter.ai')) {
+      headers['HTTP-Referer'] = 'https://github.com/vinaes/succ';
+      headers['X-Title'] = 'succ';
     }
 
     const testResponse = await fetchWithTimeout(
-      config.embedding_api_url,
+      apiUrl,
       {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: config.embedding_model,
+          model: taskCfg.model,
           input: ['test'],
         }),
       },
@@ -399,29 +371,33 @@ export async function checkCustomApiHealth(): Promise<{ ok: boolean; error?: str
   }
 }
 
+
 /**
- * Get embeddings from custom API (llama.cpp, LM Studio, Ollama, etc.)
+ * Get embeddings from API endpoint (OpenRouter, Ollama, llama.cpp, LM Studio, etc.)
  * Expects OpenAI-compatible /v1/embeddings endpoint (with retry and timeout)
- * Supports larger batch sizes for llama.cpp (default 32, configurable)
+ * Supports batching (default 32, configurable via llm.embeddings.batch_size)
  */
-async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfigWithOverride();
-  if (!config.embedding_api_url) {
-    throw new Error('Custom API URL required');
-  }
+async function getApiEmbeddings(texts: string[]): Promise<number[][]> {
+  const taskCfg = getLLMTaskConfig('embeddings');
+  const apiUrl = taskCfg.api_url;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   // Add API key if provided
-  if (config.embedding_api_key) {
-    headers['Authorization'] = `Bearer ${config.embedding_api_key}`;
+  if (taskCfg.api_key) {
+    headers['Authorization'] = `Bearer ${taskCfg.api_key}`;
+  }
+  // Auto-add OpenRouter headers when URL contains openrouter.ai
+  if (apiUrl.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://github.com/vinaes/succ';
+    headers['X-Title'] = 'succ';
   }
 
-  // Use larger batch size for custom API (llama.cpp handles 32+ well)
-  const batchSize = config.embedding_batch_size || 32;
-  const expectedDimensions = config.embedding_dimensions;
+  const config = getConfigWithOverride();
+  const batchSize = taskCfg.batch_size ?? config.llm?.embeddings?.batch_size ?? 32;
+  const expectedDimensions = config.llm?.embeddings?.dimensions;
 
   // Process in batches
   const results: number[][] = [];
@@ -430,18 +406,18 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
     const batch = texts.slice(i, i + batchSize);
 
     const batchEmbeddings = await withRetry(async () => {
-      const response = await fetchWithTimeout(config.embedding_api_url!, {
+      const response = await fetchWithTimeout(apiUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: config.embedding_model,
+          model: taskCfg.model,
           input: batch,
         }),
       });
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Custom API error: ${response.status} - ${error}`);
+        throw new Error(`Embedding API error: ${response.status} - ${error}`);
       }
 
       const data = (await response.json()) as EmbeddingResponse;
@@ -450,9 +426,7 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
 
     // Validate embeddings
     for (const embedding of batchEmbeddings) {
-      if (embedding.some((v) => !isFinite(v))) {
-        throw new Error('Embedding contains NaN or Infinity values');
-      }
+      validateEmbedding(embedding, getEmbeddingModel());
       // Validate dimensions if configured
       if (expectedDimensions && embedding.length !== expectedDimensions) {
         throw new Error(
@@ -468,20 +442,17 @@ async function getCustomApiEmbeddings(texts: string[]): Promise<number[][]> {
 }
 
 /**
- * Get embeddings (auto-selects based on config mode)
- * Priority: local (default) → openrouter → custom
+ * Get embeddings (auto-selects based on llm.embeddings.mode)
+ * Modes: local (ONNX, default) | api (any OpenAI-compatible endpoint)
  * Uses configOverride if set (for benchmarking)
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const config = getConfigWithOverride();
+  const taskCfg = getLLMTaskConfig('embeddings');
 
-  switch (config.embedding_mode) {
+  switch (taskCfg.mode) {
+    case 'api':
+      return getApiEmbeddings(texts);
     case 'local':
-      return getLocalEmbeddings(texts);
-    case 'openrouter':
-      return getOpenRouterEmbeddings(texts);
-    case 'custom':
-      return getCustomApiEmbeddings(texts);
     default:
       return getLocalEmbeddings(texts);
   }
@@ -491,8 +462,8 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
  * Get embedding for a single text (with caching)
  */
 export async function getEmbedding(text: string): Promise<number[]> {
-  const config = getConfigWithOverride();
-  const cacheKey = getCacheKey(text, config.embedding_mode, config.embedding_model);
+  const taskCfg = getLLMTaskConfig('embeddings');
+  const cacheKey = getCacheKey(text, taskCfg.mode, taskCfg.model);
 
   // Check cache first
   const cached = cacheGet(cacheKey);
@@ -510,11 +481,11 @@ export async function getEmbedding(text: string): Promise<number[]> {
  * Get info about current embedding configuration
  */
 export function getEmbeddingInfo(): { mode: string; model: string; dimensions: number | undefined } {
-  const config = getConfigWithOverride();
+  const taskCfg = getLLMTaskConfig('embeddings');
   return {
-    mode: config.embedding_mode,
-    model: config.embedding_model,
-    dimensions: getModelDimension(config.embedding_model),
+    mode: taskCfg.mode,
+    model: taskCfg.model,
+    dimensions: getModelDimension(taskCfg.model),
   };
 }
 

@@ -102,16 +102,14 @@ program
   .command('analyze')
   .description('Analyze project with Claude agents and generate brain vault')
   .option('--sequential', 'Run agents sequentially instead of parallel')
-  .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
-  .option('--local', 'Use local LLM API (Ollama, LM Studio, llama.cpp)')
+  .option('--api', 'Use API mode (OpenAI-compatible endpoint) instead of Claude CLI')
   .option('--background', 'Run analysis in background (detached process)')
   .option('--fast', 'Fast analysis (fewer agents, smaller context)')
   .option('--force', 'Force full re-analysis (skip incremental cache)')
   .action(async (options) => {
     analyze({
       parallel: !options.sequential,
-      openrouter: options.openrouter,
-      local: options.local,
+      api: options.api,
       background: options.background,
       fast: options.fast,
       force: options.force,
@@ -214,10 +212,9 @@ program
   .option('--valid-until <date>', 'When fact expires (e.g., "2024-12-31" or "30d")')
   .option('-e, --extract', 'Force LLM extraction (default: enabled)')
   .option('--no-extract', 'Disable LLM extraction (save content as-is)')
-  .option('--local', 'Use local LLM (Ollama/LM Studio) for extraction')
-  .option('--openrouter', 'Use OpenRouter for extraction')
+  .option('--api', 'Use API mode (OpenAI-compatible endpoint) for extraction')
   .option('--model <model>', 'Model to use for extraction')
-  .option('--api-url <url>', 'API URL for local LLM')
+  .option('--api-url <url>', 'API URL for LLM endpoint')
   .action((content, options) => {
     remember(content, {
       tags: options.tags,
@@ -230,8 +227,7 @@ program
       validUntil: options.validUntil,
       extract: options.extract === true ? true : undefined,
       noExtract: options.extract === false,
-      local: options.local,
-      openrouter: options.openrouter,
+      api: options.api,
       model: options.model,
       apiUrl: options.apiUrl,
     });
@@ -346,13 +342,13 @@ program
   .command('benchmark-quality', { hidden: true })
   .description('Run quality scoring benchmark (heuristic vs ONNX vs Ollama vs OpenRouter)')
   .option('--ollama', 'Include Ollama models in benchmark')
-  .option('--openrouter', 'Include OpenRouter API models in benchmark')
+  .option('--api', 'Include API models in benchmark')
   .option('--models <models>', 'Models to test (comma-separated)')
   .option('--ollama-url <url>', 'Ollama API URL', 'http://localhost:11434')
   .action((options) => {
     benchmarkQuality({
       ollama: options.ollama,
-      openrouter: options.openrouter,
+      api: options.api,
       models: options.models,
       ollamaUrl: options.ollamaUrl,
     });
@@ -395,10 +391,10 @@ program
 program
   .command('soul')
   .description('Generate personalized soul.md from project analysis')
-  .option('--openrouter', 'Use OpenRouter API instead of Claude CLI')
+  .option('--api', 'Use API mode (OpenAI-compatible endpoint) instead of Claude CLI')
   .action((options) => {
     soul({
-      openrouter: options.openrouter,
+      api: options.api,
     });
   });
 
@@ -456,16 +452,14 @@ program
   .description('Extract facts from session transcript and save as memories')
   .option('--dry-run', 'Preview facts without saving')
   .option('-v, --verbose', 'Show detailed output')
-  .option('--local', 'Use local LLM (Ollama/llama.cpp)')
-  .option('--openrouter', 'Use OpenRouter API')
-  .option('--api-url <url>', 'API URL for local LLM')
+  .option('--api', 'Use API mode (OpenAI-compatible endpoint)')
+  .option('--api-url <url>', 'API URL for LLM endpoint')
   .option('--model <model>', 'Model to use')
   .action((transcript, options) => {
     sessionSummary(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
-      local: options.local,
-      openrouter: options.openrouter,
+      api: options.api,
       apiUrl: options.apiUrl,
       model: options.model,
     });
@@ -476,14 +470,12 @@ program
   .description('Generate context briefing for next session')
   .option('--dry-run', 'Preview output without saving')
   .option('-v, --verbose', 'Show detailed output')
-  .option('--local', 'Use local LLM (Ollama/llama.cpp)')
-  .option('--openrouter', 'Use OpenRouter API')
+  .option('--api', 'Use API mode (OpenAI-compatible endpoint)')
   .action((transcript, options) => {
     precomputeContext(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
-      local: options.local,
-      openrouter: options.openrouter,
+      api: options.api,
     });
   });
 

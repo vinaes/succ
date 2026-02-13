@@ -84,6 +84,38 @@ export function tokenizeCode(text: string): string[] {
 }
 
 /**
+ * Enrich BM25 tokens with AST-derived identifiers.
+ * AST identifiers are boosted by repeating them (doubles their TF score).
+ * Symbol names are tokenized through the same pipeline for consistency.
+ */
+export function tokenizeCodeWithAST(
+  text: string,
+  astIdentifiers: string[],
+  symbolName?: string,
+): string[] {
+  const baseTokens = tokenizeCode(text);
+
+  // Tokenize and boost AST identifiers
+  const astTokens: string[] = [];
+  for (const id of astIdentifiers) {
+    // Apply same tokenization as code tokens
+    const subTokens = tokenizeCode(id);
+    astTokens.push(...subTokens);
+    // Also keep the original identifier for exact match
+    if (id.length > 1) astTokens.push(id.toLowerCase());
+  }
+
+  // Symbol name gets extra boost (3x: once from content, twice here)
+  if (symbolName) {
+    const nameTokens = tokenizeCode(symbolName);
+    astTokens.push(...nameTokens, ...nameTokens);
+  }
+
+  // Intentionally no dedup — repeated AST tokens boost their TF score in BM25
+  return [...baseTokens, ...astTokens];
+}
+
+/**
  * Porter Stemmer (simplified)
  * Handles common English suffixes
  */

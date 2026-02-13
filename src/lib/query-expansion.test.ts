@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./llm.js', () => ({
   callLLM: vi.fn(),
   getLLMConfig: vi.fn(() => ({
-    backend: 'local',
+    backend: 'api',
     model: 'qwen2.5:7b',
-    localEndpoint: 'http://localhost:11434/v1/chat/completions',
+    endpoint: 'http://localhost:11434/v1/chat/completions',
   })),
 }));
 
@@ -102,16 +102,16 @@ describe('expandQuery', () => {
   it('passes config override when mode differs from default', async () => {
     mockedCallLLM.mockResolvedValue('expanded query');
 
-    await expandQuery('test', 'openrouter');
+    await expandQuery('test', 'claude');
 
     const configOverride = mockedCallLLM.mock.calls[0][2];
-    expect(configOverride).toEqual({ backend: 'openrouter' });
+    expect(configOverride).toEqual({ backend: 'claude' });
   });
 
   it('passes no config override when mode matches default', async () => {
     mockedCallLLM.mockResolvedValue('expanded query');
 
-    await expandQuery('test', 'local');
+    await expandQuery('test', 'api');
 
     const configOverride = mockedCallLLM.mock.calls[0][2];
     expect(configOverride).toBeUndefined();

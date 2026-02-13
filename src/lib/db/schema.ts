@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
-import { getConfig } from '../config.js';
+import { getConfig, getLLMTaskConfig } from '../config.js';
 import { logWarn } from '../fault-logger.js';
 import { getModelDimension } from '../embeddings.js';
 import { bufferToFloatArray } from './helpers.js';
@@ -237,6 +237,25 @@ export function initDb(database: Database.Database): void {
     // Index already exists, ignore
   }
 
+  // Migration: add AST metadata columns to documents table (tree-sitter integration)
+  for (const col of ['symbol_name TEXT', 'symbol_type TEXT', 'signature TEXT']) {
+    try {
+      database.prepare(`ALTER TABLE documents ADD COLUMN ${col}`).run();
+    } catch {
+      // Column already exists, ignore
+    }
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+
   // Migration: create learning_deltas table for session progress tracking
   database.exec(`
     CREATE TABLE IF NOT EXISTS learning_deltas (
@@ -305,7 +324,7 @@ export function initDb(database: Database.Database): void {
  */
 function checkModelCompatibility(database: Database.Database): void {
   const config = getConfig();
-  const currentModel = config.embedding_model;
+  const currentModel = getLLMTaskConfig('embeddings').model;
 
   // Get stored model
   const stored = database
@@ -345,7 +364,7 @@ export function initVecTables(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
   const config = getConfig();
-  const dims = getModelDimension(config.embedding_model) || 384;
+  const dims = getModelDimension(getLLMTaskConfig('embeddings').model) || 384;
 
   // Check if vec tables already exist
   const vecMemoriesExists = database
@@ -601,7 +620,7 @@ export function initGlobalVecTable(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
   const config = getConfig();
-  const dims = getModelDimension(config.embedding_model) || 384;
+  const dims = getModelDimension(getLLMTaskConfig('embeddings').model) || 384;
 
   const vecMemoriesExists = database
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")

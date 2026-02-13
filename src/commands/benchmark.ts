@@ -2,11 +2,11 @@ import { getEmbedding, getEmbeddingInfo, cleanupEmbeddings } from '../lib/embedd
 import { saveMemory, searchMemories, hybridSearchMemories, deleteMemory, closeDb, getMemoryStats } from '../lib/storage/index.js';
 import {
   setConfigOverride,
-  hasOpenRouterKey,
+  hasApiKey,
   LOCAL_MODEL,
-  OPENROUTER_MODEL,
   getConfig,
   getSuccDir,
+  getLLMTaskConfig,
 } from '../lib/config.js';
 import {
   calculateAccuracyMetrics,
@@ -348,8 +348,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
   console.log(`└─────────────────────────────────────────────────────────────┘`);
 
   setConfigOverride({
-    embedding_mode: 'local',
-    embedding_model: localModel,
+    llm: { embeddings: { mode: 'local', model: localModel } },
   });
   cleanupEmbeddings(); // Reset pipeline
 
@@ -364,22 +363,19 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
 
   allModeResults.push(localResults);
 
-  // ============ OPENROUTER BENCHMARK ============
-  if (hasOpenRouterKey()) {
+  // ============ API BENCHMARK ============
+  if (hasApiKey()) {
     console.log('\n┌─────────────────────────────────────────────────────────────┐');
-    console.log('│ OPENROUTER API (openai/text-embedding-3-small)              │');
+    console.log('│ API EMBEDDINGS (openai/text-embedding-3-small)              │');
     console.log('└─────────────────────────────────────────────────────────────┘');
 
-    // Get API key from config before override
-    const baseConfig = getConfig();
+    const embCfg = getLLMTaskConfig('embeddings');
     setConfigOverride({
-      embedding_mode: 'openrouter',
-      embedding_model: OPENROUTER_MODEL,
-      openrouter_api_key: baseConfig.openrouter_api_key,
+      llm: { embeddings: { mode: 'api', model: 'openai/text-embedding-3-small' }, api_key: embCfg.api_key },
     });
     cleanupEmbeddings(); // Reset cache
 
-    const openrouterResults = await runModeBenchmark(iterations, 'openrouter');
+    const openrouterResults = await runModeBenchmark(iterations, 'api');
 
     if (options.advanced) {
       const { accuracy, latency } = await runAdvancedBenchmark(k, datasetSize);
@@ -390,7 +386,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
     allModeResults.push(openrouterResults);
   } else {
     console.log('\n  ⓘ OpenRouter benchmark skipped (no API key)');
-    console.log('    Set OPENROUTER_API_KEY or add to ~/.succ/config.json');
+    console.log('    Set OPENROUTER_API_KEY env var or add llm.api_key to ~/.succ/config.json');
   }
 
   // Reset config override
@@ -801,8 +797,7 @@ export async function benchmarkWithHistory(options: BenchmarkOptions = {}): Prom
     console.log('└─────────────────────────────────────────────────────────────┘');
 
     setConfigOverride({
-      embedding_mode: 'local',
-      embedding_model: localModel,
+      llm: { embeddings: { mode: 'local', model: localModel } },
     });
     cleanupEmbeddings();
 
@@ -820,8 +815,7 @@ export async function benchmarkWithHistory(options: BenchmarkOptions = {}): Prom
       // We need to re-run to get metrics for saving
       // For simplicity, assume the last run was with local embeddings
       setConfigOverride({
-        embedding_mode: 'local',
-        embedding_model: localModel,
+        llm: { embeddings: { mode: 'local', model: localModel } },
       });
       cleanupEmbeddings();
 

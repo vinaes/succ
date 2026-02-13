@@ -17,7 +17,8 @@ import {
   closeGlobalDb,
 } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
-import { getConfig, getProjectRoot, getIdleReflectionConfig } from '../lib/config.js';
+import { getConfig, getProjectRoot, getIdleReflectionConfig, getLLMTaskConfig } from '../lib/config.js';
+import type { LLMBackend } from '../lib/llm.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
 import { parseDuration } from '../lib/temporal.js';
@@ -201,17 +202,16 @@ interface RememberOptions {
   // LLM extraction
   extract?: boolean;    // Force extract structured facts using LLM
   noExtract?: boolean;  // Disable LLM extraction (override config default)
-  local?: boolean;      // Use local LLM (Ollama/LM Studio)
-  openrouter?: boolean; // Use OpenRouter
+  api?: boolean;        // Use API mode (OpenAI-compatible endpoint)
   model?: string;       // Model to use for extraction
-  apiUrl?: string;      // API URL for local LLM
+  apiUrl?: string;      // API URL for LLM endpoint
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, extract, noExtract, local, openrouter, model, apiUrl } = options;
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, extract, noExtract, api, model, apiUrl } = options;
 
   try {
     const config = getConfig();
@@ -223,7 +223,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
 
     // LLM extraction mode: extract structured facts from content
     if (useExtract) {
-      await rememberWithExtraction(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, local, openrouter, model, apiUrl });
+      await rememberWithExtraction(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, api, model, apiUrl });
       return;
     }
 
@@ -353,7 +353,7 @@ async function rememberWithExtraction(
   content: string,
   options: Omit<RememberOptions, 'extract'>
 ): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, local, openrouter, model, apiUrl } = options;
+  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, api, model, apiUrl } = options;
   const config = getConfig();
   const idleConfig = getIdleReflectionConfig();
 
@@ -361,23 +361,19 @@ async function rememberWithExtraction(
 
   // Determine LLM options
   let llmOptions: {
-    mode: 'claude' | 'local' | 'openrouter';
+    mode: LLMBackend;
     model?: string;
     apiUrl?: string;
     apiKey?: string;
   };
 
-  if (local) {
+  if (api) {
+    const sleepCfg = getLLMTaskConfig('sleep');
     llmOptions = {
-      mode: 'local',
-      model: model || idleConfig.sleep_agent?.model || 'qwen2.5-coder:14b',
-      apiUrl: apiUrl || idleConfig.sleep_agent?.api_url || 'http://localhost:11434/v1',
-    };
-  } else if (openrouter) {
-    llmOptions = {
-      mode: 'openrouter',
-      model: model || idleConfig.sleep_agent?.model || 'anthropic/claude-3-haiku',
-      apiKey: idleConfig.sleep_agent?.api_key || config.openrouter_api_key,
+      mode: 'api',
+      model: model || sleepCfg.model,
+      apiUrl: apiUrl || sleepCfg.api_url,
+      apiKey: sleepCfg.api_key,
     };
   } else {
     // Default to Claude CLI

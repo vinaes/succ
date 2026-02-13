@@ -137,10 +137,11 @@ export function getStorageInfo(): {
 
 export async function upsertDocument(
   filePath: string, chunkIndex: number, content: string,
-  startLine: number, endLine: number, embedding: number[]
+  startLine: number, endLine: number, embedding: number[],
+  symbolName?: string, symbolType?: string, signature?: string,
 ): Promise<void> {
   const d = await getStorageDispatcher();
-  return d.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding);
+  return d.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
 }
 
 export async function upsertDocumentsBatch(documents: Array<{

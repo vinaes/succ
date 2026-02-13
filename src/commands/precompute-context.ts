@@ -1,7 +1,5 @@
 /**
- * Precompute Context Command
- *
- * Generate context briefing for next session from transcript.
+ * CLI command wrapper for precompute context
  */
 
 import { precomputeContextCLI } from '../lib/precompute-context.js';
@@ -9,8 +7,7 @@ import { precomputeContextCLI } from '../lib/precompute-context.js';
 interface PrecomputeContextOptions {
   dryRun?: boolean;
   verbose?: boolean;
-  local?: boolean;
-  openrouter?: boolean;
+  api?: boolean;
 }
 
 export async function precomputeContext(
@@ -20,7 +17,6 @@ export async function precomputeContext(
   await precomputeContextCLI(transcriptPath, {
     dryRun: options.dryRun,
     verbose: options.verbose,
-    local: options.local,
-    openrouter: options.openrouter,
+    api: options.api,
   });
 }

@@ -34,13 +34,13 @@ export interface AnalyzerState {
 
 export interface AnalyzeJob {
   file: string;
-  mode: 'claude' | 'openrouter' | 'local';
+  mode: 'claude' | 'api';
   addedAt: number;
 }
 
 export interface AnalyzerConfig {
   intervalMinutes?: number;
-  mode?: 'claude' | 'openrouter' | 'local';
+  mode?: 'claude' | 'api';
   autoStart?: boolean;
 }
 
@@ -92,7 +92,7 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
     } catch {}
   }
 
-  // Add directory structure (top 2 levels)
+  // Add directory structure with AST symbols where possible
   lines.push('\nDirectory structure:');
   const srcDir = path.join(projectRoot, 'src');
   if (fs.existsSync(srcDir)) {
@@ -100,7 +100,44 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
       cwd: srcDir,
       ignore: ['**/node_modules/**', '**/dist/**'],
     });
+
+    // Try tree-sitter for symbol extraction
+    let extractSymbols: ((code: string, lang: string) => Promise<Array<{ name: string; type: string }>>) | null = null;
+    try {
+      const { extractSymbols: _extract } = await import('../lib/tree-sitter/extractor.js');
+      const { parseCode } = await import('../lib/tree-sitter/parser.js');
+      extractSymbols = async (code: string, lang: string) => {
+        const tree = await parseCode(code, lang);
+        if (!tree) return [];
+        const symbols = await _extract(tree, code, lang);
+        tree.delete();
+        return symbols;
+      };
+    } catch {
+      // tree-sitter not available
+    }
+
+    const langMap: Record<string, string> = { ts: 'typescript', js: 'javascript', py: 'python', go: 'go', rs: 'rust' };
+
     for (const file of files.slice(0, 20)) {
+      const ext = file.split('.').pop() || '';
+      const lang = langMap[ext];
+
+      // Try to extract key symbols for compact context
+      if (extractSymbols && lang) {
+        try {
+          const content = await fs.promises.readFile(path.join(srcDir, file), 'utf-8');
+          const symbols = await extractSymbols(content, lang);
+          if (symbols.length > 0) {
+            const symbolList = symbols.slice(0, 5).map(s => `${s.type}:${s.name}`).join(', ');
+            lines.push(`  src/${file} [${symbolList}]`);
+            continue;
+          }
+        } catch {
+          // fall through
+        }
+      }
+
       lines.push(`  src/${file}`);
     }
   }
@@ -113,7 +150,7 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
  */
 async function runDiscoveryAgent(
   context: string,
-  mode: 'claude' | 'openrouter' | 'local',
+  mode: 'claude' | 'api',
   log: (msg: string) => void
 ): Promise<Discovery[]> {
   const prompt = DISCOVERY_PROMPT.replace('{context}', context);
@@ -295,7 +332,7 @@ export function stopAnalyzer(log: (msg: string) => void): void {
  * Run analysis now
  */
 async function runAnalysis(
-  mode: 'claude' | 'openrouter' | 'local',
+  mode: 'claude' | 'api',
   log: (msg: string) => void
 ): Promise<void> {
   if (!analyzerState || analyzerState.running) {
@@ -351,7 +388,7 @@ async function runAnalysis(
  */
 export function queueFileForAnalysis(
   file: string,
-  mode: 'claude' | 'openrouter' | 'local' = 'claude'
+  mode: 'claude' | 'api' = 'claude'
 ): void {
   if (!analyzerState) {
     analyzerState = {
@@ -409,7 +446,7 @@ export function getAnalyzerStatus(): {
  * Trigger analysis manually
  */
 export async function triggerAnalysis(
-  mode: 'claude' | 'openrouter' | 'local',
+  mode: 'claude' | 'api',
   log: (msg: string) => void
 ): Promise<void> {
   if (!analyzerState) {

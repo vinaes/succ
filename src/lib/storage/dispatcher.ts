@@ -193,7 +193,8 @@ export class StorageDispatcher {
 
   async upsertDocument(
     filePath: string, chunkIndex: number, content: string,
-    startLine: number, endLine: number, embedding: number[]
+    startLine: number, endLine: number, embedding: number[],
+    symbolName?: string, symbolType?: string, signature?: string,
   ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const id = await this.postgres.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding);
@@ -214,7 +215,7 @@ export class StorageDispatcher {
       return;
     }
     const sqlite = await this.getSqliteFns();
-    sqlite.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding);
+    sqlite.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
   }
 
   async upsertDocumentsBatch(documents: any[]): Promise<void> {

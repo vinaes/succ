@@ -42,7 +42,9 @@ export interface PrecomputeResult {
 }
 
 /**
- * Extract key topics from transcript for memory search
+ * Extract key topics from transcript for memory search.
+ * Uses regex patterns for identifiers, file paths, and key phrases.
+ * Extracts symbol-like patterns (function/class declarations) for richer context.
  */
 function extractTopicsFromTranscript(transcript: string): string[] {
   const topics: string[] = [];
@@ -58,6 +60,21 @@ function extractTopicsFromTranscript(transcript: string): string[] {
   if (identifierMatches) {
     const unique = [...new Set(identifierMatches)];
     topics.push(...unique.slice(0, 5));
+  }
+
+  // Extract symbol-like patterns: function declarations, class names, type annotations
+  const symbolPatterns = [
+    /(?:function|const|let|var|class|interface|type|enum)\s+([A-Za-z_]\w+)/g,
+    /(?:def|class)\s+([A-Za-z_]\w+)/g,
+    /(?:func|type)\s+([A-Za-z_]\w+)/g,
+  ];
+  for (const pattern of symbolPatterns) {
+    let match;
+    while ((match = pattern.exec(transcript)) !== null) {
+      if (match[1] && match[1].length > 2) {
+        topics.push(match[1]);
+      }
+    }
   }
 
   // Extract key phrases
@@ -144,9 +161,7 @@ export async function precomputeContext(
   options: {
     verbose?: boolean;
     dryRun?: boolean;
-    // CLI overrides for LLM backend selection
-    local?: boolean;
-    openrouter?: boolean;
+    api?: boolean;
   } = {}
 ): Promise<PrecomputeResult> {
   const { verbose = false, dryRun = false } = options;
@@ -169,13 +184,9 @@ export async function precomputeContext(
       console.log(`Found ${memories.length} relevant memories`);
     }
 
-    // Determine backend override from CLI flags (if any)
-    // Otherwise uses unified llm.* config
     let backendOverride: LLMBackend | undefined;
-    if (options.local) {
-      backendOverride = 'local';
-    } else if (options.openrouter) {
-      backendOverride = 'openrouter';
+    if (options.api) {
+      backendOverride = 'api';
     }
 
     if (verbose) {
@@ -257,8 +268,7 @@ export async function precomputeContextCLI(
   options: {
     dryRun?: boolean;
     verbose?: boolean;
-    local?: boolean;
-    openrouter?: boolean;
+    api?: boolean;
   } = {}
 ): Promise<void> {
   if (!fs.existsSync(transcriptPath)) {
@@ -311,8 +321,7 @@ export async function precomputeContextCLI(
   const result = await precomputeContext(transcript, {
     dryRun: options.dryRun,
     verbose: options.verbose ?? true,
-    local: options.local,
-    openrouter: options.openrouter,
+    api: options.api,
   });
 
   console.log('\nPrecompute Results:');
