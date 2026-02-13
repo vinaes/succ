@@ -687,10 +687,18 @@ export class StorageDispatcher {
   }
 
   async getRecentMemories(limit: number = 10): Promise<any[]> {
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.getRecentMemories(limit);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.getRecentMemories(limit);
+    // Over-fetch to allow validity filtering and re-ranking
+    const overfetchLimit = limit * 3;
+    let raw: any[];
+    if (this.backend === 'postgresql' && this.postgres) {
+      raw = await this.postgres.getRecentMemories(overfetchLimit);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      raw = sqlite.getRecentMemories(overfetchLimit);
+    }
+    // Apply working memory pipeline: validity filter → score → rank
+    const { applyWorkingMemoryPipeline } = await import('../working-memory-pipeline.js');
+    return applyWorkingMemoryPipeline(raw, limit);
   }
 
   async findSimilarMemory(
