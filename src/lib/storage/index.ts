@@ -147,6 +147,7 @@ export async function upsertDocument(
 export async function upsertDocumentsBatch(documents: Array<{
   filePath: string; chunkIndex: number; content: string;
   startLine: number; endLine: number; embedding: number[];
+  symbolName?: string; symbolType?: string; signature?: string;
 }>): Promise<void> {
   const d = await getStorageDispatcher();
   return d.upsertDocumentsBatch(documents);
@@ -155,6 +156,7 @@ export async function upsertDocumentsBatch(documents: Array<{
 export async function upsertDocumentsBatchWithHashes(documents: Array<{
   filePath: string; chunkIndex: number; content: string;
   startLine: number; endLine: number; embedding: number[]; hash: string;
+  symbolName?: string; symbolType?: string; signature?: string;
 }>): Promise<void> {
   const d = await getStorageDispatcher();
   return d.upsertDocumentsBatchWithHashes(documents);

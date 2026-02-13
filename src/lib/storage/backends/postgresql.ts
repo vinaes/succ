@@ -205,6 +205,9 @@ export class PostgresBackend {
         start_line INTEGER NOT NULL,
         end_line INTEGER NOT NULL,
         embedding vector(${dims}),
+        symbol_name TEXT,
+        symbol_type TEXT,
+        signature TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(project_id, file_path, chunk_index)
@@ -223,6 +226,21 @@ export class PostgresBackend {
           -- Drop old unique constraint and add new one
           ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_file_path_chunk_index_key;
           ALTER TABLE documents ADD CONSTRAINT documents_project_file_chunk_key UNIQUE(project_id, file_path, chunk_index);
+        END IF;
+      END $$;
+    `);
+
+    // Migration: add symbol columns if missing
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'documents' AND column_name = 'symbol_name'
+        ) THEN
+          ALTER TABLE documents ADD COLUMN symbol_name TEXT;
+          ALTER TABLE documents ADD COLUMN symbol_type TEXT;
+          ALTER TABLE documents ADD COLUMN signature TEXT;
         END IF;
       END $$;
     `);
@@ -523,23 +541,29 @@ export class PostgresBackend {
     content: string,
     startLine: number,
     endLine: number,
-    embedding: number[]
+    embedding: number[],
+    symbolName?: string,
+    symbolType?: string,
+    signature?: string,
   ): Promise<number> {
     if (!this.projectId) {
       throw new Error('Project ID must be set before upserting documents');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
-      `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
          content = EXCLUDED.content,
          start_line = EXCLUDED.start_line,
          end_line = EXCLUDED.end_line,
          embedding = EXCLUDED.embedding,
+         symbol_name = EXCLUDED.symbol_name,
+         symbol_type = EXCLUDED.symbol_type,
+         signature = EXCLUDED.signature,
          updated_at = NOW()
        RETURNING id`,
-      [this.projectId, filePath, chunkIndex, content, startLine, endLine, toPgVector(embedding)]
+      [this.projectId, filePath, chunkIndex, content, startLine, endLine, toPgVector(embedding), symbolName ?? null, symbolType ?? null, signature ?? null]
     );
     return result.rows[0].id;
   }
@@ -559,16 +583,19 @@ export class PostgresBackend {
 
       for (const doc of documents) {
         const result = await client.query<{ id: number }>(
-          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
            ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
              content = EXCLUDED.content,
              start_line = EXCLUDED.start_line,
              end_line = EXCLUDED.end_line,
              embedding = EXCLUDED.embedding,
+             symbol_name = EXCLUDED.symbol_name,
+             symbol_type = EXCLUDED.symbol_type,
+             signature = EXCLUDED.signature,
              updated_at = NOW()
            RETURNING id`,
-          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
+          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding), doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null]
         );
         ids.push(result.rows[0].id);
       }
@@ -601,16 +628,19 @@ export class PostgresBackend {
 
       for (const doc of documents) {
         const result = await client.query<{ id: number }>(
-          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
            ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
              content = EXCLUDED.content,
              start_line = EXCLUDED.start_line,
              end_line = EXCLUDED.end_line,
              embedding = EXCLUDED.embedding,
+             symbol_name = EXCLUDED.symbol_name,
+             symbol_type = EXCLUDED.symbol_type,
+             signature = EXCLUDED.signature,
              updated_at = NOW()
            RETURNING id`,
-          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding)]
+          [this.projectId, doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, toPgVector(doc.embedding), doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null]
         );
         ids.push(result.rows[0].id);
 
@@ -654,8 +684,8 @@ export class PostgresBackend {
     queryEmbedding: number[],
     limit: number = 5,
     threshold: number = 0.5,
-    options?: { codeOnly?: boolean; docsOnly?: boolean }
-  ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
+    options?: { codeOnly?: boolean; docsOnly?: boolean; symbolType?: string }
+  ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number; symbol_name: string | null; symbol_type: string | null; signature: string | null }>> {
     if (!this.projectId) {
       throw new Error('Project ID must be set before searching documents');
     }
@@ -665,8 +695,13 @@ export class PostgresBackend {
     // similarity = 1 - distance/2 for normalized vectors
     // For our use: similarity = 1 - distance (since cosine distance from pgvector is 1-cosine_similarity)
     let whereExtra = '';
+    const params: any[] = [toPgVector(queryEmbedding), this.projectId, threshold, limit];
     if (options?.codeOnly) whereExtra = " AND file_path LIKE 'code:%'";
     else if (options?.docsOnly) whereExtra = " AND file_path NOT LIKE 'code:%'";
+    if (options?.symbolType) {
+      params.push(options.symbolType);
+      whereExtra += ` AND symbol_type = $${params.length}`;
+    }
 
     const result = await pool.query<{
       file_path: string;
@@ -674,14 +709,17 @@ export class PostgresBackend {
       start_line: number;
       end_line: number;
       similarity: number;
+      symbol_name: string | null;
+      symbol_type: string | null;
+      signature: string | null;
     }>(
-      `SELECT file_path, content, start_line, end_line,
+      `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
               1 - (embedding <=> $1) as similarity
        FROM documents
        WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
        ORDER BY embedding <=> $1
        LIMIT $4`,
-      [toPgVector(queryEmbedding), this.projectId, threshold, limit]
+      params
     );
 
     return result.rows;
