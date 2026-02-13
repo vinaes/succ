@@ -249,7 +249,7 @@ export async function analyzeFile(
 
   // Determine mode
   const analyzeCfg = getLLMTaskConfig('analyze');
-  let mode: 'claude' | 'api' = options.mode || (analyzeCfg.mode as 'claude' | 'api');
+  const mode: 'claude' | 'api' = options.mode || (analyzeCfg.mode as 'claude' | 'api');
 
   // Check file exists
   const absolutePath = path.isAbsolute(filePath)

@@ -102,7 +102,7 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
   // recall doesn't have "savings" - it returns memories, not chunks from indexed files
   // search and search_code return chunks vs full files
   const ragTypes: TokenEventType[] = ['recall', 'search', 'search_code'];
-  let ragTotal = {
+  const ragTotal = {
     queries: 0,
     returned: 0,
     saved: 0,
