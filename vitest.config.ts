@@ -5,14 +5,14 @@ export default defineConfig({
     testTimeout: 30000,
     projects: [
       {
-        // Main project — vmThreads for most tests
+        // Main project — forks for full mock isolation between test files
         test: {
           name: 'main',
           testTimeout: 30000,
           hookTimeout: 30000,
-          include: ['src/**/*.test.ts', 'dist/**/*.test.js'],
-          exclude: ['node_modules', 'dist/node_modules', '**/ort-session.test.*'],
-          pool: 'vmThreads',
+          include: ['src/**/*.test.ts'],
+          exclude: ['node_modules', '**/ort-session.test.*'],
+          pool: 'forks',
         },
       },
       {
