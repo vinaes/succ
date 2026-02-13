@@ -16,4 +16,37 @@ docker/data/
 
 # Build/tool caches
 .cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test/coverage output
+coverage/
+
+# Logs
+*.log
+
+# Temp files
+tmp/
+temp/
+
+# LaTeX artifacts
+*.aux
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+
+# Windows
 nul

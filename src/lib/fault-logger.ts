@@ -66,7 +66,7 @@ function writeToFile(entry: FaultEntry, maxSizeMb: number): void {
     }
 
     rotateIfNeeded(logPath, maxSizeMb);
-    fs.appendFileSync(logPath, JSON.stringify(entry) + '\n');
+    fs.promises.appendFile(logPath, JSON.stringify(entry) + '\n').catch(() => {});
   } catch {
     // Never break caller
   }

@@ -1,8 +1,10 @@
 {
   "name": "succ",
-  "version": "1.2.64",
+  "version": "1.2.65",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
   "exports": {
     ".": "./dist/cli.js",
     "./api": "./dist/lib/public-api.js",
@@ -28,7 +30,8 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm run lint"
   },
   "keywords": [
     "claude",
@@ -66,7 +69,7 @@
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
     "ora": "^9.1.0",
-    "sqlite-vec": "^0.1.7-alpha.2",
+    "sqlite-vec": "0.1.7-alpha.2",
     "web-tree-sitter": "^0.26.5",
     "ws": "^8.19.0",
     "zod": "^3.25.76"

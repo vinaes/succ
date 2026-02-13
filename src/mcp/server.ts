@@ -74,7 +74,7 @@ process.on('unhandledRejection', (error) => {
   process.exit(1);
 });
 
-// Idle timeout: exit if no MCP requests for 30 minutes (zombie prevention)
+// Idle timeout: exit if no MCP requests for 60 minutes (zombie prevention)
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 

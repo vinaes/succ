@@ -256,6 +256,28 @@ export function initDb(database: Database.Database): void {
     // Index already exists, ignore
   }
 
+  // Migration: add performance indexes for common query patterns
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_until ON memories(valid_until)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+  try {
+    database.prepare(`CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at)`).run();
+  } catch {
+    // Index already exists, ignore
+  }
+
   // Migration: create learning_deltas table for session progress tracking
   database.exec(`
     CREATE TABLE IF NOT EXISTS learning_deltas (

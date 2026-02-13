@@ -127,14 +127,14 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     const fileDataPromises = batch.map(async (filePath): Promise<FileData | null> => {
       // Check file size if limit specified
       if (maxFileSize) {
-        const stats = fs.statSync(filePath);
+        const stats = await fs.promises.stat(filePath);
         if (stats.size > maxFileSize * 1024) {
           skippedLargeFiles++;
           return null;
         }
       }
 
-      const rawContent = fs.readFileSync(filePath, 'utf-8');
+      const rawContent = await fs.promises.readFile(filePath, 'utf-8');
       const relativePath = pathPrefix + path.relative(projectRoot, filePath);
       currentFiles.add(relativePath);
 

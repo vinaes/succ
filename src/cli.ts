@@ -2,39 +2,6 @@
 
 import { Command } from 'commander';
 import { createRequire } from 'module';
-import { init } from './commands/init.js';
-import { index } from './commands/index.js';
-import { search } from './commands/search.js';
-import { status } from './commands/status.js';
-import { analyze } from './commands/analyze.js';
-import { chat } from './commands/chat.js';
-import { watch } from './commands/watch.js';
-import { config, configSet } from './commands/config.js';
-import { memories, remember, forget } from './commands/memories.js';
-import { indexCode } from './commands/index-code.js';
-import { reindex } from './commands/reindex.js';
-import { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } from './commands/benchmark.js';
-import { benchmarkQuality } from './commands/benchmark-quality.js';
-import { benchmarkSqliteVec } from './commands/benchmark-sqlite-vec.js';
-import { clear } from './commands/clear.js';
-import { soul } from './commands/soul.js';
-import { graph } from './commands/graph.js';
-import { consolidate } from './commands/consolidate.js';
-import { sessionSummary } from './commands/session-summary.js';
-import { precomputeContext } from './commands/precompute-context.js';
-import { trainBPE } from './commands/train-bpe.js';
-import { stats } from './commands/stats.js';
-import { retention } from './commands/retention.js';
-import { checkpoint } from './commands/checkpoint.js';
-import { score } from './commands/score.js';
-import { daemon } from './commands/daemon.js';
-import { migrate } from './commands/migrate.js';
-import { setup } from './commands/setup.js';
-import { agentsMd } from './commands/agents-md.js';
-import { progress } from './commands/progress.js';
-import { backfill } from './commands/backfill.js';
-import { prdGenerate, prdParse, prdRun, prdList, prdStatus, prdArchive, prdExport } from './commands/prd.js';
-import { embeddingInfo, embeddingMigrate } from './commands/embedding.js';
 import { logError } from './lib/fault-logger.js';
 
 // Read version from package.json
@@ -65,7 +32,10 @@ program
   .option('-v, --verbose', 'Show detailed output (created files, etc.)')
   .option('-g, --global', 'Use global hooks (from succ package dir, not local copies)')
   .option('--ai', 'Use AI-powered interactive onboarding instead of static wizard')
-  .action(init);
+  .action(async (...args) => {
+    const { init } = await import('./commands/init.js');
+    return init(...args);
+  });
 
 program
   .command('index [path]')
@@ -74,29 +44,42 @@ program
   .option('--pattern <glob>', 'File pattern to match', '**/*.md')
   .option('-f, --force', 'Force reindex all files (ignore cache)')
   .option('-m, --memories', 'Re-embed all memories with current embedding model')
-  .action(index);
+  .action(async (...args) => {
+    const { index } = await import('./commands/index.js');
+    return index(...args);
+  });
 
 program
   .command('search <query>')
   .description('Semantic search across indexed content')
   .option('-n, --limit <number>', 'Number of results', '5')
   .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.2')
-  .action(search);
+  .action(async (query, options) => {
+    const { search } = await import('./commands/search.js');
+    return search(query, options);
+  });
 
 program
   .command('status')
   .description('Show index statistics')
-  .action(status);
+  .action(async () => {
+    const { status } = await import('./commands/status.js');
+    return status();
+  });
 
 program
   .command('reindex')
   .description('Re-index stale files and clean up deleted entries')
-  .action(reindex);
+  .action(async () => {
+    const { reindex } = await import('./commands/reindex.js');
+    return reindex();
+  });
 
 program
   .command('add <file>', { hidden: true })
   .description('Add a single file to the index')
   .action(async (file: string) => {
+    const { index } = await import('./commands/index.js');
     await index(file, { recursive: false, pattern: '*' });
   });
 
@@ -109,7 +92,8 @@ program
   .option('--fast', 'Fast analysis (fewer agents, smaller context)')
   .option('--force', 'Force full re-analysis (skip incremental cache)')
   .action(async (options) => {
-    analyze({
+    const { analyze } = await import('./commands/analyze.js');
+    return analyze({
       parallel: !options.sequential,
       api: options.api,
       background: options.background,
@@ -124,8 +108,9 @@ program
   .option('-n, --limit <number>', 'Number of context chunks', '5')
   .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.2')
   .option('-v, --verbose', 'Show search results before asking')
-  .action((query, options) => {
-    chat(query, {
+  .action(async (query, options) => {
+    const { chat } = await import('./commands/chat.js');
+    return chat(query, {
       limit: parseInt(options.limit, 10),
       threshold: parseFloat(options.threshold),
       verbose: options.verbose,
@@ -140,7 +125,7 @@ program
   .option('--stop', 'Stop watch service')
   .option('--status', 'Show watch service status')
   .action(async (targetPath, options) => {
-    const { stopWatchDaemon, watchDaemonStatus } = await import('./commands/watch.js');
+    const { watch, stopWatchDaemon, watchDaemonStatus } = await import('./commands/watch.js');
 
     if (options.stop) {
       await stopWatchDaemon();
@@ -155,7 +140,7 @@ program
     // Code watching is ON by default, --ignore-code turns it off
     const includeCode = !options.ignoreCode;
 
-    watch(targetPath, {
+    return watch(targetPath, {
       pattern: options.pattern,
       includeCode,
     });
@@ -166,8 +151,9 @@ const configCmd = program
   .description('Show or edit succ configuration')
   .option('-s, --show', 'Show current configuration (non-interactive)')
   .option('--json', 'Output as JSON (with --show)')
-  .action((options) => {
-    config({
+  .action(async (options) => {
+    const { config } = await import('./commands/config.js');
+    return config({
       show: options.show,
       json: options.json,
     });
@@ -177,8 +163,9 @@ configCmd
   .command('set <key> <value>')
   .description('Set a configuration value (supports dot notation, e.g. error_reporting.level)')
   .option('-p, --project', 'Save to project config (.succ/config.json) instead of global')
-  .action((key: string, value: string, options) => {
-    configSet(key, value, { project: options.project });
+  .action(async (key: string, value: string, options) => {
+    const { configSet } = await import('./commands/config.js');
+    return configSet(key, value, { project: options.project });
   });
 
 program
@@ -190,8 +177,9 @@ program
   .option('-n, --limit <number>', 'Maximum number of results', '10')
   .option('-g, --global', 'Use global memory (shared across projects)')
   .option('--json', 'Output as JSON (for scripting)')
-  .action((options) => {
-    memories({
+  .action(async (options) => {
+    const { memories } = await import('./commands/memories.js');
+    return memories({
       recent: options.recent ? parseInt(options.recent, 10) : undefined,
       search: options.search,
       tags: options.tags,
@@ -217,8 +205,9 @@ program
   .option('--api', 'Use API mode (OpenAI-compatible endpoint) for extraction')
   .option('--model <model>', 'Model to use for extraction')
   .option('--api-url <url>', 'API URL for LLM endpoint')
-  .action((content, options) => {
-    remember(content, {
+  .action(async (content, options) => {
+    const { remember } = await import('./commands/memories.js');
+    return remember(content, {
       tags: options.tags,
       source: options.source,
       global: options.global,
@@ -266,7 +255,8 @@ program
       return;
     }
     // Directory/pattern mode
-    indexCode(targetPath, {
+    const { indexCode } = await import('./commands/index-code.js');
+    return indexCode(targetPath, {
       patterns: options.patterns?.split(','),
       ignore: options.ignore?.split(','),
       force: options.force,
@@ -281,8 +271,9 @@ program
   .option('--older-than <date>', 'Delete memories older than (e.g., "30d", "1w", "3m")')
   .option('--tag <tag>', 'Delete memories with tag')
   .option('--all', 'Delete ALL memories')
-  .action((options) => {
-    forget({
+  .action(async (options) => {
+    const { forget } = await import('./commands/memories.js');
+    return forget({
       id: options.id ? parseInt(options.id, 10) : undefined,
       olderThan: options.olderThan,
       tag: options.tag,
@@ -305,19 +296,20 @@ program
   .option('--hybrid', 'Include hybrid search comparison (semantic vs BM25 vs RRF)')
   .option('--history', 'List benchmark history')
   .option('--history-limit <n>', 'Number of history entries to show', '10')
-  .action((options) => {
+  .action(async (options) => {
+    const { benchmark, benchmarkExisting, benchmarkWithHistory, listBenchmarkHistory } = await import('./commands/benchmark.js');
     if (options.history) {
-      listBenchmarkHistory({
+      return listBenchmarkHistory({
         limit: parseInt(options.historyLimit, 10),
         json: options.json,
       });
     } else if (options.existing) {
-      benchmarkExisting({
+      return benchmarkExisting({
         k: parseInt(options.k, 10),
         json: options.json,
       });
     } else if (options.save || options.compare || options.hybrid) {
-      benchmarkWithHistory({
+      return benchmarkWithHistory({
         iterations: parseInt(options.iterations, 10),
         advanced: options.advanced,
         k: parseInt(options.k, 10),
@@ -329,7 +321,7 @@ program
         hybrid: options.hybrid,
       });
     } else {
-      benchmark({
+      return benchmark({
         iterations: parseInt(options.iterations, 10),
         advanced: options.advanced,
         k: parseInt(options.k, 10),
@@ -347,8 +339,9 @@ program
   .option('--api', 'Include API models in benchmark')
   .option('--models <models>', 'Models to test (comma-separated)')
   .option('--ollama-url <url>', 'Ollama API URL', 'http://localhost:11434')
-  .action((options) => {
-    benchmarkQuality({
+  .action(async (options) => {
+    const { benchmarkQuality } = await import('./commands/benchmark-quality.js');
+    return benchmarkQuality({
       ollama: options.ollama,
       api: options.api,
       models: options.models,
@@ -364,8 +357,9 @@ program
   .option('-k <number>', 'Top-K results to retrieve', '10')
   .option('-m, --model <model>', 'Local embedding model')
   .option('--json', 'Output results as JSON')
-  .action((options) => {
-    benchmarkSqliteVec({
+  .action(async (options) => {
+    const { benchmarkSqliteVec } = await import('./commands/benchmark-sqlite-vec.js');
+    return benchmarkSqliteVec({
       sizes: options.sizes.split(',').map((s: string) => parseInt(s, 10)),
       queries: parseInt(options.queries, 10),
       k: parseInt(options.k, 10),
@@ -381,8 +375,9 @@ program
   .option('--memories-only', 'Clear only memories')
   .option('--code-only', 'Clear only code index (keeps brain docs)')
   .option('-f, --force', 'Confirm deletion (required)')
-  .action((options) => {
-    clear({
+  .action(async (options) => {
+    const { clear } = await import('./commands/clear.js');
+    return clear({
       indexOnly: options.indexOnly,
       memoriesOnly: options.memoriesOnly,
       codeOnly: options.codeOnly,
@@ -394,8 +389,9 @@ program
   .command('soul')
   .description('Generate personalized soul.md from project analysis')
   .option('--api', 'Use API mode (OpenAI-compatible endpoint) instead of Claude CLI')
-  .action((options) => {
-    soul({
+  .action(async (options) => {
+    const { soul } = await import('./commands/soul.js');
+    return soul({
       api: options.api,
     });
   });
@@ -410,8 +406,9 @@ program
   .option('-n, --limit <number>', 'Limit number of links to enrich')
   .option('--min-count <number>', 'Min co-occurrence count for proximity', '2')
   .option('--dry-run', 'Preview proximity links without creating them')
-  .action((action, options) => {
-    graph({
+  .action(async (action, options) => {
+    const { graph } = await import('./commands/graph.js');
+    return graph({
       action: action as 'export' | 'stats' | 'auto-link' | 'enrich-relations' | 'proximity' | 'communities' | 'centrality',
       format: options.format,
       threshold: parseFloat(options.threshold),
@@ -431,7 +428,10 @@ const embeddingCmd = program
 embeddingCmd
   .command('info')
   .description('Show current embedding config, dimensions, and backend status')
-  .action(embeddingInfo);
+  .action(async () => {
+    const { embeddingInfo } = await import('./commands/embedding.js');
+    return embeddingInfo();
+  });
 
 embeddingCmd
   .command('migrate')
@@ -443,7 +443,10 @@ embeddingCmd
   .option('--api-key <key>', 'API key')
   .option('--project', 'Apply to project config only (default: both global and project)')
   .option('-y, --yes', 'Skip confirmation')
-  .action(embeddingMigrate);
+  .action(async (options) => {
+    const { embeddingMigrate } = await import('./commands/embedding.js');
+    return embeddingMigrate(options);
+  });
 
 program
   .command('consolidate')
@@ -457,8 +460,9 @@ program
   .option('--no-llm', 'Disable LLM merge (use simple quality-based merge)')
   .option('--undo <id>', 'Undo a consolidation by restoring original memories')
   .option('--history', 'Show recent consolidation operations')
-  .action((options) => {
-    consolidate({
+  .action(async (options) => {
+    const { consolidate } = await import('./commands/consolidate.js');
+    return consolidate({
       dryRun: options.dryRun,
       threshold: options.threshold,
       limit: options.limit,
@@ -479,8 +483,9 @@ program
   .option('--api', 'Use API mode (OpenAI-compatible endpoint)')
   .option('--api-url <url>', 'API URL for LLM endpoint')
   .option('--model <model>', 'Model to use')
-  .action((transcript, options) => {
-    sessionSummary(transcript, {
+  .action(async (transcript, options) => {
+    const { sessionSummary } = await import('./commands/session-summary.js');
+    return sessionSummary(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
       api: options.api,
@@ -495,8 +500,9 @@ program
   .option('--dry-run', 'Preview output without saving')
   .option('-v, --verbose', 'Show detailed output')
   .option('--api', 'Use API mode (OpenAI-compatible endpoint)')
-  .action((transcript, options) => {
-    precomputeContext(transcript, {
+  .action(async (transcript, options) => {
+    const { precomputeContext } = await import('./commands/precompute-context.js');
+    return precomputeContext(transcript, {
       dryRun: options.dryRun,
       verbose: options.verbose,
       api: options.api,
@@ -509,8 +515,9 @@ program
   .option('--vocab-size <number>', 'Target vocabulary size', '5000')
   .option('--min-frequency <number>', 'Minimum pair frequency to merge', '2')
   .option('--stats', 'Show current BPE statistics only')
-  .action((options) => {
-    trainBPE({
+  .action(async (options) => {
+    const { trainBPE } = await import('./commands/train-bpe.js');
+    return trainBPE({
       vocabSize: parseInt(options.vocabSize, 10),
       minFrequency: parseInt(options.minFrequency, 10),
       showStats: options.stats,
@@ -523,8 +530,9 @@ program
   .option('--tokens', 'Show token savings statistics')
   .option('--clear', 'Clear token statistics')
   .option('--model <model>', 'Override model for cost recalculation (opus, sonnet, haiku)')
-  .action((options) => {
-    stats({
+  .action(async (options) => {
+    const { stats } = await import('./commands/stats.js');
+    return stats({
       tokens: options.tokens,
       clear: options.clear,
       model: options.model,
@@ -538,8 +546,9 @@ program
   .option('--apply', 'Actually delete low-score memories')
   .option('--auto-cleanup', 'Soft-invalidate (not delete) low-score memories')
   .option('-v, --verbose', 'Show detailed analysis')
-  .action((options) => {
-    retention({
+  .action(async (options) => {
+    const { retention } = await import('./commands/retention.js');
+    return retention({
       dryRun: options.dryRun,
       apply: options.apply,
       autoCleanup: options.autoCleanup,
@@ -554,8 +563,9 @@ program
   .option('--global', 'Only backfill global memories')
   .option('--documents', 'Only backfill documents')
   .option('--dry-run', 'Show counts without writing')
-  .action((options) => {
-    backfill({
+  .action(async (options) => {
+    const { backfill } = await import('./commands/backfill.js');
+    return backfill({
       memories: options.memories,
       global: options.global,
       documents: options.documents,
@@ -568,8 +578,9 @@ program
   .description('Generate .claude/AGENTS.md from project memories (decisions, patterns, dead-ends)')
   .option('--preview', 'Preview without writing to disk')
   .option('--path <path>', 'Custom output path')
-  .action((options) => {
-    agentsMd({
+  .action(async (options) => {
+    const { agentsMd } = await import('./commands/agents-md.js');
+    return agentsMd({
       preview: options.preview,
       path: options.path,
     });
@@ -580,8 +591,9 @@ program
   .description('View session progress log (knowledge growth over time)')
   .option('-n, --limit <number>', 'Number of entries to show', '20')
   .option('--since <duration>', 'Show entries since (e.g., 7d, 1w, 1m)')
-  .action((options) => {
-    progress({
+  .action(async (options) => {
+    const { progress } = await import('./commands/progress.js');
+    return progress({
       limit: parseInt(options.limit, 10),
       since: options.since,
     });
@@ -597,8 +609,9 @@ program
   .option('--no-config', 'Exclude config from create')
   .option('--overwrite', 'Overwrite existing data on restore')
   .option('--restore-config', 'Also restore config on restore')
-  .action((action, file, options) => {
-    checkpoint({
+  .action(async (action, file, options) => {
+    const { checkpoint } = await import('./commands/checkpoint.js');
+    return checkpoint({
       action: action as 'create' | 'restore' | 'list' | 'info',
       file,
       output: options.output,
@@ -617,8 +630,9 @@ program
   .command('score')
   .description('Show AI-readiness score for the project')
   .option('--json', 'Output as JSON')
-  .action((options) => {
-    score({
+  .action(async (options) => {
+    const { score } = await import('./commands/score.js');
+    return score({
       json: options.json,
     });
   });
@@ -630,8 +644,9 @@ program
   .option('--force', 'Force stop even if sessions active')
   .option('--lines <number>', 'Number of log lines to show', '50')
   .option('--all', 'Include service sessions in list')
-  .action((subcommand, options) => {
-    daemon(subcommand || 'status', {
+  .action(async (subcommand, options) => {
+    const { daemon } = await import('./commands/daemon.js');
+    return daemon(subcommand || 'status', {
       json: options.json,
       force: options.force,
       lines: parseInt(options.lines, 10),
@@ -647,8 +662,9 @@ program
   .option('--import <file>', 'Import data from JSON file')
   .option('--dry-run', 'Preview without making changes')
   .option('--force', 'Confirm destructive operations')
-  .action((options) => {
-    migrate({
+  .action(async (options) => {
+    const { migrate } = await import('./commands/migrate.js');
+    return migrate({
       to: options.to as 'sqlite' | 'postgresql' | undefined,
       export: options.export,
       import: options.import,
@@ -661,8 +677,9 @@ program
   .command('setup [editor]')
   .description('Configure succ MCP server for an editor (claude, cursor, windsurf, continue)')
   .option('--detect', 'Auto-detect installed editors and configure all')
-  .action((editor, options) => {
-    setup({
+  .action(async (editor, options) => {
+    const { setup } = await import('./commands/setup.js');
+    return setup({
       editor,
       detect: options.detect,
     });
@@ -680,8 +697,9 @@ prdCmd
   .option('--gates <gates>', 'Quality gates (comma-separated, e.g. "typecheck,test")')
   .option('--model <model>', 'LLM model override')
   .option('--auto-parse', 'Automatically parse PRD into tasks')
-  .action((description, options) => {
-    prdGenerate(description, {
+  .action(async (description, options) => {
+    const { prdGenerate } = await import('./commands/prd.js');
+    return prdGenerate(description, {
       mode: options.mode,
       gates: options.gates,
       model: options.model,
@@ -694,8 +712,9 @@ prdCmd
   .description('Parse a PRD markdown into executable tasks')
   .option('--prd-id <id>', 'Add tasks to an existing PRD')
   .option('--dry-run', 'Show tasks without saving')
-  .action((fileOrId, options) => {
-    prdParse(fileOrId, {
+  .action(async (fileOrId, options) => {
+    const { prdParse } = await import('./commands/prd.js');
+    return prdParse(fileOrId, {
       prdId: options.prdId,
       dryRun: options.dryRun,
     });
@@ -713,8 +732,9 @@ prdCmd
   .option('--force', 'Force resume even if another runner may be active')
   .option('--mode <mode>', 'Execution mode: loop (sequential) or team (parallel)', 'loop')
   .option('--concurrency <num>', 'Max parallel workers in team mode (default: 3)')
-  .action((prdId, options) => {
-    prdRun(prdId, {
+  .action(async (prdId, options) => {
+    const { prdRun } = await import('./commands/prd.js');
+    return prdRun(prdId, {
       resume: options.resume,
       task: options.task,
       dryRun: options.dryRun,
@@ -731,8 +751,9 @@ prdCmd
   .command('list')
   .description('List all PRDs')
   .option('--all', 'Include archived PRDs')
-  .action((options) => {
-    prdList({ all: options.all });
+  .action(async (options) => {
+    const { prdList } = await import('./commands/prd.js');
+    return prdList({ all: options.all });
   });
 
 prdCmd
@@ -740,8 +761,9 @@ prdCmd
   .description('Show PRD status and tasks')
   .option('--json', 'Output as JSON')
   .option('--verbose', 'Show detailed task info')
-  .action((prdId, options) => {
-    prdStatus(prdId, {
+  .action(async (prdId, options) => {
+    const { prdStatus } = await import('./commands/prd.js');
+    return prdStatus(prdId, {
       json: options.json,
       verbose: options.verbose,
     });
@@ -751,8 +773,9 @@ prdCmd
   .command('archive [prd-id]')
   .description('Archive a PRD (set status to archived)')
   .option('--prd-id <id>', 'PRD ID to archive (or use positional argument)')
-  .action((prdId, options) => {
-    prdArchive(prdId || options.prdId);
+  .action(async (prdId, options) => {
+    const { prdArchive } = await import('./commands/prd.js');
+    return prdArchive(prdId || options.prdId);
   });
 
 prdCmd
@@ -760,8 +783,9 @@ prdCmd
   .description('Export PRD execution to Obsidian-compatible markdown with Mermaid diagrams')
   .option('--output <dir>', 'Output directory (default: .succ/brain/04_PRD)')
   .option('--all', 'Export all PRDs')
-  .action((prdId, options) => {
-    prdExport(prdId, {
+  .action(async (prdId, options) => {
+    const { prdExport } = await import('./commands/prd.js');
+    return prdExport(prdId, {
       output: options.output,
       all: options.all,
     });

@@ -21,7 +21,7 @@ function logDeletion(caller: string, count: number, ids: number[], reason?: stri
     const idStr = ids.length <= 20 ? ids.join(',') : `${ids.slice(0, 20).join(',')}... (${ids.length} total)`;
     const reasonStr = reason ? ` | ${reason}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count} | ids=[${idStr}]${reasonStr}\n`;
-    fs.appendFileSync(logFile, line);
+    fs.promises.appendFile(logFile, line).catch(() => {});
   } catch {
     // Never let audit logging break actual operations
   }
@@ -78,6 +78,37 @@ export function findSimilarMemory(
 ): { id: number; content: string; similarity: number } | null {
   const database = getDb();
 
+  // Try sqlite-vec KNN fast path
+  if (sqliteVecAvailable) {
+    try {
+      const queryBuffer = floatArrayToBuffer(embedding);
+      const vecResults = database.prepare(`
+        SELECT m.memory_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = 5
+        ORDER BY v.distance
+      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+
+      for (const result of vecResults) {
+        const similarity = 1 - result.distance;
+        if (similarity >= threshold) {
+          const memory = database.prepare(
+            'SELECT id, content FROM memories WHERE id = ?'
+          ).get(result.memory_id) as { id: number; content: string } | undefined;
+          if (memory) {
+            return { id: memory.id, content: memory.content, similarity };
+          }
+        }
+      }
+      return null;
+    } catch {
+      // Fall through to brute-force
+    }
+  }
+
+  // Brute-force fallback when sqlite-vec unavailable
   const rows = database.prepare('SELECT id, content, embedding FROM memories').all() as Array<{
     id: number;
     content: string;
@@ -87,7 +118,6 @@ export function findSimilarMemory(
   for (const row of rows) {
     const existingEmbedding = bufferToFloatArray(row.embedding);
     const similarity = cosineSimilarity(embedding, existingEmbedding);
-
     if (similarity >= threshold) {
       return { id: row.id, content: row.content, similarity };
     }
@@ -207,31 +237,65 @@ export function saveMemory(
 function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: number = 0.7): number {
   const database = getDb();
 
-  // Get all existing memories (excluding the new one)
+  // Try sqlite-vec KNN fast path
+  if (sqliteVecAvailable) {
+    try {
+      const queryBuffer = floatArrayToBuffer(embedding);
+      const vecResults = database.prepare(`
+        SELECT m.memory_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = 10
+        ORDER BY v.distance
+      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+
+      const similarities: Array<{ id: number; similarity: number }> = [];
+      for (const result of vecResults) {
+        if (result.memory_id === memoryId) continue; // exclude self
+        const similarity = 1 - result.distance;
+        if (similarity >= threshold) {
+          similarities.push({ id: result.memory_id, similarity });
+        }
+      }
+
+      const topSimilar = similarities.slice(0, 3);
+      let created = 0;
+      for (const { id: targetId, similarity } of topSimilar) {
+        try {
+          const { createMemoryLink } = require('./graph.js');
+          const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
+          if (result.created) created++;
+        } catch {
+          // Ignore link creation errors
+        }
+      }
+      return created;
+    } catch {
+      // Fall through to brute-force
+    }
+  }
+
+  // Brute-force fallback
   const memories = database
     .prepare('SELECT id, embedding FROM memories WHERE id != ?')
     .all(memoryId) as Array<{ id: number; embedding: Buffer }>;
 
   const similarities: Array<{ id: number; similarity: number }> = [];
-
   for (const mem of memories) {
     const memEmbedding = bufferToFloatArray(mem.embedding);
     const similarity = cosineSimilarity(embedding, memEmbedding);
-
     if (similarity >= threshold) {
       similarities.push({ id: mem.id, similarity });
     }
   }
 
-  // Sort and take top 3
   similarities.sort((a, b) => b.similarity - a.similarity);
   const topSimilar = similarities.slice(0, 3);
 
   let created = 0;
   for (const { id: targetId, similarity } of topSimilar) {
     try {
-      // Import createMemoryLink from graph.ts when it's created
-      // For now, we'll need to update this after Phase 9
       const { createMemoryLink } = require('./graph.js');
       const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
       if (result.created) created++;

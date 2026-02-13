@@ -1,7 +1,7 @@
 import { getGlobalDb } from './connection.js';
 import { cosineSimilarity } from '../embeddings.js';
-import { bufferToFloatArray } from './helpers.js';
-import { MemoryType } from './schema.js';
+import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
+import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { SaveMemoryResult } from './memories.js';
 import { updateGlobalMemoriesBm25Index } from './bm25-indexes.js';
 
@@ -47,6 +47,37 @@ export function findSimilarGlobalMemory(
 ): { id: number; content: string; similarity: number } | null {
   const database = getGlobalDb();
 
+  // Try sqlite-vec KNN fast path
+  if (sqliteVecAvailable) {
+    try {
+      const queryBuffer = floatArrayToBuffer(embedding);
+      const vecResults = database.prepare(`
+        SELECT m.memory_id, v.distance
+        FROM vec_memories v
+        JOIN vec_memories_map m ON m.vec_rowid = v.rowid
+        WHERE v.embedding MATCH ?
+          AND k = 5
+        ORDER BY v.distance
+      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+
+      for (const result of vecResults) {
+        const similarity = 1 - result.distance;
+        if (similarity >= threshold) {
+          const memory = database.prepare(
+            'SELECT id, content FROM memories WHERE id = ?'
+          ).get(result.memory_id) as { id: number; content: string } | undefined;
+          if (memory) {
+            return { id: memory.id, content: memory.content, similarity };
+          }
+        }
+      }
+      return null;
+    } catch {
+      // Fall through to brute-force
+    }
+  }
+
+  // Brute-force fallback
   const rows = database.prepare('SELECT id, content, embedding FROM memories').all() as Array<{
     id: number;
     content: string;
@@ -56,7 +87,6 @@ export function findSimilarGlobalMemory(
   for (const row of rows) {
     const existingEmbedding = bufferToFloatArray(row.embedding);
     const similarity = cosineSimilarity(embedding, existingEmbedding);
-
     if (similarity >= threshold) {
       return { id: row.id, content: row.content, similarity };
     }
