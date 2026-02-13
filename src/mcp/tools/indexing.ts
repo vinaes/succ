@@ -5,6 +5,7 @@
  * - succ_analyze_file: Analyze a source file and generate documentation
  * - succ_index_code_file: Index a single source code file
  * - succ_reindex: Detect and fix stale/deleted index entries
+ * - succ_symbols: Extract AST symbols from a source file
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -213,6 +214,88 @@ export function registerIndexingTools(server: McpServer) {
       } catch (error: any) {
         return {
           content: [{ type: 'text' as const, text: `Error during reindex: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Tool: succ_symbols - Extract AST symbols from a source file using tree-sitter
+  server.tool(
+    'succ_symbols',
+    'Extract functions, classes, interfaces, and type definitions from a source file using tree-sitter AST parsing. Returns symbol names, types, signatures, and line numbers. Supports 13 languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.',
+    {
+      file: z.string().describe('Path to the source file to extract symbols from'),
+      type: z.enum(['all', 'function', 'method', 'class', 'interface', 'type_alias']).optional().default('all')
+        .describe('Filter by symbol type (default: all)'),
+      project_path: projectPathParam,
+    },
+    async ({ file, type, project_path }) => {
+      await applyProjectPath(project_path);
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        const absolutePath = path.default.resolve(file);
+        if (!fs.default.existsSync(absolutePath)) {
+          return {
+            content: [{ type: 'text' as const, text: `File not found: ${file}` }],
+            isError: true,
+          };
+        }
+
+        const content = fs.default.readFileSync(absolutePath, 'utf-8');
+        const { parseCode } = await import('../../lib/tree-sitter/parser.js');
+        const { extractSymbols } = await import('../../lib/tree-sitter/extractor.js');
+        const { getLanguageForExtension } = await import('../../lib/tree-sitter/types.js');
+
+        const ext = absolutePath.split('.').pop() || '';
+        const language = getLanguageForExtension(ext);
+        if (!language) {
+          return {
+            content: [{ type: 'text' as const, text: `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift` }],
+          };
+        }
+
+        const tree = await parseCode(content, language);
+        if (!tree) {
+          return {
+            content: [{ type: 'text' as const, text: `Failed to parse ${file} — tree-sitter grammar not available for ${language}` }],
+            isError: true,
+          };
+        }
+
+        try {
+          let symbols = await extractSymbols(tree, content, language);
+
+          if (type !== 'all') {
+            symbols = symbols.filter(s => s.type === type);
+          }
+
+          if (symbols.length === 0) {
+            return {
+              content: [{ type: 'text' as const, text: `No ${type === 'all' ? '' : type + ' '}symbols found in ${file}` }],
+            };
+          }
+
+          const lines = symbols.map(s => {
+            const sig = s.signature ? `: ${s.signature}` : '';
+            const doc = s.docComment ? ` — ${s.docComment.split('\n')[0]}` : '';
+            return `  ${s.type} **${s.name}**${sig} (L${s.startRow + 1}-${s.endRow + 1})${doc}`;
+          });
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `${symbols.length} symbols in ${file} (${language}):\n\n${lines.join('\n')}`,
+            }],
+          };
+        } finally {
+          tree.delete();
+        }
+      } catch (error: any) {
+        return {
+          content: [{ type: 'text' as const, text: `Error extracting symbols: ${error.message}` }],
           isError: true,
         };
       }

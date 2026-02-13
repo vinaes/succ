@@ -29,13 +29,26 @@ function getCodeBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from documents
-  const rows = database.prepare("SELECT id, content FROM documents WHERE file_path LIKE 'code:%'").all() as Array<{
+  // Build from documents — enrich with AST metadata for better ranking
+  const rows = database.prepare(
+    "SELECT id, content, symbol_name, signature FROM documents WHERE file_path LIKE 'code:%'"
+  ).all() as Array<{
     id: number;
     content: string;
+    symbol_name: string | null;
+    signature: string | null;
   }>;
 
-  codeBm25Index = bm25.buildIndex(rows, 'code');
+  // Enrich content with AST tokens: append symbol name + signature for BM25 boosting
+  const enriched = rows.map(row => {
+    if (!row.symbol_name && !row.signature) return { id: row.id, content: row.content };
+    const parts = [row.content];
+    if (row.symbol_name) parts.push(row.symbol_name, row.symbol_name); // 3x boost (once in content + twice)
+    if (row.signature) parts.push(row.signature);
+    return { id: row.id, content: parts.join('\n') };
+  });
+
+  codeBm25Index = bm25.buildIndex(enriched, 'code');
 
   // Store for future use
   saveCodeBm25Index();
@@ -65,12 +78,15 @@ export function invalidateCodeBm25Index(): void {
 /**
  * Update BM25 index when a document is added/updated
  */
-export function updateCodeBm25Index(docId: number, content: string): void {
+export function updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): void {
   const index = getCodeBm25Index();
   // Remove old entry if exists
   bm25.removeFromIndex(index, docId);
-  // Add new entry
-  bm25.addToIndex(index, { id: docId, content }, 'code');
+  // Enrich with AST metadata for BM25 boosting
+  const parts = [content];
+  if (symbolName) parts.push(symbolName, symbolName); // 3x boost
+  if (signature) parts.push(signature);
+  bm25.addToIndex(index, { id: docId, content: parts.join('\n') }, 'code');
   saveCodeBm25Index();
 }
 
