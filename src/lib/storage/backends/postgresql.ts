@@ -653,7 +653,8 @@ export class PostgresBackend {
   async searchDocuments(
     queryEmbedding: number[],
     limit: number = 5,
-    threshold: number = 0.5
+    threshold: number = 0.5,
+    options?: { codeOnly?: boolean; docsOnly?: boolean }
   ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
     if (!this.projectId) {
       throw new Error('Project ID must be set before searching documents');
@@ -663,6 +664,10 @@ export class PostgresBackend {
     // pgvector cosine distance: <=> returns distance (0 = identical, 2 = opposite)
     // similarity = 1 - distance/2 for normalized vectors
     // For our use: similarity = 1 - distance (since cosine distance from pgvector is 1-cosine_similarity)
+    let whereExtra = '';
+    if (options?.codeOnly) whereExtra = " AND file_path LIKE 'code:%'";
+    else if (options?.docsOnly) whereExtra = " AND file_path NOT LIKE 'code:%'";
+
     const result = await pool.query<{
       file_path: string;
       content: string;
@@ -673,7 +678,7 @@ export class PostgresBackend {
       `SELECT file_path, content, start_line, end_line,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3
+       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
        ORDER BY embedding <=> $1
        LIMIT $4`,
       [toPgVector(queryEmbedding), this.projectId, threshold, limit]

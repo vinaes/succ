@@ -1139,6 +1139,14 @@ export interface ConfigDisplay {
     sleep: { enabled: boolean; mode: string; model: string };
     skills: { mode: string; model: string };
   };
+  // Storage backend settings
+  storage: {
+    backend: string;
+    vector: string;
+    sqlite?: { path?: string; global_path?: string; wal_mode?: boolean };
+    postgresql?: { host?: string; port?: number; database?: string; ssl?: boolean; pool_size?: number; connection_string?: string };
+    qdrant?: { url?: string; collection_prefix?: string; api_key?: string };
+  };
   // Chunking settings
   chunking: {
     chunk_size: number;
@@ -1294,6 +1302,37 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       sleep: { enabled: config.llm?.sleep?.enabled ?? false, mode: sleepCfg.mode, model: sleepCfg.model },
       skills: { mode: skillsCfg.mode, model: skillsCfg.model },
     },
+    storage: (() => {
+      const sc = config.storage;
+      const result: ConfigDisplay['storage'] = {
+        backend: sc?.backend || 'sqlite',
+        vector: sc?.vector || 'builtin',
+      };
+      if (sc?.backend === 'postgresql' && sc.postgresql) {
+        result.postgresql = {
+          host: sc.postgresql.host || 'localhost',
+          port: sc.postgresql.port || 5432,
+          database: sc.postgresql.database,
+          ssl: sc.postgresql.ssl ?? false,
+          pool_size: sc.postgresql.pool_size ?? 10,
+          connection_string: sc.postgresql.connection_string ? mask(sc.postgresql.connection_string) : undefined,
+        };
+      } else {
+        result.sqlite = {
+          path: sc?.sqlite?.path,
+          global_path: sc?.sqlite?.global_path,
+          wal_mode: sc?.sqlite?.wal_mode,
+        };
+      }
+      if (sc?.vector === 'qdrant' && sc.qdrant) {
+        result.qdrant = {
+          url: sc.qdrant.url || 'http://localhost:6333',
+          collection_prefix: sc.qdrant.collection_prefix || 'succ_',
+          api_key: sc.qdrant.api_key ? mask(sc.qdrant.api_key) : undefined,
+        };
+      }
+      return result;
+    })(),
     chunking: {
       chunk_size: config.chunk_size,
       chunk_overlap: config.chunk_overlap,
@@ -1405,6 +1444,37 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   }
   if (display.sources.api_key) {
     lines.push(`  API Key: ${display.sources.api_key}`);
+  }
+  lines.push('');
+
+  // Storage
+  lines.push('## Storage');
+  lines.push(`  Backend: ${display.storage.backend}`);
+  lines.push(`  Vector: ${display.storage.vector}`);
+  if (display.storage.postgresql) {
+    const pg = display.storage.postgresql;
+    lines.push('  PostgreSQL:');
+    if (pg.connection_string) {
+      lines.push(`    Connection string: ${pg.connection_string}`);
+    } else {
+      lines.push(`    Host: ${pg.host}:${pg.port}`);
+      if (pg.database) lines.push(`    Database: ${pg.database}`);
+    }
+    lines.push(`    SSL: ${pg.ssl}`);
+    lines.push(`    Pool size: ${pg.pool_size}`);
+  }
+  if (display.storage.sqlite) {
+    const sq = display.storage.sqlite;
+    if (sq.path) lines.push(`  SQLite path: ${sq.path}`);
+    if (sq.global_path) lines.push(`  SQLite global path: ${sq.global_path}`);
+    if (sq.wal_mode !== undefined) lines.push(`  WAL mode: ${sq.wal_mode}`);
+  }
+  if (display.storage.qdrant) {
+    const qd = display.storage.qdrant;
+    lines.push('  Qdrant:');
+    lines.push(`    URL: ${qd.url}`);
+    lines.push(`    Collection prefix: ${qd.collection_prefix}`);
+    if (qd.api_key) lines.push(`    API key: ${qd.api_key}`);
   }
   lines.push('');
 

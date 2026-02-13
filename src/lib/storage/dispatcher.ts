@@ -964,7 +964,7 @@ export class StorageDispatcher {
       } catch (error) { this._warnQdrantFailure('hybridSearchCode failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh)).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { codeOnly: true })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
@@ -981,7 +981,7 @@ export class StorageDispatcher {
       } catch (error) { this._warnQdrantFailure('hybridSearchDocs failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh)).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { docsOnly: true })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
