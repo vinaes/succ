@@ -27,7 +27,7 @@ import {
 // Test fixtures
 // ============================================================================
 
-function makeGate(type: string = 'test', passed = true): QualityGate {
+function makeGate(type: string = 'test', _passed = true): QualityGate {
   return { type: type as any, command: `npm ${type}`, required: true, timeout_ms: 120000 };
 }
 

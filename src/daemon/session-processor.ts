@@ -16,11 +16,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { saveMemory, searchMemories, saveMemoriesBatch, type MemoryBatchInput } from '../lib/storage/index.js';
+import { saveMemoriesBatch, type MemoryBatchInput } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
 import { countTokens } from '../lib/token-counter.js';
-import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
+import { scoreMemory } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
@@ -167,6 +167,7 @@ function formatEntries(entries: TranscriptEntry[]): string {
 /**
  * Split entries into chunks of approximately targetTokens each
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function chunkEntries(entries: TranscriptEntry[], targetTokens: number = 25000): TranscriptEntry[][] {
   if (entries.length === 0) return [];
 
@@ -214,6 +215,7 @@ async function runLLM(prompt: string, timeoutMs: number = 60000): Promise<string
 /**
  * Summarize a single chunk of transcript
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function summarizeChunk(entries: TranscriptEntry[], chunkIndex: number, totalChunks: number): Promise<string> {
   const formatted = formatEntries(entries);
 
@@ -248,6 +250,7 @@ Output a bullet-point summary (5-15 bullets).`;
 /**
  * Combine multiple chunk summaries into a final handoff document
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function combineSummaries(summaries: string[]): Promise<string> {
   const validSummaries = summaries.filter(s => s.trim());
 
@@ -293,6 +296,7 @@ ${validSummaries.map((s, i) => `### Part ${i + 1}\n${s}`).join('\n\n')}`;
 /**
  * Extract reusable learnings from the summary
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function extractLearnings(summary: string): Promise<string[]> {
   if (!summary.trim()) {
     return [];

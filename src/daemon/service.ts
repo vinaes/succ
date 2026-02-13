@@ -17,7 +17,6 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
@@ -49,10 +48,10 @@ import { getEmbedding, cleanupEmbeddings } from '../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, cleanupQualityScoring } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
-import { callLLM, isSleepAgentEnabled } from '../lib/llm.js';
+import { callLLM } from '../lib/llm.js';
 import { extractSessionSummary } from '../lib/session-summary.js';
 import { recordTranscriptTokens, recordExtraction, resetTranscriptCounter, loadBudgets, flushBudgets, removeBudget } from '../lib/token-budget.js';
-import { appendObservations, removeObservations, cleanupStaleObservations, type Observation } from '../lib/session-observations.js';
+import { appendObservations, removeObservations, cleanupStaleObservations } from '../lib/session-observations.js';
 import { REFLECTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -185,7 +184,7 @@ export function readTailTranscript(transcriptPath: string, maxBytes: number = 2 
 
 const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000;  // 5 minutes
 const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000;  // Re-generate after 5KB growth
-const BRIEFING_PREGENERATE_IDLE_MS = 120 * 1000;  // Pre-generate after 2 min idle
+// const BRIEFING_PREGENERATE_IDLE_MS = 120 * 1000;  // Pre-generate after 2 min idle
 
 /**
  * Pre-generate briefing for a session in background
@@ -243,6 +242,7 @@ async function preGenerateBriefing(sessionId: string, transcriptPath: string): P
 /**
  * Get cached briefing or generate on-demand
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getCachedBriefing(sessionId: string, transcriptPath: string): Promise<{ briefing?: string; cached: boolean }> {
   const cached = briefingCache.get(sessionId);
 
@@ -326,7 +326,7 @@ function log(message: string): void {
  */
 async function writeReflection(
   transcript: string,
-  idleConfig: ReturnType<typeof getIdleReflectionConfig>
+  _idleConfig: ReturnType<typeof getIdleReflectionConfig>
 ): Promise<void> {
   const projectRoot = getProjectRoot();
   const reflectionsDir = path.join(projectRoot, '.succ', 'brain', 'Reflections');
@@ -929,7 +929,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   // Compact briefing endpoint (for /compact hook)
   // Supports pre-generated cache for instant responses
   if (pathname === '/api/briefing' && method === 'POST') {
-    const { transcript, transcript_path, session_id, format, model, include_learnings, include_memories, max_memories, use_cache } = body;
+    const { transcript, transcript_path, session_id, format, include_learnings, include_memories, max_memories, use_cache } = body;
 
     // Try cached briefing first if session_id provided and use_cache not explicitly false
     if (session_id && use_cache !== false) {
@@ -1158,7 +1158,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   const cwd = getProjectRoot();
   const watcherConfig = getIdleWatcherConfig();
-  const idleConfig = getIdleReflectionConfig();
+  getIdleReflectionConfig();
 
   // Initialize storage dispatcher (routes to SQLite or PG based on config)
   await initStorageDispatcher();
@@ -1186,26 +1186,22 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   let port = portStart;
 
   for (let i = 0; i < MAX_PORT_ATTEMPTS; i++) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.once('error', (err: any) => {
-          if (err.code === 'EADDRINUSE') {
-            port++;
-            resolve();
-          } else {
-            reject(err);
-          }
-        });
-        server.listen(port, '127.0.0.1', () => {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          port++;
           resolve();
-        });
+        } else {
+          reject(err);
+        }
       });
+      server.listen(port, '127.0.0.1', () => {
+        resolve();
+      });
+    });
 
-      if (server.listening) {
-        break;
-      }
-    } catch (err) {
-      throw err;
+    if (server.listening) {
+      break;
     }
   }
 

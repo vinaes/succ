@@ -8,18 +8,10 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 import {
   getDb,
   getGlobalDb,
 } from '../../db/connection.js';
-import type {
-  Document,
-  Memory,
-  MemoryLink,
-  GlobalMemory,
-} from '../types.js';
-
 /**
  * Export format version for compatibility checking
  */

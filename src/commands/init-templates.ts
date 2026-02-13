@@ -72,7 +72,7 @@ _Add your preferences here or run \`succ soul\` to auto-detect from project._
 `;
 }
 
-export function getLearningsTemplate(projectName: string): string {
+export function getLearningsTemplate(_projectName: string): string {
   return `---
 description: "What the brain learned about itself - patterns, improvements, common queries"
 type: meta

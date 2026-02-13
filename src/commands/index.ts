@@ -23,7 +23,8 @@ export async function index(
   targetPath?: string,
   options: IndexOptions = {}
 ): Promise<void> {
-  let { pattern = '**/*.md', force = false, autoReindex = false, memories = false } = options;
+  const { pattern = '**/*.md', autoReindex = false, memories = false } = options;
+  let { force = false } = options;
 
   // --memories: re-embed all memories with current embedding model
   if (memories) {

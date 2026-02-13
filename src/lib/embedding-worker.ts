@@ -42,11 +42,12 @@ if (parentPort) {
           port.postMessage({ type: 'ready' } as WorkerResponse);
           break;
 
-        case 'embed':
+        case 'embed': {
           if (!session) throw new DependencyError('Session not initialized');
           const embeddings = await session.embed(msg.texts || []);
           port.postMessage({ type: 'result', embeddings } as WorkerResponse);
           break;
+        }
 
         case 'shutdown':
           if (session) {

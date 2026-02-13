@@ -381,7 +381,9 @@ describe('PostgreSQL Backend Integration', async () => {
 
     afterAll(async () => {
       // Clean up test skill
-      try { await backend.deleteSkill(testSkillName); } catch {}
+      try { await backend.deleteSkill(testSkillName); } catch {
+        // intentional
+      }
     });
 
     it('should upsert and get all skills', async () => {

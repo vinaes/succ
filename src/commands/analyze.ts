@@ -24,19 +24,15 @@ import {
   runAgentsSequential,
   runAgentsApi,
   createLLMCaller,
-  type Agent,
 } from './analyze-agents.js';
 
 import {
   sanitizeFilename,
   buildMocContent,
-  buildItemPrompt,
-  gatherItemContext,
   runMultiPassItems,
   cleanAgentSubfiles,
   ensureBrainStructure,
   generateIndexFiles,
-  type MultiPassOptions,
 } from './analyze-utils.js';
 
 import {

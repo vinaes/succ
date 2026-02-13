@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EventEmitter } from 'events';
 
 // Track workers created by the mock — vi.hoisted makes it available to the hoisted vi.mock
 const { createdWorkers } = vi.hoisted(() => {
@@ -7,6 +6,7 @@ const { createdWorkers } = vi.hoisted(() => {
 });
 
 vi.mock('worker_threads', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { EventEmitter: EE } = require('events');
 
   class MockWorker extends EE {

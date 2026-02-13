@@ -9,7 +9,7 @@ import { getConfig, getLLMTaskConfig, invalidateConfigCache } from '../lib/confi
 import { getEmbeddingInfo, getEmbedding, getModelDimension } from '../lib/embeddings.js';
 import { initStorageDispatcher, getStoredEmbeddingDimension,
   getMemoryCount, getMemoryEmbeddingCount } from '../lib/storage/index.js';
-import { configSet, type ConfigSetOptions } from './config.js';
+import { configSet } from './config.js';
 
 /**
  * Show current embedding configuration and status.

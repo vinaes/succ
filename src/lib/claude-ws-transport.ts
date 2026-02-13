@@ -545,12 +545,7 @@ export class ClaudeWSTransport {
       this.pending = null;
     }
     // Reject all queued
-    const queued = this.queue.splice(0);
-    for (const work of queued) {
-      // Each queued item is a closure that will call sendPrompt,
-      // but since we're disconnected, just reject immediately
-      this.processing = false;
-    }
+    this.queue.splice(0);
     this.queue = [];
     this.processing = false;
   }

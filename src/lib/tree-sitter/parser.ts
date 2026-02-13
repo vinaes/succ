@@ -192,7 +192,9 @@ export async function loadLanguage(language: string): Promise<import('web-tree-s
       return lang;
     } catch {
       // Corrupted file — delete and re-download
-      try { fs.unlinkSync(localPath); } catch {}
+      try { fs.unlinkSync(localPath); } catch {
+        // intentional
+      }
     }
   }
 
@@ -369,7 +371,9 @@ export function clearGrammarCache(): void {
  */
 export function resetParserState(): void {
   for (const parser of parserPool.values()) {
-    try { parser.delete(); } catch {}
+    try { parser.delete(); } catch {
+      // intentional
+    }
   }
   parserPool.clear();
   languageCache.clear();

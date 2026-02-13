@@ -13,7 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
 import { SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
-import { logError, logWarn, logInfo } from './fault-logger.js';
+import { logWarn } from './fault-logger.js';
 import fs from 'fs';
 import path from 'path';
 

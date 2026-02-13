@@ -340,7 +340,9 @@ export function extractIdentifiers(rootNode: Node): string[] {
  */
 export function resetQueryCache(): void {
   for (const query of queryCache.values()) {
-    try { query.delete(); } catch {}
+    try { query.delete(); } catch {
+      // intentional
+    }
   }
   queryCache.clear();
   QueryClass = null;

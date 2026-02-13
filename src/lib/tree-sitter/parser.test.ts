@@ -3,11 +3,9 @@ import {
   initTreeSitter,
   parseCode,
   getGrammarsDir,
-  isGrammarCached,
   listCachedGrammars,
   resetParserState,
   getParserForFile,
-  getParserForLanguage,
   loadLanguage,
 } from './parser.js';
 import {

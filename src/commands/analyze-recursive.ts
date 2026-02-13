@@ -2,9 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { getLLMTaskConfig, getProjectRoot, getSuccDir } from '../lib/config.js';
 import { NetworkError, ValidationError } from '../lib/errors.js';
-import { spawnClaudeCLI } from '../lib/llm.js';
 import { formatSymbolMap, batchChunks } from './analyze-helpers.js';
-import { cleanMarkdownOutput, type MultiPassOptions } from './analyze-utils.js';
+import { cleanMarkdownOutput } from './analyze-utils.js';
 import { gatherMinimalContext, getExistingBrainDocs } from './analyze-profile.js';
 
 /** Threshold for switching to recursive analysis (chars) */

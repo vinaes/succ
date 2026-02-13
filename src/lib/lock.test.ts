@@ -161,7 +161,7 @@ describe('Lock System', () => {
         await withLock('test-op', async () => {
           throw new Error('Test error');
         });
-      } catch (e) {
+      } catch {
         // Expected
       }
 

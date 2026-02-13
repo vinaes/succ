@@ -8,8 +8,7 @@
  * signaling the caller to use the regex/line-based fallback.
  */
 
-import type { Node } from 'web-tree-sitter';
-import type { TreeSitterChunk, SymbolInfo, SymbolType } from './types.js';
+import type { TreeSitterChunk, SymbolInfo } from './types.js';
 import { getLanguageForExtension } from './types.js';
 import { parseFile } from './parser.js';
 import { extractSymbols } from './extractor.js';

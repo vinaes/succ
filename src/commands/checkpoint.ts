@@ -18,7 +18,6 @@ import {
   restoreCheckpoint,
   listCheckpoints,
   formatSize,
-  type CheckpointData,
 } from '../lib/checkpoint.js';
 import { logError } from '../lib/fault-logger.js';
 

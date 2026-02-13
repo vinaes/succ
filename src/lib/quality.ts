@@ -9,7 +9,7 @@
 
 import { getConfig, getLLMTaskConfig, type SuccConfig } from './config.js';
 import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
-import { logWarn, logInfo } from './fault-logger.js';
+import { logWarn } from './fault-logger.js';
 import { NetworkError, ValidationError } from './errors.js';
 
 // Lazy-loaded zero-shot classification pipeline for local scoring
@@ -382,7 +382,7 @@ function parseScoreResponse(response: string): Omit<QualityScore, 'mode'> {
         uniqueness: clamp(parsed.factors?.uniqueness || 0.5, 0, 1),
       },
     };
-  } catch (error) {
+  } catch {
     // Return default scores on parse error
     return {
       score: 0.5,

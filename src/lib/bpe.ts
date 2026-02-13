@@ -21,7 +21,6 @@ import {
   loadBPEVocabFromDb,
   getLastBPETrainTimeFromDb,
 } from './db/bpe.js';
-import { logInfo } from './fault-logger.js';
 
 // ============================================================================
 // Types

@@ -127,7 +127,7 @@ import { getSuccDir } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
-import { startAnalyzer, stopAnalyzer, triggerAnalysis } from './analyzer.js';
+import { startAnalyzer, triggerAnalysis } from './analyzer.js';
 
 describe('Daemon Service', () => {
   let testTmpDir: string;

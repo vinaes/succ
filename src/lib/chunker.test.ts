@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { chunkText, chunkCode, chunkCodeAsync, enrichForEmbedding, extractFrontmatter, getChunkingStats, resetChunkingStats, Chunk } from './chunker.js';
 
 // Mock config

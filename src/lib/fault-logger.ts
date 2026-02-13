@@ -92,11 +92,11 @@ function sendToWebhook(entry: FaultEntry, url: string, headers?: Record<string, 
 // Channel 3: Sentry (lazy-loaded optional peer dependency)
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let sentryModule: any = undefined; // undefined=not tried, false=not installed
 let sentryInitialized = false;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 async function getSentry(): Promise<any> {
   if (sentryModule === false) return null;
   if (sentryModule) return sentryModule;

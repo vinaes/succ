@@ -14,7 +14,6 @@ import {
   ensureDebugsDir,
   saveSession,
   loadSession,
-  deleteSession,
   listSessions,
   findActiveSession,
   appendSessionLog,
@@ -23,7 +22,6 @@ import {
 import {
   detectLanguage,
   generateLogStatement,
-  sessionToIndexEntry,
 } from '../../lib/debug/types.js';
 import type { DebugSession, Hypothesis, DebugLanguage } from '../../lib/debug/types.js';
 

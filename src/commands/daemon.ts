@@ -93,7 +93,7 @@ export async function daemonSessions(options: DaemonOptions & { all?: boolean } 
 /**
  * Start daemon
  */
-export async function daemonStart(options: DaemonOptions = {}): Promise<void> {
+export async function daemonStart(_options: DaemonOptions = {}): Promise<void> {
   const client = createDaemonClient();
 
   if (await client.isRunning()) {
@@ -242,8 +242,12 @@ function cleanupDaemonFiles(): void {
 
   try {
     fs.unlinkSync(path.join(tmpDir, 'daemon.pid'));
-  } catch {}
+  } catch {
+    // intentional
+  }
   try {
     fs.unlinkSync(path.join(tmpDir, 'daemon.port'));
-  } catch {}
+  } catch {
+    // intentional
+  }
 }

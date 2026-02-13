@@ -70,7 +70,6 @@ import {
   readTailTranscript,
   parseFactsResponse,
   formatTranscriptForExtraction,
-  type ExtractedFact,
 } from './session-processor.js';
 
 beforeEach(() => {

@@ -49,7 +49,7 @@ export async function expandQuery(
     // Parse response: one query per line, filter empty/invalid
     const expanded = response
       .split('\n')
-      .map(line => line.replace(/^[\d\-\*\.\)]+\s*/, '').trim())  // strip numbering
+      .map(line => line.replace(/^[\d\-*.)]+\s*/, '').trim())  // strip numbering
       .filter(line => line.length >= 3 && line.length <= 200)
       .filter(line => !/^(alternative|here are|queries?:)/i.test(line))
       .slice(0, 5);

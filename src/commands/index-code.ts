@@ -8,7 +8,7 @@ import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from '../lib/bm25.js';
 import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
-import { needsBPERetrain, trainBPEFromDatabase, getLastBPETrainTime } from '../lib/bpe.js';
+import { needsBPERetrain, trainBPEFromDatabase } from '../lib/bpe.js';
 import { DEFAULT_CODE_PATTERNS, DEFAULT_IGNORE_PATTERNS } from '../lib/patterns.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
 
@@ -27,13 +27,13 @@ export async function indexCode(
   targetPath?: string,
   options: IndexCodeOptions = {}
 ): Promise<void> {
-  let {
+  const {
     patterns = DEFAULT_CODE_PATTERNS,
     ignore = DEFAULT_IGNORE,
-    force = false,
     maxFileSize = 500, // 500KB default
     autoReindex = false,
   } = options;
+  let { force = false } = options;
 
   const projectRoot = getProjectRoot();
   const searchPath = targetPath ? path.resolve(targetPath) : projectRoot;

@@ -327,7 +327,7 @@ describe('MCP Tools', () => {
 
     it('should return recent memories for wildcard query', async () => {
       const handler = toolHandlers.get('succ_recall')!;
-      const result = await handler({ query: '*', limit: 3 });
+      await handler({ query: '*', limit: 3 });
 
       expect(getRecentMemories).toHaveBeenCalledWith(3);
     });

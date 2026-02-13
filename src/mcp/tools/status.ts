@@ -19,10 +19,9 @@ import {
   closeDb,
   type TokenEventType,
 } from '../../lib/storage/index.js';
-import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig, getProjectRoot, getSuccDir, isProjectInitialized } from '../../lib/config.js';
+import { getDaemonStatuses, isGlobalOnlyMode, getIdleReflectionConfig, getRetentionConfig, getProjectRoot } from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
-import { z } from 'zod';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerStatusTools(server: McpServer) {

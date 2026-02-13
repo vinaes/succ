@@ -12,7 +12,7 @@ import {
   updateTokenFrequencies,
 } from './storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
-import { logError, logInfo } from './fault-logger.js';
+import { logError } from './fault-logger.js';
 
 import { enrichForEmbedding, type Chunk } from './chunker.js';
 export type { Chunk };

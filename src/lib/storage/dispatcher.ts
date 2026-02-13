@@ -24,7 +24,6 @@
 
 import { getConfig, getProjectRoot } from '../config.js';
 import { logError, logWarn } from '../fault-logger.js';
-import { ConfigError } from '../errors.js';
 import type { PostgresBackend } from './backends/postgresql.js';
 import type { QdrantVectorStore } from './vector/qdrant.js';
 import type {
@@ -36,7 +35,7 @@ import type {
   WebSearchHistoryFilter,
   WebSearchHistorySummary,
 } from './types.js';
-import type { DocumentUpsertMeta, MemoryUpsertMeta } from './vector/qdrant.js';
+import type { DocumentUpsertMeta } from './vector/qdrant.js';
 
 // Internal SQL query result types
 interface SqlLearningDelta {
@@ -66,23 +65,6 @@ interface SqlMemoryRow {
   invalidated_by: number | null;
   created_at: string;
   embedding?: Buffer | null;
-}
-
-interface SqlMemoryWithEmbedding extends SqlMemoryRow {
-  embedding: Buffer;
-}
-
-interface SqlDocumentRow {
-  id: number;
-  file_path: string;
-  content: string;
-  start_line: number;
-  end_line: number;
-  embedding?: Buffer | null;
-}
-
-interface SqlDocumentWithEmbedding extends SqlDocumentRow {
-  embedding: Buffer;
 }
 
 // Dispatcher state
@@ -1712,6 +1694,7 @@ export class StorageDispatcher {
 }
 
 /** Parse pgvector string '[1.0, 2.0, 3.0]' to number[] */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function parsePgVector(str: string): number[] {
   const inner = str.slice(1, -1);
   if (!inner) return [];

@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import zlib from 'zlib';
 import {
-  createCheckpoint,
   readCheckpoint,
-  restoreCheckpoint,
-  listCheckpoints,
   formatSize,
   type CheckpointData,
   type CheckpointMemory,
@@ -53,7 +51,7 @@ describe('Checkpoint Library', () => {
     let tempDir: string;
 
     beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'checkpoint-test-'));
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'checkpoint-test-'));
     });
 
     afterEach(() => {

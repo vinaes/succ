@@ -20,7 +20,6 @@ import path from 'path';
 import { getSuccDir, getProjectRoot } from './config.js';
 import {
   getMemoryStats,
-  getStats,
   getCodeFileCount,
   getDocsFileCount,
   getAverageMemoryQuality,

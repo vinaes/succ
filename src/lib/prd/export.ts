@@ -16,7 +16,7 @@ import {
   findLatestPrd,
   listPrds,
 } from './state.js';
-import type { Prd, Task, TaskAttempt, PrdExecution, ExecutionMode } from './types.js';
+import type { Prd, Task, PrdExecution } from './types.js';
 import { NotFoundError } from '../errors.js';
 
 // ============================================================================

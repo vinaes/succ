@@ -12,8 +12,6 @@ import {
   saveGlobalMemory,
   searchGlobalMemories,
   getRecentGlobalMemories,
-  deleteGlobalMemory,
-  getGlobalMemoryStats,
   closeGlobalDb,
 } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
@@ -22,7 +20,7 @@ import type { LLMBackend } from '../lib/llm.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
 import { parseDuration } from '../lib/temporal.js';
-import { extractFactsWithLLM, ExtractedFact } from '../lib/session-summary.js';
+import { extractFactsWithLLM } from '../lib/session-summary.js';
 import path from 'path';
 import { logError } from '../lib/fault-logger.js';
 
@@ -449,7 +447,6 @@ async function rememberWithExtraction(
       }
 
       if (useGlobal) {
-        const projectName = path.basename(getProjectRoot());
         const result = await saveGlobalMemory(factContent, embedding, factTags, source || 'extraction');
         if (result.isDuplicate) {
           console.log(`  ⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 50)}..."`);
@@ -535,7 +532,6 @@ async function saveSingleFact(
   }
 
   if (useGlobal) {
-    const projectName = path.basename(getProjectRoot());
     const result = await saveGlobalMemory(content, embedding, tagList, source);
     closeGlobalDb();
     console.log(`✓ Remembered globally (id: ${result.id})`);
