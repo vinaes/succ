@@ -78,7 +78,7 @@
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
     "onnxruntime-node": "1.24.1",
-    "ora": "^9.1.0",
+    "ora": "^9.3.0",
     "sqlite-vec": "0.1.7-alpha.2",
     "web-tree-sitter": "^0.26.5",
     "ws": "^8.19.0",
