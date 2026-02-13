@@ -82,7 +82,7 @@
     "sqlite-vec": "0.1.7-alpha.2",
     "web-tree-sitter": "^0.26.5",
     "ws": "^8.19.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "optionalDependencies": {
     "@qdrant/js-client-rest": "^1.12.0",
