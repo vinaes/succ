@@ -526,9 +526,9 @@ export async function invalidateBM25Index(): Promise<void> {
   return d.invalidateBM25Index();
 }
 
-export async function updateCodeBm25Index(docId: number, content: string): Promise<void> {
+export async function updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): Promise<void> {
   const d = await getStorageDispatcher();
-  return d.updateCodeBm25Index(docId, content);
+  return d.updateCodeBm25Index(docId, content, symbolName, signature);
 }
 
 export async function updateMemoriesBm25Index(memoryId: number, content: string): Promise<void> {

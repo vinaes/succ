@@ -945,7 +945,7 @@ export class StorageDispatcher {
   async invalidateMemoriesBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateMemoriesBm25Index(); }
   async invalidateGlobalMemoriesBm25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateGlobalMemoriesBm25Index(); }
   async invalidateBM25Index(): Promise<void> { const s = await this.getSqliteFns(); s.invalidateBM25Index(); }
-  async updateCodeBm25Index(docId: number, content: string): Promise<void> { const s = await this.getSqliteFns(); s.updateCodeBm25Index(docId, content); }
+  async updateCodeBm25Index(docId: number, content: string, symbolName?: string, signature?: string): Promise<void> { const s = await this.getSqliteFns(); s.updateCodeBm25Index(docId, content, symbolName, signature); }
   async updateMemoriesBm25Index(memoryId: number, content: string): Promise<void> { const s = await this.getSqliteFns(); s.updateMemoriesBm25Index(memoryId, content); }
   async updateGlobalMemoriesBm25Index(memoryId: number, content: string): Promise<void> { const s = await this.getSqliteFns(); s.updateGlobalMemoriesBm25Index(memoryId, content); }
 

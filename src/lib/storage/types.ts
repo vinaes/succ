@@ -169,6 +169,8 @@ export interface SearchResult {
   start_line: number;
   end_line: number;
   similarity: number;
+  symbol_name?: string;
+  symbol_type?: string;
 }
 
 export interface HybridSearchResult extends SearchResult {
