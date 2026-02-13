@@ -123,13 +123,19 @@ describe('PRD State', () => {
     });
 
     it('should return the most recently updated PRD', () => {
+      // savePrd() overwrites updated_at with new Date().toISOString(),
+      // so we mock Date to control ordering deterministically
+      vi.useFakeTimers();
+
       const prd1 = createPrd({ title: 'Old', description: 'old' });
-      prd1.updated_at = '2024-01-01T00:00:00Z';
+      vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
       savePrd(prd1);
 
       const prd2 = createPrd({ title: 'New', description: 'new' });
-      prd2.updated_at = '2024-06-01T00:00:00Z';
+      vi.setSystemTime(new Date('2024-06-01T00:00:00Z'));
       savePrd(prd2);
+
+      vi.useRealTimers();
 
       const latest = findLatestPrd();
       expect(latest).not.toBeNull();
