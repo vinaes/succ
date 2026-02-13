@@ -108,6 +108,7 @@ export {
 // --- Web search ---
 export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './storage/index.js';
 export { callOpenRouterSearch } from './llm.js';
+export type { ChatMessage, OpenRouterSearchResponse } from './llm.js';
 
 // --- AI readiness ---
 export { calculateAIReadinessScore, formatAIReadinessScore } from './ai-readiness.js';
@@ -127,9 +128,12 @@ export { exportGraphSilent } from './graph-export.js';
 
 // --- PRD pipeline ---
 export { generatePrd } from './prd/generate.js';
+export type { GenerateResult } from './prd/generate.js';
 export { loadPrd, loadTasks, listPrds, findLatestPrd } from './prd/state.js';
 export { runPrd } from './prd/runner.js';
+export type { RunOptions, RunResult } from './prd/runner.js';
 export { exportPrdToObsidian, exportAllPrds } from './prd/export.js';
+export type { Prd, Task, PrdStatus, PrdIndexEntry } from './prd/types.js';
 
 // --- Config (write) ---
 export { getConfigDisplay, formatConfigDisplay } from './config.js';
@@ -149,7 +153,6 @@ export {
 export {
   detectLanguage,
   generateLogStatement,
-  sessionToIndexEntry,
 } from './debug/types.js';
 export type {
   DebugSession,
@@ -180,4 +183,4 @@ export {
 
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
-export type { LinkRelation, MemoryType } from './storage/types.js';
+export type { LinkRelation, MemoryType, StorageConfig, SqliteConfig, PostgresConfig, QdrantConfig } from './storage/types.js';
