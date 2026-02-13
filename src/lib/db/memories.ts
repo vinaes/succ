@@ -10,6 +10,12 @@ import { getSuccDir, getConfig } from '../config.js';
 import { invalidateMemoriesBm25Index } from './bm25-indexes.js';
 import { createMemoryLink } from './graph.js';
 
+/** Parse JSON tags column, returning empty array on null/invalid. */
+function parseTags(raw: string | null): string[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 /**
  * Log memory deletion events to .succ/memory-audit.log for debugging.
  * Format: [ISO timestamp] [DELETE] caller | count=N | ids=[...] | reason
@@ -382,7 +388,7 @@ export function searchMemories(
             }
           }
 
-          const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+          const rowTags: string[] = parseTags(row.tags);
 
           // Filter by tags if specified
           if (tags && tags.length > 0) {
@@ -461,7 +467,7 @@ export function searchMemories(
       }
     }
 
-    const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    const rowTags: string[] = parseTags(row.tags);
 
     if (tags && tags.length > 0) {
       const hasMatchingTag = tags.some((t) =>
@@ -523,7 +529,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
   return rows.map((row) => ({
     id: row.id,
     content: row.content,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: parseTags(row.tags),
     source: row.source,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
@@ -729,13 +735,9 @@ export function deleteMemoriesByTag(tag: string): number {
   const toDelete: number[] = [];
 
   for (const memory of memories) {
-    try {
-      const tags: string[] = JSON.parse(memory.tags);
-      if (tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
-        toDelete.push(memory.id);
-      }
-    } catch {
-      // Skip invalid JSON
+    const tags = parseTags(memory.tags);
+    if (tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      toDelete.push(memory.id);
     }
   }
 
@@ -795,7 +797,7 @@ export function getMemoryById(id: number): Memory | null {
   return {
     id: row.id,
     content: row.content,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: parseTags(row.tags),
     source: row.source,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
@@ -899,7 +901,7 @@ export function searchMemoriesAsOf(
       results.push({
         id: row.id,
         content: row.content,
-        tags: row.tags ? JSON.parse(row.tags) : [],
+        tags: parseTags(row.tags),
         source: row.source,
         quality_score: row.quality_score,
         quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
