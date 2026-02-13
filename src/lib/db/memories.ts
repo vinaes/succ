@@ -8,6 +8,7 @@ import { cosineSimilarity } from '../embeddings.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
 import { getSuccDir, getConfig } from '../config.js';
 import { invalidateMemoriesBm25Index } from './bm25-indexes.js';
+import { createMemoryLink } from './graph.js';
 
 /**
  * Log memory deletion events to .succ/memory-audit.log for debugging.
@@ -263,7 +264,6 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
       let created = 0;
       for (const { id: targetId, similarity } of topSimilar) {
         try {
-          const { createMemoryLink } = require('./graph.js');
           const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
           if (result.created) created++;
         } catch {
@@ -296,7 +296,6 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
   let created = 0;
   for (const { id: targetId, similarity } of topSimilar) {
     try {
-      const { createMemoryLink } = require('./graph.js');
       const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
       if (result.created) created++;
     } catch {
