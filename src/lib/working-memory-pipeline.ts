@@ -86,12 +86,34 @@ export class PinnedMemoryError extends Error {
 export function detectInvariant(content: string): boolean {
   const text = content.toLowerCase().replace(/\s+/g, ' ');
   const patterns = [
+    // English
     /\b(?:always|never|must|shall)\s+\w/,
     /\b(?:must not|shall not|do not|don't)\s+\w/,
     /\b(?:required|mandatory|forbidden|prohibited)\b/,
     /\b(?:critical|important)\s*:/,
     /\bnever\b.*\bwithout\b/,
     /\balways\b.*\bbefore\b/,
+    // Russian
+    /(?:всегда|никогда|обязательно|запрещено|нельзя|недопустимо)\s+\S/,
+    /(?:нельзя|запрещено|недопустимо)(?:\s|$)/,
+    /(?:должен|должна|должно|должны)\s+\S/,
+    /(?:ни в коем случае|ни при каких|строго запрещ)/,
+    /(?:критично|важно)\s*:/,
+    // German
+    /\b(?:immer|niemals|nie)\s+\w/,
+    /\b(?:muss|müssen|verboten|pflicht)\b/,
+    // French
+    /\b(?:toujours|jamais)\s+\w/,
+    /\b(?:obligatoire|interdit|défendu)\b/,
+    // Spanish
+    /\b(?:siempre|nunca|jamás)\s+\w/,
+    /\b(?:obligatorio|prohibido|requerido)\b/,
+    // Chinese
+    /(?:必须|绝不|永远不|禁止|始终|一定要|不得|不允许|不可以)/,
+    // Japanese
+    /(?:必ず|絶対に|禁止|してはいけない|しなければならない|常に)/,
+    // Korean
+    /(?:반드시|절대로|금지|항상|해서는 안)/,
   ];
   return patterns.some((p) => p.test(text));
 }
