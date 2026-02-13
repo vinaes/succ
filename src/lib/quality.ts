@@ -7,7 +7,7 @@
  * - openrouter: OpenRouter API
  */
 
-import { getConfig, SuccConfig } from './config.js';
+import { getConfig, getLLMTaskConfig, type SuccConfig } from './config.js';
 import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
 import { logWarn } from './fault-logger.js';
 
@@ -33,7 +33,7 @@ export interface QualityScore {
     relevance: number; // How relevant to the project context
     uniqueness: number; // How unique compared to existing memories
   };
-  mode: 'local' | 'custom' | 'openrouter' | 'heuristic';
+  mode: 'local' | 'api' | 'heuristic';
 }
 
 /**
@@ -278,9 +278,10 @@ export async function scoreWithLocal(content: string, existingSimilarity?: numbe
 }
 
 /**
- * Score memory using custom LLM API (Ollama, LM Studio, etc.)
+ * Score memory using any OpenAI-compatible API (Ollama, OpenRouter, LM Studio, etc.)
+ * Auto-adds OpenRouter-specific headers when api_url contains 'openrouter.ai'.
  */
-export async function scoreWithCustom(
+export async function scoreWithApi(
   content: string,
   apiUrl: string,
   model: string,
@@ -288,13 +289,21 @@ export async function scoreWithCustom(
 ): Promise<QualityScore> {
   const prompt = buildScoringPrompt(content);
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  if (apiUrl.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://succ.ai';
+    headers['X-Title'] = 'succ';
+  }
+
   try {
     const response = await fetch(`${apiUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
-      },
+      headers,
       body: JSON.stringify({
         model,
         messages: [
@@ -312,53 +321,9 @@ export async function scoreWithCustom(
 
     const data = await response.json();
     const result = parseScoreResponse(data.choices[0]?.message?.content || '');
-    return { ...result, mode: 'custom' };
+    return { ...result, mode: 'api' };
   } catch (error) {
-    // Fall back to heuristics on error
-    logWarn('quality', 'Custom LLM scoring failed, falling back to heuristics', { error: String(error) });
-    return scoreWithHeuristics(content);
-  }
-}
-
-/**
- * Score memory using OpenRouter API
- */
-export async function scoreWithOpenRouter(
-  content: string,
-  apiKey: string,
-  model: string = 'openai/gpt-4o-mini'
-): Promise<QualityScore> {
-  const prompt = buildScoringPrompt(content);
-
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://github.com/vinaes/succ',
-        'X-Title': 'succ - Memory Quality Scoring',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: QUALITY_SCORER_SYSTEM },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 200,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const result = parseScoreResponse(data.choices[0]?.message?.content || '');
-    return { ...result, mode: 'openrouter' };
-  } catch (error) {
-    logWarn('quality', 'OpenRouter scoring failed, falling back to heuristics', { error: String(error) });
+    logWarn('quality', 'API scoring failed, falling back to heuristics', { error: String(error) });
     return scoreWithHeuristics(content);
   }
 }
@@ -436,7 +401,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Main scoring function - uses configured mode
+ * Main scoring function - uses configured mode from llm.quality.*
  */
 export async function scoreMemory(
   content: string,
@@ -444,7 +409,6 @@ export async function scoreMemory(
   configOverride?: Partial<SuccConfig>
 ): Promise<QualityScore> {
   const config = { ...getConfig(), ...configOverride };
-  const mode = config.quality_scoring_mode || 'local';
 
   // If scoring disabled, return neutral score
   if (config.quality_scoring_enabled === false) {
@@ -456,31 +420,22 @@ export async function scoreMemory(
     };
   }
 
-  switch (mode) {
+  const taskCfg = getLLMTaskConfig('quality');
+
+  switch (taskCfg.mode) {
     case 'local':
       return scoreWithLocal(content);
 
-    case 'custom':
-      if (!config.quality_scoring_api_url || !config.quality_scoring_model) {
-        logWarn('quality', 'Custom scoring requires quality_scoring_api_url and quality_scoring_model');
+    case 'api':
+      if (!taskCfg.model) {
+        logWarn('quality', 'API scoring requires llm.quality.model');
         return scoreWithHeuristics(content, existingSimilarity);
       }
-      return scoreWithCustom(
+      return scoreWithApi(
         content,
-        config.quality_scoring_api_url,
-        config.quality_scoring_model,
-        config.quality_scoring_api_key
-      );
-
-    case 'openrouter':
-      if (!config.openrouter_api_key) {
-        logWarn('quality', 'OpenRouter scoring requires openrouter_api_key');
-        return scoreWithHeuristics(content, existingSimilarity);
-      }
-      return scoreWithOpenRouter(
-        content,
-        config.openrouter_api_key,
-        config.quality_scoring_model || 'openai/gpt-4o-mini'
+        taskCfg.api_url,
+        taskCfg.model,
+        taskCfg.api_key
       );
 
     default:

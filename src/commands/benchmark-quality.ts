@@ -4,19 +4,18 @@
  * Compares different quality scoring modes:
  * - heuristic: Fast regex-based scoring (no model)
  * - local: ONNX zero-shot classification (Xenova/nli-deberta-v3-xsmall)
- * - openrouter: OpenRouter API with configurable model
+ * - api: API endpoint (OpenRouter, Ollama, etc.) with configurable model
  */
 
 import {
   scoreWithHeuristics,
   scoreWithLocal,
-  scoreWithCustom,
-  scoreWithOpenRouter,
+  scoreWithApi,
   formatQualityScore,
   cleanupQualityScoring,
   QualityScore,
 } from '../lib/quality.js';
-import { hasOpenRouterKey, getConfig } from '../lib/config.js';
+import { hasApiKey, getConfig, getLLMTaskConfig } from '../lib/config.js';
 
 // Default Ollama models to benchmark (small, fast models good for classification)
 const OLLAMA_MODELS = [
@@ -128,8 +127,8 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   },
 ];
 
-// OpenRouter models to benchmark
-const OPENROUTER_MODELS = [
+// API models to benchmark (via OpenRouter or any OpenAI-compatible endpoint)
+const API_MODELS = [
   'openai/gpt-4o-mini',
   'anthropic/claude-3.5-haiku',
   'google/gemini-2.0-flash-001',
@@ -211,8 +210,8 @@ async function getOllamaModels(url: string = 'http://localhost:11434'): Promise<
 /**
  * Run quality scoring benchmark
  */
-export async function benchmarkQuality(options: { openrouter?: boolean; ollama?: boolean; models?: string; ollamaUrl?: string } = {}): Promise<void> {
-  const { openrouter = false, ollama = false, models, ollamaUrl = 'http://localhost:11434' } = options;
+export async function benchmarkQuality(options: { api?: boolean; ollama?: boolean; models?: string; ollamaUrl?: string } = {}): Promise<void> {
+  const { api = false, ollama = false, models, ollamaUrl = 'http://localhost:11434' } = options;
 
   console.log('═══════════════════════════════════════════════════════════');
   console.log('               QUALITY SCORING BENCHMARK                    ');
@@ -271,7 +270,7 @@ export async function benchmarkQuality(options: { openrouter?: boolean; ollama?:
 
         try {
           const ollamaResult = await benchmarkMode('ollama', model, async (content) =>
-            scoreWithCustom(content, ollamaUrl, model)
+            scoreWithApi(content, ollamaUrl, model)
           );
           allResults.push(ollamaResult);
         } catch (error: any) {
@@ -281,30 +280,31 @@ export async function benchmarkQuality(options: { openrouter?: boolean; ollama?:
     }
   }
 
-  // ============ OPENROUTER BENCHMARK ============
-  if (openrouter) {
-    if (!hasOpenRouterKey()) {
-      console.log('\n  ⓘ OpenRouter benchmark skipped (no API key)');
-      console.log('    Set OPENROUTER_API_KEY or add to ~/.succ/config.json');
+  // ============ API BENCHMARK ============
+  if (api) {
+    if (!hasApiKey()) {
+      console.log('\n  ⓘ API benchmark skipped (no API key)');
+      console.log('    Set OPENROUTER_API_KEY env var or add llm.api_key to ~/.succ/config.json');
     } else {
-      const config = getConfig();
-      const apiKey = config.openrouter_api_key!;
+      const qualityCfg = getLLMTaskConfig('quality');
+      const apiKey = qualityCfg.api_key!;
+      const apiUrl = qualityCfg.api_url;
 
       // Parse models from CLI or use defaults
       const modelsToTest = models
         ? models.split(',').map((m) => m.trim())
-        : OPENROUTER_MODELS;
+        : API_MODELS;
 
       for (const model of modelsToTest) {
         console.log('\n┌─────────────────────────────────────────────────────────────┐');
-        console.log(`│ OPENROUTER (${model.padEnd(43)}) │`);
+        console.log(`│ API (${model.padEnd(50)}) │`);
         console.log('└─────────────────────────────────────────────────────────────┘');
 
         try {
-          const orResult = await benchmarkMode('openrouter', model, async (content) =>
-            scoreWithOpenRouter(content, apiKey, model)
+          const apiResult = await benchmarkMode('api', model, async (content) =>
+            scoreWithApi(content, apiUrl, model, apiKey)
           );
-          allResults.push(orResult);
+          allResults.push(apiResult);
         } catch (error: any) {
           console.log(`  ⚠ Error: ${error.message}`);
         }

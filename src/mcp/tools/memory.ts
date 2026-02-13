@@ -57,7 +57,7 @@ async function rememberWithLLMExtraction(params: {
 
   // Determine LLM options (default to Claude CLI)
   const llmOptions: {
-    mode: 'claude' | 'local' | 'openrouter';
+    mode: 'claude' | 'api';
     model?: string;
     apiUrl?: string;
     apiKey?: string;

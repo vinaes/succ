@@ -40,6 +40,9 @@ export interface DocumentBatch {
   startLine: number;
   endLine: number;
   embedding: number[];
+  symbolName?: string;
+  symbolType?: string;
+  signature?: string;
 }
 
 export interface DocumentBatchWithHash extends DocumentBatch {
@@ -52,7 +55,10 @@ export function upsertDocument(
   content: string,
   startLine: number,
   endLine: number,
-  embedding: number[]
+  embedding: number[],
+  symbolName?: string,
+  symbolType?: string,
+  signature?: string,
 ): void {
   const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
@@ -65,17 +71,20 @@ export function upsertDocument(
   database
     .prepare(
       `
-    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(file_path, chunk_index) DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
       embedding = excluded.embedding,
+      symbol_name = excluded.symbol_name,
+      symbol_type = excluded.symbol_type,
+      signature = excluded.signature,
       updated_at = CURRENT_TIMESTAMP
   `
     )
-    .run(filePath, chunkIndex, content, startLine, endLine, embeddingBlob);
+    .run(filePath, chunkIndex, content, startLine, endLine, embeddingBlob, symbolName ?? null, symbolType ?? null, signature ?? null);
 
   // Update vec_documents with mapping table
   if (sqliteVecAvailable) {
@@ -115,20 +124,23 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
   const database = getDb();
 
   const stmt = database.prepare(`
-    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(file_path, chunk_index) DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
       embedding = excluded.embedding,
+      symbol_name = excluded.symbol_name,
+      symbol_type = excluded.symbol_type,
+      signature = excluded.signature,
       updated_at = CURRENT_TIMESTAMP
   `);
 
   const transaction = database.transaction((docs: DocumentBatch[]) => {
     for (const doc of docs) {
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
-      stmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob);
+      stmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob, doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null);
     }
   });
 
@@ -193,13 +205,16 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   const database = getDb();
 
   const docStmt = database.prepare(`
-    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(file_path, chunk_index) DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
       embedding = excluded.embedding,
+      symbol_name = excluded.symbol_name,
+      symbol_type = excluded.symbol_type,
+      signature = excluded.signature,
       updated_at = CURRENT_TIMESTAMP
   `);
 
@@ -217,7 +232,7 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
     for (const doc of docs) {
       // Insert document
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
-      docStmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob);
+      docStmt.run(doc.filePath, doc.chunkIndex, doc.content, doc.startLine, doc.endLine, embeddingBlob, doc.symbolName ?? null, doc.symbolType ?? null, doc.signature ?? null);
 
       // Update file hash (once per file)
       if (!processedFiles.has(doc.filePath)) {

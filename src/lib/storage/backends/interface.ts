@@ -85,7 +85,10 @@ export interface StorageBackend {
     content: string,
     startLine: number,
     endLine: number,
-    embeddingBlob: Buffer
+    embeddingBlob: Buffer,
+    symbolName?: string,
+    symbolType?: string,
+    signature?: string,
   ): number;
 
   /**

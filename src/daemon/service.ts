@@ -953,7 +953,6 @@ export async function routeRequest(method: string, pathname: string, searchParam
 
     const result = await generateCompactBriefing(transcriptContent, {
       format,
-      model,
       include_learnings,
       include_memories,
       max_memories,

@@ -1,19 +1,19 @@
-import { spawnClaudeCLI } from '../lib/llm.js';
+import { spawnClaudeCLI, callLLM } from '../lib/llm.js';
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
-import { getProjectRoot, getClaudeDir, getConfig } from '../lib/config.js';
+import { getProjectRoot, getClaudeDir, hasApiKey } from '../lib/config.js';
 import { logError } from '../lib/fault-logger.js';
 
 interface SoulOptions {
-  openrouter?: boolean;
+  api?: boolean;
 }
 
 /**
  * Generate or update soul.md with personalized "About You" section
  */
 export async function soul(options: SoulOptions = {}): Promise<void> {
-  const { openrouter = false } = options;
+  const useApi = options.api || false;
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
   const soulPath = path.join(claudeDir, 'soul.md');
@@ -66,8 +66,8 @@ Keep each line concise. If uncertain about communication language, default to En
 
   let generatedSection: string;
 
-  if (openrouter) {
-    generatedSection = await generateViaOpenRouter(context, prompt);
+  if (useApi) {
+    generatedSection = await generateViaApi(context, prompt);
   } else {
     generatedSection = await generateViaClaude(context, prompt);
   }
@@ -128,53 +128,20 @@ async function generateViaClaude(context: string, prompt: string): Promise<strin
   }
 }
 
-async function generateViaOpenRouter(context: string, prompt: string): Promise<string> {
-  let config;
-  try {
-    config = getConfig();
-  } catch (err) {
-    logError('soul', 'OPENROUTER_API_KEY not set', err instanceof Error ? err : undefined);
-    console.error('Error: OPENROUTER_API_KEY not set');
-    console.error('Set it via env var or run `succ config`');
+async function generateViaApi(context: string, prompt: string): Promise<string> {
+  if (!hasApiKey()) {
+    logError('soul', 'API key not set');
+    console.error('Error: API key not set');
+    console.error('Set OPENROUTER_API_KEY env var or run `succ config`');
     return '';
   }
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.openrouter_api_key}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/vinaes/succ',
-        'X-Title': 'succ',
-      },
-      body: JSON.stringify({
-        model: 'anthropic/claude-3.5-haiku',
-        messages: [
-          {
-            role: 'user',
-            content: `${context}\n\n---\n\n${prompt}`,
-          },
-        ],
-        max_tokens: 1024,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      logError('soul', `OpenRouter API error: ${response.status}`, new Error(error));
-      console.error(`OpenRouter API error: ${response.status} - ${error}`);
-      return '';
-    }
-
-    const data = (await response.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-    return data.choices[0]?.message?.content || '';
+    const fullPrompt = `${context}\n\n---\n\n${prompt}`;
+    return await callLLM(fullPrompt, { maxTokens: 1024 }, { backend: 'api' });
   } catch (error) {
-    logError('soul', 'OpenRouter API error:', error instanceof Error ? error : new Error(String(error)));
-
-    console.error('OpenRouter API error:', error);
+    logError('soul', 'API error:', error instanceof Error ? error : new Error(String(error)));
+    console.error('API error:', error);
     return '';
   }
 }

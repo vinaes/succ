@@ -1,4 +1,5 @@
 import { getConfig } from './config.js';
+import type { SymbolType } from './tree-sitter/types.js';
 
 /**
  * Count net brace depth change ({=+1, }=-1) ignoring braces inside strings and comments
@@ -65,6 +66,11 @@ export interface Chunk {
   content: string;
   startLine: number;
   endLine: number;
+  // Tree-sitter metadata (populated when AST parsing is available)
+  symbolName?: string;
+  symbolType?: SymbolType;
+  signature?: string;
+  docComment?: string;
 }
 
 /**
@@ -331,6 +337,27 @@ export function chunkCode(content: string, filePath: string): Chunk[] {
 
   // Split any chunks that exceed the max size
   return filtered.flatMap(splitLargeChunk);
+}
+
+/**
+ * Async code chunker: tries tree-sitter first, falls back to regex chunker.
+ *
+ * Use this instead of chunkCode() when async is acceptable (indexer, MCP tools).
+ * Tree-sitter provides precise AST boundaries and metadata (symbolName, symbolType, etc.)
+ * for 36+ languages. Falls back to regex-based chunkCode() if tree-sitter is unavailable.
+ */
+export async function chunkCodeAsync(content: string, filePath: string): Promise<Chunk[]> {
+  try {
+    const { chunkCodeWithTreeSitter } = await import('./tree-sitter/chunker-ts.js');
+    const tsChunks = await chunkCodeWithTreeSitter(content, filePath);
+    if (tsChunks && tsChunks.length > 0) {
+      return tsChunks;
+    }
+  } catch {
+    // Tree-sitter unavailable or failed — fall through to regex
+  }
+
+  return chunkCode(content, filePath);
 }
 
 /**

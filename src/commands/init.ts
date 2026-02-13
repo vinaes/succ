@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
-import { getProjectRoot, getSuccDir, LOCAL_MODEL, isOnboardingCompleted, markOnboardingCompleted } from '../lib/config.js';
+import { getProjectRoot, getSuccDir, isOnboardingCompleted, markOnboardingCompleted } from '../lib/config.js';
 import { runStaticWizard, runAiOnboarding } from '../lib/onboarding/index.js';
 import { logWarn } from '../lib/fault-logger.js';
 
@@ -23,14 +23,21 @@ interface InitOptions {
 }
 
 interface ConfigData {
-  embedding_mode: 'local' | 'openrouter' | 'custom';
-  embedding_model?: string;
-  embedding_api_url?: string;
-  embedding_dimensions?: number;
-  openrouter_api_key?: string;
-  analyze_mode?: 'claude' | 'openrouter' | 'local';
-  analyze_api_url?: string;
-  analyze_model?: string;
+  llm?: {
+    api_key?: string;
+    api_url?: string;
+    embeddings?: {
+      mode?: 'local' | 'api';
+      model?: string;
+      api_url?: string;
+      dimensions?: number;
+    };
+    analyze?: {
+      mode?: 'claude' | 'api';
+      model?: string;
+      api_url?: string;
+    };
+  };
   daemon?: {
     enabled?: boolean;
     watch?: { auto_start?: boolean };
@@ -601,35 +608,32 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
           description: 'Runs on your CPU, no API key needed',
         },
         {
-          name: 'Custom API (Ollama, LM Studio, llama.cpp)',
-          value: 'custom',
-          description: 'Use your own embedding server',
-        },
-        {
-          name: 'OpenRouter Cloud',
-          value: 'openrouter',
-          description: 'Cloud embeddings, requires API key',
+          name: 'API (Ollama, LM Studio, OpenRouter, etc.)',
+          value: 'api',
+          description: 'Use any OpenAI-compatible embedding endpoint',
         },
       ],
       default: 'local',
     });
 
+    if (!targetConfig.llm) targetConfig.llm = {};
+    if (!targetConfig.llm.embeddings) targetConfig.llm.embeddings = {};
+
     if (embeddingMode === 'local') {
-      targetConfig.embedding_mode = 'local';
-      targetConfig.embedding_model = LOCAL_MODEL;
+      targetConfig.llm.embeddings.mode = 'local';
       console.log('\n  ✓ Using local embeddings (no API key needed)');
       console.log('    Model: Xenova/all-MiniLM-L6-v2 (runs on CPU)\n');
-    } else if (embeddingMode === 'custom') {
-      console.log('\n  Custom API Configuration');
-      console.log('  ─────────────────────────');
+    } else if (embeddingMode === 'api') {
+      console.log('\n  API Embedding Configuration');
+      console.log('  ─────────────────────────────');
       console.log('  Examples:');
-      console.log('    Ollama:    http://localhost:11434/v1/embeddings');
-      console.log('    LM Studio: http://localhost:1234/v1/embeddings');
-      console.log('    llama.cpp: http://localhost:8080/v1/embeddings\n');
+      console.log('    Ollama:      http://localhost:11434/v1');
+      console.log('    LM Studio:   http://localhost:1234/v1');
+      console.log('    OpenRouter:   https://openrouter.ai/api/v1\n');
 
       const embeddingApiUrl = await input({
         message: 'API URL:',
-        default: 'http://localhost:11434/v1/embeddings',
+        default: 'http://localhost:11434/v1',
       });
       const embeddingModel = await input({
         message: 'Model name:',
@@ -641,30 +645,26 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
       });
       const embeddingDimensions = parseInt(embeddingDimensionsStr, 10) || 768;
 
-      targetConfig.embedding_mode = 'custom';
-      targetConfig.embedding_api_url = embeddingApiUrl;
-      targetConfig.embedding_model = embeddingModel;
-      targetConfig.embedding_dimensions = embeddingDimensions;
-      console.log(`\n  ✓ Using custom API: ${embeddingApiUrl}`);
+      targetConfig.llm.embeddings.mode = 'api';
+      targetConfig.llm.embeddings.api_url = embeddingApiUrl;
+      targetConfig.llm.embeddings.model = embeddingModel;
+      targetConfig.llm.embeddings.dimensions = embeddingDimensions;
+
+      // Prompt for API key if the URL looks like a cloud provider
+      if (embeddingApiUrl.includes('openrouter.ai') || embeddingApiUrl.includes('openai.com')) {
+        const apiKey = await password({
+          message: 'API key:',
+          mask: '*',
+          validate: (val: string) => val?.trim() ? true : 'API key is required',
+        });
+        targetConfig.llm.api_key = apiKey;
+      }
+
+      console.log(`\n  ✓ Using API embeddings: ${embeddingApiUrl}`);
       console.log(`    Model: ${embeddingModel} (${embeddingDimensions}d)`);
       if (embeddingApiUrl.includes('11434')) {
         console.log(`\n  Tip: Run \`ollama pull ${embeddingModel}\` to download the model`);
       }
-    } else if (embeddingMode === 'openrouter') {
-      console.log('\n  OpenRouter Configuration');
-      console.log('  ─────────────────────────');
-      console.log('  Get your API key at: https://openrouter.ai/keys\n');
-
-      const apiKey = await password({
-        message: 'OpenRouter API key:',
-        mask: '*',
-        validate: (val: string) => val?.trim() ? true : 'API key is required',
-      });
-      targetConfig.embedding_mode = 'openrouter';
-      targetConfig.openrouter_api_key = apiKey;
-      targetConfig.embedding_model = 'openai/text-embedding-3-small';
-      console.log('\n  ✓ Using OpenRouter cloud embeddings');
-      console.log('    Model: openai/text-embedding-3-small\n');
     }
 
     // Step 3: Analysis mode
@@ -682,29 +682,27 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
           description: 'Uses the `claude` command',
         },
         {
-          name: 'Custom API (Ollama, LM Studio, llama.cpp)',
-          value: 'local',
-          description: 'Use your own LLM server',
-        },
-        {
-          name: 'OpenRouter Cloud',
-          value: 'openrouter',
-          description: 'Cloud LLM, requires API key',
+          name: 'API (Ollama, LM Studio, OpenRouter, etc.)',
+          value: 'api',
+          description: 'Use any OpenAI-compatible chat endpoint',
         },
       ],
       default: 'claude',
     });
 
+    if (!targetConfig.llm.analyze) targetConfig.llm.analyze = {};
+
     if (analyzeMode === 'claude') {
+      targetConfig.llm.analyze.mode = 'claude';
       console.log('\n  ✓ Using Claude CLI for analysis');
       console.log('    Make sure `claude` command is available\n');
-    } else if (analyzeMode === 'local') {
-      console.log('\n  Custom API Configuration');
-      console.log('  ─────────────────────────');
+    } else if (analyzeMode === 'api') {
+      console.log('\n  API Configuration for Analysis');
+      console.log('  ─────────────────────────────────');
       console.log('  Examples:');
-      console.log('    Ollama:    http://localhost:11434/v1');
-      console.log('    LM Studio: http://localhost:1234/v1');
-      console.log('    llama.cpp: http://localhost:8080/v1\n');
+      console.log('    Ollama:      http://localhost:11434/v1');
+      console.log('    LM Studio:   http://localhost:1234/v1');
+      console.log('    OpenRouter:   https://openrouter.ai/api/v1\n');
 
       const analyzeApiUrl = await input({
         message: 'API URL:',
@@ -715,30 +713,25 @@ async function runInteractiveSetup(projectRoot: string, verbose: boolean = false
         default: 'qwen2.5-coder:14b',
       });
 
-      targetConfig.analyze_mode = 'local';
-      targetConfig.analyze_api_url = analyzeApiUrl;
-      targetConfig.analyze_model = analyzeModel;
-      console.log(`\n  ✓ Using custom API: ${analyzeApiUrl}`);
+      targetConfig.llm.analyze.mode = 'api';
+      targetConfig.llm.analyze.api_url = analyzeApiUrl;
+      targetConfig.llm.analyze.model = analyzeModel;
+
+      // Prompt for API key if cloud provider and not already set
+      if (!targetConfig.llm.api_key && (analyzeApiUrl.includes('openrouter.ai') || analyzeApiUrl.includes('openai.com'))) {
+        const apiKey = await password({
+          message: 'API key:',
+          mask: '*',
+          validate: (val: string) => val?.trim() ? true : 'API key is required',
+        });
+        targetConfig.llm.api_key = apiKey;
+      }
+
+      console.log(`\n  ✓ Using API for analysis: ${analyzeApiUrl}`);
       console.log(`    Model: ${analyzeModel}`);
       if (analyzeApiUrl.includes('11434')) {
         console.log(`\n  Tip: Run \`ollama pull ${analyzeModel}\` to download the model`);
       }
-    } else if (analyzeMode === 'openrouter') {
-      targetConfig.analyze_mode = 'openrouter';
-      // Prompt for API key if not already set for embeddings
-      if (!targetConfig.openrouter_api_key) {
-        console.log('\n  OpenRouter Configuration');
-        console.log('  ─────────────────────────');
-        console.log('  Get your API key at: https://openrouter.ai/keys\n');
-
-        const apiKey = await password({
-          message: 'OpenRouter API key:',
-          mask: '*',
-          validate: (val: string) => val?.trim() ? true : 'API key is required',
-        });
-        targetConfig.openrouter_api_key = apiKey;
-      }
-      console.log('\n  ✓ Using OpenRouter for analysis\n');
     }
 
     // Step 4: Background services (always project-specific)

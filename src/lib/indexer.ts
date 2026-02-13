@@ -11,14 +11,11 @@ import {
   getAllFileHashes,
   updateTokenFrequencies,
 } from './storage/index.js';
-import { tokenizeCode } from './bm25.js';
+import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
 import { logError } from './fault-logger.js';
 
-export interface Chunk {
-  content: string;
-  startLine: number;
-  endLine: number;
-}
+import type { Chunk } from './chunker.js';
+export type { Chunk };
 
 export interface IndexerOptions {
   searchPath: string;
@@ -29,7 +26,7 @@ export interface IndexerOptions {
   batchSize?: number;
   maxFileSize?: number; // in KB, optional
   pathPrefix?: string; // e.g., 'code:' for code files
-  chunker: (content: string, filePath: string) => Chunk[];
+  chunker: (content: string, filePath: string) => Chunk[] | Promise<Chunk[]>;
   contentProcessor?: (content: string) => { content: string; skip: boolean };
   cleanupFilter?: (filePath: string) => boolean; // Filter for cleanup phase
   skipCleanup?: boolean; // Skip cleanup phase entirely (for partial/single-file indexing)
@@ -123,7 +120,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       filePath: string;
       relativePath: string;
       hash: string;
-      chunks: Array<{ content: string; startLine: number; endLine: number }>;
+      chunks: Chunk[];
       isNew: boolean;
     }
 
@@ -162,8 +159,8 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       // Track if new or updated
       const isNew = !existingHash;
 
-      // Chunk the content
-      const chunks = chunker(content, filePath);
+      // Chunk the content (supports both sync and async chunkers)
+      const chunks = await Promise.resolve(chunker(content, filePath));
       if (chunks.length === 0) return null;
 
       return { filePath, relativePath, hash, chunks, isNew };
@@ -181,6 +178,9 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       content: string;
       startLine: number;
       endLine: number;
+      symbolName?: string;
+      symbolType?: string;
+      signature?: string;
     }> = [];
 
     for (let fileIdx = 0; fileIdx < validFiles.length; fileIdx++) {
@@ -193,6 +193,9 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
           content: chunk.content,
           startLine: chunk.startLine,
           endLine: chunk.endLine,
+          symbolName: chunk.symbolName,
+          symbolType: chunk.symbolType,
+          signature: chunk.signature,
         });
       }
     }
@@ -210,6 +213,9 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         endLine: number;
         embedding: number[];
         hash: string;
+        symbolName?: string;
+        symbolType?: string;
+        signature?: string;
       }>>();
 
       for (let i = 0; i < allChunksWithMeta.length; i++) {
@@ -228,6 +234,9 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
           endLine: chunkMeta.endLine,
           embedding: allEmbeddings[i],
           hash: file.hash,
+          symbolName: chunkMeta.symbolName,
+          symbolType: chunkMeta.symbolType,
+          signature: chunkMeta.signature,
         });
       }
 
@@ -248,12 +257,19 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         // Save new documents
         await upsertDocumentsBatchWithHashes(documents);
 
-        // Update token frequencies for code files
+        // Update token frequencies for code files (boost AST identifiers when available)
         if (pathPrefix === 'code:') {
           const allTokens: string[] = [];
           for (const doc of documents) {
-            const tokens = tokenizeCode(doc.content);
-            allTokens.push(...tokens);
+            if (doc.symbolName || doc.signature) {
+              // Use signature tokens as pseudo-AST identifiers for BM25 boost
+              const sigTokens = doc.signature ? tokenizeCode(doc.signature) : [];
+              const tokens = tokenizeCodeWithAST(doc.content, sigTokens, doc.symbolName ?? undefined);
+              allTokens.push(...tokens);
+            } else {
+              const tokens = tokenizeCode(doc.content);
+              allTokens.push(...tokens);
+            }
           }
           await updateTokenFrequencies(allTokens);
         }

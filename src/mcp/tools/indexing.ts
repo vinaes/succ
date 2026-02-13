@@ -79,7 +79,7 @@ export function registerIndexingTools(server: McpServer) {
     'Analyze a single source file and generate documentation in brain vault. Modes: claude (CLI with Haiku), local (Ollama/LM Studio), openrouter (cloud API). Check succ_status first - if analyze daemon is running, it handles this automatically.',
     {
       file: z.string().describe('Path to the file to analyze'),
-      mode: z.enum(['claude', 'local', 'openrouter']).optional().describe('claude = Claude CLI (Haiku), local = Ollama/LM Studio/llama.cpp, openrouter = cloud API (default: from config)'),
+      mode: z.enum(['claude', 'api']).optional().describe('claude = Claude CLI (Haiku), api = any OpenAI-compatible endpoint (default: from config)'),
       project_path: projectPathParam,
     },
     async ({ file, mode, project_path }) => {

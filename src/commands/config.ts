@@ -2,14 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import inquirer from 'inquirer';
-import { LOCAL_MODEL, OPENROUTER_MODEL, getConfigDisplay, formatConfigDisplay, getSuccDir, invalidateConfigCache } from '../lib/config.js';
+import { LOCAL_MODEL, getConfigDisplay, formatConfigDisplay, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 
 interface ConfigData {
-  embedding_mode: 'local' | 'openrouter' | 'custom';
-  embedding_model?: string;
-  openrouter_api_key?: string;
-  embedding_api_url?: string;
-  embedding_api_key?: string;
+  llm?: {
+    api_key?: string;
+    api_url?: string;
+    embeddings?: {
+      mode?: 'local' | 'api';
+      model?: string;
+    };
+  };
   chunk_size?: number;
   chunk_overlap?: number;
 }
@@ -49,7 +52,7 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
   const globalConfigPath = path.join(globalConfigDir, 'config.json');
 
   // Load existing config
-  let existingConfig: Partial<ConfigData> = {};
+  let existingConfig: Record<string, unknown> = {};
   if (fs.existsSync(globalConfigPath)) {
     try {
       existingConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
@@ -58,9 +61,22 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
     }
   }
 
+  const existingLlm = (existingConfig.llm || {}) as Record<string, unknown>;
+  const existingEmbeddings = (existingLlm.embeddings || {}) as Record<string, unknown>;
+
   console.log('succ configuration wizard\n');
 
-  // Step 1: Choose embedding mode
+  // Step 1: API key (used for OpenRouter, remote APIs)
+  const { apiKey } = await inquirer.prompt([
+    {
+      type: 'password',
+      name: 'apiKey',
+      message: 'API key (OpenRouter / remote LLM, press Enter to skip):',
+      default: (existingLlm.api_key as string) || '',
+    },
+  ]);
+
+  // Step 2: Choose embedding mode
   const { mode } = await inquirer.prompt([
     {
       type: 'list',
@@ -72,67 +88,43 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
           value: 'local',
         },
         {
-          name: 'OpenRouter - cloud embeddings via OpenRouter API',
-          value: 'openrouter',
-        },
-        {
-          name: 'Custom API - use your own OpenAI-compatible endpoint',
-          value: 'custom',
+          name: 'API - any OpenAI-compatible endpoint (OpenRouter, Ollama, etc.)',
+          value: 'api',
         },
       ],
-      default: existingConfig.embedding_mode || 'local',
+      default: (existingEmbeddings.mode as string) || 'local',
     },
   ]);
 
   const newConfig: ConfigData = {
-    embedding_mode: mode,
+    llm: {
+      embeddings: { mode },
+    },
   };
 
-  // Step 2: Mode-specific configuration
+  if (apiKey) {
+    newConfig.llm!.api_key = apiKey;
+  }
+
+  // Step 3: Mode-specific configuration
   if (mode === 'local') {
     const { model } = await inquirer.prompt([
       {
         type: 'input',
         name: 'model',
         message: 'Local model (Hugging Face model ID):',
-        default: existingConfig.embedding_model || LOCAL_MODEL,
+        default: (existingEmbeddings.model as string) || LOCAL_MODEL,
       },
     ]);
-    newConfig.embedding_model = model;
-  } else if (mode === 'openrouter') {
-    const { apiKey, model } = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'apiKey',
-        message: 'OpenRouter API key:',
-        default: existingConfig.openrouter_api_key,
-        validate: (input: string) => {
-          if (!input || input.trim() === '') {
-            return 'API key is required for OpenRouter mode';
-          }
-          return true;
-        },
-      },
-      {
-        type: 'input',
-        name: 'model',
-        message: 'Embedding model:',
-        default: existingConfig.embedding_model || OPENROUTER_MODEL,
-      },
-    ]);
-    newConfig.openrouter_api_key = apiKey;
-    newConfig.embedding_model = model;
-  } else if (mode === 'custom') {
-    const { apiUrl, apiKey, model } = await inquirer.prompt([
+    newConfig.llm!.embeddings!.model = model;
+  } else if (mode === 'api') {
+    const { apiUrl, model } = await inquirer.prompt([
       {
         type: 'input',
         name: 'apiUrl',
-        message: 'Custom API URL (e.g., http://localhost:1234/v1/embeddings):',
-        default: existingConfig.embedding_api_url,
+        message: 'API URL (e.g., https://openrouter.ai/api/v1 or http://localhost:11434/v1):',
+        default: (existingEmbeddings.api_url as string) || (existingLlm.api_url as string) || 'https://openrouter.ai/api/v1',
         validate: (input: string) => {
-          if (!input || input.trim() === '') {
-            return 'API URL is required for custom mode';
-          }
           try {
             new URL(input);
             return true;
@@ -142,26 +134,17 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
         },
       },
       {
-        type: 'password',
-        name: 'apiKey',
-        message: 'API key (optional, press Enter to skip):',
-        default: existingConfig.embedding_api_key || '',
-      },
-      {
         type: 'input',
         name: 'model',
-        message: 'Model name:',
-        default: existingConfig.embedding_model || 'text-embedding-3-small',
+        message: 'Embedding model:',
+        default: (existingEmbeddings.model as string) || 'openai/text-embedding-3-small',
       },
     ]);
-    newConfig.embedding_api_url = apiUrl;
-    if (apiKey) {
-      newConfig.embedding_api_key = apiKey;
-    }
-    newConfig.embedding_model = model;
+    newConfig.llm!.api_url = apiUrl;
+    newConfig.llm!.embeddings!.model = model;
   }
 
-  // Step 3: Advanced options
+  // Step 4: Advanced options
   const { configureAdvanced } = await inquirer.prompt([
     {
       type: 'confirm',
@@ -177,13 +160,13 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
         type: 'number',
         name: 'chunkSize',
         message: 'Chunk size (characters):',
-        default: existingConfig.chunk_size || 500,
+        default: (existingConfig.chunk_size as number) || 500,
       },
       {
         type: 'number',
         name: 'chunkOverlap',
         message: 'Chunk overlap (characters):',
-        default: existingConfig.chunk_overlap || 50,
+        default: (existingConfig.chunk_overlap as number) || 50,
       },
     ]);
     newConfig.chunk_size = chunkSize;
@@ -195,21 +178,30 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
     fs.mkdirSync(globalConfigDir, { recursive: true });
   }
 
-  // Merge with existing config (preserve fields we didn't ask about)
-  const finalConfig = { ...existingConfig, ...newConfig };
-
-  // Clean up undefined/empty values
-  for (const key of Object.keys(finalConfig) as Array<keyof ConfigData>) {
-    if (finalConfig[key] === undefined || finalConfig[key] === '') {
-      delete finalConfig[key];
-    }
-  }
+  // Deep merge with existing config
+  const finalConfig = deepMerge(existingConfig, newConfig as unknown as Record<string, unknown>);
 
   fs.writeFileSync(globalConfigPath, JSON.stringify(finalConfig, null, 2));
 
   console.log(`\nConfiguration saved to ${globalConfigPath}`);
   console.log('\nCurrent configuration:');
   console.log(JSON.stringify(finalConfig, null, 2));
+}
+
+/**
+ * Deep merge two objects (target wins on conflicts)
+ */
+function deepMerge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    if (override[key] && typeof override[key] === 'object' && !Array.isArray(override[key]) &&
+        result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])) {
+      result[key] = deepMerge(result[key] as Record<string, unknown>, override[key] as Record<string, unknown>);
+    } else if (override[key] !== undefined && override[key] !== '') {
+      result[key] = override[key];
+    }
+  }
+  return result;
 }
 
 /**
@@ -254,7 +246,7 @@ export async function configSet(key: string, value: string, options: ConfigSetOp
   else if (value === 'false') parsedValue = false;
   else if (!isNaN(Number(value)) && value.trim() !== '') parsedValue = Number(value);
 
-  // Handle nested keys (e.g., "error_reporting.enabled")
+  // Handle nested keys (e.g., "llm.embeddings.mode")
   const keys = key.split('.');
   if (keys.length === 1) {
     config[key] = parsedValue;

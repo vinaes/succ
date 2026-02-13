@@ -40,13 +40,7 @@ export interface QualityGatesConfig {
 }
 
 export interface SuccConfig {
-  openrouter_api_key?: string;
-  embedding_model: string;
-  embedding_mode: 'local' | 'openrouter' | 'custom';
-  embedding_api_url?: string;  // For custom API (llama.cpp, LM Studio, Ollama, etc.)
-  embedding_api_key?: string;  // Optional API key for custom endpoint
-  embedding_batch_size?: number;  // Batch size for custom API (default 32, llama.cpp works well with larger batches)
-  embedding_dimensions?: number;  // Override embedding dimensions for custom models
+  // Runtime embedding tuning (not LLM config — stays at top level)
   embedding_local_batch_size?: number;  // Batch size for local embeddings (default: 16)
   embedding_local_concurrency?: number;  // Concurrent batches for local embeddings (default: 4)
   embedding_worker_pool_enabled?: boolean;  // Use worker thread pool for local embeddings (default: true)
@@ -64,20 +58,8 @@ export interface SuccConfig {
   graph_auto_export?: boolean;  // Auto-export graph to Obsidian on changes (default: false)
   graph_export_format?: 'obsidian' | 'json';  // Export format (default: obsidian)
   graph_export_path?: string;  // Custom export path (default: .succ/brain/graph)
-  // Analyze mode settings (for succ analyze)
-  analyze_mode?: 'claude' | 'openrouter' | 'local';  // claude = Claude CLI (default), openrouter = OpenRouter API, local = local LLM
-  analyze_api_url?: string;  // Local LLM API URL (e.g., http://localhost:11434/v1 for Ollama)
-  analyze_api_key?: string;  // Optional API key for local LLM
-  analyze_model?: string;  // Model name for local/openrouter (e.g., qwen2.5-coder:32b, deepseek-coder-v2)
-  analyze_temperature?: number;  // Temperature for generation (default: 0.3)
-  analyze_max_tokens?: number;  // Max tokens per response (default: 4096)
-  analyze_concurrency?: number;  // Concurrent API calls for multi-pass systems/features (default: 3)
-  // Quality scoring settings
+  // Quality scoring feature toggles (mode/model/api under llm.quality.*)
   quality_scoring_enabled?: boolean;  // Enable quality scoring for memories (default: true)
-  quality_scoring_mode?: 'local' | 'custom' | 'openrouter';  // local = ONNX, custom = Ollama/LM Studio, openrouter = API
-  quality_scoring_model?: string;  // Model for LLM-based scoring (custom/openrouter modes)
-  quality_scoring_api_url?: string;  // API URL for custom mode
-  quality_scoring_api_key?: string;  // API key for custom mode
   quality_scoring_threshold?: number;  // Minimum quality score to keep (0-1, default: 0)
   // Sensitive info filter settings
   sensitive_filter_enabled?: boolean;  // Enable sensitive info detection (default: true)
@@ -111,12 +93,8 @@ export interface SuccConfig {
   commandSafetyGuard?: CommandSafetyGuardConfig;
   // Skills discovery and suggestion settings
   skills?: SkillsConfig;
-  // Unified LLM settings (used by all LLM-powered features)
+  // Unified LLM settings — ALL LLM/embedding/analyze config lives here
   llm?: LLMConfig;
-  // Chat LLM settings (for interactive chats: succ chat, onboarding)
-  chat_llm?: ChatLLMConfig;
-  // Sleep agent - secondary LLM for background operations
-  sleep_agent?: SleepAgentConfig;
   // Storage backend settings (SQLite, PostgreSQL, Qdrant)
   storage?: StorageConfig;
   // Quality gate settings for PRD pipeline
@@ -194,64 +172,83 @@ export interface StorageConfig {
 }
 
 /**
- * Chat LLM Config - separate config for interactive chats
+ * Unified LLM Config — ALL LLM-related settings live here.
  *
- * Used by succ chat and interactive onboarding.
- * Default: Claude CLI with Sonnet (best quality for interactive use)
+ * Resolution chain (per task):
+ *   api_key:  llm.{task}.api_key  →  llm.api_key  →  API_KEY env  →  undefined
+ *   api_url:  llm.{task}.api_url  →  llm.api_url  →  "http://localhost:11434/v1"
+ *   model:    llm.{task}.model    →  llm.model    →  default per mode
+ *   mode:     llm.{task}.mode     →  llm.type     →  default per subsystem
+ *
+ * Modes:
+ *   'local'  = built-in ONNX (embeddings + quality scoring only)
+ *   'api'    = any OpenAI-compatible HTTP endpoint (Ollama, OpenRouter, nano-gpt, etc.)
+ *   'claude' = Claude CLI subprocess (where applicable)
+ *
+ * OpenRouter headers (HTTP-Referer, X-Title) are auto-sent when api_url contains 'openrouter.ai'.
  */
-export interface ChatLLMConfig {
-  backend?: 'claude' | 'local' | 'openrouter';  // Default: 'claude' with sonnet
-  model?: string;  // Model name (e.g., 'sonnet' for claude, 'qwen2.5:7b' for local)
-  local_endpoint?: string;  // Local LLM endpoint (default: from llm.local_endpoint)
-  max_tokens?: number;  // Max tokens (default: 4000)
-  temperature?: number;  // Temperature (default: 0.7)
-}
-
 export interface LLMConfig {
-  type?: 'claude' | 'local' | 'openrouter';  // Default: 'local'
-  model?: string;  // Model for the chosen type (e.g., 'sonnet', 'qwen2.5:7b', 'anthropic/claude-3-haiku')
-  transport?: 'process' | 'ws' | 'http';  // Default: depends on type (claude→process, local/openrouter→http)
-  max_tokens?: number;  // Max tokens per response (default: 2000)
-  temperature?: number;  // Temperature for generation (default: 0.3)
+  api_key?: string;              // ONE key for everything (overridden per-task if needed)
+  api_url?: string;              // Default endpoint (default: http://localhost:11434/v1)
+  type?: 'claude' | 'api';      // Default LLM type (default: 'api')
+  model?: string;                // Default model
+  max_tokens?: number;           // Default max tokens (default: 2000)
+  temperature?: number;          // Default temperature (default: 0.3)
+  transport?: 'process' | 'ws' | 'http';  // Claude transport mode
 
-  // Per-backend overrides (used for fallback chain + backend-specific settings)
-  local?: {
-    endpoint?: string;  // Default: 'http://localhost:11434/v1/chat/completions'
-    model?: string;  // Override model when falling back to local
-  };
-  openrouter?: {
-    model?: string;  // Override model when falling back to openrouter
-  };
+  // Claude-specific overrides
   claude?: {
-    model?: string;  // Override model when falling back to claude
-    transport?: 'process' | 'ws';  // Override transport for claude
+    model?: string;
+    transport?: 'process' | 'ws';
   };
 
-  // Deprecated aliases (still read for back-compat)
-  backend?: 'claude' | 'local' | 'openrouter';  // Use type instead
-  claude_mode?: 'process' | 'ws';  // Use transport or claude.transport instead
-  claude_ws_model?: string;  // Use claude.model or model instead
-  local_endpoint?: string;  // Use local.endpoint instead
-  openrouter_model?: string;  // Use openrouter.model instead
-}
-
-/**
- * Sleep Agent Config - secondary LLM for background/idle operations
- *
- * When enabled, background operations (idle reflection, memory consolidation,
- * precompute context) use this LLM instead of the primary llm.* config.
- *
- * Use cases:
- * - Primary: Claude CLI (quality) + Sleep: Ollama (free, background)
- * - Primary: OpenRouter (fast) + Sleep: Local (free, no rate limits)
- */
-export interface SleepAgentConfig {
-  enabled?: boolean;  // Enable sleep agent (default: false)
-  backend?: 'local' | 'openrouter';  // Backend for sleep agent (claude not recommended - ToS)
-  model?: string;  // Model name (e.g., 'qwen2.5:7b' for local, 'anthropic/claude-3-haiku' for openrouter)
-  local_endpoint?: string;  // Local LLM endpoint (default: from llm.local_endpoint)
-  max_tokens?: number;  // Max tokens (default: from llm.max_tokens)
-  temperature?: number;  // Temperature (default: from llm.temperature)
+  // Per-task overrides — each inherits from top-level llm.*
+  embeddings?: {
+    mode?: 'local' | 'api';     // Default: 'local' (ONNX)
+    model?: string;
+    api_url?: string;           // Override endpoint for embeddings
+    api_key?: string;           // Override key for embeddings
+    batch_size?: number;        // Batch size for API (default: 32)
+    dimensions?: number;        // Override embedding dimensions
+  };
+  analyze?: {
+    mode?: 'claude' | 'api';    // Default: 'claude'
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+    temperature?: number;
+    max_tokens?: number;
+    concurrency?: number;       // Concurrent API calls (default: 3)
+  };
+  quality?: {
+    mode?: 'local' | 'api';     // Default: 'local' (ONNX)
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+  };
+  chat?: {
+    mode?: 'claude' | 'api';    // Default: 'claude'
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+    max_tokens?: number;
+    temperature?: number;
+  };
+  sleep?: {
+    enabled?: boolean;           // Enable sleep agent (default: false)
+    mode?: 'api';               // Always 'api' (claude = ToS issues)
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+    max_tokens?: number;
+    temperature?: number;
+  };
+  skills?: {
+    mode?: 'claude' | 'api';    // Default: from llm.type
+    model?: string;
+    api_url?: string;
+    api_key?: string;
+  };
 }
 
 export interface SkillsConfig {
@@ -268,11 +265,7 @@ export interface SkillsConfig {
   auto_suggest?: {
     enabled?: boolean;  // Enable auto-suggest (default: true)
     on_user_prompt?: boolean;  // Suggest on user prompt (default: true)
-    llm_backend?: 'claude' | 'local' | 'openrouter';  // LLM backend (default: 'claude')
-    llm_model?: string;  // Model for Claude backend (default: 'haiku')
-    local_endpoint?: string;  // Local LLM endpoint (default: 'http://localhost:11434/v1/chat/completions')
-    local_model?: string;  // Model for local backend (default: 'qwen2.5:7b')
-    openrouter_model?: string;  // Model for OpenRouter (default: 'anthropic/claude-3-haiku')
+    // LLM config now comes from llm.skills.* (mode, model, api_url, api_key)
     min_confidence?: number;  // Min confidence for suggestions (default: 0.7)
     max_suggestions?: number;  // Max suggestions to show (default: 2)
     cooldown_prompts?: number;  // Cooldown between suggestions (default: 3)
@@ -284,10 +277,7 @@ export interface SkillsConfig {
 export interface CompactBriefingConfig {
   enabled?: boolean;  // Enable compact briefing (default: true)
   format?: 'structured' | 'prose' | 'minimal';  // Output format (default: 'structured')
-  mode?: 'local' | 'openrouter' | 'custom';  // Generation mode: local (Claude CLI), openrouter (API), custom (Ollama/LM Studio)
-  model?: string;  // Model name: 'haiku'/'sonnet'/'opus' for local, 'anthropic/claude-3-haiku' for openrouter, etc.
-  api_url?: string;  // Custom API URL (for custom mode, e.g., http://localhost:11434/v1)
-  api_key?: string;  // Custom API key (for custom mode or openrouter override)
+  // LLM config removed — was dead code (never read). Uses llm.* if needed.
   include_learnings?: boolean;  // Include extracted learnings (default: true)
   include_memories?: boolean;  // Include relevant memories (default: true)
   max_memories?: number;  // Max relevant memories to include (default: 3)
@@ -306,7 +296,7 @@ export interface DaemonConfig {
   analyze?: {
     auto_start?: boolean;  // Auto-start analyze service (default: false)
     interval_minutes?: number;  // Analysis interval (default: 30)
-    mode?: 'claude' | 'openrouter' | 'local';  // Analysis mode (default: 'claude')
+    mode?: 'claude' | 'api';  // Analysis mode (default: 'claude')
   };
 }
 
@@ -396,7 +386,7 @@ export interface RetrievalConfig {
   mmr_enabled?: boolean;  // Maximal Marginal Relevance diversity reranking (default: false)
   mmr_lambda?: number;  // MMR balance: 1=pure relevance, 0=pure diversity (default: 0.8)
   query_expansion_enabled?: boolean;  // LLM-based query expansion for richer recall (default: false)
-  query_expansion_mode?: 'local' | 'openrouter' | 'claude';  // LLM backend for expansion (default: from llm config)
+  query_expansion_mode?: 'claude' | 'api';  // LLM backend for expansion (default: from llm.type)
 }
 
 export interface ObserverConfig {
@@ -458,12 +448,9 @@ export interface IdleReflectionConfig {
   // Primary agent (always Claude via CLI)
   agent_model?: 'haiku' | 'sonnet' | 'opus';  // Claude model for reflection (default: 'haiku')
   // Optional secondary sleep agent (runs in parallel for heavy lifting)
+  // Uses llm.sleep.* for mode/model/api_url/api_key
   sleep_agent?: {
-    enabled?: boolean;  // Enable secondary sleep agent (default: false)
-    mode?: 'local' | 'openrouter';  // local = Ollama/LM Studio, openrouter = API
-    model?: string;  // Model name: 'qwen2.5:7b' for local, 'deepseek/deepseek-chat' for openrouter
-    api_url?: string;  // API URL for local mode (e.g., 'http://localhost:11434/v1')
-    api_key?: string;  // API key for openrouter (uses openrouter_api_key if not set)
+    enabled?: boolean;  // Enable secondary sleep agent (default: false — uses llm.sleep.enabled)
     // Which operations to offload to sleep agent
     handle_operations?: {
       memory_consolidation?: boolean;  // Offload memory merge/dedup (default: true)
@@ -476,9 +463,8 @@ export interface IdleReflectionConfig {
   timeout_seconds?: number;  // Max time for idle operations (default: 25)
 }
 
-// Model names for different modes
+// Default embedding model for local ONNX mode
 export const LOCAL_MODEL = 'Xenova/all-MiniLM-L6-v2';  // 384 dimensions
-export const OPENROUTER_MODEL = 'openai/text-embedding-3-small';
 
 // Default readiness gate config
 export const DEFAULT_READINESS_GATE_CONFIG = {
@@ -509,13 +495,9 @@ export const DEFAULT_RETENTION_POLICY_CONFIG: Required<RetentionPolicyConfig> = 
   use_temporal_decay: true,
 };
 
-// Default sleep agent config
+// Default sleep agent config (for idle_reflection.sleep_agent)
 export const DEFAULT_SLEEP_AGENT_CONFIG = {
   enabled: false,
-  mode: 'local' as const,
-  model: '',
-  api_url: '',
-  api_key: '',
   handle_operations: {
     memory_consolidation: true,
     session_summary: true,
@@ -527,14 +509,10 @@ export const DEFAULT_SLEEP_AGENT_CONFIG = {
 export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = {
   enabled: true,
   format: 'structured',
-  mode: 'local',  // Default to local Claude CLI (safe fallback)
-  model: 'haiku',  // Model name depends on mode
-  api_url: '',  // Only needed for custom mode
-  api_key: '',  // Only needed for custom mode or openrouter override
   include_learnings: true,
   include_memories: true,
   max_memories: 3,
-  timeout_ms: 15000,  // 15s default timeout
+  timeout_ms: 15000,
 };
 
 // Default error reporting config
@@ -579,9 +557,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG = {
   timeout_seconds: 25,
 };
 
-const DEFAULT_CONFIG: Omit<SuccConfig, 'openrouter_api_key'> = {
-  embedding_model: LOCAL_MODEL,
-  embedding_mode: 'local',  // Local by default (no API key needed)
+const DEFAULT_CONFIG: SuccConfig = {
   chunk_size: 500,
   chunk_overlap: 50,
 };
@@ -626,9 +602,6 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Try environment variable first
-  const apiKey = process.env.OPENROUTER_API_KEY;
-
   // Read global config file
   let fileConfig: Partial<SuccConfig> = {};
 
@@ -640,7 +613,7 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Read project config (deep merge for nested objects like storage, bpe)
+  // Read project config (deep merge for nested objects like storage, llm, etc.)
   if (activeProjectPath) {
     try {
       const projectConfig = JSON.parse(fs.readFileSync(activeProjectPath, 'utf-8'));
@@ -649,7 +622,7 @@ export function getConfig(): SuccConfig {
         if (value && typeof value === 'object' && !Array.isArray(value) &&
             fileConfig[key as keyof typeof fileConfig] && typeof fileConfig[key as keyof typeof fileConfig] === 'object' &&
             !Array.isArray(fileConfig[key as keyof typeof fileConfig])) {
-          // Deep merge: global + project for nested objects (storage, bpe, etc.)
+          // Deep merge: global + project for nested objects (storage, llm, etc.)
           (fileConfig as Record<string, unknown>)[key] = {
             ...(fileConfig[key as keyof typeof fileConfig] as Record<string, unknown>),
             ...(value as Record<string, unknown>),
@@ -664,44 +637,9 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  const finalApiKey = apiKey || fileConfig.openrouter_api_key;
-
-  // Determine embedding mode
-  let embeddingMode = fileConfig.embedding_mode || DEFAULT_CONFIG.embedding_mode;
-
-  // Determine model based on mode (unless explicitly set)
-  let embeddingModel = fileConfig.embedding_model;
-  if (!embeddingModel) {
-    if (embeddingMode === 'local') {
-      embeddingModel = LOCAL_MODEL;
-    } else if (embeddingMode === 'openrouter') {
-      embeddingModel = OPENROUTER_MODEL;
-    } else {
-      // Custom mode - user must specify model or we use a sensible default
-      embeddingModel = 'text-embedding-3-small';
-    }
-  }
-
-  // Validate mode requirements
-  if (embeddingMode === 'openrouter' && !finalApiKey) {
-    throw new Error(
-      'OpenRouter API key required. Set OPENROUTER_API_KEY env var or add to ~/.succ/config.json\n' +
-      'Or use embedding_mode: "local" (default, no API key needed)'
-    );
-  }
-
-  if (embeddingMode === 'custom' && !fileConfig.embedding_api_url) {
-    throw new Error(
-      'Custom API URL required. Set embedding_api_url in config (e.g., "http://localhost:1234/v1/embeddings")'
-    );
-  }
-
   const result: SuccConfig = {
     ...DEFAULT_CONFIG,
     ...fileConfig,
-    embedding_model: embeddingModel,
-    openrouter_api_key: finalApiKey,
-    embedding_mode: embeddingMode,
   };
 
   // Update cache
@@ -796,22 +734,149 @@ export function getConfigWithOverride(): SuccConfig {
 }
 
 /**
- * Check if OpenRouter API key is available
+ * Get the global API key.
+ * Resolution: llm.api_key → OPENROUTER_API_KEY env → undefined
  */
-export function hasOpenRouterKey(): boolean {
-  if (process.env.OPENROUTER_API_KEY) return true;
+export function getApiKey(): string | undefined {
+  const config = getConfig();
+  if (config.llm?.api_key) return config.llm.api_key;
+  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  return undefined;
+}
 
-  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
-  if (fs.existsSync(globalConfigPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
-      if (config.openrouter_api_key) return true;
-    } catch {
-      // Ignore
-    }
-  }
+/**
+ * Get the global API URL.
+ * Resolution: llm.api_url → "http://localhost:11434/v1"
+ */
+export function getApiUrl(): string {
+  const config = getConfig();
+  return config.llm?.api_url || 'http://localhost:11434/v1';
+}
 
-  return false;
+/**
+ * Check if an API key is available (global or env)
+ */
+export function hasApiKey(): boolean {
+  return !!getApiKey();
+}
+
+
+/** Default API URL */
+export const DEFAULT_API_URL = 'http://localhost:11434/v1';
+
+/**
+ * Resolved config for a specific LLM task.
+ * All fields are resolved through the chain: task → global llm.* → env → defaults.
+ */
+export interface ResolvedLLMTaskConfig {
+  mode: 'claude' | 'api' | 'local';
+  model: string;
+  api_url: string;
+  api_key: string | undefined;
+  max_tokens: number;
+  temperature: number;
+  /** Embeddings: batch size for API calls */
+  batch_size?: number;
+  /** Embeddings: expected dimensions */
+  dimensions?: number;
+  /** Analyze: concurrency for multi-pass agents */
+  concurrency?: number;
+}
+
+/**
+ * Get fully resolved LLM config for a specific task.
+ *
+ * Resolution chain:
+ *   mode:     llm.{task}.mode  → llm.type      → default per task
+ *   model:    llm.{task}.model → llm.model      → default per mode
+ *   api_key:  llm.{task}.api_key → llm.api_key  → env OPENROUTER_API_KEY → undefined
+ *   api_url:  llm.{task}.api_url → llm.api_url  → "http://localhost:11434/v1"
+ *   max_tokens: llm.{task}.max_tokens → llm.max_tokens → 2000
+ *   temperature: llm.{task}.temperature → llm.temperature → 0.3
+ */
+export function getLLMTaskConfig(
+  task: 'embeddings' | 'analyze' | 'quality' | 'chat' | 'sleep' | 'skills'
+): ResolvedLLMTaskConfig {
+  const config = getConfig();
+  const llm = config.llm || {};
+  const taskConfig = llm[task] || {};
+
+  // Default modes per task
+  const defaultModes: Record<string, 'claude' | 'api' | 'local'> = {
+    embeddings: 'local',
+    analyze: 'claude',
+    quality: 'local',
+    chat: 'claude',
+    sleep: 'api',
+    skills: llm.type === 'claude' ? 'claude' : 'api',
+  };
+
+  // Default models per mode
+  const defaultModels: Record<string, string> = {
+    claude: 'haiku',
+    api: 'qwen2.5:7b',
+    local: task === 'embeddings' ? LOCAL_MODEL : '',
+  };
+
+  // Tasks that only support 'local' | 'api' (no claude CLI support)
+  const localOnlyTasks = new Set(['embeddings', 'quality']);
+  const globalType = llm.type;
+  // Skip llm.type fallback if it's 'claude' but the task doesn't support it
+  const globalTypeFallback = (globalType && !(localOnlyTasks.has(task) && globalType === 'claude'))
+    ? globalType
+    : undefined;
+
+  const mode = (taskConfig as Record<string, unknown>).mode as string
+    || globalTypeFallback
+    || defaultModes[task];
+
+  // llm.model is the global API/Claude model — don't use it as fallback for 'local' mode
+  const globalModelFallback = mode === 'local' ? undefined : llm.model;
+  const model = (taskConfig as Record<string, unknown>).model as string
+    || globalModelFallback
+    || defaultModels[mode] || defaultModels['api'];
+
+  const apiKey = (taskConfig as Record<string, unknown>).api_key as string | undefined
+    || llm.api_key
+    || process.env.OPENROUTER_API_KEY
+    || undefined;
+
+  const apiUrl = (taskConfig as Record<string, unknown>).api_url as string | undefined
+    || llm.api_url
+    || DEFAULT_API_URL;
+
+  const maxTokens = ((taskConfig as Record<string, unknown>).max_tokens as number | undefined)
+    ?? llm.max_tokens
+    ?? (task === 'chat' ? 4000 : task === 'analyze' ? 4096 : 2000);
+
+  const temperature = ((taskConfig as Record<string, unknown>).temperature as number | undefined)
+    ?? llm.temperature
+    ?? (task === 'chat' ? 0.7 : 0.3);
+
+  // Task-specific extra fields
+  const batchSize = task === 'embeddings'
+    ? ((taskConfig as Record<string, unknown>).batch_size as number | undefined) ?? 32
+    : undefined;
+
+  const dimensions = task === 'embeddings'
+    ? ((taskConfig as Record<string, unknown>).dimensions as number | undefined)
+    : undefined;
+
+  const concurrency = task === 'analyze'
+    ? ((taskConfig as Record<string, unknown>).concurrency as number | undefined) ?? 3
+    : undefined;
+
+  return {
+    mode: mode as 'claude' | 'api' | 'local',
+    model,
+    api_url: apiUrl,
+    api_key: apiKey,
+    max_tokens: maxTokens,
+    temperature,
+    batch_size: batchSize,
+    dimensions,
+    concurrency,
+  };
 }
 
 /**
@@ -878,10 +943,8 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   const userConfig = config.idle_reflection || {};
   const userSleepAgent = userConfig.sleep_agent || {};
 
-  // For openrouter mode, fall back to global openrouter_api_key if not set
-  const sleepAgentApiKey = userSleepAgent.api_key ||
-    (userSleepAgent.mode === 'openrouter' ? config.openrouter_api_key : '') ||
-    DEFAULT_SLEEP_AGENT_CONFIG.api_key;
+  // Sleep agent enabled state: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → false
+  const sleepEnabled = userSleepAgent.enabled ?? config.llm?.sleep?.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled;
 
   // Safety: memory_consolidation requires GLOBAL opt-in.
   // Project config can DISABLE (false) but cannot ENABLE (true) on its own.
@@ -896,10 +959,6 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   } catch { /* ignore parse errors */ }
 
   // Rule: global must explicitly be true, AND merged value must not be false
-  // global=true + project=undefined → true (global opt-in honored)
-  // global=true + project=false → false (project can restrict)
-  // global=undefined + project=true → false (project alone can't enable)
-  // global=false + project=true → false (global didn't opt-in)
   const consolidationEnabled = globalConsolidation === true
     && (userConfig.operations?.memory_consolidation !== false);
 
@@ -921,11 +980,7 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     },
     agent_model: userConfig.agent_model ?? DEFAULT_IDLE_REFLECTION_CONFIG.agent_model,
     sleep_agent: {
-      enabled: userSleepAgent.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled,
-      mode: userSleepAgent.mode ?? DEFAULT_SLEEP_AGENT_CONFIG.mode,
-      model: userSleepAgent.model ?? DEFAULT_SLEEP_AGENT_CONFIG.model,
-      api_url: userSleepAgent.api_url ?? DEFAULT_SLEEP_AGENT_CONFIG.api_url,
-      api_key: sleepAgentApiKey,
+      enabled: sleepEnabled,
       handle_operations: {
         memory_consolidation: userSleepAgent.handle_operations?.memory_consolidation ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.memory_consolidation,
         session_summary: userSleepAgent.handle_operations?.session_summary ?? DEFAULT_SLEEP_AGENT_CONFIG.handle_operations.session_summary,
@@ -952,10 +1007,6 @@ export function getCompactBriefingConfig(): Required<CompactBriefingConfig> {
   return {
     enabled: userConfig.enabled ?? DEFAULT_COMPACT_BRIEFING_CONFIG.enabled,
     format: userConfig.format ?? DEFAULT_COMPACT_BRIEFING_CONFIG.format,
-    mode: userConfig.mode ?? DEFAULT_COMPACT_BRIEFING_CONFIG.mode,
-    model: userConfig.model ?? DEFAULT_COMPACT_BRIEFING_CONFIG.model,
-    api_url: userConfig.api_url ?? DEFAULT_COMPACT_BRIEFING_CONFIG.api_url,
-    api_key: userConfig.api_key ?? DEFAULT_COMPACT_BRIEFING_CONFIG.api_key,
     include_learnings: userConfig.include_learnings ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_learnings,
     include_memories: userConfig.include_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.include_memories,
     max_memories: userConfig.max_memories ?? DEFAULT_COMPACT_BRIEFING_CONFIG.max_memories,
@@ -994,11 +1045,12 @@ export interface OperationAssignment {
 }
 
 export function getOperationAssignments(): OperationAssignment[] {
-  const config = getIdleReflectionConfig();
-  const ops = config.operations;
-  const sleepAgent = config.sleep_agent;
+  const idleConfig = getIdleReflectionConfig();
+  const sleepTaskCfg = getLLMTaskConfig('sleep');
+  const ops = idleConfig.operations;
+  const sleepAgent = idleConfig.sleep_agent;
   const sleepOps = sleepAgent.handle_operations;
-  const sleepEnabled = sleepAgent.enabled && !!sleepAgent.model;
+  const sleepEnabled = sleepAgent.enabled && !!sleepTaskCfg.model;
 
   const assignments: OperationAssignment[] = [
     {
@@ -1068,16 +1120,24 @@ export interface ConfigDisplay {
     global: string;
     project: string | null;
     env: string[];
-    openrouter_api_key?: string;
-  };
-  // Embedding settings
-  embedding: {
-    mode: 'local' | 'openrouter' | 'custom';
-    model: string;
-    api_url?: string;
     api_key?: string;
-    batch_size: number;
-    dimensions?: number;
+  };
+  // Unified LLM settings
+  llm: {
+    type: string;
+    model: string;
+    api_url: string;
+    api_key?: string;
+    max_tokens: number;
+    temperature: number;
+    transport?: string;
+    // Per-task configs
+    embeddings: { mode: string; model: string; api_url?: string };
+    analyze: { mode: string; model: string; api_url?: string; concurrency: number };
+    quality: { mode: string; model: string; api_url?: string };
+    chat: { mode: string; model: string; max_tokens: number; temperature: number };
+    sleep: { enabled: boolean; mode: string; model: string };
+    skills: { mode: string; model: string };
   };
   // Chunking settings
   chunking: {
@@ -1089,31 +1149,9 @@ export interface ConfigDisplay {
     enabled: boolean;
     device?: string;
   };
-  // LLM settings
-  llm: {
-    type: string;
-    model: string;
-    transport: string;
-    local_endpoint: string;
-    openrouter_model: string;
-    max_tokens: number;
-    temperature: number;
-  };
-  // Analyze settings
-  analyze: {
-    mode: 'claude' | 'openrouter' | 'local';
-    model?: string;
-    api_url?: string;
-    api_key?: string;
-    temperature: number;
-    max_tokens: number;
-  };
-  // Quality scoring settings
+  // Quality scoring feature settings
   quality: {
     enabled: boolean;
-    mode: 'local' | 'custom' | 'openrouter';
-    model?: string;
-    api_url?: string;
     threshold: number;
   };
   // Sensitive filter settings
@@ -1152,8 +1190,6 @@ export interface ConfigDisplay {
     };
     sleep_agent: {
       enabled: boolean;
-      mode: 'local' | 'openrouter';
-      model?: string;
     };
   };
   // Idle watcher settings
@@ -1221,20 +1257,42 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
 
   const mask = (val: string | undefined) => maskSecrets ? maskSensitive(val) : (val || '(not set)');
 
+  // Resolve per-task configs
+  const embCfg = getLLMTaskConfig('embeddings');
+  const anlCfg = getLLMTaskConfig('analyze');
+  const qCfg = getLLMTaskConfig('quality');
+  const chatCfg = getLLMTaskConfig('chat');
+  const sleepCfg = getLLMTaskConfig('sleep');
+  const skillsCfg = getLLMTaskConfig('skills');
+
+  const globalApiKey = getApiKey();
+  const globalApiUrl = getApiUrl();
+
   return {
     sources: {
       global: fs.existsSync(globalConfigPath) ? globalConfigPath : '(not found)',
       project: projectConfig,
       env: envVars,
-      openrouter_api_key: config.openrouter_api_key ? mask(config.openrouter_api_key) : undefined,
+      api_key: globalApiKey ? mask(globalApiKey) : undefined,
     },
-    embedding: {
-      mode: config.embedding_mode,
-      model: config.embedding_model,
-      api_url: config.embedding_mode === 'custom' ? config.embedding_api_url : undefined,
-      api_key: config.embedding_mode === 'custom' ? mask(config.embedding_api_key) : undefined,
-      batch_size: config.embedding_batch_size ?? 32,
-      dimensions: config.embedding_dimensions,
+    llm: {
+      type: config.llm?.type || 'api',
+      model: config.llm?.model || 'qwen2.5:7b',
+      api_url: globalApiUrl,
+      api_key: globalApiKey ? mask(globalApiKey) : undefined,
+      max_tokens: config.llm?.max_tokens ?? 2000,
+      temperature: config.llm?.temperature ?? 0.3,
+      transport: config.llm?.claude?.transport || config.llm?.transport,
+      embeddings: { mode: embCfg.mode, model: embCfg.model, api_url: embCfg.mode === 'api' ? embCfg.api_url : undefined },
+      analyze: {
+        mode: anlCfg.mode, model: anlCfg.model,
+        api_url: anlCfg.mode === 'api' ? anlCfg.api_url : undefined,
+        concurrency: (config.llm?.analyze as Record<string, unknown> | undefined)?.concurrency as number ?? 3,
+      },
+      quality: { mode: qCfg.mode, model: qCfg.model, api_url: qCfg.mode === 'api' ? qCfg.api_url : undefined },
+      chat: { mode: chatCfg.mode, model: chatCfg.model, max_tokens: chatCfg.max_tokens, temperature: chatCfg.temperature },
+      sleep: { enabled: config.llm?.sleep?.enabled ?? false, mode: sleepCfg.mode, model: sleepCfg.model },
+      skills: { mode: skillsCfg.mode, model: skillsCfg.model },
     },
     chunking: {
       chunk_size: config.chunk_size,
@@ -1244,37 +1302,8 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       enabled: config.gpu_enabled ?? true,
       device: config.gpu_device,
     },
-    llm: (() => {
-      const llm = config.llm || {};
-      const type = llm.type || 'local';
-      const transport = llm.transport || llm.claude?.transport || (type === 'claude' ? 'process' : 'http');
-      // Resolve model for the active type: llm.{type}.model → llm.model → default
-      const typeBlock = type === 'claude' ? llm.claude : type === 'local' ? llm.local : llm.openrouter;
-      const defaultModel = type === 'claude' ? 'haiku' : type === 'openrouter' ? 'anthropic/claude-3-haiku' : 'qwen2.5:7b';
-      const model = (typeBlock as { model?: string } | undefined)?.model || llm.model || defaultModel;
-      return {
-        type,
-        model,
-        transport,
-        local_endpoint: llm.local?.endpoint || 'http://localhost:11434/v1/chat/completions',
-        openrouter_model: llm.openrouter?.model || 'anthropic/claude-3-haiku',
-        max_tokens: llm.max_tokens ?? 2000,
-        temperature: llm.temperature ?? 0.3,
-      };
-    })(),
-    analyze: {
-      mode: config.analyze_mode ?? 'claude',
-      model: config.analyze_model,
-      api_url: config.analyze_mode === 'local' ? config.analyze_api_url : undefined,
-      api_key: config.analyze_mode !== 'claude' ? mask(config.analyze_api_key) : undefined,
-      temperature: config.analyze_temperature ?? 0.3,
-      max_tokens: config.analyze_max_tokens ?? 4096,
-    },
     quality: {
       enabled: config.quality_scoring_enabled ?? true,
-      mode: config.quality_scoring_mode ?? 'local',
-      model: config.quality_scoring_model,
-      api_url: config.quality_scoring_mode === 'custom' ? config.quality_scoring_api_url : undefined,
       threshold: config.quality_scoring_threshold ?? 0,
     },
     sensitive: {
@@ -1310,8 +1339,6 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       },
       sleep_agent: {
         enabled: idleReflection.sleep_agent.enabled ?? false,
-        mode: idleReflection.sleep_agent.mode ?? 'local',
-        model: idleReflection.sleep_agent.model || undefined,
       },
     },
     idle_watcher: {
@@ -1376,25 +1403,40 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   if (display.sources.env.length > 0) {
     lines.push(`  Environment: ${display.sources.env.join(', ')}`);
   }
-  if (display.sources.openrouter_api_key) {
-    lines.push(`  OpenRouter API Key: ${display.sources.openrouter_api_key}`);
+  if (display.sources.api_key) {
+    lines.push(`  API Key: ${display.sources.api_key}`);
   }
   lines.push('');
 
-  // Embedding
-  lines.push('## Embedding');
-  lines.push(`  Mode: ${display.embedding.mode}`);
-  lines.push(`  Model: ${display.embedding.model}`);
-  if (display.embedding.api_url) {
-    lines.push(`  API URL: ${display.embedding.api_url}`);
+  // LLM (unified)
+  lines.push('## LLM');
+  lines.push(`  Type: ${display.llm.type}`);
+  lines.push(`  Model: ${display.llm.model}`);
+  lines.push(`  API URL: ${display.llm.api_url}`);
+  if (display.llm.api_key) {
+    lines.push(`  API Key: ${display.llm.api_key}`);
   }
-  if (display.embedding.api_key) {
-    lines.push(`  API Key: ${display.embedding.api_key}`);
+  if (display.llm.transport) {
+    lines.push(`  Transport: ${display.llm.transport}`);
   }
-  lines.push(`  Batch size: ${display.embedding.batch_size}`);
-  if (display.embedding.dimensions) {
-    lines.push(`  Dimensions: ${display.embedding.dimensions}`);
-  }
+  lines.push(`  Max tokens: ${display.llm.max_tokens}`);
+  lines.push(`  Temperature: ${display.llm.temperature}`);
+  // Per-task
+  lines.push('  Embeddings:');
+  lines.push(`    Mode: ${display.llm.embeddings.mode}, Model: ${display.llm.embeddings.model}`);
+  if (display.llm.embeddings.api_url) lines.push(`    API URL: ${display.llm.embeddings.api_url}`);
+  lines.push('  Analyze:');
+  lines.push(`    Mode: ${display.llm.analyze.mode}, Model: ${display.llm.analyze.model}, Concurrency: ${display.llm.analyze.concurrency}`);
+  if (display.llm.analyze.api_url) lines.push(`    API URL: ${display.llm.analyze.api_url}`);
+  lines.push('  Quality:');
+  lines.push(`    Mode: ${display.llm.quality.mode}, Model: ${display.llm.quality.model}`);
+  if (display.llm.quality.api_url) lines.push(`    API URL: ${display.llm.quality.api_url}`);
+  lines.push('  Chat:');
+  lines.push(`    Mode: ${display.llm.chat.mode}, Model: ${display.llm.chat.model}, Temp: ${display.llm.chat.temperature}`);
+  lines.push('  Sleep:');
+  lines.push(`    Enabled: ${display.llm.sleep.enabled}, Mode: ${display.llm.sleep.mode}, Model: ${display.llm.sleep.model}`);
+  lines.push('  Skills:');
+  lines.push(`    Mode: ${display.llm.skills.mode}, Model: ${display.llm.skills.model}`);
   lines.push('');
 
   // Chunking
@@ -1411,47 +1453,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   }
   lines.push('');
 
-  // LLM
-  lines.push('## LLM');
-  lines.push(`  Type: ${display.llm.type}`);
-  lines.push(`  Model: ${display.llm.model}`);
-  lines.push(`  Transport: ${display.llm.transport}`);
-  if (display.llm.type === 'local' || display.llm.local_endpoint !== 'http://localhost:11434/v1/chat/completions') {
-    lines.push(`  Local endpoint: ${display.llm.local_endpoint}`);
-  }
-  if (display.llm.type === 'openrouter' || display.llm.openrouter_model !== 'anthropic/claude-3-haiku') {
-    lines.push(`  OpenRouter model: ${display.llm.openrouter_model}`);
-  }
-  lines.push(`  Max tokens: ${display.llm.max_tokens}`);
-  lines.push(`  Temperature: ${display.llm.temperature}`);
-  lines.push('');
-
-  // Analyze
-  lines.push('## Analyze');
-  lines.push(`  Mode: ${display.analyze.mode}`);
-  if (display.analyze.model) {
-    lines.push(`  Model: ${display.analyze.model}`);
-  }
-  if (display.analyze.api_url) {
-    lines.push(`  API URL: ${display.analyze.api_url}`);
-  }
-  if (display.analyze.api_key) {
-    lines.push(`  API Key: ${display.analyze.api_key}`);
-  }
-  lines.push(`  Temperature: ${display.analyze.temperature}`);
-  lines.push(`  Max tokens: ${display.analyze.max_tokens}`);
-  lines.push('');
-
   // Quality
   lines.push('## Quality Scoring');
   lines.push(`  Enabled: ${display.quality.enabled}`);
-  lines.push(`  Mode: ${display.quality.mode}`);
-  if (display.quality.model) {
-    lines.push(`  Model: ${display.quality.model}`);
-  }
-  if (display.quality.api_url) {
-    lines.push(`  API URL: ${display.quality.api_url}`);
-  }
   lines.push(`  Threshold: ${display.quality.threshold}`);
   lines.push('');
 
@@ -1486,7 +1490,7 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(`    - Write reflection: ${ops.write_reflection}`);
   lines.push(`    - Retention cleanup: ${ops.retention_cleanup}`);
   if (display.idle_reflection.sleep_agent.enabled) {
-    lines.push(`  Sleep agent: ${display.idle_reflection.sleep_agent.mode} (${display.idle_reflection.sleep_agent.model || 'not configured'})`);
+    lines.push(`  Sleep agent: enabled`);
   }
   lines.push('  Consolidation guards:');
   const guards = display.idle_reflection.consolidation_guards;
@@ -1570,13 +1574,7 @@ export interface GlobalConfig {
   onboarding_completed?: boolean;
   onboarding_completed_at?: string;
   onboarding_mode?: 'wizard' | 'ai-chat' | 'skipped';
-  chat_llm?: {
-    backend?: 'local' | 'openrouter';
-    model?: string;
-    local_endpoint?: string;
-    max_tokens?: number;
-    temperature?: number;
-  };
+  llm?: LLMConfig;
   [key: string]: unknown;
 }
 
@@ -1728,7 +1726,7 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     mmr_enabled: userConfig.mmr_enabled ?? false,
     mmr_lambda: userConfig.mmr_lambda ?? 0.8,
     query_expansion_enabled: userConfig.query_expansion_enabled ?? false,
-    query_expansion_mode: userConfig.query_expansion_mode ?? 'local',
+    query_expansion_mode: userConfig.query_expansion_mode ?? (getConfig().llm?.type || 'api'),
   };
 }
 

@@ -25,13 +25,20 @@ let currentProject = projectA;
 vi.mock('./config.js', () => {
   return {
     getConfig: () => ({
-      embedding_model: 'test-model',
-      embedding_mode: 'local',
       chunk_size: 500,
       chunk_overlap: 50,
+      llm: { embeddings: { mode: 'local', model: 'test-model' } },
       skills: {
         local_paths: ['.claude/commands'],
       },
+    }),
+    getLLMTaskConfig: (task: string) => ({
+      mode: task === 'embeddings' ? 'local' : 'api',
+      model: task === 'embeddings' ? 'test-model' : 'qwen2.5:7b',
+      api_url: 'http://localhost:11434/v1',
+      api_key: undefined,
+      max_tokens: 2000,
+      temperature: 0.3,
     }),
     getDbPath: () => path.join(tempDir, 'test.db'),
     getGlobalDbPath: () => path.join(tempDir, 'global.db'),

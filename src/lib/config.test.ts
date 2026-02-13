@@ -11,9 +11,9 @@ import {
   getGlobalDbPath,
   setConfigOverride,
   getConfigWithOverride,
-  hasOpenRouterKey,
+  hasApiKey,
+  getLLMTaskConfig,
   LOCAL_MODEL,
-  OPENROUTER_MODEL,
 } from './config.js';
 
 describe('Config Module', () => {
@@ -88,14 +88,13 @@ describe('Config Module', () => {
       expect(config).toBeDefined();
       expect(config.chunk_size).toBeDefined();
       expect(config.chunk_overlap).toBeDefined();
-      expect(config.embedding_model).toBeDefined();
-      expect(config.embedding_mode).toBeDefined();
     });
 
-    it('should have valid embedding mode', () => {
-      const config = getConfig();
+    it('should have valid embedding mode via getLLMTaskConfig', () => {
+      const embCfg = getLLMTaskConfig('embeddings');
 
-      expect(['local', 'openrouter', 'custom']).toContain(config.embedding_mode);
+      expect(['local', 'api']).toContain(embCfg.mode);
+      expect(embCfg.model).toBeDefined();
     });
   });
 
@@ -120,9 +119,9 @@ describe('Config Module', () => {
     });
   });
 
-  describe('hasOpenRouterKey', () => {
+  describe('hasApiKey', () => {
     it('should return boolean', () => {
-      const hasKey = hasOpenRouterKey();
+      const hasKey = hasApiKey();
 
       expect(typeof hasKey).toBe('boolean');
     });
@@ -133,10 +132,29 @@ describe('Config Module', () => {
       expect(LOCAL_MODEL).toBeDefined();
       expect(typeof LOCAL_MODEL).toBe('string');
     });
+  });
 
-    it('should export OPENROUTER_MODEL', () => {
-      expect(OPENROUTER_MODEL).toBeDefined();
-      expect(typeof OPENROUTER_MODEL).toBe('string');
+  describe('getLLMTaskConfig', () => {
+    it('should return resolved config for embeddings', () => {
+      const cfg = getLLMTaskConfig('embeddings');
+
+      expect(cfg.mode).toBeDefined();
+      expect(cfg.model).toBeDefined();
+      expect(cfg.api_url).toBeDefined();
+    });
+
+    it('should return resolved config for analyze', () => {
+      const cfg = getLLMTaskConfig('analyze');
+
+      expect(cfg.mode).toBeDefined();
+      expect(cfg.model).toBeDefined();
+    });
+
+    it('should return resolved config for quality', () => {
+      const cfg = getLLMTaskConfig('quality');
+
+      expect(cfg.mode).toBeDefined();
+      expect(cfg.model).toBeDefined();
     });
   });
 

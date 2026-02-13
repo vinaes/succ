@@ -93,14 +93,14 @@ export async function status(): Promise<void> {
     // Show embedding config
     console.log();
     try {
-      const config = getConfig();
-      console.log(`Embedding mode:       ${config.embedding_mode}`);
-      console.log(`Embedding model:      ${config.embedding_model}`);
+      const { getLLMTaskConfig, hasApiKey } = await import('../lib/config.js');
+      const embCfg = getLLMTaskConfig('embeddings');
+      console.log(`Embedding mode:       ${embCfg.mode}`);
+      console.log(`Embedding model:      ${embCfg.model}`);
 
-      if (config.embedding_mode === 'openrouter') {
-        console.log(`OpenRouter API key:   ${config.openrouter_api_key ? 'Set' : 'Not set'}`);
-      } else if (config.embedding_mode === 'custom') {
-        console.log(`Embedding API URL:    ${config.embedding_api_url || 'Not set'}`);
+      if (embCfg.mode === 'api') {
+        console.log(`API key:              ${hasApiKey() ? 'Set' : 'Not set'}`);
+        console.log(`API URL:              ${embCfg.api_url}`);
       }
     } catch (error: any) {
       // Config validation failed - show the issue

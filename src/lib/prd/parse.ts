@@ -5,7 +5,7 @@
  * Enriches the LLM prompt with real codebase context before parsing.
  */
 
-import { callLLM, callLLMWithFallback, getLLMConfig } from '../llm.js';
+import { callLLM, callLLMWithFallback, getLLMConfig, type LLMBackend } from '../llm.js';
 import { logWarn } from '../fault-logger.js';
 import { PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
@@ -93,7 +93,7 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
   // 4c. If local LLM can't produce JSON, escalate to a stronger backend
   if (!rawTasks) {
     const currentBackend = getLLMConfig().backend;
-    const escalateBackends = ['openrouter', 'claude'].filter(b => b !== currentBackend) as Array<'openrouter' | 'claude'>;
+    const escalateBackends = ['api', 'claude'].filter(b => b !== currentBackend) as LLMBackend[];
 
     for (const backend of escalateBackends) {
       try {

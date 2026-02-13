@@ -13,7 +13,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getWebSearchConfig } from '../../lib/config.js';
-import { isOpenRouterConfigured, callOpenRouterSearch, type OpenRouterSearchResponse, type ChatMessage } from '../../lib/llm.js';
+import { isApiConfigured, callOpenRouterSearch, type OpenRouterSearchResponse, type ChatMessage } from '../../lib/llm.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
 import type { WebSearchToolName } from '../../lib/storage/types.js';
@@ -187,9 +187,9 @@ export function registerWebSearchTools(server: McpServer) {
     async ({ query, system_prompt, max_tokens, save_to_memory, project_path }) => {
       await applyProjectPath(project_path);
 
-      if (!isOpenRouterConfigured()) {
+      if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="openrouter_api_key" value="sk-or-..."' }],
+          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
           isError: true,
         };
       }
@@ -256,9 +256,9 @@ export function registerWebSearchTools(server: McpServer) {
     async ({ query, model, system_prompt, max_tokens, save_to_memory, project_path }) => {
       await applyProjectPath(project_path);
 
-      if (!isOpenRouterConfigured()) {
+      if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="openrouter_api_key" value="sk-or-..."' }],
+          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
           isError: true,
         };
       }
@@ -326,9 +326,9 @@ export function registerWebSearchTools(server: McpServer) {
     async ({ query, system_prompt, max_tokens, include_reasoning, save_to_memory, project_path }) => {
       await applyProjectPath(project_path);
 
-      if (!isOpenRouterConfigured()) {
+      if (!isApiConfigured()) {
         return {
-          content: [{ type: 'text' as const, text: 'OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="openrouter_api_key" value="sk-or-..."' }],
+          content: [{ type: 'text' as const, text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config_set key="llm.api_key" value="sk-or-..."' }],
           isError: true,
         };
       }

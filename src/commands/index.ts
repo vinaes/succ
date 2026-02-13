@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import inquirer from 'inquirer';
-import { getClaudeDir, getProjectRoot, getConfig } from '../lib/config.js';
+import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/storage/index.js';
@@ -44,10 +44,11 @@ export async function index(
     const currentDimension = testEmbedding.length;
 
     if (storedDimension !== currentDimension) {
-      const config = getConfig();
+      const { getLLMTaskConfig } = await import('../lib/config.js');
+      const embModel = getLLMTaskConfig('embeddings').model;
       console.log(`\n⚠️  Embedding dimension mismatch detected!`);
       console.log(`   Stored embeddings: ${storedDimension} dimensions`);
-      console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
+      console.log(`   Current model (${embModel}): ${currentDimension} dimensions\n`);
 
       // Determine mode: interactive (TTY), explicit auto-reindex, or non-interactive
       const isInteractive = process.stdout.isTTY && !autoReindex;

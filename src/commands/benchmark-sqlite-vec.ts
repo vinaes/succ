@@ -249,8 +249,7 @@ export async function benchmarkSqliteVec(options: SqliteVecBenchmarkOptions = {}
 
   // Setup embedding model
   setConfigOverride({
-    embedding_mode: 'local',
-    embedding_model: localModel,
+    llm: { embeddings: { mode: 'local', model: localModel } },
   });
   cleanupEmbeddings();
 

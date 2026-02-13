@@ -1,6 +1,5 @@
 import { getEmbedding } from '../lib/embeddings.js';
 import { searchDocuments, closeDb, getStoredEmbeddingDimension, clearDocuments } from '../lib/storage/index.js';
-import { getConfig } from '../lib/config.js';
 import inquirer from 'inquirer';
 import { index as indexBrain } from './index.js';
 import { logError } from '../lib/fault-logger.js';
@@ -29,10 +28,11 @@ export async function search(
       const currentDimension = testEmbedding.length;
 
       if (storedDimension !== currentDimension) {
-        const config = getConfig();
+        const { getLLMTaskConfig } = await import('../lib/config.js');
+        const embModel = getLLMTaskConfig('embeddings').model;
         console.log(`\n⚠️  Embedding dimension mismatch detected!`);
         console.log(`   Stored embeddings: ${storedDimension} dimensions`);
-        console.log(`   Current model (${config.embedding_model}): ${currentDimension} dimensions\n`);
+        console.log(`   Current model (${embModel}): ${currentDimension} dimensions\n`);
 
         // In non-interactive mode (no TTY), auto-reindex
         const isInteractive = process.stdout.isTTY;

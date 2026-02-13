@@ -173,7 +173,7 @@ describe('Quality Scoring', () => {
     });
 
     it('should include the mode in output', () => {
-      const modes: Array<QualityScore['mode']> = ['heuristic', 'local', 'custom', 'openrouter'];
+      const modes: Array<QualityScore['mode']> = ['heuristic', 'local', 'api'];
 
       for (const mode of modes) {
         const score: QualityScore = {

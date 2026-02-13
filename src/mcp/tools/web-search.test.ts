@@ -30,9 +30,8 @@ const mockDeepResearchResponse = {
 };
 
 vi.mock('../../lib/llm.js', () => ({
-  isOpenRouterConfigured: vi.fn(() => true),
+  isApiConfigured: vi.fn(() => true),
   callOpenRouterSearch: vi.fn(async () => ({ ...mockSearchResponse })),
-  getOpenRouterApiKey: vi.fn(() => 'sk-or-test'),
 }));
 
 vi.mock('../../lib/config.js', () => ({
@@ -90,7 +89,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 // ============================================================================
 
 import { registerWebSearchTools } from './web-search.js';
-import { isOpenRouterConfigured, callOpenRouterSearch } from '../../lib/llm.js';
+import { isApiConfigured, callOpenRouterSearch } from '../../lib/llm.js';
 import { getWebSearchConfig } from '../../lib/config.js';
 import { saveMemory, recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
 
@@ -121,7 +120,7 @@ describe('Web Search MCP Tools', () => {
     vi.clearAllMocks();
 
     // Restore default mock implementations after clearAllMocks
-    vi.mocked(isOpenRouterConfigured).mockReturnValue(true);
+    vi.mocked(isApiConfigured).mockReturnValue(true);
     vi.mocked(callOpenRouterSearch).mockResolvedValue({ ...mockSearchResponse });
     vi.mocked(getWebSearchConfig).mockReturnValue({
       enabled: true,
@@ -195,7 +194,7 @@ describe('Web Search MCP Tools', () => {
     });
 
     it('should error when OpenRouter not configured', async () => {
-      vi.mocked(isOpenRouterConfigured).mockReturnValueOnce(false);
+      vi.mocked(isApiConfigured).mockReturnValueOnce(false);
 
       const handler = toolHandlers.get('succ_quick_search')!;
       const result = await handler({ query: 'test' });
@@ -294,7 +293,7 @@ describe('Web Search MCP Tools', () => {
     });
 
     it('should error when OpenRouter not configured', async () => {
-      vi.mocked(isOpenRouterConfigured).mockReturnValueOnce(false);
+      vi.mocked(isApiConfigured).mockReturnValueOnce(false);
 
       const handler = toolHandlers.get('succ_web_search')!;
       const result = await handler({ query: 'test' });

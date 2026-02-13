@@ -1,15 +1,11 @@
 /**
  * Unified LLM Backend Module
  *
- * Provides a consistent interface for calling LLMs across succ.
- * Supports three backends:
- * - claude: Claude Code CLI (requires Claude Code subscription)
- *   - process mode (default): spawns a new CLI process per call
- *   - ws mode: persistent WebSocket connection via --sdk-url (no process-per-call overhead)
- * - local: Ollama or any OpenAI-compatible local server
- * - openrouter: OpenRouter API (requires OPENROUTER_API_KEY)
+ * Two modes:
+ * - claude: Claude Code CLI (process or WebSocket transport)
+ * - api: Any OpenAI-compatible HTTP endpoint (Ollama, OpenRouter, nano-gpt, etc.)
  *
- * Default backend is 'local' to avoid ToS issues with Claude CLI automation.
+ * OpenRouter headers (HTTP-Referer, X-Title) are auto-sent when api_url contains 'openrouter.ai'.
  */
 
 import spawn from 'cross-spawn';
@@ -17,20 +13,20 @@ import { logError, logWarn } from './fault-logger.js';
 // cross-spawn exposes .sync at runtime but not in types
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
-import { getConfig } from './config.js';
+import { getConfig, getLLMTaskConfig, getApiKey, getApiUrl } from './config.js';
 import { ClaudeWSTransport } from './claude-ws-transport.js';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type LLMBackend = 'claude' | 'local' | 'openrouter';
+export type LLMBackend = 'claude' | 'api';
 
-export interface LLMConfig {
+export interface LLMRuntimeConfig {
   backend: LLMBackend;
   model: string;
-  localEndpoint?: string;
-  openrouterModel?: string;
+  endpoint?: string;  // API URL (for 'api' mode)
+  apiKey?: string;     // API key (for 'api' mode)
   maxTokens?: number;
   temperature?: number;
 }
@@ -51,19 +47,6 @@ export interface ChatMessage {
 }
 
 // ============================================================================
-// Default Config
-// ============================================================================
-
-const DEFAULT_LLM_CONFIG: LLMConfig = {
-  backend: 'local', // Default to local to avoid Claude CLI ToS issues
-  model: 'qwen2.5:7b',
-  localEndpoint: 'http://localhost:11434/v1/chat/completions',
-  openrouterModel: 'anthropic/claude-3-haiku',
-  maxTokens: 2000,
-  temperature: 0.3,
-};
-
-// ============================================================================
 // Claude Mode (process vs ws)
 // ============================================================================
 
@@ -76,10 +59,7 @@ export function getClaudeMode(): 'process' | 'ws' {
   const llm = config.llm;
   if (!llm) return 'process';
 
-  // Top-level transport (when type=claude, transport applies directly)
   if (llm.transport === 'ws' || llm.transport === 'process') return llm.transport;
-
-  // Per-backend override
   if (llm.claude?.transport) return llm.claude.transport;
 
   return 'process';
@@ -89,102 +69,68 @@ export function getClaudeMode(): 'process' | 'ws' {
 // Config Loading
 // ============================================================================
 
-// Default models per backend type
-const DEFAULT_MODELS: Record<LLMBackend, string> = {
-  claude: 'haiku',
-  local: 'qwen2.5:7b',
-  openrouter: 'anthropic/claude-3-haiku',
-};
-
 /**
- * Resolve model for a given backend type.
- * Priority: llm.{type}.model → llm.model → hardcoded default per type
+ * Build headers for an API call.
+ * Auto-adds OpenRouter-specific headers when endpoint contains 'openrouter.ai'.
  */
-function resolveModel(llmConfig: Record<string, unknown>, backendType: LLMBackend): string {
-  // Per-backend override (e.g., llm.claude.model, llm.local.model)
-  const perBackend = llmConfig[backendType] as { model?: string } | undefined;
-  if (perBackend?.model) return perBackend.model;
+function buildApiHeaders(endpoint: string, apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
 
-  // Top-level model
-  if (llmConfig.model && typeof llmConfig.model === 'string') return llmConfig.model;
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
 
-  // Hardcoded default
-  return DEFAULT_MODELS[backendType];
+  // OpenRouter-specific headers
+  if (endpoint.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://succ.ai';
+    headers['X-Title'] = 'succ';
+  }
+
+  return headers;
 }
 
 /**
- * Resolve local endpoint.
- * Priority: llm.local.endpoint → default
+ * Get LLM runtime config from succ config, with defaults.
+ * Reads from llm.type/model/api_url/api_key.
  */
-function resolveLocalEndpoint(llmConfig: Record<string, unknown>): string {
-  const localBlock = llmConfig.local as { endpoint?: string } | undefined;
-  if (localBlock?.endpoint) return localBlock.endpoint;
-  return DEFAULT_LLM_CONFIG.localEndpoint!;
-}
-
-/**
- * Resolve openrouter model.
- * Priority: llm.openrouter.model → resolveModel fallback
- */
-function resolveOpenRouterModel(llmConfig: Record<string, unknown>): string {
-  const orBlock = llmConfig.openrouter as { model?: string } | undefined;
-  if (orBlock?.model) return orBlock.model;
-  return resolveModel(llmConfig, 'openrouter');
-}
-
-/**
- * Get LLM config from succ config, with defaults.
- */
-export function getLLMConfig(): LLMConfig {
+export function getLLMConfig(): LLMRuntimeConfig {
   const config = getConfig();
-  const llmConfig = (config.llm || {}) as Record<string, unknown>;
+  const llm = config.llm || {};
 
-  // Resolve backend type: llm.type → default
-  const backendType = (llmConfig.type as LLMBackend) || DEFAULT_LLM_CONFIG.backend;
+  const backend: LLMBackend = (llm.type as LLMBackend) || 'api';
+  const model = llm.model || (backend === 'claude' ? 'haiku' : 'qwen2.5:7b');
 
   return {
-    backend: backendType,
-    model: resolveModel(llmConfig, backendType),
-    localEndpoint: resolveLocalEndpoint(llmConfig),
-    openrouterModel: resolveOpenRouterModel(llmConfig),
-    maxTokens: (llmConfig.max_tokens as number) || DEFAULT_LLM_CONFIG.maxTokens,
-    temperature: (llmConfig.temperature as number) || DEFAULT_LLM_CONFIG.temperature,
+    backend,
+    model,
+    endpoint: getApiUrl() + '/chat/completions',
+    apiKey: getApiKey(),
+    maxTokens: llm.max_tokens ?? 2000,
+    temperature: llm.temperature ?? 0.3,
   };
 }
 
 /**
- * Get Sleep Agent config if enabled
- * Returns null if sleep agent is not enabled
+ * Get Sleep Agent config if enabled.
+ * Reads from llm.sleep.*.
  */
-export function getSleepAgentConfig(): LLMConfig | null {
+export function getSleepAgentConfig(): LLMRuntimeConfig | null {
   const config = getConfig();
-  const sleepAgent = config.sleep_agent;
+  const sleepEnabled = config.llm?.sleep?.enabled;
 
-  if (!sleepAgent?.enabled) {
-    return null;
-  }
+  if (!sleepEnabled) return null;
 
-  // Get base LLM config for fallback values
-  const baseLlmConfig = getLLMConfig();
-
-  // Sleep agent only supports local and openrouter (not claude - ToS issues)
-  const backend = sleepAgent.backend || 'local';
-  if (backend !== 'local' && backend !== 'openrouter') {
-    logWarn('llm', `Sleep agent backend '${backend}' not supported, only 'local' and 'openrouter' are allowed`);
-  }
-
-  // Determine model based on backend
-  const effectiveModel = sleepAgent.model ||
-    (backend === 'openrouter' ? baseLlmConfig.openrouterModel : baseLlmConfig.model) ||
-    DEFAULT_LLM_CONFIG.model;
+  const taskCfg = getLLMTaskConfig('sleep');
 
   return {
-    backend: backend === 'openrouter' ? 'openrouter' : 'local',
-    model: effectiveModel,
-    localEndpoint: sleepAgent.local_endpoint || baseLlmConfig.localEndpoint,
-    openrouterModel: backend === 'openrouter' ? (sleepAgent.model || baseLlmConfig.openrouterModel) : baseLlmConfig.openrouterModel,
-    maxTokens: sleepAgent.max_tokens || baseLlmConfig.maxTokens,
-    temperature: sleepAgent.temperature ?? baseLlmConfig.temperature,
+    backend: 'api',  // Sleep agent is always 'api' (claude = ToS issues)
+    model: taskCfg.model,
+    endpoint: taskCfg.api_url + '/chat/completions',
+    apiKey: taskCfg.api_key,
+    maxTokens: taskCfg.max_tokens,
+    temperature: taskCfg.temperature,
   };
 }
 
@@ -193,45 +139,23 @@ export function getSleepAgentConfig(): LLMConfig | null {
  */
 export function isSleepAgentEnabled(): boolean {
   const config = getConfig();
-  return config.sleep_agent?.enabled === true;
+  return config.llm?.sleep?.enabled === true;
 }
 
 /**
- * Default Chat LLM config - Claude CLI with Sonnet
- * Used for interactive chats (succ chat, onboarding)
+ * Get Chat LLM config for interactive chats (succ chat, onboarding).
+ * Reads from llm.chat.*.
  */
-const DEFAULT_CHAT_LLM_CONFIG: LLMConfig = {
-  backend: 'claude',
-  model: 'sonnet',
-  maxTokens: 4000,
-  temperature: 0.7,
-};
-
-/**
- * Get Chat LLM config for interactive chats (succ chat, onboarding)
- * Default: Claude CLI with Sonnet (best quality for interactive use)
- * Can be overridden via chat_llm config
- */
-export function getChatLLMConfig(): LLMConfig {
-  const config = getConfig();
-  const chatLlm = config.chat_llm;
-
-  // If no chat_llm config, use Claude CLI with Sonnet as default
-  if (!chatLlm?.backend) {
-    return DEFAULT_CHAT_LLM_CONFIG;
-  }
-
-  const baseLlmConfig = getLLMConfig();
+export function getChatLLMConfig(): LLMRuntimeConfig {
+  const taskCfg = getLLMTaskConfig('chat');
 
   return {
-    backend: (chatLlm.backend as LLMBackend) || DEFAULT_CHAT_LLM_CONFIG.backend,
-    model: chatLlm.model || DEFAULT_CHAT_LLM_CONFIG.model,
-    localEndpoint: chatLlm.local_endpoint || baseLlmConfig.localEndpoint,
-    openrouterModel: chatLlm.backend === 'openrouter'
-      ? (chatLlm.model || baseLlmConfig.openrouterModel)
-      : baseLlmConfig.openrouterModel,
-    maxTokens: chatLlm.max_tokens || DEFAULT_CHAT_LLM_CONFIG.maxTokens,
-    temperature: chatLlm.temperature ?? DEFAULT_CHAT_LLM_CONFIG.temperature,
+    backend: taskCfg.mode === 'claude' ? 'claude' : 'api',
+    model: taskCfg.model,
+    endpoint: taskCfg.api_url + '/chat/completions',
+    apiKey: taskCfg.api_key,
+    maxTokens: taskCfg.max_tokens,
+    temperature: taskCfg.temperature,
   };
 }
 
@@ -241,18 +165,13 @@ export function getChatLLMConfig(): LLMConfig {
 
 /**
  * Call LLM with the configured backend
- *
- * @param prompt - The prompt to send to the LLM
- * @param options - Optional overrides for timeout, maxTokens, temperature, useSleepAgent
- * @param configOverride - Optional config override (for testing or specific use cases)
  */
 export async function callLLM(
   prompt: string,
   options: LLMOptions = {},
-  configOverride?: Partial<LLMConfig>
+  configOverride?: Partial<LLMRuntimeConfig>
 ): Promise<string> {
-  // If useSleepAgent is true and sleep agent is enabled, use sleep agent config
-  let baseConfig: LLMConfig;
+  let baseConfig: LLMRuntimeConfig;
   if (options.useSleepAgent) {
     const sleepAgentConfig = getSleepAgentConfig();
     baseConfig = sleepAgentConfig || getLLMConfig();
@@ -269,11 +188,8 @@ export async function callLLM(
     case 'claude':
       return runClaudeCLI(prompt, config.model, timeout);
 
-    case 'local':
-      return callLocalLLM(prompt, config.localEndpoint!, config.model, timeout, maxTokens, temperature);
-
-    case 'openrouter':
-      return callOpenRouter(prompt, config.openrouterModel!, timeout, maxTokens, temperature);
+    case 'api':
+      return callApiLLM(prompt, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
 
     default:
       throw new Error(`Unknown LLM backend: ${config.backend}`);
@@ -281,19 +197,8 @@ export async function callLLM(
 }
 
 /**
- * Resolve model for a specific backend during fallback.
- * Uses per-backend config blocks: llm.local.model, llm.openrouter.model, llm.claude.model
- */
-function resolveModelForBackend(backend: LLMBackend): string {
-  const config = getConfig();
-  const llmConfig = (config.llm || {}) as Record<string, unknown>;
-  return resolveModel(llmConfig, backend);
-}
-
-/**
- * Call LLM with fallback chain
- * Tries backends in order until one succeeds.
- * Each backend uses its own model from per-backend config blocks.
+ * Call LLM with fallback chain.
+ * Tries configured backend first, then fallback.
  */
 export async function callLLMWithFallback(
   prompt: string,
@@ -301,23 +206,19 @@ export async function callLLMWithFallback(
   preferredBackend?: LLMBackend
 ): Promise<string> {
   const config = getLLMConfig();
-  const backends: LLMBackend[] = ['local', 'openrouter', 'claude'];
+  const backends: LLMBackend[] = ['api', 'claude'];
   const preferred = preferredBackend || config.backend;
 
-  // Order: preferred first, then others
   const orderedBackends = [preferred, ...backends.filter((b) => b !== preferred)];
 
   let lastError: Error | null = null;
 
   for (const backend of orderedBackends) {
     try {
-      // Use per-backend model for fallback (e.g., llm.openrouter.model when falling back to openrouter)
-      const model = backend === preferred ? config.model : resolveModelForBackend(backend);
-      return await callLLM(prompt, options, { backend, model });
+      return await callLLM(prompt, options, { backend });
     } catch (err) {
       lastError = err as Error;
       logWarn('llm', `Backend '${backend}' failed: ${lastError.message}`);
-      // Continue to next backend
     }
   }
 
@@ -326,19 +227,13 @@ export async function callLLMWithFallback(
 
 /**
  * Call LLM with multi-turn chat messages
- * Used for interactive conversations (succ chat, onboarding)
- *
- * @param messages - Array of chat messages (system, user, assistant)
- * @param options - Optional overrides for timeout, maxTokens, temperature
- * @param configOverride - Optional config override
  */
 export async function callLLMChat(
   messages: ChatMessage[],
   options: LLMOptions = {},
-  configOverride?: Partial<LLMConfig>
+  configOverride?: Partial<LLMRuntimeConfig>
 ): Promise<string> {
-  // Use chat LLM config by default for chat calls
-  let baseConfig: LLMConfig;
+  let baseConfig: LLMRuntimeConfig;
   if (options.useChatLLM !== false) {
     baseConfig = getChatLLMConfig();
   } else if (options.useSleepAgent) {
@@ -349,14 +244,13 @@ export async function callLLMChat(
   }
 
   const config = { ...baseConfig, ...configOverride };
-  const timeout = options.timeout || 60000; // Longer timeout for chat
+  const timeout = options.timeout || 60000;
   const maxTokens = options.maxTokens || config.maxTokens || 4000;
   const temperature = options.temperature ?? config.temperature ?? 0.7;
 
   switch (config.backend) {
     case 'claude':
       if (getClaudeMode() === 'ws') {
-        // WebSocket mode — native multi-turn, no message concatenation
         const transport = await ClaudeWSTransport.getInstance();
         return transport.sendChat(messages, { model: config.model, timeout });
       }
@@ -366,11 +260,8 @@ export async function callLLMChat(
         .join('\n\n');
       return runClaudeCLI(prompt, config.model, timeout);
 
-    case 'local':
-      return callLocalLLMChat(messages, config.localEndpoint!, config.model, timeout, maxTokens, temperature);
-
-    case 'openrouter':
-      return callOpenRouterChat(messages, config.openrouterModel!, timeout, maxTokens, temperature);
+    case 'api':
+      return callApiLLMChat(messages, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
 
     default:
       throw new Error(`Unknown LLM backend: ${config.backend}`);
@@ -405,11 +296,9 @@ const CLAUDE_SPAWN_OPTIONS = {
 
 /**
  * Spawn Claude CLI asynchronously and return stdout.
- * Single source of truth for all async Claude CLI calls.
  * When transport is 'ws', routes through persistent WebSocket transport.
  */
 export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions): Promise<string> {
-  // WebSocket mode — route through persistent connection
   if (getClaudeMode() === 'ws') {
     const transport = await ClaudeWSTransport.getInstance();
     return transport.send(prompt, {
@@ -418,7 +307,6 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
     });
   }
 
-  // Process mode — spawn per call (default)
   const timeout = options?.timeout ?? 60000;
   const args = buildClaudeArgs(options);
 
@@ -465,7 +353,6 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
 
 /**
  * Spawn Claude CLI synchronously and return stdout.
- * Single source of truth for all sync Claude CLI calls.
  */
 export function spawnClaudeCLISync(prompt: string, options?: ClaudeCLIOptions): string {
   const timeout = options?.timeout ?? 60000;
@@ -494,19 +381,20 @@ function runClaudeCLI(prompt: string, model: string, timeout: number): Promise<s
 }
 
 /**
- * Call local LLM (Ollama or OpenAI-compatible)
+ * Call any OpenAI-compatible API (single prompt)
  */
-async function callLocalLLM(
+async function callApiLLM(
   prompt: string,
   endpoint: string,
   model: string,
   timeout: number,
   maxTokens: number,
-  temperature: number
+  temperature: number,
+  apiKey?: string
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildApiHeaders(endpoint, apiKey),
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
@@ -517,7 +405,9 @@ async function callLocalLLM(
   });
 
   if (!response.ok) {
-    throw new Error(`Local LLM error: ${response.status} ${response.statusText}`);
+    const errorBody = await response.text().catch(() => '');
+    logError('llm', `API error ${response.status}: ${errorBody}`);
+    throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
   }
 
   const data = (await response.json()) as {
@@ -525,74 +415,27 @@ async function callLocalLLM(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('Local LLM returned no choices');
+    throw new Error('LLM API returned no choices');
   }
 
   return data.choices[0].message.content;
 }
 
 /**
- * Call OpenRouter API
+ * Call any OpenAI-compatible API with multi-turn messages
  */
-async function callOpenRouter(
-  prompt: string,
-  model: string,
-  timeout: number,
-  maxTokens: number,
-  temperature: number
-): Promise<string> {
-  const apiKey = getOpenRouterApiKey();
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY not set');
-  }
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://succ.ai',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature,
-      max_tokens: maxTokens,
-    }),
-    signal: AbortSignal.timeout(timeout),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    logError('llm', `OpenRouter API error ${response.status}: ${errorBody}`);
-    throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error('OpenRouter returned no choices');
-  }
-
-  return data.choices[0].message.content;
-}
-
-/**
- * Call local LLM with multi-turn messages (Ollama or OpenAI-compatible)
- */
-async function callLocalLLMChat(
+async function callApiLLMChat(
   messages: ChatMessage[],
   endpoint: string,
   model: string,
   timeout: number,
   maxTokens: number,
-  temperature: number
+  temperature: number,
+  apiKey?: string
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildApiHeaders(endpoint, apiKey),
     body: JSON.stringify({
       model,
       messages,
@@ -603,7 +446,9 @@ async function callLocalLLMChat(
   });
 
   if (!response.ok) {
-    throw new Error(`Local LLM error: ${response.status} ${response.statusText}`);
+    const errorBody = await response.text().catch(() => '');
+    logError('llm', `API chat error ${response.status}: ${errorBody}`);
+    throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
   }
 
   const data = (await response.json()) as {
@@ -611,62 +456,14 @@ async function callLocalLLMChat(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('Local LLM returned no choices');
+    throw new Error('LLM API returned no choices');
   }
 
   return data.choices[0].message.content;
 }
 
 /**
- * Call OpenRouter API with multi-turn messages
- */
-async function callOpenRouterChat(
-  messages: ChatMessage[],
-  model: string,
-  timeout: number,
-  maxTokens: number,
-  temperature: number
-): Promise<string> {
-  const apiKey = getOpenRouterApiKey();
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY not set');
-  }
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://succ.ai',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-    }),
-    signal: AbortSignal.timeout(timeout),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    logError('llm', `OpenRouter chat API error ${response.status}: ${errorBody}`);
-    throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error('OpenRouter returned no choices');
-  }
-
-  return data.choices[0].message.content;
-}
-
-/**
- * Response from OpenRouter with Perplexity-specific fields (citations, search_results)
+ * Response from search API with Perplexity-specific fields (citations, search_results)
  */
 export interface OpenRouterSearchResponse {
   content: string;
@@ -677,7 +474,8 @@ export interface OpenRouterSearchResponse {
 }
 
 /**
- * Call OpenRouter search models (Perplexity Sonar) and return full response with citations.
+ * Call search API (Perplexity Sonar via OpenRouter) and return full response with citations.
+ * Uses llm.api_key for authentication.
  */
 export async function callOpenRouterSearch(
   messages: ChatMessage[],
@@ -686,18 +484,16 @@ export async function callOpenRouterSearch(
   maxTokens: number,
   temperature: number,
 ): Promise<OpenRouterSearchResponse> {
-  const apiKey = getOpenRouterApiKey();
+  const apiKey = getApiKey();
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY not set. Configure via environment variable or succ_config_set.');
+    throw new Error('API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.');
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+
+  const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://succ.ai',
-    },
+    headers: buildApiHeaders(endpoint, apiKey),
     body: JSON.stringify({
       model,
       messages,
@@ -709,8 +505,8 @@ export async function callOpenRouterSearch(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    logError('llm', `OpenRouter search API error ${response.status}: ${errorBody}`);
-    throw new Error(`OpenRouter error: ${response.status} ${response.statusText}`);
+    logError('llm', `Search API error ${response.status}: ${errorBody}`);
+    throw new Error(`Search API error: ${response.status} ${response.statusText}`);
   }
 
   const data = (await response.json()) as {
@@ -721,7 +517,7 @@ export async function callOpenRouterSearch(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('OpenRouter returned no choices');
+    throw new Error('Search API returned no choices');
   }
 
   return {
@@ -738,12 +534,12 @@ export async function callOpenRouterSearch(
 // ============================================================================
 
 /**
- * Check if local LLM is available
+ * Check if API endpoint is available
  */
 export async function isLocalLLMAvailable(): Promise<boolean> {
-  const config = getLLMConfig();
+  const apiUrl = getApiUrl();
   try {
-    const response = await fetch(config.localEndpoint!.replace('/chat/completions', '/models'), {
+    const response = await fetch(apiUrl + '/models', {
       signal: AbortSignal.timeout(2000),
     });
     return response.ok;
@@ -753,21 +549,10 @@ export async function isLocalLLMAvailable(): Promise<boolean> {
 }
 
 /**
- * Get OpenRouter API key from env or config
+ * Check if an API key is configured (for web search, etc.)
  */
-export function getOpenRouterApiKey(): string | undefined {
-  if (process.env.OPENROUTER_API_KEY) {
-    return process.env.OPENROUTER_API_KEY;
-  }
-  const config = getConfig();
-  return config.openrouter_api_key;
-}
-
-/**
- * Check if OpenRouter is configured
- */
-export function isOpenRouterConfigured(): boolean {
-  return !!getOpenRouterApiKey();
+export function isApiConfigured(): boolean {
+  return !!getApiKey();
 }
 
 /**
@@ -777,12 +562,16 @@ export async function getAvailableBackends(): Promise<LLMBackend[]> {
   const available: LLMBackend[] = ['claude']; // Always available if Claude Code is installed
 
   if (await isLocalLLMAvailable()) {
-    available.unshift('local'); // Prefer local
+    available.unshift('api'); // Prefer api (local endpoint)
   }
 
-  if (isOpenRouterConfigured()) {
-    available.push('openrouter');
+  if (getApiKey()) {
+    // If we have an API key but no local endpoint, still add 'api'
+    if (!available.includes('api')) {
+      available.push('api');
+    }
   }
 
   return available;
 }
+

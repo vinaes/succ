@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import ora from 'ora';
-import { getProjectRoot, getSuccDir, getConfig } from '../lib/config.js';
+import { getProjectRoot, getSuccDir, getConfig, getLLMTaskConfig } from '../lib/config.js';
 import { withLock } from '../lib/lock.js';
 import {
   loadAnalyzeState, saveAnalyzeState, getGitHead, getChangedFiles,
@@ -14,11 +14,10 @@ import { logError, logWarn } from '../lib/fault-logger.js';
 
 interface AnalyzeOptions {
   parallel?: boolean;
-  openrouter?: boolean;
-  local?: boolean;  // Use local LLM API
+  api?: boolean;
   background?: boolean;
-  fast?: boolean;   // Fast mode: fewer agents, smaller context
-  force?: boolean;  // Force full re-analysis (skip incremental)
+  fast?: boolean;
+  force?: boolean;
 }
 
 interface Agent {
@@ -65,18 +64,11 @@ interface MultiPassResult {
  * Analyze project and generate brain vault using Claude Code agents
  */
 export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
-  const { parallel = true, openrouter = false, local = false, background = false, fast = false } = options;
+  const { parallel = true, api = false, background = false, fast = false } = options;
 
   // Determine mode from options or config
-  const config = getConfig();
-  let mode: 'claude' | 'openrouter' | 'local' = 'claude';
-  if (local) {
-    mode = 'local';
-  } else if (openrouter) {
-    mode = 'openrouter';
-  } else if (config.analyze_mode) {
-    mode = config.analyze_mode;
-  }
+  const analyzeCfg = getLLMTaskConfig('analyze');
+  let mode: 'claude' | 'api' = api ? 'api' : (analyzeCfg.mode as 'claude' | 'api');
   const projectRoot = getProjectRoot();
   const succDir = getSuccDir();
   const brainDir = path.join(succDir, 'brain');
@@ -86,7 +78,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     const logFile = path.join(succDir, 'analyze.log');
     const args = ['analyze'];
     if (!parallel) args.push('--sequential');
-    if (openrouter) args.push('--openrouter');
+    if (mode === 'api') args.push('--api');
     if (fast) args.push('--fast');
 
     // Spawn detached process
@@ -119,11 +111,9 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     }, null, 2));
   };
 
-  const backendName = mode === 'local'
-    ? `Local LLM (${config.analyze_model || 'not configured'})`
-    : mode === 'openrouter'
-      ? 'OpenRouter API'
-      : 'Claude Code CLI';
+  const backendName = mode === 'api'
+    ? `API (${analyzeCfg.model || 'not configured'} @ ${analyzeCfg.api_url})`
+    : 'Claude Code CLI';
 
   console.log('🧠 Analyzing project with Claude agents...\n');
   console.log(`Project: ${projectRoot}`);
@@ -183,10 +173,8 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
   const context = await gatherProjectContext(projectRoot, profile, fast);
 
   // Run single-file agents based on mode
-  if (mode === 'openrouter') {
-    await runAgentsOpenRouter(agents, context, writeProgress, fast);
-  } else if (mode === 'local') {
-    await runAgentsLocal(agents, context, writeProgress, fast);
+  if (mode === 'api') {
+    await runAgentsApi(agents, context, writeProgress, fast);
   } else {
     // Default: Claude Code CLI
     if (parallel) {
@@ -198,8 +186,8 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   // Multi-pass: individual API calls per system/feature (skipped in fast mode)
   if (!fast && mode !== 'claude' && (profile.systems.length > 0 || profile.features.length > 0)) {
-    const concurrency = config.analyze_concurrency ?? 3;
-    const multiPassMaxTokens = config.analyze_max_tokens ?? 8192;
+    const concurrency = analyzeCfg.concurrency ?? 3;
+    const multiPassMaxTokens = analyzeCfg.max_tokens ?? 8192;
     const callLLM = createLLMCaller(mode, multiPassMaxTokens);
     // Reuse the LLM-guided context already gathered (profile-aware file tree + key files)
     const broadContext = context;
@@ -720,16 +708,14 @@ async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPassResul
  * Factory: returns a callLLM function for the given mode.
  */
 function createLLMCaller(
-  mode: 'openrouter' | 'local' | 'claude',
+  mode: 'api' | 'claude',
   maxTokens: number,
 ): (prompt: string, context: string) => Promise<string> {
   return async (prompt: string, context: string) => {
     const fullPrompt = `You are analyzing a software project. Here is the project context:\n\n${context}\n\n---\n\n${prompt}`;
 
-    if (mode === 'openrouter') {
-      return callOpenRouterRaw(fullPrompt, maxTokens);
-    } else if (mode === 'local') {
-      return callLocalRaw(fullPrompt, maxTokens);
+    if (mode === 'api') {
+      return callApiRaw(fullPrompt, maxTokens);
     } else {
       // Claude CLI mode — use spawnClaudeCLI
       return spawnClaudeCLI(fullPrompt);
@@ -969,25 +955,19 @@ function printTimingSummary(timings: AgentTiming[], totalMs: number): void {
 }
 
 /**
- * Run agents using OpenRouter API directly (faster, no tool calls)
+ * Run agents using API endpoint (OpenRouter, Ollama, LM Studio, llama.cpp, etc.)
  */
-async function runAgentsOpenRouter(
+async function runAgentsApi(
   agents: Agent[],
   context: string,
   writeProgress: ProgressFn,
   fast = false
 ): Promise<void> {
-  console.log(`Running ${agents.length} agents via OpenRouter API...\n`);
+  const cfg = getLLMTaskConfig('analyze');
 
-  let config;
-  try {
-    config = getConfig();
-  } catch (err) {
-    logError('analyze', 'OPENROUTER_API_KEY not set', err instanceof Error ? err : undefined);
-    console.error('Error: OPENROUTER_API_KEY not set');
-    console.error('Set it via env var or ~/.succ/config.json');
-    process.exit(1);
-  }
+  console.log(`Running ${agents.length} agents via API...`);
+  console.log(`  Endpoint: ${cfg.api_url}`);
+  console.log(`  Model: ${cfg.model}\n`);
 
   const totalStart = Date.now();
   const timings: AgentTiming[] = [];
@@ -999,135 +979,37 @@ async function runAgentsOpenRouter(
 
     // Multi-file agents (systems-overview, features) need more output tokens
     const isMultiFile = agent.prompt.includes('===FILE:');
-    const agentMaxTokens = config.analyze_max_tokens
-      ?? (isMultiFile ? (fast ? 4096 : 32768) : (fast ? 2048 : 8192));
-
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.openrouter_api_key}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/vinaes/succ',
-          'X-Title': 'succ',
-        },
-        body: JSON.stringify({
-          model: config.analyze_model || (fast ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3.5-haiku'),
-          messages: [
-            {
-              role: 'user',
-              content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
-            },
-          ],
-          max_tokens: agentMaxTokens,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`API error: ${response.status} - ${error}`);
-      }
-
-      const data = (await response.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      const content = data.choices?.[0]?.message?.content;
-
-      if (content) {
-        // Write output (handles both single and multi-file)
-        await writeAgentOutput(agent, content);
-        completed++;
-        const elapsed = Date.now() - agentStart;
-        spinner.succeed(`${agent.name} (${formatDuration(elapsed)})`);
-        timings.push({ name: agent.name, durationMs: elapsed, success: true });
-      } else {
-        const elapsed = Date.now() - agentStart;
-        spinner.fail(`${agent.name}: No content returned`);
-        timings.push({ name: agent.name, durationMs: elapsed, success: false });
-      }
-    } catch (error) {
-      logError('analyze', `Agent ${agent.name} failed`, error instanceof Error ? error : new Error(String(error)));
-      const elapsed = Date.now() - agentStart;
-      spinner.fail(`${agent.name}: ${error}`);
-      timings.push({ name: agent.name, durationMs: elapsed, success: false });
-    }
-  }
-
-  printTimingSummary(timings, Date.now() - totalStart);
-}
-
-/**
- * Run agents using local LLM API (Ollama, LM Studio, llama.cpp, etc.)
- */
-async function runAgentsLocal(
-  agents: Agent[],
-  context: string,
-  writeProgress: ProgressFn,
-  fast = false
-): Promise<void> {
-  const config = getConfig();
-
-  const apiUrl = config.analyze_api_url;
-  const model = config.analyze_model;
-  const temperature = config.analyze_temperature ?? 0.3;
-
-  if (!apiUrl) {
-    logError('analyze', 'analyze_api_url not configured');
-    console.error('Error: analyze_api_url not configured');
-    console.error('Set it in ~/.succ/config.json:');
-    console.error('  "analyze_api_url": "http://localhost:11434/v1"  // Ollama');
-    console.error('  "analyze_api_url": "http://localhost:1234/v1"   // LM Studio');
-    process.exit(1);
-  }
-
-  if (!model) {
-    logError('analyze', 'analyze_model not configured');
-    console.error('Error: analyze_model not configured');
-    console.error('Set it in ~/.succ/config.json:');
-    console.error('  "analyze_model": "qwen2.5-coder:32b"  // Ollama');
-    console.error('  "analyze_model": "deepseek-coder-v2"  // LM Studio');
-    process.exit(1);
-  }
-
-  console.log(`Running ${agents.length} agents via local LLM...`);
-  console.log(`  API: ${apiUrl}`);
-  console.log(`  Model: ${model}\n`);
-
-  const totalStart = Date.now();
-  const timings: AgentTiming[] = [];
-  let completed = 0;
-  for (const agent of agents) {
-    writeProgress('running', completed, agents.length, agent.name);
-    const spinner = ora(`${agent.name}`).start();
-    const agentStart = Date.now();
-
-    // Multi-file agents (systems-overview, features) need more output tokens
-    const isMultiFile = agent.prompt.includes('===FILE:');
-    const agentMaxTokens = config.analyze_max_tokens
+    const agentMaxTokens = cfg.max_tokens
       ?? (isMultiFile ? (fast ? 4096 : 32768) : (fast ? 2048 : 8192));
 
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-
-      // Add API key if configured
-      if (config.analyze_api_key) {
-        headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+      if (cfg.api_key) {
+        headers['Authorization'] = `Bearer ${cfg.api_key}`;
+      }
+      // Auto-add OpenRouter headers
+      if (cfg.api_url.includes('openrouter.ai')) {
+        headers['HTTP-Referer'] = 'https://succ.ai';
+        headers['X-Title'] = 'succ';
       }
 
       // Build the completion endpoint URL
+      const apiUrl = cfg.api_url;
       const completionUrl = apiUrl.endsWith('/v1')
         ? `${apiUrl}/chat/completions`
-        : apiUrl.endsWith('/')
-          ? `${apiUrl}v1/chat/completions`
-          : `${apiUrl}/v1/chat/completions`;
+        : apiUrl.endsWith('/v1/')
+          ? `${apiUrl}chat/completions`
+          : apiUrl.endsWith('/')
+            ? `${apiUrl}v1/chat/completions`
+            : `${apiUrl}/v1/chat/completions`;
 
       const response = await fetch(completionUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model,
+          model: cfg.model,
           messages: [
             {
               role: 'system',
@@ -1138,7 +1020,7 @@ async function runAgentsLocal(
               content: `You are analyzing a software project. Here is the project structure and key files:\n\n${context}\n\n---\n\n${agent.prompt}`,
             },
           ],
-          temperature,
+          temperature: cfg.temperature ?? 0.3,
           max_tokens: agentMaxTokens,
           stream: false,
         }),
@@ -1155,7 +1037,6 @@ async function runAgentsLocal(
       const content = data.choices?.[0]?.message?.content;
 
       if (content) {
-        // Write output (handles both single and multi-file)
         await writeAgentOutput(agent, content);
         completed++;
         const elapsed = Date.now() - agentStart;
@@ -1184,7 +1065,7 @@ async function runAgentsLocal(
  */
 async function profileProjectWithLLM(
   projectRoot: string,
-  mode: 'claude' | 'openrouter' | 'local',
+  mode: 'claude' | 'api',
   fast: boolean,
 ): Promise<ProjectProfile> {
   // 1. Gather raw file tree (lightweight — only paths, no content)
@@ -1245,10 +1126,8 @@ Rules:
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      if (mode === 'openrouter') {
-        responseText = await callOpenRouterRaw(prompt, 4096);
-      } else if (mode === 'local') {
-        responseText = await callLocalRaw(prompt, 4096);
+      if (mode === 'api') {
+        responseText = await callApiRaw(prompt, 4096);
       } else {
         responseText = await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 60000 });
       }
@@ -1380,61 +1259,42 @@ function repairTruncatedJSON(json: string): string | null {
 }
 
 /**
- * Raw OpenRouter API call (shared by profiling and agents)
+ * Raw API call to any OpenAI-compatible endpoint (shared by profiling and agents)
+ * Reads config from llm.analyze.*
  */
-async function callOpenRouterRaw(prompt: string, maxTokens: number): Promise<string> {
-  const config = getConfig();
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.openrouter_api_key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/vinaes/succ',
-      'X-Title': 'succ',
-    },
-    body: JSON.stringify({
-      model: config.analyze_model || 'anthropic/claude-3.5-haiku',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
-    }),
-  });
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
-  }
-  const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
-  return data.choices?.[0]?.message?.content || '';
-}
+async function callApiRaw(prompt: string, maxTokens: number): Promise<string> {
+  const cfg = getLLMTaskConfig('analyze');
+  const apiUrl = cfg.api_url;
 
-/**
- * Raw local LLM API call (shared by profiling and agents)
- */
-async function callLocalRaw(prompt: string, maxTokens: number): Promise<string> {
-  const config = getConfig();
-  const apiUrl = config.analyze_api_url || 'http://localhost:11434/v1';
   const completionUrl = apiUrl.endsWith('/v1')
     ? `${apiUrl}/chat/completions`
-    : apiUrl.endsWith('/')
-      ? `${apiUrl}v1/chat/completions`
-      : `${apiUrl}/v1/chat/completions`;
+    : apiUrl.endsWith('/v1/')
+      ? `${apiUrl}chat/completions`
+      : apiUrl.endsWith('/')
+        ? `${apiUrl}v1/chat/completions`
+        : `${apiUrl}/v1/chat/completions`;
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (config.analyze_api_key) {
-    headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+  if (cfg.api_key) {
+    headers['Authorization'] = `Bearer ${cfg.api_key}`;
+  }
+  if (apiUrl.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://succ.ai';
+    headers['X-Title'] = 'succ';
   }
 
   const response = await fetch(completionUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model: config.analyze_model || 'llama3',
+      model: cfg.model,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: maxTokens,
     }),
   });
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Local LLM API error: ${response.status} - ${error}`);
+    throw new Error(`API error: ${response.status} - ${error}`);
   }
   const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
   return data.choices?.[0]?.message?.content || '';
@@ -1703,7 +1563,7 @@ Lessons learned during development.
  * Analyze a single file and generate documentation in brain vault
  */
 export interface AnalyzeFileOptions {
-  mode?: 'claude' | 'openrouter' | 'local';
+  mode?: 'claude' | 'api';
 }
 
 export interface AnalyzeFileResult {
@@ -1800,13 +1660,13 @@ export async function analyzeFile(
   filePath: string,
   options: AnalyzeFileOptions = {}
 ): Promise<AnalyzeFileResult> {
-  const config = getConfig();
   const projectRoot = getProjectRoot();
   const succDir = getSuccDir();
   const brainDir = path.join(succDir, 'brain');
 
-  // Determine mode (default to config or 'claude', but 'claude' not supported for single file)
-  let mode = options.mode || config.analyze_mode || 'claude';
+  // Determine mode
+  const analyzeCfg = getLLMTaskConfig('analyze');
+  let mode: 'claude' | 'api' = options.mode || (analyzeCfg.mode as 'claude' | 'api');
 
   // Check file exists
   const absolutePath = path.isAbsolute(filePath)
@@ -1920,35 +1780,34 @@ CRITICAL FORMATTING RULES:
   try {
     let content: string | null = null;
 
-    if (mode === 'local') {
-      const apiUrl = config.analyze_api_url;
-      const model = config.analyze_model;
-
-      if (!apiUrl || !model) {
-        return {
-          success: false,
-          error: 'Local LLM not configured. Set analyze_api_url and analyze_model in ~/.succ/config.json',
-        };
-      }
+    if (mode === 'api') {
+      const cfg = getLLMTaskConfig('analyze');
+      const apiUrl = cfg.api_url;
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.analyze_api_key) {
-        headers['Authorization'] = `Bearer ${config.analyze_api_key}`;
+      if (cfg.api_key) {
+        headers['Authorization'] = `Bearer ${cfg.api_key}`;
+      }
+      if (apiUrl.includes('openrouter.ai')) {
+        headers['HTTP-Referer'] = 'https://succ.ai';
+        headers['X-Title'] = 'succ';
       }
 
       const completionUrl = apiUrl.endsWith('/v1')
         ? `${apiUrl}/chat/completions`
-        : apiUrl.endsWith('/')
-          ? `${apiUrl}v1/chat/completions`
-          : `${apiUrl}/v1/chat/completions`;
+        : apiUrl.endsWith('/v1/')
+          ? `${apiUrl}chat/completions`
+          : apiUrl.endsWith('/')
+            ? `${apiUrl}v1/chat/completions`
+            : `${apiUrl}/v1/chat/completions`;
 
       const response = await fetch(completionUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model,
+          model: cfg.model,
           messages: [
             {
               role: 'system',
@@ -1956,8 +1815,8 @@ CRITICAL FORMATTING RULES:
             },
             { role: 'user', content: prompt },
           ],
-          temperature: config.analyze_temperature ?? 0.3,
-          max_tokens: config.analyze_max_tokens ?? 4096,
+          temperature: cfg.temperature ?? 0.3,
+          max_tokens: cfg.max_tokens ?? 4096,
           stream: false,
         }),
       });
@@ -1965,42 +1824,6 @@ CRITICAL FORMATTING RULES:
       if (!response.ok) {
         const error = await response.text();
         return { success: false, error: `API error: ${response.status} - ${error}` };
-      }
-
-      const data = (await response.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      content = data.choices?.[0]?.message?.content || null;
-    } else if (mode === 'openrouter') {
-      const apiKey = config.openrouter_api_key;
-      if (!apiKey) {
-        return { success: false, error: 'OpenRouter API key not configured' };
-      }
-
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://github.com/vinaes/succ',
-        },
-        body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert software documentation writer. Generate clear, concise documentation.',
-            },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 4096,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        return { success: false, error: `OpenRouter error: ${response.status} - ${error}` };
       }
 
       const data = (await response.json()) as {
