@@ -520,7 +520,7 @@ It is not supported for unattended background processing, cloud deployments, or 
 
 ## Hybrid Search
 
-Combines semantic embeddings with BM25 keyword search. Code search includes AST symbol boost — function and class names rank higher.
+Combines semantic embeddings with BM25 keyword search. Code search includes AST symbol boost, regex post-filtering, and symbol type filtering (function, method, class, interface, type_alias). Three output modes: `full` (code blocks), `lean` (file+lines), `signatures` (symbol names only).
 
 | Aspect | Documents | Code |
 |--------|-----------|------|
