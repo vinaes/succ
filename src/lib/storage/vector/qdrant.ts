@@ -61,6 +61,9 @@ export interface DocumentPayload {
   start_line: number;
   end_line: number;
   project_id: string;
+  symbol_name: string | null;
+  symbol_type: string | null;
+  signature: string | null;
 }
 
 export interface MemoryPayload {
@@ -88,6 +91,9 @@ export interface DocumentUpsertMeta {
   startLine: number;
   endLine: number;
   projectId: string;
+  symbolName?: string | null;
+  symbolType?: string | null;
+  signature?: string | null;
 }
 
 export interface MemoryUpsertMeta {
@@ -119,6 +125,9 @@ export interface QdrantDocumentResult {
   similarity: number;
   bm25Score: number;
   vectorScore: number;
+  symbol_name?: string | null;
+  symbol_type?: string | null;
+  signature?: string | null;
 }
 
 export interface QdrantMemoryResult extends Memory {
@@ -274,6 +283,7 @@ export class QdrantVectorStore implements VectorStore {
     if (type === 'documents') {
       await client.createPayloadIndex(name, { field_name: 'doc_type', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
+      await client.createPayloadIndex(name, { field_name: 'symbol_type', field_schema: 'keyword' });
     } else {
       // memories + global_memories
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
@@ -566,6 +576,9 @@ export class QdrantVectorStore implements VectorStore {
           start_line: meta.startLine,
           end_line: meta.endLine,
           project_id: meta.projectId,
+          symbol_name: meta.symbolName ?? null,
+          symbol_type: meta.symbolType ?? null,
+          signature: meta.signature ?? null,
         } satisfies DocumentPayload,
       }],
     });
@@ -601,6 +614,9 @@ export class QdrantVectorStore implements VectorStore {
               start_line: item.meta.startLine,
               end_line: item.meta.endLine,
               project_id: item.meta.projectId,
+              symbol_name: item.meta.symbolName ?? null,
+              symbol_type: item.meta.symbolType ?? null,
+              signature: item.meta.signature ?? null,
             } satisfies DocumentPayload,
           };
         }),
@@ -773,7 +789,7 @@ export class QdrantVectorStore implements VectorStore {
     queryEmbedding: number[],
     limit: number,
     threshold: number,
-    options?: { codeOnly?: boolean; docsOnly?: boolean; projectId?: string }
+    options?: { codeOnly?: boolean; docsOnly?: boolean; projectId?: string; symbolType?: string }
   ): Promise<QdrantDocumentResult[]> {
     const client = await this.getClient();
     const name = this.collectionName('documents');
@@ -783,6 +799,7 @@ export class QdrantVectorStore implements VectorStore {
     if (options?.codeOnly) must.push({ key: 'doc_type', match: { value: 'code' } });
     if (options?.docsOnly) must.push({ key: 'doc_type', match: { value: 'doc' } });
     if (options?.projectId) must.push({ key: 'project_id', match: { value: options.projectId } });
+    if (options?.symbolType) must.push({ key: 'symbol_type', match: { value: options.symbolType } });
 
     const filter = must.length > 0 ? { must } : undefined;
 
@@ -817,6 +834,9 @@ export class QdrantVectorStore implements VectorStore {
       similarity: p.score,
       bm25Score: 0,      // RRF doesn't expose individual scores
       vectorScore: 0,
+      symbol_name: p.payload?.symbol_name ?? null,
+      symbol_type: p.payload?.symbol_type ?? null,
+      signature: p.payload?.signature ?? null,
     }));
   }
 
