@@ -66,7 +66,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
 
   // Determine mode from options or config
   const analyzeCfg = getLLMTaskConfig('analyze');
-  let mode: 'claude' | 'api' = api ? 'api' : (analyzeCfg.mode as 'claude' | 'api');
+  const mode: 'claude' | 'api' = api ? 'api' : (analyzeCfg.mode as 'claude' | 'api');
   const projectRoot = getProjectRoot();
   const succDir = getSuccDir();
   const brainDir = path.join(succDir, 'brain');

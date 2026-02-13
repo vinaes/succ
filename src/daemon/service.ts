@@ -95,7 +95,7 @@ interface BriefingCache {
   transcriptSize: number;
 }
 const briefingCache = new Map<string, BriefingCache>();
-let briefingGenerationInProgress = new Set<string>();
+const briefingGenerationInProgress = new Set<string>();
 
 // In-flight dedup: prevents race condition when identical /api/remember requests
 // arrive within a short window (e.g. hook fires twice for same tool_use)

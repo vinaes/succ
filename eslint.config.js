@@ -7,15 +7,17 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettierConfig,
   {
-    languageOptions: {
-      parserOptions: {
-        project: './tsconfig.json',
-      },
-    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-require-imports': 'warn',
+      '@typescript-eslint/no-empty-object-type': 'warn',
       'no-console': 'off',
+      'no-empty': 'warn',
+      'no-useless-catch': 'warn',
+      'no-case-declarations': 'warn',
+      'prefer-const': 'warn',
+      'no-useless-escape': 'warn',
     },
   },
   {

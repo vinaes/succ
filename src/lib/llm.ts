@@ -11,7 +11,7 @@
 import spawn from 'cross-spawn';
 import { logError, logWarn } from './fault-logger.js';
 // cross-spawn exposes .sync at runtime but not in types
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 // cross-spawn's sync method is available at runtime but not in types
 // Keep as any since cross-spawn types are incomplete
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;

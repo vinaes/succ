@@ -1463,7 +1463,7 @@ export class PostgresBackend {
   ): Promise<Array<Memory & { similarity: number }>> {
     const pool = await this.getPool();
 
-    let query = `
+    const query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until, created_at,
              1 - (embedding <=> $1) as similarity
