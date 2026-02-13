@@ -588,6 +588,29 @@ export function getGraphStatsAsOf(asOfDate: Date): {
 /**
  * Update tags for a memory.
  */
+export function updateMemoryEmbedding(memoryId: number, embedding: number[]): void {
+  const database = getDb();
+  const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
+  database.prepare('UPDATE memories SET embedding = ? WHERE id = ?').run(embeddingBlob, memoryId);
+}
+
+export function getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Array<{ id: number; content: string }> {
+  const database = getDb();
+  return database.prepare('SELECT id, content FROM memories WHERE id > ? ORDER BY id LIMIT ?').all(afterId, limit) as Array<{ id: number; content: string }>;
+}
+
+export function getMemoryCount(): number {
+  const database = getDb();
+  const row = database.prepare('SELECT count(*) as count FROM memories').get() as { count: number };
+  return row.count;
+}
+
+export function getMemoryEmbeddingCount(): number {
+  const database = getDb();
+  const row = database.prepare('SELECT count(*) as count FROM memories WHERE embedding IS NOT NULL').get() as { count: number };
+  return row.count;
+}
+
 export function updateMemoryTags(memoryId: number, tags: string[]): void {
   const database = getDb();
   database.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(tags), memoryId);

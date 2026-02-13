@@ -1024,3 +1024,23 @@ export async function deleteMemoryLinksForMemory(memoryId: number): Promise<numb
   const d = await getStorageDispatcher();
   return d.deleteMemoryLinksForMemory(memoryId);
 }
+
+export async function updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.updateMemoryEmbeddingsBatch(updates);
+}
+
+export async function getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+  const d = await getStorageDispatcher();
+  return d.getMemoriesNeedingReembedding(limit, afterId);
+}
+
+export async function getMemoryCount(): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.getMemoryCount();
+}
+
+export async function getMemoryEmbeddingCount(): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.getMemoryEmbeddingCount();
+}

@@ -5,14 +5,17 @@ import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
-import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes } from '../lib/storage/index.js';
-import { getEmbedding, getEmbeddings } from '../lib/embeddings.js';
+import { getStoredEmbeddingDimension, clearDocuments, getFileHash, upsertDocumentsBatchWithHashes,
+  updateMemoryEmbeddingsBatch, getMemoriesNeedingReembedding, getMemoryCount, getMemoryEmbeddingCount,
+  initStorageDispatcher } from '../lib/storage/index.js';
+import { getEmbedding, getEmbeddings, getEmbeddingInfo } from '../lib/embeddings.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
 
 interface IndexOptions {
   recursive?: boolean;
   pattern?: string;
   force?: boolean;
+  memories?: boolean; // Re-embed all memories
   autoReindex?: boolean; // Auto-reindex on dimension mismatch (for non-interactive mode)
 }
 
@@ -20,7 +23,13 @@ export async function index(
   targetPath?: string,
   options: IndexOptions = {}
 ): Promise<void> {
-  let { pattern = '**/*.md', force = false, autoReindex = false } = options;
+  let { pattern = '**/*.md', force = false, autoReindex = false, memories = false } = options;
+
+  // --memories: re-embed all memories with current embedding model
+  if (memories) {
+    await reembedMemories();
+    return;
+  }
   const projectRoot = getProjectRoot();
   const claudeDir = getClaudeDir();
 
@@ -208,4 +217,52 @@ export async function indexDocFile(filePath: string, options: { force?: boolean 
   await upsertDocumentsBatchWithHashes(documents);
 
   return { success: true, chunks: chunks.length };
+}
+
+/**
+ * Re-embed all memories with the current embedding model.
+ * Processes in batches, showing progress.
+ */
+async function reembedMemories(): Promise<void> {
+  await initStorageDispatcher();
+
+  const info = getEmbeddingInfo();
+  const total = await getMemoryCount();
+  const withEmb = await getMemoryEmbeddingCount();
+
+  console.log(`Re-embedding memories with ${info.model} (${info.dimensions ?? '?'} dims)`);
+  console.log(`Total memories: ${total}, with embeddings: ${withEmb}\n`);
+
+  if (total === 0) {
+    console.log('No memories to re-embed.');
+    return;
+  }
+
+  const BATCH = 50;
+  let processed = 0;
+  let afterId = 0;
+
+  while (processed < total) {
+    const batch = await getMemoriesNeedingReembedding(BATCH, afterId);
+    if (batch.length === 0) break;
+
+    const texts = batch.map(m => m.content.slice(0, 2000));
+
+    try {
+      const embeddings = await getEmbeddings(texts);
+      const updates = batch.map((m, i) => ({ id: m.id, embedding: embeddings[i] }));
+      await updateMemoryEmbeddingsBatch(updates);
+
+      processed += batch.length;
+      afterId = batch[batch.length - 1].id;
+      const pct = Math.min(100, (processed / total) * 100).toFixed(1);
+      process.stdout.write(`\r  [${pct}%] ${processed}/${total}`);
+    } catch (err) {
+      logError('index', `Failed to re-embed batch after id ${afterId}: ${(err as Error).message}`);
+      console.error(`\nError after id ${afterId}: ${(err as Error).message}`);
+      break;
+    }
+  }
+
+  console.log(`\nDone! Re-embedded ${processed} memories.`);
 }

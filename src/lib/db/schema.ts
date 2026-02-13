@@ -364,7 +364,8 @@ export function initVecTables(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
   const config = getConfig();
-  const dims = getModelDimension(getLLMTaskConfig('embeddings').model) || 384;
+  const configDims = getConfig().llm?.embeddings?.dimensions;
+  const dims = configDims ?? getModelDimension(getLLMTaskConfig('embeddings').model) ?? 384;
 
   // Check if vec tables already exist
   const vecMemoriesExists = database
@@ -620,7 +621,8 @@ export function initGlobalVecTable(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
   const config = getConfig();
-  const dims = getModelDimension(getLLMTaskConfig('embeddings').model) || 384;
+  const configDims = getConfig().llm?.embeddings?.dimensions;
+  const dims = configDims ?? getModelDimension(getLLMTaskConfig('embeddings').model) ?? 384;
 
   const vecMemoriesExists = database
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_memories'")

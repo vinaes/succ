@@ -1785,6 +1785,58 @@ export class PostgresBackend {
   // Graph Enrichment Operations
   // ============================================================================
 
+  async updateMemoryEmbedding(memoryId: number, embedding: number[]): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query('UPDATE memories SET embedding = $1 WHERE id = $2', [toPgVector(embedding), memoryId]);
+  }
+
+  async updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+    const pool = await this.getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const { id, embedding } of updates) {
+        await client.query('UPDATE memories SET embedding = $1 WHERE id = $2', [toPgVector(embedding), id]);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getMemoriesWithoutEmbeddings(limit: number = 100): Promise<Array<{ id: number; content: string }>> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      'SELECT id, content FROM memories WHERE embedding IS NULL ORDER BY id LIMIT $1',
+      [limit]
+    );
+    return result.rows;
+  }
+
+  async getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      'SELECT id, content FROM memories WHERE id > $1 ORDER BY id LIMIT $2',
+      [afterId, limit]
+    );
+    return result.rows;
+  }
+
+  async getMemoryCount(): Promise<number> {
+    const pool = await this.getPool();
+    const result = await pool.query('SELECT count(*) FROM memories');
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  async getMemoryEmbeddingCount(): Promise<number> {
+    const pool = await this.getPool();
+    const result = await pool.query('SELECT count(*) FROM memories WHERE embedding IS NOT NULL');
+    return parseInt(result.rows[0].count, 10);
+  }
+
   async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
     const pool = await this.getPool();
     await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [JSON.stringify(tags), memoryId, this.projectId]);

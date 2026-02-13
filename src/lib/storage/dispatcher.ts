@@ -76,7 +76,9 @@ export async function initStorageDispatcher(): Promise<void> {
       const { createQdrantVectorStore } = await import('./vector/qdrant.js');
       _qdrantStore = createQdrantVectorStore(config);
       _qdrantStore.setProjectId(projectId);
-      await _qdrantStore.init(384);
+      const { getEmbeddingInfo } = await import('../embeddings.js');
+      const embDims = getEmbeddingInfo().dimensions ?? 384;
+      await _qdrantStore.init(embDims);
     } catch (error) {
       logError('storage', `Qdrant init failed, falling back to builtin: ${(error as Error).message}`, error as Error);
       _qdrantStore = null;
@@ -681,6 +683,48 @@ export class StorageDispatcher {
   // ===========================================================================
   // Graph Enrichment
   // ===========================================================================
+
+  async updateMemoryEmbedding(memoryId: number, embedding: number[]): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.updateMemoryEmbedding(memoryId, embedding);
+    }
+    const sqlite = await this.getSqliteFns();
+    sqlite.updateMemoryEmbedding(memoryId, embedding);
+  }
+
+  async updateMemoryEmbeddingsBatch(updates: Array<{ id: number; embedding: number[] }>): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.updateMemoryEmbeddingsBatch(updates);
+    }
+    const sqlite = await this.getSqliteFns();
+    for (const { id, embedding } of updates) {
+      sqlite.updateMemoryEmbedding(id, embedding);
+    }
+  }
+
+  async getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Promise<Array<{ id: number; content: string }>> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getMemoriesNeedingReembedding(limit, afterId);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getMemoriesNeedingReembedding(limit, afterId);
+  }
+
+  async getMemoryCount(): Promise<number> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getMemoryCount();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getMemoryCount();
+  }
+
+  async getMemoryEmbeddingCount(): Promise<number> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getMemoryEmbeddingCount();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getMemoryEmbeddingCount();
+  }
 
   async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
