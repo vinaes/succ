@@ -6,9 +6,10 @@
  *
  * 1. Validity filtering (via isValidAt from temporal.ts)
  * 2. Pinned memories always included (correction_count >= 2 OR is_invariant)
- * 3. Remaining slots filled by effectiveScore ranking
- * 4. Fallback to recency if scoring data is missing
- * 5. Telemetry for anomalies
+ * 3. Remaining slots filled by priority_score (or effectiveScore fallback)
+ * 4. Diversity filter removes near-duplicate embeddings (cosine > 0.85)
+ * 5. Fallback to recency if scoring data is missing
+ * 6. Telemetry for anomalies
  */
 
 import { isValidAt } from './temporal.js';
@@ -20,6 +21,28 @@ const COMPONENT = 'working-memory';
 
 /** Pinning threshold: memories with correction_count >= this are Tier 1 pins */
 export const PIN_THRESHOLD = 2;
+
+/** Max similarity allowed between two memories in working set */
+export const DIVERSITY_THRESHOLD = 0.85;
+
+// ============================================================================
+// Type weights for priority_score formula
+// ============================================================================
+
+const TYPE_WEIGHTS: Record<string, number> = {
+  decision: 1.0,
+  error: 0.9,
+  dead_end: 0.85,
+  pattern: 0.8,
+  learning: 0.7,
+  observation: 0.5,
+};
+
+const BOOST_TAGS = /^(critical|architecture|security)$/i;
+
+// ============================================================================
+// Interfaces
+// ============================================================================
 
 /** Minimum fields needed from a raw memory row */
 export interface WorkingMemoryCandidate {
@@ -33,38 +56,143 @@ export interface WorkingMemoryCandidate {
   valid_until: string | null;
   correction_count: number;
   is_invariant: boolean;
+  type?: string | null;
+  tags?: string[] | string | null;
+  priority_score?: number | null;
 }
+
+// ============================================================================
+// Error class
+// ============================================================================
+
+/** Thrown when attempting to delete or invalidate a pinned (Tier 1) memory */
+export class PinnedMemoryError extends Error {
+  public readonly memoryId: number;
+  constructor(memoryId: number) {
+    super(`Memory ${memoryId} is pinned (Tier 1) and cannot be deleted or invalidated`);
+    this.name = 'PinnedMemoryError';
+    this.memoryId = memoryId;
+  }
+}
+
+// ============================================================================
+// Pure functions
+// ============================================================================
 
 /**
  * Detect if memory content contains invariant language (rules, constraints).
  * Used to auto-set is_invariant on new memories.
- *
- * Matches imperative patterns: "always X", "never X", "must X", "MUST NOT",
- * "do not X", "required", "mandatory", "forbidden", "prohibited".
  */
 export function detectInvariant(content: string): boolean {
-  // Normalize: lowercase, collapse whitespace
   const text = content.toLowerCase().replace(/\s+/g, ' ');
-
-  // Patterns indicating invariant rules/constraints
   const patterns = [
-    /\b(?:always|never|must|shall)\s+\w/,           // "always use", "never commit", "must validate"
-    /\b(?:must not|shall not|do not|don't)\s+\w/,    // "must not push", "don't use"
-    /\b(?:required|mandatory|forbidden|prohibited)\b/, // standalone keywords
-    /\b(?:critical|important)\s*:/,                    // "CRITICAL:" prefix patterns
-    /\bnever\b.*\bwithout\b/,                          // "never X without Y"
-    /\balways\b.*\bbefore\b/,                           // "always X before Y"
+    /\b(?:always|never|must|shall)\s+\w/,
+    /\b(?:must not|shall not|do not|don't)\s+\w/,
+    /\b(?:required|mandatory|forbidden|prohibited)\b/,
+    /\b(?:critical|important)\s*:/,
+    /\bnever\b.*\bwithout\b/,
+    /\balways\b.*\bbefore\b/,
   ];
-
   return patterns.some((p) => p.test(text));
 }
 
 /**
  * Check if a memory is pinned (Tier 1 working memory).
  */
-export function isPinned(memory: WorkingMemoryCandidate): boolean {
+export function isPinned(memory: { is_invariant: boolean; correction_count: number }): boolean {
   return memory.is_invariant || memory.correction_count >= PIN_THRESHOLD;
 }
+
+/**
+ * Get the weight for a memory type. Higher = more important.
+ * Tags like "critical", "architecture", "security" add a +0.1 boost.
+ */
+export function getTagWeight(type: string | null, tags: string[]): number {
+  let weight = TYPE_WEIGHTS[type ?? 'observation'] ?? 0.5;
+  if (tags.some((t) => BOOST_TAGS.test(t))) {
+    weight = Math.min(weight + 0.1, 1.0);
+  }
+  return weight;
+}
+
+/**
+ * Compute confidence-decayed quality score.
+ * Quality decays exponentially based on time since last access (half-life 7 days).
+ * Floor at 10% of quality_score to prevent total decay.
+ */
+export function computeConfidenceDecay(
+  qualityScore: number | null,
+  lastAccessed: string | null,
+  createdAt: string,
+  now: Date
+): number {
+  const qs = qualityScore ?? 0.5;
+  const ref = lastAccessed ?? createdAt;
+  const hoursSince = (now.getTime() - new Date(ref).getTime()) / 3_600_000;
+  const halfLife = 168; // 7 days in hours
+  const decay = Math.exp((-Math.LN2 / halfLife) * Math.max(hoursSince, 0));
+  return qs * Math.max(decay, 0.1);
+}
+
+/**
+ * Compute the priority_score for a memory.
+ * Formula: 0.30*is_invariant + 0.25*confidence_decayed + 0.20*correction_capped
+ *        + 0.15*tag_weight + 0.10*access_capped
+ */
+export function computePriorityScore(
+  m: {
+    is_invariant: boolean;
+    quality_score: number | null;
+    correction_count: number;
+    type?: string | null;
+    tags?: string[] | string | null;
+    access_count: number;
+    last_accessed: string | null;
+    created_at: string;
+  },
+  now: Date
+): number {
+  const tags = parseTags(m.tags);
+  const isInv = m.is_invariant ? 1 : 0;
+  const confidence = computeConfidenceDecay(m.quality_score, m.last_accessed, m.created_at, now);
+  const corrCapped = Math.min(m.correction_count, 5) / 5;
+  const tagW = getTagWeight(m.type ?? null, tags);
+  const accessCapped = Math.min(m.access_count, 20) / 20;
+  return 0.3 * isInv + 0.25 * confidence + 0.2 * corrCapped + 0.15 * tagW + 0.1 * accessCapped;
+}
+
+/** Parse tags from various formats (string[], JSON string, null) */
+function parseTags(tags: string[] | string | null | undefined): string[] {
+  if (!tags) return [];
+  if (Array.isArray(tags)) return tags;
+  try {
+    return JSON.parse(tags);
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
+// Cosine similarity (local copy — avoids importing embeddings.ts with heavy deps)
+// ============================================================================
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+// ============================================================================
+// Main pipeline
+// ============================================================================
 
 /**
  * Apply the working memory pipeline with two-phase fetch:
@@ -72,9 +200,9 @@ export function isPinned(memory: WorkingMemoryCandidate): boolean {
  * Phase 2: Fill remaining slots with scored recent memories
  *
  * @param memories - Raw memories from backend (pre-sorted by created_at DESC)
- * @param pinned - Pinned memories from getPinnedMemories() — may overlap with memories
  * @param limit - Max total memories to return
  * @param now - Current time (injectable for testing)
+ * @param pinned - Pinned memories from getPinnedMemories() — may overlap with memories
  * @returns Pinned + scored memories, up to `limit`
  */
 export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
@@ -127,8 +255,7 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
 
   const pinnedFromMemories = memories.filter((m) => pinnedIds.has(m.id)).length;
   const filteredOut = memories.length - candidates.length - pinnedFromMemories;
-  const filteredPercent =
-    memories.length > 0 ? (filteredOut / memories.length) * 100 : 0;
+  const filteredPercent = memories.length > 0 ? (filteredOut / memories.length) * 100 : 0;
 
   if (filteredPercent > 10) {
     logInfo(
@@ -150,9 +277,12 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
   }
 
   // Step 3: Score and rank remaining candidates
-  const hasAnyQuality = candidates.some((m) => m.quality_score !== null);
+  // Use priority_score if available, otherwise fall back to effectiveScore
+  const hasAnyScore = candidates.some(
+    (m) => m.priority_score != null || m.quality_score !== null
+  );
 
-  if (!hasAnyQuality) {
+  if (!hasAnyScore) {
     logWarn(COMPONENT, 'All candidates lack quality_score — falling back to recency order', {
       count: candidates.length,
     });
@@ -160,6 +290,11 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
   }
 
   const scored = candidates.map((m) => {
+    // Prefer precomputed priority_score
+    if (m.priority_score != null) {
+      return { memory: m, score: m.priority_score };
+    }
+    // Fallback to calculateEffectiveScore
     const retentionInput: MemoryForRetention = {
       id: m.id,
       content: m.content,
@@ -168,7 +303,6 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
       created_at: m.created_at,
       last_accessed: m.last_accessed,
     };
-
     try {
       const result = calculateEffectiveScore(retentionInput);
       return { memory: m, score: result.effectiveScore };
@@ -180,4 +314,51 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
   scored.sort((a, b) => b.score - a.score);
 
   return [...pinnedValid, ...scored.slice(0, remainingSlots).map((s) => s.memory)];
+}
+
+// ============================================================================
+// Diversity filter (async — uses embeddings)
+// ============================================================================
+
+/**
+ * Remove near-duplicate memories based on embedding cosine similarity.
+ * Greedy: iterate in order, skip if too similar to any already-selected.
+ *
+ * @param memories - Scored memories (order matters — higher priority first)
+ * @param getEmbeddings - Async function to fetch embeddings by IDs
+ * @param maxSimilarity - Threshold above which items are considered duplicates
+ * @returns Deduplicated list preserving original order
+ */
+export async function applyDiversityFilter<T extends { id: number }>(
+  memories: T[],
+  getEmbeddings: (ids: number[]) => Promise<Map<number, number[]>>,
+  maxSimilarity: number = DIVERSITY_THRESHOLD
+): Promise<T[]> {
+  if (memories.length <= 1) return memories;
+
+  const embeddings = await getEmbeddings(memories.map((m) => m.id));
+  if (embeddings.size === 0) return memories;
+
+  const selected: T[] = [];
+  const selectedEmbeddings: number[][] = [];
+
+  for (const m of memories) {
+    const emb = embeddings.get(m.id);
+    if (!emb) {
+      // Keep items without embeddings (can't compare)
+      selected.push(m);
+      continue;
+    }
+
+    const tooSimilar = selectedEmbeddings.some(
+      (sEmb) => cosineSimilarity(emb, sEmb) > maxSimilarity
+    );
+
+    if (!tooSimilar) {
+      selected.push(m);
+      selectedEmbeddings.push(emb);
+    }
+  }
+
+  return selected;
 }

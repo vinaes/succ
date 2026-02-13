@@ -81,6 +81,9 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
     quality_factors?: Record<string, number> | null;
     access_count?: number;
     last_accessed?: string | null;
+    correction_count?: number;
+    is_invariant?: boolean | number;
+    priority_score?: number | null;
     valid_from?: string | null;
     valid_until?: string | null;
   }
@@ -97,6 +100,9 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
       quality_factors: row.quality_factors ?? null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed ?? null,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from ?? null,
       valid_until: row.valid_until ?? null,
       created_at: row.created_at,

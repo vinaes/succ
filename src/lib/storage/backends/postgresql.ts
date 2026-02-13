@@ -516,6 +516,21 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)'
     );
 
+    // Migration: add priority_score column for working memory ranking
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'priority_score'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)'
+    );
+
     // Learning deltas table for session progress tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS learning_deltas (
@@ -911,6 +926,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
@@ -1163,6 +1181,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
@@ -1183,7 +1204,8 @@ export class PostgresBackend {
     const pool = await this.getPool();
     const result = await pool.query(
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
-              access_count, last_accessed, valid_from, valid_until, created_at
+              access_count, last_accessed, valid_from, valid_until,
+              correction_count, is_invariant, priority_score, created_at
        FROM memories WHERE id = $1`,
       [id]
     );
@@ -1205,6 +1227,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
@@ -1255,7 +1280,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, created_at
+             correction_count, is_invariant, priority_score, created_at
       FROM memories
     `;
     const params: any[] = [];
@@ -1297,6 +1322,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       correction_count: row.correction_count ?? 0,
       is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       created_at: row.created_at,
     }));
   }
@@ -1319,13 +1345,18 @@ export class PostgresBackend {
     );
   }
 
+  async updatePriorityScore(memoryId: number, score: number): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(`UPDATE memories SET priority_score = $1 WHERE id = $2`, [score, memoryId]);
+  }
+
   async getPinnedMemories(threshold: number = 2): Promise<Memory[]> {
     const pool = await this.getPool();
 
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, created_at
+             correction_count, is_invariant, priority_score, created_at
       FROM memories
     `;
     const params: any[] = [];
@@ -1364,6 +1395,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       correction_count: row.correction_count ?? 0,
       is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       created_at: row.created_at,
     }));
   }
@@ -1700,6 +1732,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
@@ -1747,6 +1782,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
@@ -2916,6 +2954,9 @@ export class PostgresBackend {
         : null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,

@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   applyWorkingMemoryPipeline,
+  applyDiversityFilter,
   detectInvariant,
   isPinned,
+  getTagWeight,
+  computeConfidenceDecay,
+  computePriorityScore,
+  PinnedMemoryError,
   PIN_THRESHOLD,
+  DIVERSITY_THRESHOLD,
 } from './working-memory-pipeline.js';
 import type { WorkingMemoryCandidate } from './working-memory-pipeline.js';
 
@@ -107,6 +113,199 @@ describe('isPinned', () => {
 });
 
 // =============================================================================
+// getTagWeight
+// =============================================================================
+
+describe('getTagWeight', () => {
+  it('returns correct weights for each memory type', () => {
+    expect(getTagWeight('decision', [])).toBe(1.0);
+    expect(getTagWeight('error', [])).toBe(0.9);
+    expect(getTagWeight('dead_end', [])).toBe(0.85);
+    expect(getTagWeight('pattern', [])).toBe(0.8);
+    expect(getTagWeight('learning', [])).toBe(0.7);
+    expect(getTagWeight('observation', [])).toBe(0.5);
+  });
+
+  it('defaults to observation weight for null type', () => {
+    expect(getTagWeight(null, [])).toBe(0.5);
+  });
+
+  it('defaults to 0.5 for unknown types', () => {
+    expect(getTagWeight('unknown_type', [])).toBe(0.5);
+  });
+
+  it('boosts for critical/architecture/security tags', () => {
+    expect(getTagWeight('observation', ['critical'])).toBe(0.6);
+    expect(getTagWeight('observation', ['architecture'])).toBe(0.6);
+    expect(getTagWeight('observation', ['security'])).toBe(0.6);
+  });
+
+  it('caps at 1.0 even with boost', () => {
+    expect(getTagWeight('decision', ['critical'])).toBe(1.0);
+  });
+
+  it('boost is case-insensitive', () => {
+    expect(getTagWeight('observation', ['CRITICAL'])).toBe(0.6);
+    expect(getTagWeight('observation', ['Architecture'])).toBe(0.6);
+  });
+
+  it('ignores non-boost tags', () => {
+    expect(getTagWeight('observation', ['debug', 'temp', 'test'])).toBe(0.5);
+  });
+});
+
+// =============================================================================
+// computeConfidenceDecay
+// =============================================================================
+
+describe('computeConfidenceDecay', () => {
+  it('returns full quality for recently accessed memory', () => {
+    const result = computeConfidenceDecay(0.8, '2026-02-14T11:00:00Z', '2026-02-13T00:00:00Z', NOW);
+    // 1 hour ago → decay close to 1.0
+    expect(result).toBeGreaterThan(0.79);
+    expect(result).toBeLessThanOrEqual(0.8);
+  });
+
+  it('decays quality after 7 days (half-life)', () => {
+    const sevenDaysAgo = '2026-02-07T12:00:00Z';
+    const result = computeConfidenceDecay(1.0, sevenDaysAgo, '2026-02-01T00:00:00Z', NOW);
+    // After 7 days, decay factor ~= 0.5
+    expect(result).toBeCloseTo(0.5, 1);
+  });
+
+  it('floors at 10% of quality', () => {
+    const veryOld = '2025-01-01T00:00:00Z';
+    const result = computeConfidenceDecay(1.0, veryOld, '2025-01-01T00:00:00Z', NOW);
+    expect(result).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it('uses created_at when last_accessed is null', () => {
+    const result = computeConfidenceDecay(0.8, null, '2026-02-14T11:00:00Z', NOW);
+    // Uses created_at (1 hour ago) → high
+    expect(result).toBeGreaterThan(0.79);
+  });
+
+  it('defaults quality to 0.5 when null', () => {
+    const result = computeConfidenceDecay(null, '2026-02-14T11:00:00Z', '2026-02-14T00:00:00Z', NOW);
+    expect(result).toBeGreaterThan(0.49);
+    expect(result).toBeLessThanOrEqual(0.5);
+  });
+
+  it('handles future timestamps gracefully (clamps to 0)', () => {
+    const future = '2026-02-15T00:00:00Z';
+    const result = computeConfidenceDecay(0.8, future, '2026-02-14T00:00:00Z', NOW);
+    // hoursSince would be negative, clamped to 0 → decay = 1.0
+    expect(result).toBe(0.8);
+  });
+});
+
+// =============================================================================
+// computePriorityScore
+// =============================================================================
+
+describe('computePriorityScore', () => {
+  it('gives highest score to invariant + high quality + corrected decision', () => {
+    const score = computePriorityScore(
+      {
+        is_invariant: true,
+        quality_score: 1.0,
+        correction_count: 5,
+        type: 'decision',
+        tags: ['critical'],
+        access_count: 20,
+        last_accessed: '2026-02-14T11:00:00Z',
+        created_at: '2026-02-14T00:00:00Z',
+      },
+      NOW
+    );
+    // 0.30*1 + 0.25*~1.0 + 0.20*1.0 + 0.15*1.0 + 0.10*1.0 = ~1.0
+    expect(score).toBeGreaterThan(0.9);
+  });
+
+  it('gives low score to old, unaccessed observation', () => {
+    const score = computePriorityScore(
+      {
+        is_invariant: false,
+        quality_score: 0.3,
+        correction_count: 0,
+        type: 'observation',
+        tags: [],
+        access_count: 0,
+        last_accessed: null,
+        created_at: '2025-01-01T00:00:00Z',
+      },
+      NOW
+    );
+    // 0.30*0 + 0.25*~0.03 + 0.20*0 + 0.15*0.5 + 0.10*0 = ~0.08
+    expect(score).toBeLessThan(0.15);
+  });
+
+  it('is_invariant contributes 0.30', () => {
+    const base = computePriorityScore(
+      {
+        is_invariant: false, quality_score: 0.5, correction_count: 0,
+        type: 'observation', tags: [], access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+      },
+      NOW
+    );
+    const withInvariant = computePriorityScore(
+      {
+        is_invariant: true, quality_score: 0.5, correction_count: 0,
+        type: 'observation', tags: [], access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+      },
+      NOW
+    );
+    expect(withInvariant - base).toBeCloseTo(0.3, 1);
+  });
+
+  it('handles string tags (JSON)', () => {
+    const score = computePriorityScore(
+      {
+        is_invariant: false, quality_score: 0.5, correction_count: 0,
+        type: 'observation', tags: '["critical"]', access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+      },
+      NOW
+    );
+    // Should parse JSON tags and apply boost
+    expect(score).toBeGreaterThan(0.19); // 0.15 * 0.6 = 0.09 for tag component
+  });
+
+  it('handles null tags gracefully', () => {
+    expect(() =>
+      computePriorityScore(
+        {
+          is_invariant: false, quality_score: 0.5, correction_count: 0,
+          type: null, tags: null, access_count: 0,
+          last_accessed: null, created_at: '2026-02-14T00:00:00Z',
+        },
+        NOW
+      )
+    ).not.toThrow();
+  });
+});
+
+// =============================================================================
+// PinnedMemoryError
+// =============================================================================
+
+describe('PinnedMemoryError', () => {
+  it('has correct name and message', () => {
+    const err = new PinnedMemoryError(42);
+    expect(err.name).toBe('PinnedMemoryError');
+    expect(err.message).toContain('42');
+    expect(err.message).toContain('pinned');
+    expect(err.memoryId).toBe(42);
+  });
+
+  it('is instanceof Error', () => {
+    expect(new PinnedMemoryError(1)).toBeInstanceOf(Error);
+  });
+});
+
+// =============================================================================
 // applyWorkingMemoryPipeline
 // =============================================================================
 
@@ -125,6 +324,37 @@ describe('applyWorkingMemoryPipeline', () => {
     const result = applyWorkingMemoryPipeline(memories, 3, NOW);
     expect(result[0].id).toBe(2);
     expect(result.length).toBe(3);
+  });
+
+  it('prefers priority_score over effectiveScore when available', () => {
+    const memories = [
+      makeMemory({ id: 1, quality_score: 0.9, access_count: 20, priority_score: 0.1 }),
+      makeMemory({ id: 2, quality_score: 0.3, access_count: 0, priority_score: 0.9 }),
+    ];
+
+    const result = applyWorkingMemoryPipeline(memories, 2, NOW);
+    // id:2 has higher priority_score despite lower quality
+    expect(result[0].id).toBe(2);
+  });
+
+  it('falls back to effectiveScore when priority_score is null', () => {
+    const memories = [
+      makeMemory({ id: 1, quality_score: 0.3, access_count: 0, priority_score: null }),
+      makeMemory({ id: 2, quality_score: 0.9, access_count: 10, priority_score: null }),
+    ];
+
+    const result = applyWorkingMemoryPipeline(memories, 2, NOW);
+    expect(result[0].id).toBe(2);
+  });
+
+  it('mixes priority_score and effectiveScore fallback', () => {
+    const memories = [
+      makeMemory({ id: 1, quality_score: 0.3, access_count: 1 }), // no priority_score → low effectiveScore
+      makeMemory({ id: 2, quality_score: 0.1, priority_score: 0.99 }), // has priority_score
+    ];
+
+    const result = applyWorkingMemoryPipeline(memories, 2, NOW);
+    expect(result[0].id).toBe(2); // priority_score 0.99 > effectiveScore
   });
 
   it('respects limit parameter', () => {
@@ -336,5 +566,108 @@ describe('applyWorkingMemoryPipeline', () => {
 
     const result = applyWorkingMemoryPipeline([], 10, NOW, pinned);
     expect(result.length).toBe(0);
+  });
+});
+
+// =============================================================================
+// applyDiversityFilter
+// =============================================================================
+
+describe('applyDiversityFilter', () => {
+  // Helper: create embedding that's a unit vector in dimension i
+  function unitVec(dim: number, i: number): number[] {
+    const v = new Array(dim).fill(0);
+    v[i] = 1;
+    return v;
+  }
+
+  it('returns single item unchanged', async () => {
+    const items = [{ id: 1 }];
+    const getEmb = vi.fn().mockResolvedValue(new Map());
+    const result = await applyDiversityFilter(items, getEmb);
+    expect(result).toEqual([{ id: 1 }]);
+    expect(getEmb).not.toHaveBeenCalled();
+  });
+
+  it('returns all items when no embeddings available', async () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const getEmb = vi.fn().mockResolvedValue(new Map());
+    const result = await applyDiversityFilter(items, getEmb);
+    expect(result.length).toBe(3);
+  });
+
+  it('keeps diverse items (orthogonal embeddings)', async () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const embeddings = new Map([
+      [1, unitVec(3, 0)],
+      [2, unitVec(3, 1)],
+      [3, unitVec(3, 2)],
+    ]);
+    const getEmb = vi.fn().mockResolvedValue(embeddings);
+
+    const result = await applyDiversityFilter(items, getEmb);
+    expect(result.length).toBe(3);
+  });
+
+  it('removes near-duplicate items (identical embeddings)', async () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const sameVec = [1, 0, 0];
+    const embeddings = new Map([
+      [1, sameVec],
+      [2, sameVec],            // duplicate of 1
+      [3, [0, 1, 0]],          // different
+    ]);
+    const getEmb = vi.fn().mockResolvedValue(embeddings);
+
+    const result = await applyDiversityFilter(items, getEmb);
+    expect(result.length).toBe(2);
+    expect(result.map((r) => r.id)).toEqual([1, 3]);
+  });
+
+  it('respects custom maxSimilarity threshold', async () => {
+    const items = [{ id: 1 }, { id: 2 }];
+    // These vectors have cosine similarity ~0.7
+    const embeddings = new Map([
+      [1, [1, 0, 0]],
+      [2, [0.7, 0.7, 0]],
+    ]);
+    const getEmb = vi.fn().mockResolvedValue(embeddings);
+
+    // With high threshold (0.9) — both kept
+    const resultHigh = await applyDiversityFilter(items, getEmb, 0.9);
+    expect(resultHigh.length).toBe(2);
+
+    // With low threshold (0.5) — second removed
+    const resultLow = await applyDiversityFilter(items, getEmb, 0.5);
+    expect(resultLow.length).toBe(1);
+  });
+
+  it('keeps items without embeddings', async () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const embeddings = new Map([
+      [1, [1, 0, 0]],
+      // id:2 has no embedding
+      [3, [1, 0, 0]], // duplicate of 1
+    ]);
+    const getEmb = vi.fn().mockResolvedValue(embeddings);
+
+    const result = await applyDiversityFilter(items, getEmb);
+    // id:1 kept (first), id:2 kept (no embedding), id:3 removed (duplicate of 1)
+    expect(result.map((r) => r.id)).toEqual([1, 2]);
+  });
+
+  it('preserves order (first item always kept)', async () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const sameVec = [1, 0, 0];
+    const embeddings = new Map([
+      [1, sameVec],
+      [2, sameVec],
+      [3, sameVec],
+    ]);
+    const getEmb = vi.fn().mockResolvedValue(embeddings);
+
+    const result = await applyDiversityFilter(items, getEmb);
+    expect(result.length).toBe(1);
+    expect(result[0].id).toBe(1);
   });
 });

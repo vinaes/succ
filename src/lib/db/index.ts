@@ -59,6 +59,7 @@ export {
   incrementCorrectionCount,
   setMemoryInvariant,
   getPinnedMemories,
+  updatePriorityScore,
 } from './retention.js';
 
 // Re-export document functions and types

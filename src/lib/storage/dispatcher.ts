@@ -537,15 +537,29 @@ export class StorageDispatcher {
     const validFrom = options?.validFrom;
     const validUntil = options?.validUntil;
 
-    if (this.backend === 'postgresql' && this.postgres) {
-      if (deduplicate) {
-        const similar = await this.findSimilarMemory(embedding, 0.95);
-        if (similar) {
-          this._sessionCounters.memoriesDuplicated++;
-          return { id: similar.id, created: false, duplicate: similar };
+    // Auto-correction: detect similar (but not duplicate) memories in 0.82-0.92 range
+    if (deduplicate) {
+      try {
+        const correctionCandidate = await this.findSimilarMemory(embedding, 0.82);
+        if (correctionCandidate) {
+          if (correctionCandidate.similarity >= 0.92) {
+            // Exact/near-exact duplicate — skip saving
+            this._sessionCounters.memoriesDuplicated++;
+            return { id: correctionCandidate.id, created: false, duplicate: correctionCandidate };
+          }
+          // Similar but different = correction/refinement — increment existing
+          await this.incrementCorrectionCount(correctionCandidate.id);
         }
+      } catch {
+        // Non-fatal: correction detection failure shouldn't block save
       }
-      const id = await this.postgres.saveMemory(
+    }
+
+    let savedId: number;
+    let wasDuplicate = false;
+
+    if (this.backend === 'postgresql' && this.postgres) {
+      savedId = await this.postgres.saveMemory(
         content,
         embedding,
         tags,
@@ -560,7 +574,7 @@ export class StorageDispatcher {
       // Sync to Qdrant with full payload
       if (this.hasQdrant()) {
         try {
-          await this.qdrant!.upsertMemoryWithPayload(id, embedding, {
+          await this.qdrant!.upsertMemoryWithPayload(savedId, embedding, {
             content,
             tags,
             source,
@@ -571,58 +585,67 @@ export class StorageDispatcher {
             validUntil,
           });
         } catch (error) {
-          this._warnQdrantFailure(`Failed to sync memory vector ${id}`, error);
+          this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
         }
       }
-      this._sessionCounters.memoriesCreated++;
-      this._sessionCounters.typesCreated[type] =
-        (this._sessionCounters.typesCreated[type] ?? 0) + 1;
-      return { id, created: true };
-    }
+    } else {
+      const sqlite = await this.getSqliteFns();
+      const result = sqlite.saveMemory(content, embedding, tags, source, {
+        type,
+        deduplicate: false, // dedup already handled above
+        qualityScore:
+          qualityScore != null
+            ? { score: qualityScore, factors: qualityFactors ?? {} }
+            : undefined,
+        validFrom,
+        validUntil,
+      });
 
-    const sqlite = await this.getSqliteFns();
-    const result = sqlite.saveMemory(content, embedding, tags, source, {
-      type,
-      deduplicate,
-      qualityScore:
-        qualityScore != null ? { score: qualityScore, factors: qualityFactors ?? {} } : undefined,
-      validFrom,
-      validUntil,
-    });
+      savedId = result.id;
+      wasDuplicate = result.isDuplicate;
 
-    // SQLite + Qdrant: sync memory
-    if (this.hasQdrant() && !result.isDuplicate) {
-      try {
-        await this.qdrant!.upsertMemoryWithPayload(result.id, embedding, {
-          content,
-          tags,
-          source,
-          type,
-          projectId: this.qdrant!.getProjectId(),
-          createdAt: new Date().toISOString(),
-          validFrom,
-          validUntil,
-        });
-      } catch (error) {
-        this._warnQdrantFailure(`Failed to sync memory vector ${result.id}`, error);
+      // SQLite + Qdrant: sync memory
+      if (this.hasQdrant() && !wasDuplicate) {
+        try {
+          await this.qdrant!.upsertMemoryWithPayload(savedId, embedding, {
+            content,
+            tags,
+            source,
+            type,
+            projectId: this.qdrant!.getProjectId(),
+            createdAt: new Date().toISOString(),
+            validFrom,
+            validUntil,
+          });
+        } catch (error) {
+          this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
+        }
       }
     }
 
-    const created = !result.isDuplicate;
-    if (created) {
+    if (!wasDuplicate) {
       this._sessionCounters.memoriesCreated++;
       this._sessionCounters.typesCreated[type] =
         (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+
+      // Auto-detect invariant content and set is_invariant + compute priority_score
+      try {
+        const { detectInvariant } = await import('../working-memory-pipeline.js');
+        if (detectInvariant(content)) {
+          await this.setMemoryInvariant(savedId, true);
+        }
+        await this.recomputePriorityScore(savedId);
+      } catch {
+        // Non-fatal
+      }
     } else {
       this._sessionCounters.memoriesDuplicated++;
     }
+
     return {
-      id: result.id,
-      created,
-      duplicate:
-        result.isDuplicate && result.similarity != null
-          ? { id: result.id, content: '', similarity: result.similarity }
-          : undefined,
+      id: savedId,
+      created: !wasDuplicate,
+      duplicate: wasDuplicate ? { id: savedId, content: '', similarity: 1.0 } : undefined,
     };
   }
 
@@ -668,6 +691,9 @@ export class StorageDispatcher {
   }
 
   async deleteMemory(id: number): Promise<boolean> {
+    // Tier 1 immutability guard: pinned memories cannot be deleted
+    await this._guardPinned(id);
+
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteMemory(id);
       if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)
@@ -702,8 +728,17 @@ export class StorageDispatcher {
       pinned = sqlite.getPinnedMemories();
     }
     // Apply working memory pipeline: pinned first → validity filter → score → rank
-    const { applyWorkingMemoryPipeline } = await import('../working-memory-pipeline.js');
-    return applyWorkingMemoryPipeline(raw, limit, new Date(), pinned);
+    const { applyWorkingMemoryPipeline, applyDiversityFilter } = await import(
+      '../working-memory-pipeline.js'
+    );
+    // Over-request to account for diversity filtering
+    const pipelineLimit = Math.min(limit * 2, raw.length + pinned.length);
+    const pipeline = applyWorkingMemoryPipeline(raw, pipelineLimit, new Date(), pinned);
+    // Diversity filter: remove near-duplicate embeddings
+    const diverse = await applyDiversityFilter(pipeline, (ids) =>
+      this.getMemoryEmbeddingsByIds(ids)
+    );
+    return diverse.slice(0, limit);
   }
 
   async findSimilarMemory(
@@ -800,6 +835,9 @@ export class StorageDispatcher {
   }
 
   async invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+    // Tier 1 immutability guard: pinned memories cannot be invalidated
+    await this._guardPinned(memoryId);
+
     if (this.backend === 'postgresql' && this.postgres)
       return this.postgres.invalidateMemory(memoryId, supersededById);
     const sqlite = await this.getSqliteFns();
@@ -841,10 +879,14 @@ export class StorageDispatcher {
   }
 
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    // Filter out pinned memories (Tier 1 immutability)
+    const safeIds = await this._filterOutPinned(ids);
+    if (safeIds.length === 0) return 0;
     if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.deleteMemoriesByIds(ids);
+      return this.postgres.deleteMemoriesByIds(safeIds);
     const sqlite = await this.getSqliteFns();
-    return sqlite.deleteMemoriesByIds(ids);
+    return sqlite.deleteMemoriesByIds(safeIds);
   }
 
   async searchMemoriesAsOf(
@@ -1289,10 +1331,12 @@ export class StorageDispatcher {
   async incrementMemoryAccess(memoryId: number, weight?: number): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       await this.postgres.incrementMemoryAccess(memoryId, weight);
-      return;
+    } else {
+      const sqlite = await this.getSqliteFns();
+      sqlite.incrementMemoryAccess(memoryId, weight);
     }
-    const sqlite = await this.getSqliteFns();
-    sqlite.incrementMemoryAccess(memoryId, weight);
+    // Recompute priority_score after access change
+    await this.recomputePriorityScore(memoryId);
   }
 
   async incrementMemoryAccessBatch(
@@ -1309,19 +1353,23 @@ export class StorageDispatcher {
   async incrementCorrectionCount(memoryId: number): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       await this.postgres.incrementCorrectionCount(memoryId);
-      return;
+    } else {
+      const sqlite = await this.getSqliteFns();
+      sqlite.incrementCorrectionCount(memoryId);
     }
-    const sqlite = await this.getSqliteFns();
-    sqlite.incrementCorrectionCount(memoryId);
+    // Recompute priority_score after correction change
+    await this.recomputePriorityScore(memoryId);
   }
 
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       await this.postgres.setMemoryInvariant(memoryId, isInvariant);
-      return;
+    } else {
+      const sqlite = await this.getSqliteFns();
+      sqlite.setMemoryInvariant(memoryId, isInvariant);
     }
-    const sqlite = await this.getSqliteFns();
-    sqlite.setMemoryInvariant(memoryId, isInvariant);
+    // Recompute priority_score after invariant change
+    await this.recomputePriorityScore(memoryId);
   }
 
   async getPinnedMemories(threshold?: number): Promise<any[]> {
@@ -1329,6 +1377,75 @@ export class StorageDispatcher {
       return this.postgres.getPinnedMemories(threshold);
     const sqlite = await this.getSqliteFns();
     return sqlite.getPinnedMemories(threshold);
+  }
+
+  async updatePriorityScore(memoryId: number, score: number): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.updatePriorityScore(memoryId, score);
+      return;
+    }
+    const sqlite = await this.getSqliteFns();
+    sqlite.updatePriorityScore(memoryId, score);
+  }
+
+  async recomputePriorityScore(memoryId: number): Promise<void> {
+    try {
+      const memory = await this.getMemoryById(memoryId);
+      if (!memory) return;
+      const { computePriorityScore } = await import('../working-memory-pipeline.js');
+      const score = computePriorityScore(
+        {
+          is_invariant: !!(memory as any).is_invariant,
+          quality_score: memory.quality_score,
+          correction_count: (memory as any).correction_count ?? 0,
+          type: (memory as any).type ?? null,
+          tags: memory.tags,
+          access_count: memory.access_count,
+          last_accessed: memory.last_accessed
+            ? typeof memory.last_accessed === 'object'
+              ? (memory.last_accessed as any).toISOString()
+              : memory.last_accessed
+            : null,
+          created_at:
+            typeof memory.created_at === 'object'
+              ? (memory.created_at as any).toISOString()
+              : memory.created_at,
+        },
+        new Date()
+      );
+      await this.updatePriorityScore(memoryId, score);
+    } catch {
+      // Non-fatal: priority_score recomputation failure shouldn't break writes
+    }
+  }
+
+  /** Filter out pinned memory IDs from a list (for bulk operations) */
+  private async _filterOutPinned(ids: number[]): Promise<number[]> {
+    const { isPinned } = await import('../working-memory-pipeline.js');
+    const safe: number[] = [];
+    for (const id of ids) {
+      const memory = await this.getMemoryById(id);
+      if (!memory) { safe.push(id); continue; }
+      if (!isPinned({ is_invariant: !!(memory as any).is_invariant, correction_count: (memory as any).correction_count ?? 0 })) {
+        safe.push(id);
+      }
+    }
+    return safe;
+  }
+
+  /** Throw PinnedMemoryError if the memory is pinned (Tier 1 immutability) */
+  private async _guardPinned(memoryId: number): Promise<void> {
+    const memory = await this.getMemoryById(memoryId);
+    if (!memory) return;
+    const { isPinned, PinnedMemoryError } = await import('../working-memory-pipeline.js');
+    if (
+      isPinned({
+        is_invariant: !!(memory as any).is_invariant,
+        correction_count: (memory as any).correction_count ?? 0,
+      })
+    ) {
+      throw new PinnedMemoryError(memoryId);
+    }
   }
 
   async getAllMemoriesForRetention(): Promise<any[]> {
