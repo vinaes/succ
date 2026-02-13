@@ -212,9 +212,17 @@ export function registerSearchTools(server: McpServer) {
             .map((r, i) => {
               const score = (r.similarity * 100).toFixed(1);
               const filePath = r.file_path.replace(/^code:/, '');
-              const sym = r.symbol_name
-                ? `${r.symbol_type ?? 'symbol'} ${r.symbol_name}`
-                : r.content.split('\n')[0].trim();
+              let sym: string;
+              if (r.symbol_name) {
+                sym = `${r.symbol_type ?? 'symbol'} ${r.symbol_name}`;
+              } else {
+                // Fallback: find first meaningful line (skip doc comments, blank lines)
+                const firstLine = r.content.split('\n')
+                  .map((l: string) => l.trim())
+                  .find((l: string) => l && !l.startsWith('/**') && !l.startsWith('*') && !l.startsWith('*/') && !l.startsWith('//'))
+                  ?? r.content.split('\n')[0].trim();
+                sym = firstLine;
+              }
               return `${i + 1}. ${filePath}:${r.start_line} (${score}%) — ${sym}`;
             })
             .join('\n');
