@@ -164,6 +164,13 @@ export type {
   DebugSessionIndexEntry,
 } from './debug/types.js';
 
+// --- Indexing & analysis (CLI-originated but used by plugins) ---
+export { analyzeFile } from '../commands/analyze-recursive.js';
+export { indexCodeFile } from '../commands/index-code.js';
+export type { IndexCodeFileResult } from '../commands/index-code.js';
+export { reindexFiles } from '../commands/reindex.js';
+export type { ReindexResult } from '../commands/reindex.js';
+
 // --- Tree-sitter symbols ---
 export { extractSymbolsFromFile } from './tree-sitter/public.js';
 export type { ExtractSymbolsOptions, ExtractSymbolsResult } from './tree-sitter/public.js';
