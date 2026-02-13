@@ -185,17 +185,23 @@ describe('listSessions', () => {
 
 describe('findActiveSession', () => {
   it('returns most recently updated active session', () => {
+    // saveSession() overwrites updated_at with new Date().toISOString(),
+    // so we use fake timers to guarantee distinct timestamps.
+    vi.useFakeTimers();
+
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
     const s1 = makeSession({ id: 'dbg_old' });
-    s1.updated_at = '2025-01-01T00:00:00Z';
     saveSession(s1);
 
+    vi.setSystemTime(new Date('2025-06-01T00:00:00Z'));
     const s2 = makeSession({ id: 'dbg_new' });
-    s2.updated_at = '2025-06-01T00:00:00Z';
     saveSession(s2);
 
     const active = findActiveSession();
     expect(active).not.toBeNull();
     expect(active!.id).toBe('dbg_new');
+
+    vi.useRealTimers();
   });
 
   it('returns null when no active sessions', () => {
