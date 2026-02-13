@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { formatSymbolMap, batchChunks } from './analyze-helpers.js';
 
 // Create a unique temp dir for each test run
 const createTempDir = () =>
@@ -291,6 +292,95 @@ Content for B.`;
 
       expect(similarity(existing, similar)).toBeGreaterThan(0.5);
       expect(similarity(existing, different)).toBeLessThan(0.3);
+    });
+  });
+});
+
+describe('Recursive File Analysis Helpers', () => {
+  describe('formatSymbolMap', () => {
+    it('should format symbols with signatures', () => {
+      const symbols = [
+        { name: 'calculateTotal', type: 'function', signature: '(items: Item[]): number', startRow: 10 },
+        { name: 'UserService', type: 'class', signature: undefined, startRow: 50 },
+      ];
+      const result = formatSymbolMap(symbols);
+      expect(result).toContain('function calculateTotal(items: Item[]): number (line 11)');
+      expect(result).toContain('class UserService (line 51)');
+    });
+
+    it('should return placeholder for empty symbols', () => {
+      expect(formatSymbolMap([])).toBe('(no symbols extracted)');
+    });
+
+    it('should handle symbols without signatures', () => {
+      const symbols = [
+        { name: 'MAX_SIZE', type: 'variable', startRow: 0 },
+      ];
+      const result = formatSymbolMap(symbols);
+      expect(result).toBe('  variable MAX_SIZE (line 1)');
+    });
+  });
+
+  describe('batchChunks', () => {
+    it('should create a single batch for small chunks', () => {
+      const chunks = [
+        { content: 'abc', startLine: 1, endLine: 3 },
+        { content: 'def', startLine: 4, endLine: 6 },
+      ];
+      const batches = batchChunks(chunks, 100);
+      expect(batches.length).toBe(1);
+      expect(batches[0].length).toBe(2);
+    });
+
+    it('should split into multiple batches when exceeding maxChars', () => {
+      const chunks = [
+        { content: 'a'.repeat(5000), startLine: 1, endLine: 50 },
+        { content: 'b'.repeat(5000), startLine: 51, endLine: 100 },
+        { content: 'c'.repeat(5000), startLine: 101, endLine: 150 },
+      ];
+      const batches = batchChunks(chunks, 8000);
+      expect(batches.length).toBe(3);
+      expect(batches[0].length).toBe(1);
+      expect(batches[1].length).toBe(1);
+      expect(batches[2].length).toBe(1);
+    });
+
+    it('should group small chunks together up to limit', () => {
+      const chunks = [
+        { content: 'a'.repeat(2000), startLine: 1, endLine: 20 },
+        { content: 'b'.repeat(2000), startLine: 21, endLine: 40 },
+        { content: 'c'.repeat(2000), startLine: 41, endLine: 60 },
+        { content: 'd'.repeat(2000), startLine: 61, endLine: 80 },
+      ];
+      const batches = batchChunks(chunks, 5000);
+      expect(batches.length).toBe(2);
+      expect(batches[0].length).toBe(2);
+      expect(batches[1].length).toBe(2);
+    });
+
+    it('should handle empty chunks array', () => {
+      const batches = batchChunks([], 8000);
+      expect(batches.length).toBe(0);
+    });
+
+    it('should handle single chunk larger than maxChars', () => {
+      const chunks = [
+        { content: 'a'.repeat(10000), startLine: 1, endLine: 100 },
+      ];
+      const batches = batchChunks(chunks, 8000);
+      expect(batches.length).toBe(1);
+      expect(batches[0].length).toBe(1);
+    });
+
+    it('should preserve chunk order across batches', () => {
+      const chunks = Array.from({ length: 10 }, (_, i) => ({
+        content: `chunk-${i}`,
+        startLine: i * 10 + 1,
+        endLine: (i + 1) * 10,
+      }));
+      const batches = batchChunks(chunks, 30);  // ~3 chunks per batch
+      const flat = batches.flat();
+      expect(flat.map(c => c.content)).toEqual(chunks.map(c => c.content));
     });
   });
 });
