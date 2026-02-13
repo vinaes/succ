@@ -34,6 +34,7 @@ import { agentsMd } from './commands/agents-md.js';
 import { progress } from './commands/progress.js';
 import { backfill } from './commands/backfill.js';
 import { prdGenerate, prdParse, prdRun, prdList, prdStatus, prdArchive, prdExport } from './commands/prd.js';
+import { embeddingInfo, embeddingMigrate } from './commands/embedding.js';
 import { logError } from './lib/fault-logger.js';
 
 // Read version from package.json
@@ -421,6 +422,28 @@ program
       dryRun: options.dryRun,
     });
   });
+
+// Embedding management
+const embeddingCmd = program
+  .command('embedding')
+  .description('Embedding model management: info, migrate');
+
+embeddingCmd
+  .command('info')
+  .description('Show current embedding config, dimensions, and backend status')
+  .action(embeddingInfo);
+
+embeddingCmd
+  .command('migrate')
+  .description('Change embedding model/dimensions across all backends')
+  .option('--model <model>', 'Embedding model ID (e.g., qwen/qwen3-embedding-8b)')
+  .option('--dims <number>', 'Output dimensions (MRL truncation)')
+  .option('--mode <mode>', 'Embedding mode (local|api)')
+  .option('--api-url <url>', 'API endpoint URL')
+  .option('--api-key <key>', 'API key')
+  .option('--project', 'Apply to project config only (default: both global and project)')
+  .option('-y, --yes', 'Skip confirmation')
+  .action(embeddingMigrate);
 
 program
   .command('consolidate')

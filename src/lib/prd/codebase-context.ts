@@ -83,8 +83,8 @@ async function gatherFileTree(): Promise<string> {
 
 /**
  * Search for relevant code using succ's indexed code.
- * Uses tree-sitter for AST-based symbol extraction when available,
- * falls back to simple glob+read.
+ * Priority: 1) hybridSearchCode (semantic + BM25 with symbol boost),
+ *           2) tree-sitter AST extraction, 3) glob+read fallback.
  */
 async function gatherCodeSearch(description: string): Promise<string> {
   const root = getProjectRoot();
@@ -92,90 +92,117 @@ async function gatherCodeSearch(description: string): Promise<string> {
   const results: string[] = [];
   const seenFiles = new Set<string>();
 
-  // Try AST-based symbol extraction for matched files
-  let extractSymbols: ((code: string, lang: string) => Promise<Array<{ name: string; type: string; signature?: string; startRow: number; endRow: number }>>) | null = null;
+  // 1. Try indexed symbol-based search (fastest, most relevant)
   try {
-    const { extractSymbols: _extract } = await import('../tree-sitter/extractor.js');
-    const { parseCode } = await import('../tree-sitter/parser.js');
-    extractSymbols = async (code: string, lang: string) => {
-      const tree = await parseCode(code, lang);
-      if (!tree) return [];
-      const symbols = await _extract(tree, code, lang);
-      tree.delete();
-      return symbols;
-    };
+    const { hybridSearchCode } = await import('../storage/index.js');
+    const { getEmbedding } = await import('../embeddings.js');
+    const queryEmbedding = await getEmbedding(description);
+    const codeResults = await hybridSearchCode(description, queryEmbedding, 8, 0.2);
+
+    if (codeResults.length > 0) {
+      for (const r of codeResults) {
+        const filePath = r.file_path.replace(/^code:/, '');
+        if (seenFiles.has(filePath)) continue;
+        seenFiles.add(filePath);
+
+        const score = (r.similarity * 100).toFixed(0);
+        // Compact format: file path + first few lines (signature-like)
+        const firstLines = r.content.split('\n').slice(0, 5).join('\n');
+        results.push(`--- ${filePath}:${r.start_line}-${r.end_line} (${score}%) ---\n${firstLines}\n`);
+      }
+    }
   } catch {
-    // tree-sitter not available, will use fallback
+    // Index not available, fall through to AST/glob
   }
 
-  // Search by filename match
-  for (const keyword of keywords.slice(0, 5)) {
-    const matches = await glob(`src/**/*${keyword.toLowerCase()}*`, {
-      cwd: root,
-      nodir: true,
-      ignore: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**'],
-    });
+  // 2. Supplement with AST symbol extraction for keyword-matched files
+  if (results.length < 5) {
+    let extractSymbolsFn: ((code: string, lang: string) => Promise<Array<{ name: string; type: string; signature?: string; startRow: number; endRow: number }>>) | null = null;
+    try {
+      const { extractSymbols: _extract } = await import('../tree-sitter/extractor.js');
+      const { parseCode } = await import('../tree-sitter/parser.js');
+      extractSymbolsFn = async (code: string, lang: string) => {
+        const tree = await parseCode(code, lang);
+        if (!tree) return [];
+        const symbols = await _extract(tree, code, lang);
+        tree.delete();
+        return symbols;
+      };
+    } catch {
+      // tree-sitter not available
+    }
 
-    for (const match of matches.slice(0, 3)) {
-      if (seenFiles.has(match)) continue;
-      seenFiles.add(match);
-      const fullPath = path.join(root, match);
-      if (!fs.existsSync(fullPath)) continue;
+    for (const keyword of keywords.slice(0, 5)) {
+      if (results.length >= 8) break;
+      const matches = await glob(`src/**/*${keyword.toLowerCase()}*`, {
+        cwd: root,
+        nodir: true,
+        ignore: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**'],
+      });
 
-      const content = fs.readFileSync(fullPath, 'utf-8');
+      for (const match of matches.slice(0, 3)) {
+        if (seenFiles.has(match)) continue;
+        seenFiles.add(match);
+        const fullPath = path.join(root, match);
+        if (!fs.existsSync(fullPath)) continue;
 
-      // Use AST symbols if available — much more compact and informative
-      if (extractSymbols) {
-        const ext = path.extname(match).slice(1);
-        const langMap: Record<string, string> = { ts: 'typescript', tsx: 'tsx', js: 'javascript', py: 'python', go: 'go', rs: 'rust', java: 'java' };
-        const lang = langMap[ext];
-        if (lang) {
-          const symbols = await extractSymbols(content, lang);
-          if (symbols.length > 0) {
-            const symbolLines = symbols.slice(0, 15).map(s =>
-              `  ${s.type} ${s.name}${s.signature ? `: ${s.signature}` : ''} (L${s.startRow + 1})`
-            );
-            results.push(`--- ${match} (${symbols.length} symbols) ---\n${symbolLines.join('\n')}\n`);
-            continue;
+        const content = fs.readFileSync(fullPath, 'utf-8');
+
+        // Use AST symbols if available — compact and informative
+        if (extractSymbolsFn) {
+          const ext = path.extname(match).slice(1);
+          const langMap: Record<string, string> = { ts: 'typescript', tsx: 'tsx', js: 'javascript', py: 'python', go: 'go', rs: 'rust', java: 'java' };
+          const lang = langMap[ext];
+          if (lang) {
+            const symbols = await extractSymbolsFn(content, lang);
+            if (symbols.length > 0) {
+              const symbolLines = symbols.slice(0, 15).map(s =>
+                `  ${s.type} ${s.name}${s.signature ? `: ${s.signature}` : ''} (L${s.startRow + 1})`
+              );
+              results.push(`--- ${match} (${symbols.length} symbols) ---\n${symbolLines.join('\n')}\n`);
+              continue;
+            }
           }
         }
-      }
 
-      // Fallback: first 50 lines
-      const lines = content.split('\n');
-      results.push(`--- ${match} ---\n${lines.slice(0, 50).join('\n')}\n`);
+        // Fallback: first 50 lines
+        const lines = content.split('\n');
+        results.push(`--- ${match} ---\n${lines.slice(0, 50).join('\n')}\n`);
+      }
     }
   }
 
-  // Search for files containing keywords in content
-  const srcFiles = await glob('src/**/*.ts', {
-    cwd: root,
-    nodir: true,
-    ignore: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**', '**/dist/**'],
-  });
+  // 3. Fallback: content-based keyword search
+  if (results.length < 5) {
+    const srcFiles = await glob('src/**/*.ts', {
+      cwd: root,
+      nodir: true,
+      ignore: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**', '**/dist/**'],
+    });
 
-  for (const keyword of keywords.slice(0, 3)) {
-    for (const file of srcFiles) {
-      if (results.length >= 8) break;
-      if (seenFiles.has(file)) continue;
-      const fullPath = path.join(root, file);
-      if (!fs.existsSync(fullPath)) continue;
+    for (const keyword of keywords.slice(0, 3)) {
+      for (const file of srcFiles) {
+        if (results.length >= 8) break;
+        if (seenFiles.has(file)) continue;
+        const fullPath = path.join(root, file);
+        if (!fs.existsSync(fullPath)) continue;
 
-      const content = fs.readFileSync(fullPath, 'utf-8');
-      if (content.toLowerCase().includes(keyword.toLowerCase())) {
-        seenFiles.add(file);
-        const lines = content.split('\n');
-        const matchingLines: string[] = [];
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].toLowerCase().includes(keyword.toLowerCase())) {
-            const start = Math.max(0, i - 2);
-            const end = Math.min(lines.length, i + 3);
-            matchingLines.push(`  L${i + 1}: ${lines.slice(start, end).join('\n  ')}`);
-            if (matchingLines.length >= 3) break;
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        if (content.toLowerCase().includes(keyword.toLowerCase())) {
+          seenFiles.add(file);
+          const lines = content.split('\n');
+          const matchingLines: string[] = [];
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].toLowerCase().includes(keyword.toLowerCase())) {
+              const start = Math.max(0, i - 2);
+              const end = Math.min(lines.length, i + 3);
+              matchingLines.push(`  L${i + 1}: ${lines.slice(start, end).join('\n  ')}`);
+              if (matchingLines.length >= 3) break;
+            }
           }
-        }
-        if (matchingLines.length > 0) {
-          results.push(`--- ${file} (matches: "${keyword}") ---\n${matchingLines.join('\n')}\n`);
+          if (matchingLines.length > 0) {
+            results.push(`--- ${file} (matches: "${keyword}") ---\n${matchingLines.join('\n')}\n`);
+          }
         }
       }
     }
