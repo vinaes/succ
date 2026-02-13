@@ -34,6 +34,7 @@ import type {
   WebSearchHistoryFilter,
   WebSearchHistorySummary,
 } from '../types.js';
+import { StorageError, ConfigError } from '../../errors.js';
 
 // Lazy-load pg to make it optional
 let pg: typeof import('pg') | null = null;
@@ -44,7 +45,7 @@ async function loadPg(): Promise<typeof import('pg')> {
     pg = await import('pg');
     return pg;
   } catch {
-    throw new Error(
+    throw new ConfigError(
       'PostgreSQL support requires the "pg" package. ' +
       'Install it with: npm install pg'
     );
@@ -547,7 +548,7 @@ export class PostgresBackend {
     signature?: string,
   ): Promise<number> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before upserting documents');
+      throw new StorageError('Project ID must be set before upserting documents');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
@@ -571,7 +572,7 @@ export class PostgresBackend {
   async upsertDocumentsBatch(documents: DocumentBatch[]): Promise<number[]> {
     if (documents.length === 0) return [];
     if (!this.projectId) {
-      throw new Error('Project ID must be set before upserting documents');
+      throw new StorageError('Project ID must be set before upserting documents');
     }
 
     const pool = await this.getPool();
@@ -614,7 +615,7 @@ export class PostgresBackend {
   async upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[]): Promise<number[]> {
     if (documents.length === 0) return [];
     if (!this.projectId) {
-      throw new Error('Project ID must be set before upserting documents');
+      throw new StorageError('Project ID must be set before upserting documents');
     }
 
     const pool = await this.getPool();
@@ -670,7 +671,7 @@ export class PostgresBackend {
 
   async deleteDocumentsByPath(filePath: string): Promise<number[]> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before deleting documents');
+      throw new StorageError('Project ID must be set before deleting documents');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ id: number }>(
@@ -687,7 +688,7 @@ export class PostgresBackend {
     options?: { codeOnly?: boolean; docsOnly?: boolean; symbolType?: string }
   ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number; symbol_name: string | null; symbol_type: string | null; signature: string | null }>> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before searching documents');
+      throw new StorageError('Project ID must be set before searching documents');
     }
     const pool = await this.getPool();
 
@@ -874,7 +875,7 @@ export class PostgresBackend {
 
   async getFileHash(filePath: string): Promise<string | null> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before getting file hash');
+      throw new StorageError('Project ID must be set before getting file hash');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ content_hash: string }>(
@@ -886,7 +887,7 @@ export class PostgresBackend {
 
   async setFileHash(filePath: string, hash: string): Promise<void> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before setting file hash');
+      throw new StorageError('Project ID must be set before setting file hash');
     }
     const pool = await this.getPool();
     await pool.query(
@@ -901,7 +902,7 @@ export class PostgresBackend {
 
   async deleteFileHash(filePath: string): Promise<void> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before deleting file hash');
+      throw new StorageError('Project ID must be set before deleting file hash');
     }
     const pool = await this.getPool();
     await pool.query('DELETE FROM file_hashes WHERE LOWER(project_id) = $1 AND file_path = $2', [this.projectId, filePath]);
@@ -909,7 +910,7 @@ export class PostgresBackend {
 
   async getAllFileHashes(): Promise<Map<string, string>> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before getting all file hashes');
+      throw new StorageError('Project ID must be set before getting all file hashes');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ file_path: string; content_hash: string }>(
@@ -921,7 +922,7 @@ export class PostgresBackend {
 
   async getAllFileHashesWithTimestamps(): Promise<Array<{ file_path: string; content_hash: string; indexed_at: string }>> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before getting file hashes');
+      throw new StorageError('Project ID must be set before getting file hashes');
     }
     const pool = await this.getPool();
     const result = await pool.query<{ file_path: string; content_hash: string; indexed_at: string }>(
@@ -1199,7 +1200,7 @@ export class PostgresBackend {
     );
 
     if (parseInt(validation.rows[0].count) !== 2) {
-      throw new Error('Cannot link memories from different projects');
+      throw new StorageError('Cannot link memories from different projects');
     }
 
     const result = await pool.query<{ id: number }>(
@@ -2255,7 +2256,7 @@ export class PostgresBackend {
     end_line: number;
   }>> {
     if (!this.projectId) {
-      throw new Error('Project ID must be set before getting recent documents');
+      throw new StorageError('Project ID must be set before getting recent documents');
     }
     const pool = await this.getPool();
     const result = await pool.query<{

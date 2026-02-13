@@ -9,7 +9,8 @@
 
 import { getConfig, getLLMTaskConfig, type SuccConfig } from './config.js';
 import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
-import { logWarn } from './fault-logger.js';
+import { logWarn, logInfo } from './fault-logger.js';
+import { NetworkError, ValidationError } from './errors.js';
 
 // Lazy-loaded zero-shot classification pipeline for local scoring
 let classifierPipeline: any = null;
@@ -316,7 +317,7 @@ export async function scoreWithApi(
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      throw new NetworkError(`API error: ${response.status}`, response.status);
     }
 
     const data = await response.json();
@@ -366,7 +367,7 @@ function parseScoreResponse(response: string): Omit<QualityScore, 'mode'> {
     // Extract JSON from response (may have markdown wrapping)
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('No JSON found in response');
+      throw new ValidationError('No JSON found in response');
     }
 
     const parsed = JSON.parse(jsonMatch[0]);

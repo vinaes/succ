@@ -19,7 +19,7 @@ import {
   searchSkillsDb,
 } from './storage/index.js';
 import { getConfig } from './config.js';
-import { logError, logWarn } from './fault-logger.js';
+import { logError, logWarn, logInfo } from './fault-logger.js';
 import type { Skill } from './skills.js';
 
 // ============================================================================
@@ -173,10 +173,10 @@ export async function searchSkyll(
   const { limit = 10, skipCache = false } = options;
   const config = getSkyllConfig();
 
-  console.log(`[skyll] searchSkyll called with keywords: ${JSON.stringify(keywords)}, enabled=${config.enabled}`);
+  logInfo('skyll', `searchSkyll called with keywords: ${JSON.stringify(keywords)}, enabled=${config.enabled}`);
 
   if (!config.enabled) {
-    console.log(`[skyll] Skyll disabled, returning empty`);
+    logInfo('skyll', 'Skyll disabled, returning empty');
     return [];
   }
 
@@ -199,7 +199,7 @@ export async function searchSkyll(
   try {
     // Skyll API uses GET with query params: /search?q=...&limit=...
     const searchUrl = `${config.endpoint}/search?q=${encodeURIComponent(query)}&limit=${limit}`;
-    console.log(`[skyll] Calling API: ${searchUrl}`);
+    logInfo('skyll', `Calling API: ${searchUrl}`);
 
     const headers: Record<string, string> = {};
 
@@ -223,7 +223,7 @@ export async function searchSkyll(
     }
 
     const data = (await response.json()) as SkyllSearchResult;
-    console.log(`[skyll] API returned ${data.skills?.length || 0} skills`);
+    logInfo('skyll', `API returned ${data.skills?.length || 0} skills`);
 
     // Cache results
     if (data.skills && data.skills.length > 0) {

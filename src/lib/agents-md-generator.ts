@@ -43,7 +43,10 @@ interface MemoryRow {
  */
 export function getAgentsMdConfig(): AgentsMdConfig {
   const config = getConfig();
-  const userConfig = (config as any).agents_md || {};
+  interface ConfigWithAgentsMd {
+    agents_md?: Partial<AgentsMdConfig>;
+  }
+  const userConfig = (config as ConfigWithAgentsMd).agents_md || {};
 
   return {
     enabled: userConfig.enabled ?? DEFAULT_AGENTS_MD_CONFIG.enabled,

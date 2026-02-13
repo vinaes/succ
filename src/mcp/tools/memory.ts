@@ -29,7 +29,7 @@ import {
   closeDb,
   closeGlobalDb,
 } from '../../lib/storage/index.js';
-import type { MemoryBatchInput } from '../../lib/storage/index.js';
+import type { MemoryBatchInput, HybridMemoryResult } from '../../lib/storage/index.js';
 import { getConfig, getProjectRoot, isGlobalOnlyMode, getIdleReflectionConfig, getReadinessGateConfig, getRetrievalConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
@@ -38,6 +38,16 @@ import { parseDuration, applyTemporalScoring, getTemporalConfig } from '../../li
 import { extractFactsWithLLM } from '../../lib/session-summary.js';
 import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
 import { trackTokenSavings, trackMemoryAccess, parseRelativeDate, projectPathParam, applyProjectPath } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
+
+/**
+ * Extended memory result type with all optional fields
+ */
+interface ExtendedMemoryResult extends HybridMemoryResult {
+  isGlobal?: boolean;
+  project?: string;
+  _isDeadEnd?: boolean;
+}
 
 /**
  * Remember with LLM extraction - extracts structured facts from content
@@ -149,8 +159,9 @@ async function rememberWithLLMExtraction(params: {
         }
 
         prepared.push({ fact, content: factContent, embedding, tags: factTags, qualityScore });
-      } catch (error: any) {
-        results.push(`✗ [${fact.type}] Error: ${error.message}`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        results.push(`✗ [${fact.type}] Error: ${errorMsg}`);
         skipped++;
       }
     }
@@ -216,8 +227,9 @@ async function rememberWithLLMExtraction(params: {
         text: `Extracted ${facts.length} facts:\n${results.join('\n')}\n\nSummary: ${saved} saved, ${skipped} skipped`,
       }],
     };
-  } catch (error: any) {
+  } catch (error) {
     // If extraction fails, fall back to saving original content
+    const errorMsg = error instanceof Error ? error.message : String(error);
     return await saveSingleMemory({
       content,
       tags,
@@ -227,7 +239,7 @@ async function rememberWithLLMExtraction(params: {
       valid_from,
       valid_until,
       config,
-      fallbackReason: `LLM extraction failed: ${error.message}`,
+      fallbackReason: `LLM extraction failed: ${errorMsg}`,
     });
   } finally {
     closeDb();
@@ -438,11 +450,12 @@ export function registerMemoryTools(server: McpServer) {
         if (valid_from) {
           try {
             validFromDate = parseDuration(valid_from);
-          } catch (e: any) {
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
             return {
               content: [{
                 type: 'text' as const,
-                text: `Invalid valid_from: ${e.message}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
+                text: `Invalid valid_from: ${errorMsg}. Use ISO date (2025-03-01) or duration (7d, 2w, 1m).`,
               }],
               isError: true,
             };
@@ -452,11 +465,12 @@ export function registerMemoryTools(server: McpServer) {
         if (valid_until) {
           try {
             validUntilDate = parseDuration(valid_until);
-          } catch (e: any) {
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
             return {
               content: [{
                 type: 'text' as const,
-                text: `Invalid valid_until: ${e.message}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
+                text: `Invalid valid_until: ${errorMsg}. Use ISO date (2025-12-31) or duration (7d, 30d).`,
               }],
               isError: true,
             };
@@ -549,12 +563,13 @@ export function registerMemoryTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error saving memory: ${error.message}`,
+              text: `Error saving memory: ${errorMsg}`,
             },
           ],
           isError: true,
@@ -672,8 +687,8 @@ export function registerMemoryTools(server: McpServer) {
               const tagStr = m.tags.length > 0 ? ` [[${m.tags.map((t: string) => `"${t}"`).join(', ')}]]` : '';
               const date = new Date(m.created_at).toLocaleDateString();
               const scope = m.isGlobal ? '[GLOBAL] ' : '';
-              const source = (m as any).source ? ` (from: ${(m as any).source})` : '';
-              const matchPct = (m as any).similarity ? ` (${Math.round((m as any).similarity * 100)}% match)` : '';
+              const source = m.source ? ` (from: ${m.source})` : '';
+              const matchPct = 'similarity' in m && m.similarity ? ` (${Math.round(m.similarity * 100)}% match)` : '';
               return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
             })
             .join('\n---\n\n');
@@ -759,8 +774,8 @@ export function registerMemoryTools(server: McpServer) {
               localResults.sort((a: any, b: any) => b.similarity - a.similarity);
               localResults = localResults.slice(0, limit * 2);
             }
-          } catch {
-            // Query expansion failure should never break search
+          } catch (err) {
+            logWarn('memory-tool', 'Query expansion failed', { error: err instanceof Error ? err.message : String(err) });
           }
         }
 
@@ -843,10 +858,10 @@ export function registerMemoryTools(server: McpServer) {
             const scoredResults = applyTemporalScoring(
               allResults.map(r => ({
                 ...r,
-                last_accessed: (r as any).last_accessed || null,
-                access_count: (r as any).access_count || 0,
-                valid_from: (r as any).valid_from || null,
-                valid_until: (r as any).valid_until || null,
+                last_accessed: r.last_accessed || null,
+                access_count: r.access_count || 0,
+                valid_from: r.valid_from || null,
+                valid_until: r.valid_until || null,
               })),
               temporalConfig
             );
@@ -859,11 +874,11 @@ export function registerMemoryTools(server: McpServer) {
         const deadEndBoost = config.dead_end_boost ?? 0.15;
         if (deadEndBoost > 0) {
           allResults = allResults.map(r => {
-            const memType = (r as any).type;
+            const memType = r.type;
             const memTags = Array.isArray(r.tags) ? r.tags : [];
             const isDeadEnd = memType === 'dead_end' || memTags.includes('dead-end');
             if (isDeadEnd) {
-              return { ...r, similarity: Math.min(1.0, r.similarity + deadEndBoost), _isDeadEnd: true };
+              return { ...r, similarity: Math.min(1.0, r.similarity + deadEndBoost), _isDeadEnd: true } as ExtendedMemoryResult;
             }
             return r;
           });
@@ -884,12 +899,13 @@ export function registerMemoryTools(server: McpServer) {
         if (retrievalConfig.quality_boost_enabled && allResults.length > 0) {
           const weight = retrievalConfig.quality_boost_weight;
           allResults = allResults.map(r => {
-            const qs = (r as any).quality_score as number | null | undefined;
+            const result = r as ExtendedMemoryResult;
+            const qs = 'quality_score' in result && typeof result.quality_score === 'number' ? result.quality_score : null;
             if (qs != null && qs > 0) {
               const factor = 1 - weight + weight * qs;
-              return { ...r, similarity: r.similarity * factor };
+              return { ...result, similarity: result.similarity * factor };
             }
-            return r;
+            return result;
           });
           allResults.sort((a, b) => b.similarity - a.similarity);
         }
@@ -977,8 +993,9 @@ export function registerMemoryTools(server: McpServer) {
             const projectStr = m.isGlobal && 'project' in m && m.project ? ` (project: ${m.project})` : '';
 
             // Show temporal validity info if present
-            const validFrom = (m as any).valid_from;
-            const validUntil = (m as any).valid_until;
+            const result = m as ExtendedMemoryResult;
+            const validFrom = result.valid_from;
+            const validUntil = result.valid_until;
             let validityStr = '';
             if (validFrom || validUntil) {
               const fromStr = validFrom ? new Date(validFrom).toLocaleDateString() : '∞';
@@ -987,7 +1004,7 @@ export function registerMemoryTools(server: McpServer) {
             }
 
             // Dead-end warning prefix
-            const deadEndPrefix = (m as any)._isDeadEnd ? '**WARNING: Dead End** ' : '';
+            const deadEndPrefix = result._isDeadEnd ? '**WARNING: Dead End** ' : '';
 
             return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}`;
           })
@@ -1017,12 +1034,13 @@ export function registerMemoryTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error recalling memories: ${error.message}`,
+              text: `Error recalling memories: ${errorMsg}`,
             },
           ],
           isError: true,
@@ -1136,12 +1154,13 @@ export function registerMemoryTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error forgetting: ${error.message}`,
+              text: `Error forgetting: ${errorMsg}`,
             },
           ],
           isError: true,

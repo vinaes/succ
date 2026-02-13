@@ -10,6 +10,7 @@ import { parseCode } from './parser.js';
 import { extractSymbols } from './extractor.js';
 import { getLanguageForExtension } from './types.js';
 import type { SymbolInfo, SymbolType } from './types.js';
+import { NotFoundError, ValidationError } from '../errors.js';
 
 export interface ExtractSymbolsOptions {
   /** Filter by symbol type */
@@ -40,7 +41,7 @@ export async function extractSymbolsFromFile(
   const absolutePath = path.resolve(filePath);
 
   if (!fs.existsSync(absolutePath)) {
-    throw new Error(`File not found: ${filePath}`);
+    throw new NotFoundError(`File not found: ${filePath}`);
   }
 
   const content = fs.readFileSync(absolutePath, 'utf-8');
@@ -48,14 +49,14 @@ export async function extractSymbolsFromFile(
   const language = getLanguageForExtension(ext);
 
   if (!language) {
-    throw new Error(
+    throw new ValidationError(
       `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`,
     );
   }
 
   const tree = await parseCode(content, language);
   if (!tree) {
-    throw new Error(`Failed to parse ${filePath} — tree-sitter grammar not available for ${language}`);
+    throw new ValidationError(`Failed to parse ${filePath} — tree-sitter grammar not available for ${language}`);
   }
 
   try {

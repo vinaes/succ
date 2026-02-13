@@ -13,6 +13,8 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir, getProjectRoot } from '../lib/config.js';
+import { NetworkError } from '../lib/errors.js';
+import { logWarn } from '../lib/fault-logger.js';
 
 // ============================================================================
 // Types
@@ -94,7 +96,8 @@ export function getDaemonPort(projectDir?: string): number | null {
       return null;
     }
     return port;
-  } catch {
+  } catch (err) {
+    logWarn('daemon-client', 'Failed to read daemon port file', { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -135,7 +138,7 @@ async function httpGet(port: number, path: string): Promise<any> {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      throw new NetworkError(`HTTP ${response.status}`, response.status);
     }
 
     return await response.json();
@@ -158,7 +161,7 @@ async function httpPost(port: number, path: string, body: any): Promise<any> {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text}`);
+      throw new NetworkError(`HTTP ${response.status}: ${text}`, response.status);
     }
 
     return await response.json();
@@ -189,7 +192,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const health = await httpGet(port, '/health');
         return health?.status === 'ok';
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon health check failed (isRunning)', { error: err instanceof Error ? err.message : String(err) });
         return false;
       }
     },
@@ -200,7 +204,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
 
       try {
         return await httpGet(port, '/health');
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon call failed: getHealth', { error: err instanceof Error ? err.message : String(err) });
         return null;
       }
     },
@@ -213,7 +218,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const result = await httpPost(port, '/api/session/register', { session_id: sessionId, transcript_path: transcriptPath, is_service: isService });
         return result?.success === true;
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon call failed: registerSession', { error: err instanceof Error ? err.message : String(err) });
         return false;
       }
     },
@@ -286,7 +292,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const result = await httpPost(port, '/api/recall', { query, ...options });
         return result?.results || [];
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon call failed: recall', { error: err instanceof Error ? err.message : String(err) });
         return [];
       }
     },
@@ -297,7 +304,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
 
       try {
         return await httpPost(port, '/api/remember', { content, ...options });
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon call failed: remember', { error: err instanceof Error ? err.message : String(err) });
         return { success: false };
       }
     },
@@ -322,7 +330,8 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
 
       try {
         return await httpGet(port, '/api/status');
-      } catch {
+      } catch (err) {
+        logWarn('daemon-client', 'Daemon call failed: getStatus', { error: err instanceof Error ? err.message : String(err) });
         return null;
       }
     },

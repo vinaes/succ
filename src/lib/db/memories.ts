@@ -104,8 +104,8 @@ export function findSimilarMemory(
         }
       }
       return null;
-    } catch {
-      // Fall through to brute-force
+    } catch (err) {
+      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -190,8 +190,8 @@ export function saveMemory(
     try {
       const vecResult = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(embeddingBlob);
       database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newId);
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('memories', 'Vector insert failed for memory, semantic recall may not find it', { error: err instanceof Error ? err.message : String(err) });
     }
   }
   let linksCreated = 0;
@@ -266,8 +266,8 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
         try {
           const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
           if (result.created) created++;
-        } catch {
-          // Ignore link creation errors
+        } catch (err) {
+          logWarn('memories', 'Auto-link creation failed', { error: err instanceof Error ? err.message : String(err) });
         }
       }
       return created;
@@ -298,8 +298,8 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
     try {
       const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
       if (result.created) created++;
-    } catch {
-      // Ignore link creation errors
+    } catch (err) {
+      logWarn('memories', 'Auto-link creation failed', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -421,8 +421,8 @@ export function searchMemories(
         results.sort((a, b) => b.similarity - a.similarity);
         return results.slice(0, limit);
       }
-    } catch {
-      // Fall through to brute-force
+    } catch (err) {
+      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -554,8 +554,8 @@ export function deleteMemory(id: number): boolean {
         database.prepare('DELETE FROM vec_memories WHERE rowid = ?').run(mapping.vec_rowid);
         database.prepare('DELETE FROM vec_memories_map WHERE memory_id = ?').run(id);
       }
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -721,8 +721,8 @@ export function deleteMemoriesOlderThan(date: Date): number {
 
         database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...ids);
       }
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -778,8 +778,8 @@ export function deleteMemoriesByTag(tag: string): number {
       }
 
       database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...toDelete);
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -1102,8 +1102,8 @@ export function saveMemoriesBatch(
           try {
             const vecResult = insertVec.run(embeddingBlob);
             insertMap.run(vecResult.lastInsertRowid, memoryId);
-          } catch {
-            // Ignore vec table errors
+          } catch (err) {
+            logWarn('memories', 'Batch vector insert failed for memory', { error: err instanceof Error ? err.message : String(err) });
           }
         }
 

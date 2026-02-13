@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { deepMerge, validateConfig } from './config-validation.js';
 
 export interface GateConfig {
   type: string;
@@ -613,33 +614,22 @@ export function getConfig(): SuccConfig {
     }
   }
 
-  // Read project config (deep merge for nested objects like storage, llm, etc.)
+  // Read project config (recursive deep merge for nested objects like storage.sqlite, llm.embeddings, etc.)
   if (activeProjectPath) {
     try {
       const projectConfig = JSON.parse(fs.readFileSync(activeProjectPath, 'utf-8'));
-      // Deep merge nested objects so project config extends (not replaces) global
-      for (const [key, value] of Object.entries(projectConfig)) {
-        if (value && typeof value === 'object' && !Array.isArray(value) &&
-            fileConfig[key as keyof typeof fileConfig] && typeof fileConfig[key as keyof typeof fileConfig] === 'object' &&
-            !Array.isArray(fileConfig[key as keyof typeof fileConfig])) {
-          // Deep merge: global + project for nested objects (storage, llm, etc.)
-          (fileConfig as Record<string, unknown>)[key] = {
-            ...(fileConfig[key as keyof typeof fileConfig] as Record<string, unknown>),
-            ...(value as Record<string, unknown>),
-          };
-        } else {
-          // Shallow override for scalar values and arrays
-          (fileConfig as Record<string, unknown>)[key] = value;
-        }
-      }
+      fileConfig = deepMerge(fileConfig as Record<string, unknown>, projectConfig) as Partial<SuccConfig>;
     } catch {
       // Ignore parse errors
     }
   }
 
+  // Validate critical config sections (logs warnings, never throws)
+  const validated = validateConfig(fileConfig as Record<string, unknown>) as Partial<SuccConfig>;
+
   const result: SuccConfig = {
     ...DEFAULT_CONFIG,
-    ...fileConfig,
+    ...validated,
   };
 
   // Update cache

@@ -12,9 +12,12 @@ import spawn from 'cross-spawn';
 import { logError, logWarn } from './fault-logger.js';
 // cross-spawn exposes .sync at runtime but not in types
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// cross-spawn's sync method is available at runtime but not in types
+// Keep as any since cross-spawn types are incomplete
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
 import { getConfig, getLLMTaskConfig, getApiKey, getApiUrl } from './config.js';
 import { ClaudeWSTransport } from './claude-ws-transport.js';
+import { NetworkError, ConfigError } from './errors.js';
 
 // ============================================================================
 // Types
@@ -192,7 +195,7 @@ export async function callLLM(
       return callApiLLM(prompt, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
 
     default:
-      throw new Error(`Unknown LLM backend: ${config.backend}`);
+      throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
   }
 }
 
@@ -264,7 +267,7 @@ export async function callLLMChat(
       return callApiLLMChat(messages, config.endpoint!, config.model, timeout, maxTokens, temperature, config.apiKey);
 
     default:
-      throw new Error(`Unknown LLM backend: ${config.backend}`);
+      throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
   }
 }
 
@@ -332,7 +335,7 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
 
     const timer = setTimeout(() => {
       proc.kill();
-      reject(new Error('Claude CLI timeout'));
+      reject(new NetworkError('Claude CLI timeout'));
     }, timeout);
 
     proc.on('close', (code: number) => {
@@ -340,7 +343,7 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
       if (code === 0) {
         resolve(stdout.trim());
       } else {
-        reject(new Error(`Claude CLI failed: ${stderr || 'unknown error'}`));
+        reject(new NetworkError(`Claude CLI failed: ${stderr || 'unknown error'}`));
       }
     });
 
@@ -366,10 +369,10 @@ export function spawnClaudeCLISync(prompt: string, options?: ClaudeCLIOptions): 
   });
 
   if (result.error) {
-    throw new Error(`Claude CLI error: ${result.error.message}`);
+    throw new NetworkError(`Claude CLI error: ${result.error.message}`);
   }
   if (result.status !== 0) {
-    throw new Error(`Claude CLI failed: ${result.stderr || 'unknown error'}`);
+    throw new NetworkError(`Claude CLI failed: ${result.stderr || 'unknown error'}`);
   }
 
   return (result.stdout ?? '').trim();
@@ -407,7 +410,7 @@ async function callApiLLM(
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
     logError('llm', `API error ${response.status}: ${errorBody}`);
-    throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
+    throw new NetworkError(`LLM API error: ${response.status} ${response.statusText}`, response.status);
   }
 
   const data = (await response.json()) as {
@@ -415,7 +418,7 @@ async function callApiLLM(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('LLM API returned no choices');
+    throw new NetworkError('LLM API returned no choices');
   }
 
   return data.choices[0].message.content;
@@ -448,7 +451,7 @@ async function callApiLLMChat(
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
     logError('llm', `API chat error ${response.status}: ${errorBody}`);
-    throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
+    throw new NetworkError(`LLM API error: ${response.status} ${response.statusText}`, response.status);
   }
 
   const data = (await response.json()) as {
@@ -456,7 +459,7 @@ async function callApiLLMChat(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('LLM API returned no choices');
+    throw new NetworkError('LLM API returned no choices');
   }
 
   return data.choices[0].message.content;
@@ -486,7 +489,7 @@ export async function callOpenRouterSearch(
 ): Promise<OpenRouterSearchResponse> {
   const apiKey = getApiKey();
   if (!apiKey) {
-    throw new Error('API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.');
+    throw new ConfigError('API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.');
   }
 
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
@@ -506,7 +509,7 @@ export async function callOpenRouterSearch(
   if (!response.ok) {
     const errorBody = await response.text();
     logError('llm', `Search API error ${response.status}: ${errorBody}`);
-    throw new Error(`Search API error: ${response.status} ${response.statusText}`);
+    throw new NetworkError(`Search API error: ${response.status} ${response.statusText}`, response.status);
   }
 
   const data = (await response.json()) as {
@@ -517,7 +520,7 @@ export async function callOpenRouterSearch(
   };
 
   if (!data.choices || data.choices.length === 0) {
-    throw new Error('Search API returned no choices');
+    throw new NetworkError('Search API returned no choices');
   }
 
   return {

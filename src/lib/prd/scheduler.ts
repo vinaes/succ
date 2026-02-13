@@ -6,6 +6,7 @@
  */
 
 import type { Task } from './types.js';
+import { ValidationError } from '../errors.js';
 
 // ============================================================================
 // Topological Sort
@@ -23,7 +24,7 @@ export function topologicalSort(tasks: Task[]): Task[] {
 
   function visit(taskId: string): void {
     if (inStack.has(taskId)) {
-      throw new Error(`Circular dependency detected involving task ${taskId}`);
+      throw new ValidationError(`Circular dependency detected involving task ${taskId}`);
     }
     if (visited.has(taskId)) return;
 

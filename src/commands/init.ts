@@ -350,8 +350,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
             finalSettings.hooks[hookType] = hookConfig;
           } else {
             // Check if succ hook already exists in this type
-            const existingHooks = finalSettings.hooks[hookType] as any[];
-            const succHookEntries = hookConfig as any[];
+            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
+            const existingHooks = finalSettings.hooks[hookType] as HookEntry[];
+            const succHookEntries = hookConfig as HookEntry[];
 
             for (const succEntry of succHookEntries) {
               // Check if this exact succ hook is already present
@@ -400,7 +401,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
         // but preserve any non-succ hooks
         if (finalSettings.hooks) {
           for (const [hookType, hookConfig] of Object.entries(finalSettings.hooks)) {
-            const existingHooks = hookConfig as any[];
+            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
+            const existingHooks = hookConfig as HookEntry[];
             // Filter out old succ hooks (both old names and new "succ-" prefixed names)
             const nonSuccHooks = existingHooks.filter((h: any) => {
               const cmd = h.hooks?.[0]?.command || '';
@@ -431,7 +433,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
           if (!finalSettings.hooks[hookType]) {
             finalSettings.hooks[hookType] = hookConfig;
           } else {
-            finalSettings.hooks[hookType] = [...finalSettings.hooks[hookType], ...(hookConfig as any[])];
+            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
+            finalSettings.hooks[hookType] = [...finalSettings.hooks[hookType], ...(hookConfig as HookEntry[])];
           }
         }
 

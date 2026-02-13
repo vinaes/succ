@@ -110,7 +110,7 @@ export async function createProximityLinks(
   // Get all non-invalidated memories with sources via storage
   const allMemories = await getAllMemoriesForExport();
   const memories = allMemories
-    .filter(m => m.source && !(m as any).invalidated_by)
+    .filter(m => m.source && !m.invalidated_by)
     .map(m => ({ id: m.id, source: m.source }));
 
   const pairs = calculateProximity(memories);

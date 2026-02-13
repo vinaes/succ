@@ -139,7 +139,10 @@ export async function enrichExistingLinks(
   // Filter to similar_to links, optionally unenriched only
   let links = allLinks.filter(l => l.relation === 'similar_to');
   if (!force) {
-    links = links.filter(l => !(l as any).llm_enriched);
+    interface LinkWithEnrichment {
+      llm_enriched?: boolean;
+    }
+    links = links.filter(l => !(l as LinkWithEnrichment).llm_enriched);
   }
   if (limit) {
     links = links.slice(0, limit);
@@ -162,7 +165,7 @@ export async function enrichExistingLinks(
     if (mem) {
       const tags: string[] = Array.isArray(mem.tags) ? mem.tags :
         (typeof mem.tags === 'string' ? (() => { try { return JSON.parse(mem.tags as string); } catch { return []; } })() : []);
-      memories.set(id, { id: mem.id, content: mem.content, type: (mem as any).type || 'observation', tags });
+      memories.set(id, { id: mem.id, content: mem.content, type: mem.type || 'observation', tags });
     }
   }
 

@@ -8,11 +8,12 @@
  */
 
 import { Worker } from 'worker_threads';
-import { logWarn } from './fault-logger.js';
+import { logWarn, logInfo } from './fault-logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   Memory,
+  MemoryType,
   deleteMemory,
   invalidateMemory,
   restoreInvalidatedMemory,
@@ -67,20 +68,37 @@ export interface ConsolidationResult {
 export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { embedding: number[] }>> {
   const rows = await getAllMemoriesWithEmbeddingsDb({ excludeInvalidated: true });
 
+  interface RowWithExtendedFields {
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    embedding: number[] | null;
+    type: string | null;
+    quality_score: number | null;
+    created_at: string;
+    invalidated_by: number | null;
+    quality_factors?: Record<string, number> | null;
+    access_count?: number;
+    last_accessed?: string | null;
+    valid_from?: string | null;
+    valid_until?: string | null;
+  }
+
   return rows
     .filter(row => row.embedding !== null)
-    .map((row) => ({
+    .map((row: RowWithExtendedFields): Memory & { embedding: number[] } => ({
       id: row.id,
       content: row.content,
       tags: row.tags,
       source: row.source,
-      type: (row.type ?? null) as any,
+      type: row.type as MemoryType | null,
       quality_score: row.quality_score,
-      quality_factors: (row as any).quality_factors ?? null,
-      access_count: (row as any).access_count ?? 0,
-      last_accessed: (row as any).last_accessed ?? null,
-      valid_from: (row as any).valid_from ?? null,
-      valid_until: (row as any).valid_until ?? null,
+      quality_factors: row.quality_factors ?? null,
+      access_count: row.access_count ?? 0,
+      last_accessed: row.last_accessed ?? null,
+      valid_from: row.valid_from ?? null,
+      valid_until: row.valid_until ?? null,
       created_at: row.created_at,
       embedding: row.embedding as number[],
     }));
@@ -374,8 +392,8 @@ export async function executeConsolidation(
           // Create supersedes link for revision tracking
           try {
             createMemoryLink(keepId, invalidateId, 'supersedes', 1.0);
-          } catch {
-            // Link may already exist
+          } catch (err) {
+            logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
           }
 
           // Soft-invalidate instead of hard delete
@@ -425,8 +443,8 @@ async function transferLinks(fromId: number, toId: number): Promise<void> {
     if (link.target_id !== toId) {
       try {
         createMemoryLink(toId, link.target_id, link.relation as LinkRelation, link.weight);
-      } catch {
-        // Link may already exist
+      } catch (err) {
+        logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
       }
     }
   }
@@ -436,8 +454,8 @@ async function transferLinks(fromId: number, toId: number): Promise<void> {
     if (link.source_id !== toId) {
       try {
         createMemoryLink(link.source_id, toId, link.relation as LinkRelation, link.weight);
-      } catch {
-        // Link may already exist
+      } catch (err) {
+        logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
       }
     }
   }
@@ -457,7 +475,11 @@ export async function undoConsolidation(mergedMemoryId: number): Promise<{
 
   // Find superseded links via dispatcher's getMemoryLinks
   const links = await getMemoryLinks(mergedMemoryId);
-  const supersededLinks = links.outgoing.filter((l: any) => l.relation === 'supersedes');
+  interface MemoryLink {
+    relation: string;
+    target_id: number;
+  }
+  const supersededLinks = links.outgoing.filter((l: MemoryLink) => l.relation === 'supersedes');
 
   if (supersededLinks.length === 0) {
     return { restored: [], deletedMerge: false, errors: ['No supersedes links found — not a consolidation result'] };
@@ -591,8 +613,8 @@ async function mergeMemories(
     // This prevents silent information loss
     try {
       createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
-    } catch {
-      // Link may already exist
+    } catch (err) {
+      logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
     }
     return null; // Signal: no merge happened, kept both
   }
@@ -605,8 +627,8 @@ async function mergeMemories(
     // LLM failed — don't delete anything, just link them
     try {
       createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
-    } catch {
-      // Link may already exist
+    } catch (err) {
+      logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
     }
     return null; // Signal: no merge happened
   }
@@ -625,8 +647,8 @@ async function mergeMemories(
         // Don't delete — just link them
         try {
           createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
-        } catch {
-          // Link may already exist
+        } catch (err) {
+          logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
         }
         return null;
       }
@@ -655,8 +677,8 @@ async function mergeMemories(
   await transferLinks(m2.id, saved.id);
 
   // Create supersedes links for revision tracking
-  try { await createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch { /* exists */ }
-  try { await createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch { /* exists */ }
+  try { await createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch (err) { logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) }); }
+  try { await createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch (err) { logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) }); }
 
   // Soft-invalidate originals instead of hard delete
   await invalidateMemory(m1.id, saved.id);

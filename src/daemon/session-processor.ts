@@ -23,7 +23,7 @@ import { countTokens } from '../lib/token-counter.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 import { SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -671,7 +671,7 @@ async function generateNextSessionContext(content: string, learnings: string[]):
       // Append to existing file
       fs.appendFileSync(contextPath, sessionSection);
     }
-  } catch {
-    // Failed to write, ignore
+  } catch (err) {
+    logWarn('session', 'Failed to write session handoff file', { error: err instanceof Error ? err.message : String(err) });
   }
 }

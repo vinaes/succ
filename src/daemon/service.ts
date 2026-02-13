@@ -20,8 +20,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 import { processSessionEnd } from './session-processor.js';
+import { ValidationError, NotFoundError, NetworkError } from '../lib/errors.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
 import { startAnalyzer, stopAnalyzer, getAnalyzerStatus, triggerAnalysis } from './analyzer.js';
 import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConfig, getConfig, getObserverConfig } from '../lib/config.js';
@@ -307,8 +308,8 @@ function log(message: string): void {
   // Write to daemon.log
   try {
     fs.appendFileSync(getDaemonLogFile(), line);
-  } catch {
-    // Ignore log write errors
+  } catch (err) {
+    logWarn('daemon', 'Failed to write daemon log', { error: err instanceof Error ? err.message : String(err) });
   }
 
   // Also write to stderr for debugging
@@ -670,7 +671,8 @@ export async function parseBody(req: http.IncomingMessage): Promise<any> {
     req.on('end', () => {
       try {
         resolve(data ? JSON.parse(data) : {});
-      } catch {
+      } catch (err) {
+        logWarn('daemon', 'Invalid JSON in HTTP request body', { error: err instanceof Error ? err.message : String(err) });
         resolve({});
       }
     });
@@ -695,7 +697,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/session/register' && method === 'POST') {
     const { session_id, transcript_path, is_service = false } = body;
     if (!session_id) {
-      throw new Error('session_id required');
+      throw new ValidationError('session_id required');
     }
     const session = sessionManager!.register(session_id, transcript_path || '', is_service);
     log(`[session] Registered: ${session_id}${is_service ? ' (service)' : ''}`);
@@ -705,7 +707,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/session/unregister' && method === 'POST') {
     const { session_id, transcript_path, run_reflection } = body;
     if (!session_id) {
-      throw new Error('session_id required');
+      throw new ValidationError('session_id required');
     }
 
     const session = sessionManager!.get(session_id);
@@ -754,7 +756,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/session/activity' && method === 'POST') {
     const { session_id, type, transcript_path, is_service = false } = body;
     if (!session_id || !type) {
-      throw new Error('session_id and type required');
+      throw new ValidationError('session_id and type required');
     }
     let session = sessionManager!.activity(session_id, type);
     if (!session) {
@@ -785,7 +787,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/search' && method === 'POST') {
     const { query, limit = 5, threshold = 0.3 } = body;
     if (!query) {
-      throw new Error('query required');
+      throw new ValidationError('query required');
     }
     const queryEmbedding = await getEmbedding(query);
     const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold);
@@ -804,7 +806,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/search-code' && method === 'POST') {
     const { query, limit = 5, threshold = 0.3 } = body;
     if (!query) {
-      throw new Error('query required');
+      throw new ValidationError('query required');
     }
     const queryEmbedding = await getEmbedding(query);
     const results = await hybridSearchCode(query, queryEmbedding, limit, threshold);
@@ -838,7 +840,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/remember' && method === 'POST') {
     const { content, tags = [], type = 'observation', source, global = false, valid_from, valid_until } = body;
     if (!content) {
-      throw new Error('content required');
+      throw new ValidationError('content required');
     }
 
     // In-flight dedup: if an identical request is already being processed, wait for it
@@ -860,7 +862,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
           if (config.sensitive_auto_redact) {
             finalContent = scanResult.redactedText;
           } else {
-            throw new Error('Content contains sensitive information');
+            throw new ValidationError('Content contains sensitive information');
           }
         }
       }
@@ -908,7 +910,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
     if (session_id) {
       const session = sessionManager!.get(session_id);
       if (!session) {
-        throw new Error('Session not found');
+        throw new NotFoundError('Session not found');
       }
       await handleReflection(session_id, session);
       sessionManager!.markReflection(session_id);
@@ -948,7 +950,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
     } else if (transcript_path && fs.existsSync(transcript_path)) {
       transcriptContent = fs.readFileSync(transcript_path, 'utf-8');
     } else {
-      throw new Error('transcript or transcript_path required');
+      throw new ValidationError('transcript or transcript_path required');
     }
 
     const result = await generateCompactBriefing(transcriptContent, {
@@ -1019,7 +1021,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/watch/index' && method === 'POST') {
     const { file } = body;
     if (!file) {
-      throw new Error('file required');
+      throw new ValidationError('file required');
     }
     await indexFileOnDemand(file, log);
     return { success: true, file };
@@ -1058,7 +1060,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/skills/suggest' && method === 'POST') {
     const { prompt, limit = 2 } = body;
     if (!prompt) {
-      throw new Error('prompt required');
+      throw new ValidationError('prompt required');
     }
 
     const { suggestSkills, getSkillsConfig } = await import('../lib/skills.js');
@@ -1085,7 +1087,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   if (pathname === '/api/skills/track' && method === 'POST') {
     const { skill_name } = body;
     if (!skill_name) {
-      throw new Error('skill_name required');
+      throw new ValidationError('skill_name required');
     }
 
     const { trackSkillUsage } = await import('../lib/skills.js');
@@ -1111,7 +1113,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
     };
   }
 
-  throw new Error(`Unknown endpoint: ${method} ${pathname}`);
+  throw new NotFoundError(`Unknown endpoint: ${method} ${pathname}`);
 }
 
 // ============================================================================
@@ -1149,8 +1151,8 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
           }
         }
       }
-    } catch {
-      // Ignore errors reading PID file
+    } catch (err) {
+      logWarn('daemon', 'Failed to read daemon PID file', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -1208,7 +1210,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   }
 
   if (!server.listening) {
-    throw new Error(`Could not find available port in range ${portStart}-${portStart + MAX_PORT_ATTEMPTS}`);
+    throw new NetworkError(`Could not find available port in range ${portStart}-${portStart + MAX_PORT_ATTEMPTS}`);
   }
 
   // Save state

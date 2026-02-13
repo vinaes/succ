@@ -18,6 +18,7 @@
 
 import type { VectorStore } from './interface.js';
 import type { VectorSearchResult, VectorItem, StorageConfig, Memory, MemoryType } from '../types.js';
+import { DependencyError } from '../../errors.js';
 
 // Lazy-load qdrant client
 let QdrantClient: any = null;
@@ -31,7 +32,7 @@ async function loadQdrant(): Promise<any> {
     QdrantClient = module.QdrantClient;
     return QdrantClient;
   } catch {
-    throw new Error(
+    throw new DependencyError(
       'Qdrant support requires the "@qdrant/js-client-rest" package. ' +
       'Install it with: npm install @qdrant/js-client-rest'
     );
@@ -212,7 +213,10 @@ export class QdrantVectorStore implements VectorStore {
       // Auto-migrate old unnamed-vector collections by recreating them.
       const vectors = info.config?.params?.vectors;
       if (vectors && typeof vectors === 'object' && 'dense' in vectors) {
-        const storedSize = (vectors as any).dense?.size;
+        interface VectorsWithDense {
+          dense?: { size?: number };
+        }
+        const storedSize = (vectors as VectorsWithDense).dense?.size;
         if (storedSize != null && storedSize !== this.dimensions) {
           logWarn('qdrant', `Collection "${name}" has ${storedSize} dims, need ${this.dimensions}. Recreating. Re-indexing required.`);
           await client.deleteCollection(name);
@@ -488,8 +492,8 @@ export class QdrantVectorStore implements VectorStore {
       await client.delete(name, {
         filter: { must: [{ key: 'doc_type', match: { value: 'doc' } }] },
       });
-    } catch {
-      // Collection might be empty
+    } catch (err) {
+      logWarn('qdrant', 'Pre-upsert delete failed (documents)', { error: err instanceof Error ? err.message : String(err) });
     }
 
     await this.upsertDocumentVectorsBatch(items);
@@ -503,8 +507,8 @@ export class QdrantVectorStore implements VectorStore {
       await client.delete(name, {
         filter: { must: [{ has_id: items.map(i => i.id) }] },
       });
-    } catch {
-      // Ignore
+    } catch (err) {
+      logWarn('qdrant', 'Pre-upsert delete failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     const batchSize = 100;
@@ -528,8 +532,8 @@ export class QdrantVectorStore implements VectorStore {
       await client.delete(name, {
         filter: { must: [{ has_id: items.map(i => i.id) }] },
       });
-    } catch {
-      // Ignore
+    } catch (err) {
+      logWarn('qdrant', 'Pre-upsert delete failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     const batchSize = 100;

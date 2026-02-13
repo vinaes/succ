@@ -13,7 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory, passesQualityThreshold } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
-import { logError, logWarn } from './fault-logger.js';
+import { logError, logWarn, logInfo } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, type LLMBackend } from './llm.js';

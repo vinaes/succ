@@ -225,7 +225,7 @@ async function benchmarkQdrant() {
     const searchMs = performance.now() - searchStart;
     recordResult('qdrant', 'vector_search', SEARCH_ITERATIONS, searchMs);
 
-    // Cleanup
+    // Cleanup - access private client via type assertion for benchmark cleanup
     const client = (store as any).client;
     await client.deleteCollection('succ_bench_documents').catch(() => {});
     await store.close();

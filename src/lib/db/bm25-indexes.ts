@@ -1,5 +1,6 @@
 import { getDb, getGlobalDb, onDbChange } from './connection.js';
 import * as bm25 from '../bm25.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // BM25 Index Management for Code
@@ -297,8 +298,8 @@ export function invalidateGlobalMemoriesBm25Index(): void {
   try {
     const database = getGlobalDb();
     database.prepare("DELETE FROM metadata WHERE key = 'bm25_memories_index'").run();
-  } catch {
-    // DB not initialized yet
+  } catch (err) {
+    logWarn('bm25', 'Failed to invalidate BM25 index', { error: err instanceof Error ? err.message : String(err) });
   }
 }
 

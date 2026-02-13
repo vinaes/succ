@@ -10,6 +10,7 @@ import {
   type MemoryType,
 } from './storage/index.js';
 import { calculateTemporalScore, getTemporalConfig } from './temporal.js';
+import { logWarn } from './fault-logger.js';
 
 // Shared memory row type used across export functions
 interface ExportMemoryRow {
@@ -111,8 +112,8 @@ export function scheduleAutoExport(): void {
         config.graph_export_format || 'obsidian',
         config.graph_export_path
       );
-    } catch {
-      // Silently ignore export errors in auto-export
+    } catch (err) {
+      logWarn('graph-export', 'Auto-export failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     // Also auto-generate AGENTS.md if enabled
@@ -136,9 +137,22 @@ export async function exportGraphSilent(
   const rawMemories = await getAllMemoriesForExport();
 
   // Map to the shape needed by export functions
+  interface MemoryRowWithTemporal {
+    id: number;
+    content: string;
+    tags: string[];
+    source: string | null;
+    type: string | null;
+    created_at: string;
+    access_count: number;
+    last_accessed: string | null;
+    invalidated_by: number | null;
+    valid_from?: string | null;
+    valid_until?: string | null;
+  }
   const memories: ExportMemoryRow[] = rawMemories
     .filter(m => m.invalidated_by === null) // Only active memories
-    .map(m => ({
+    .map((m: MemoryRowWithTemporal) => ({
       id: m.id,
       content: m.content,
       tags: m.tags,
@@ -147,8 +161,8 @@ export async function exportGraphSilent(
       created_at: m.created_at,
       access_count: m.access_count ?? 0,
       last_accessed: m.last_accessed,
-      valid_from: (m as any).valid_from ?? null,
-      valid_until: (m as any).valid_until ?? null,
+      valid_from: m.valid_from ?? null,
+      valid_until: m.valid_until ?? null,
     }));
 
   if (memories.length === 0) {
@@ -547,7 +561,7 @@ function ensureObsidianGraphConfig(brainDir: string, communityIds: number[] = []
  */
 async function getMemoryTypeAsync(id: number): Promise<string> {
   const memory = await getMemoryById(id);
-  return (memory as any)?.type || 'observation';
+  return memory?.type || 'observation';
 }
 
 async function generateIndexContent(

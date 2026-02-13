@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getClaudeDir } from './config.js';
+import { StorageError } from './errors.js';
 
 const LOCK_FILE = 'succ.lock';
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds max lock hold time
@@ -110,7 +111,7 @@ export async function acquireLock(operation: string): Promise<() => void> {
     }
   }
 
-  throw new Error(`Could not acquire lock for ${operation} after ${LOCK_MAX_RETRIES * LOCK_RETRY_MS / 1000}s`);
+  throw new StorageError(`Could not acquire lock for ${operation} after ${LOCK_MAX_RETRIES * LOCK_RETRY_MS / 1000}s`);
 }
 
 /**

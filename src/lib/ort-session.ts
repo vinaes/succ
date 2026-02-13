@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
+import { DependencyError } from './errors.js';
 
 export interface NativeOrtSessionConfig {
   model: string;
@@ -55,7 +56,7 @@ export class NativeOrtSession {
         const msg = err instanceof Error ? err.message : String(err);
         if (this.providers.indexOf(provider) === this.providers.length - 1) {
           // Last provider in chain — throw with details
-          throw new Error(
+          throw new DependencyError(
             `Failed to create ORT session. Last provider ${provider}: ${msg}`
           );
         }
@@ -63,7 +64,7 @@ export class NativeOrtSession {
       }
     }
 
-    throw new Error(
+    throw new DependencyError(
       `Failed to create ORT session with any provider: ${this.providers.join(', ')}`
     );
   }
@@ -71,7 +72,7 @@ export class NativeOrtSession {
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     if (!this.session || !this.tokenizer) {
-      throw new Error('Session not initialized. Call init() first.');
+      throw new DependencyError('Session not initialized. Call init() first.');
     }
 
     // Tokenize
@@ -160,7 +161,7 @@ export async function resolveModelPath(modelName: string): Promise<string> {
   const retryPath = findTransformersJsCache(modelName) || findHfHubCache(modelName);
   if (retryPath) return retryPath;
 
-  throw new Error(
+  throw new DependencyError(
     `ONNX model file not found for '${modelName}'. ` +
     `Ensure the model has ONNX exports (e.g., Xenova/ models on HuggingFace).`
   );

@@ -141,7 +141,7 @@ export function registerStatusTools(server: McpServer) {
               `  Recall queries: ${sc.recallQueries}`,
               `  Search queries: ${sc.searchQueries}`,
               sc.codeSearchQueries > 0 ? `  Code search queries: ${sc.codeSearchQueries}` : '',
-              (sc as any).webSearchQueries > 0 ? `  Web searches: ${(sc as any).webSearchQueries} ($${((sc as any).webSearchCostUsd || 0).toFixed(4)})` : '',
+              sc.webSearchQueries > 0 ? `  Web searches: ${sc.webSearchQueries} ($${(sc.webSearchCostUsd || 0).toFixed(4)})` : '',
               typesList ? `  Types: ${typesList}` : '',
               `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`,
             );

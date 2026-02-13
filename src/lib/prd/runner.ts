@@ -14,6 +14,7 @@
 import { execSync } from 'child_process';
 import { getProjectRoot } from '../config.js';
 import { LoopExecutor, WSExecutor } from './executor.js';
+import { logWarn } from '../fault-logger.js';
 import type { ExecuteOptions } from './executor.js';
 import { getClaudeMode } from '../llm.js';
 import { topologicalSort, allDependenciesMet, validateTaskGraph } from './scheduler.js';
@@ -33,6 +34,7 @@ import {
 } from './state.js';
 import { createExecution, computeStats } from './types.js';
 import type { Prd, Task, TaskAttempt, PrdExecution } from './types.js';
+import { NotFoundError, ValidationError } from '../errors.js';
 
 // ============================================================================
 // Run Options
@@ -114,8 +116,8 @@ function resetWorkingTree(cwd: string): void {
   try {
     git('checkout -- .', cwd);
     git('clean -fd -e .succ', cwd);
-  } catch {
-    // best-effort
+  } catch (err) {
+    logWarn('prd', 'Failed to reset worktree', { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -162,15 +164,15 @@ export async function runPrd(
 
   // 1. Load PRD and tasks
   const prd = loadPrd(prdId);
-  if (!prd) throw new Error(`PRD not found: ${prdId}`);
+  if (!prd) throw new NotFoundError(`PRD not found: ${prdId}`);
 
   const tasks = loadTasks(prdId);
-  if (tasks.length === 0) throw new Error(`No tasks for PRD ${prdId}. Run: succ prd parse ${prdId}`);
+  if (tasks.length === 0) throw new ValidationError(`No tasks for PRD ${prdId}. Run: succ prd parse ${prdId}`);
 
   // 2. Validate task graph
   const validation = validateTaskGraph(tasks);
   if (!validation.valid) {
-    throw new Error(`Invalid task graph:\n${validation.errors.join('\n')}`);
+    throw new ValidationError(`Invalid task graph:\n${validation.errors.join('\n')}`);
   }
   if (validation.warnings.length > 0) {
     console.log('Warnings:');
@@ -191,25 +193,25 @@ export async function runPrd(
   if (options.resume) {
     // Resume existing execution
     const existing = loadExecution(prdId);
-    if (!existing) throw new Error(`No execution state for ${prdId}. Start fresh without --resume`);
+    if (!existing) throw new ValidationError(`No execution state for ${prdId}. Start fresh without --resume`);
 
     // Validate PRD status
-    if (prd.status === 'completed') throw new Error(`PRD ${prdId} already completed. Nothing to resume.`);
-    if (prd.status === 'archived') throw new Error(`PRD ${prdId} is archived. Unarchive first.`);
+    if (prd.status === 'completed') throw new ValidationError(`PRD ${prdId} already completed. Nothing to resume.`);
+    if (prd.status === 'archived') throw new ValidationError(`PRD ${prdId} is archived. Unarchive first.`);
 
     // Check branch exists
     if (!options.noBranch) {
       try {
         git(`rev-parse --verify ${existing.branch}`, root);
       } catch {
-        throw new Error(`Branch ${existing.branch} not found. Cannot resume.`);
+        throw new NotFoundError(`Branch ${existing.branch} not found. Cannot resume.`);
       }
     }
 
     // Stale process detection
     if (existing.pid && existing.pid !== process.pid && isProcessRunning(existing.pid)) {
       if (!options.force) {
-        throw new Error(
+        throw new ValidationError(
           `Another runner (PID ${existing.pid}) may still be running.\n` +
           `Use --force to override, or kill the process first.`
         );
