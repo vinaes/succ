@@ -90,6 +90,58 @@ describe('detectInvariant', () => {
     expect(detectInvariant('ALWAYS USE ESM')).toBe(true);
     expect(detectInvariant('NEVER commit secrets')).toBe(true);
   });
+
+  // Multi-language support
+  it('detects Russian invariant patterns', () => {
+    expect(detectInvariant('Всегда делай PR review перед мержем')).toBe(true);
+    expect(detectInvariant('Никогда не пушь напрямую в main')).toBe(true);
+    expect(detectInvariant('Обязательно запускай тесты перед коммитом')).toBe(true);
+    expect(detectInvariant('Запрещено коммитить секреты в репо')).toBe(true);
+    expect(detectInvariant('Нельзя использовать any в TypeScript')).toBe(true);
+    expect(detectInvariant('Ни в коем случае не удаляй миграции')).toBe(true);
+    expect(detectInvariant('Это запрещено')).toBe(true); // keyword at end of string
+    expect(detectInvariant('Это нельзя')).toBe(true);
+  });
+
+  it('detects German invariant patterns', () => {
+    expect(detectInvariant('Immer Tests vor dem Commit ausführen')).toBe(true);
+    expect(detectInvariant('Niemals direkt auf main pushen')).toBe(true);
+    expect(detectInvariant('Das ist verboten in Produktion')).toBe(true);
+  });
+
+  it('detects French invariant patterns', () => {
+    expect(detectInvariant('Toujours vérifier les tests avant de merger')).toBe(true);
+    expect(detectInvariant('Jamais pousser directement sur main')).toBe(true);
+    expect(detectInvariant('Accès interdit sans authentification')).toBe(true);
+  });
+
+  it('detects Spanish invariant patterns', () => {
+    expect(detectInvariant('Siempre ejecutar tests antes de commit')).toBe(true);
+    expect(detectInvariant('Nunca hacer push directo a main')).toBe(true);
+    expect(detectInvariant('Acceso prohibido sin autenticación')).toBe(true);
+  });
+
+  it('detects Chinese invariant patterns', () => {
+    expect(detectInvariant('必须在提交前运行测试')).toBe(true);
+    expect(detectInvariant('绝不允许直接推送到主分支')).toBe(true);
+    expect(detectInvariant('禁止提交敏感信息')).toBe(true);
+  });
+
+  it('detects Japanese invariant patterns', () => {
+    expect(detectInvariant('必ずテストを実行してからコミットすること')).toBe(true);
+    expect(detectInvariant('本番環境での直接変更は禁止')).toBe(true);
+  });
+
+  it('detects Korean invariant patterns', () => {
+    expect(detectInvariant('반드시 테스트를 실행한 후 커밋하세요')).toBe(true);
+    expect(detectInvariant('메인 브랜치에 직접 푸시해서는 안됩니다')).toBe(true); // "해서는 안" = "must not"
+  });
+
+  it('does not false-positive on normal non-English content', () => {
+    expect(detectInvariant('Базу данных обновили вчера')).toBe(false);
+    expect(detectInvariant('Die Datenbank wurde gestern aktualisiert')).toBe(false);
+    expect(detectInvariant('数据库昨天更新了')).toBe(false);
+  });
 });
 
 // =============================================================================
