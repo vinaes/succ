@@ -72,6 +72,7 @@ program
   .option('-r, --recursive', 'Index recursively', true)
   .option('--pattern <glob>', 'File pattern to match', '**/*.md')
   .option('-f, --force', 'Force reindex all files (ignore cache)')
+  .option('-m, --memories', 'Re-embed all memories with current embedding model')
   .action(index);
 
 program
