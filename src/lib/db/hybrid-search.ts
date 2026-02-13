@@ -227,20 +227,56 @@ export function hybridSearchCode(
   const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
   const vectorMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
 
+  // 5. Symbol name match boost — fetch AST metadata for result set
+  const resultDocIds = combined.map(c => c.docId);
+  const symbolMap = new Map<number, { symbol_name: string | null; symbol_type: string | null }>();
+  if (resultDocIds.length > 0) {
+    const placeholders = resultDocIds.map(() => '?').join(',');
+    const symbolRows = database.prepare(`
+      SELECT id, symbol_name, symbol_type FROM documents WHERE id IN (${placeholders})
+    `).all(...resultDocIds) as Array<{ id: number; symbol_name: string | null; symbol_type: string | null }>;
+    for (const row of symbolRows) {
+      symbolMap.set(row.id, { symbol_name: row.symbol_name, symbol_type: row.symbol_type });
+    }
+  }
+
+  const queryTokens = query.toLowerCase().trim().split(/[\s,]+/).filter(Boolean);
+
   const results: HybridSearchResult[] = [];
   for (const c of combined) {
     const row = rowMap.get(c.docId);
     if (!row) continue;
+
+    let score = c.score;
+
+    // Boost results where symbol_name matches query tokens
+    const sym = symbolMap.get(c.docId);
+    if (sym?.symbol_name) {
+      const symLower = sym.symbol_name.toLowerCase();
+      for (const token of queryTokens) {
+        if (symLower === token) {
+          score += 0.15; // Exact symbol name match
+          break;
+        } else if (symLower.includes(token) || token.includes(symLower)) {
+          score += 0.08; // Partial symbol name match
+          break;
+        }
+      }
+    }
+
     results.push({
       file_path: row.file_path,
       content: row.content,
       start_line: row.start_line,
       end_line: row.end_line,
-      similarity: c.score,
+      similarity: Math.min(score, 1.0),
       bm25Score: bm25Map.get(c.docId),
       vectorScore: vectorMap.get(c.docId),
     });
   }
+
+  // Re-sort by boosted score
+  results.sort((a, b) => b.similarity - a.similarity);
   return results;
 }
 
@@ -396,7 +432,7 @@ export function hybridSearchMemories(
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
       const vecResults = database.prepare(`
-        SELECT m.doc_id, v.distance
+        SELECT m.memory_id AS doc_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
@@ -528,7 +564,7 @@ export function hybridSearchGlobalMemories(
       const candidateLimit = limit * 5;
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
       const vecResults = database.prepare(`
-        SELECT m.doc_id, v.distance
+        SELECT m.memory_id AS doc_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
