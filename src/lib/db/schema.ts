@@ -363,7 +363,6 @@ function checkModelCompatibility(database: Database.Database): void {
 export function initVecTables(database: Database.Database): void {
   if (!sqliteVecAvailable) return;
 
-  const config = getConfig();
   const configDims = getConfig().llm?.embeddings?.dimensions;
   const dims = configDims ?? getModelDimension(getLLMTaskConfig('embeddings').model) ?? 384;
 
@@ -377,17 +376,25 @@ export function initVecTables(database: Database.Database): void {
     .prepare("SELECT value FROM metadata WHERE key = 'vec_memories_migrated_dims'")
     .get() as { value: string } | undefined;
 
-  // Check if migration is needed (table empty but memories exist)
-  // ONLY migrate if no persistent flag exists — prevents repeated DROP+CREATE
+  // Check if migration is needed:
+  // 1. Table empty but memories exist (initial migration)
+  // 2. Dimensions changed since last migration
   let needsMemoriesMigration = false;
-  if (vecMemoriesExists && !vecMemoriesMigrated) {
-    try {
-      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
-      const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
-      needsMemoriesMigration = vecCount.cnt === 0 && memCount.cnt > 0;
-    } catch {
-      // Table might be corrupted, recreate it
-      needsMemoriesMigration = false;
+  let memoriesDimChange = false; // true = old embeddings are wrong dims, skip re-insertion
+  if (vecMemoriesExists) {
+    if (vecMemoriesMigrated && Number(vecMemoriesMigrated.value) !== dims) {
+      // Dimensions changed — recreate vec table (old embeddings are incompatible)
+      logWarn('sqlite-vec', `vec_memories dimension change: ${vecMemoriesMigrated.value} -> ${dims}. Recreating. Re-indexing required.`);
+      needsMemoriesMigration = true;
+      memoriesDimChange = true;
+    } else if (!vecMemoriesMigrated) {
+      try {
+        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as { cnt: number };
+        const memCount = database.prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL').get() as { cnt: number };
+        needsMemoriesMigration = vecCount.cnt === 0 && memCount.cnt > 0;
+      } catch {
+        needsMemoriesMigration = false;
+      }
     }
   }
 
@@ -414,22 +421,24 @@ export function initVecTables(database: Database.Database): void {
         )
       `).run();
 
-      // Migrate existing embeddings
-      const memories = database
-        .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
-        .all() as Array<{ id: number; embedding: Buffer }>;
+      // Migrate existing embeddings (only if same dimensions — skip on dim change)
+      if (!memoriesDimChange) {
+        const memories = database
+          .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
+          .all() as Array<{ id: number; embedding: Buffer }>;
 
-      if (memories.length > 0) {
-        const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
-        const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+        if (memories.length > 0) {
+          const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
+          const insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
 
-        const migrate = database.transaction(() => {
-          for (const mem of memories) {
-            const result = insertVec.run(mem.embedding);
-            insertMap.run(result.lastInsertRowid, mem.id);
-          }
-        });
-        migrate();
+          const migrate = database.transaction(() => {
+            for (const mem of memories) {
+              const result = insertVec.run(mem.embedding);
+              insertMap.run(result.lastInsertRowid, mem.id);
+            }
+          });
+          migrate();
+        }
       }
 
       // Store persistent migration flag to prevent re-running
@@ -451,16 +460,24 @@ export function initVecTables(database: Database.Database): void {
     .prepare("SELECT value FROM metadata WHERE key = 'vec_documents_migrated_dims'")
     .get() as { value: string } | undefined;
 
-  // Check if migration is needed for documents
-  // ONLY migrate if no persistent flag exists — prevents repeated DROP+CREATE
+  // Check if migration is needed for documents:
+  // 1. Table empty but documents exist (initial migration)
+  // 2. Dimensions changed since last migration
   let needsDocumentsMigration = false;
-  if (vecDocumentsExists && sqliteVecAvailable && !vecDocumentsMigrated) {
-    try {
-      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as { cnt: number };
-      const docCount = database.prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL').get() as { cnt: number };
-      needsDocumentsMigration = vecCount.cnt === 0 && docCount.cnt > 0;
-    } catch {
-      needsDocumentsMigration = false;
+  let documentsDimChange = false;
+  if (vecDocumentsExists && sqliteVecAvailable) {
+    if (vecDocumentsMigrated && Number(vecDocumentsMigrated.value) !== dims) {
+      logWarn('sqlite-vec', `vec_documents dimension change: ${vecDocumentsMigrated.value} -> ${dims}. Recreating. Re-indexing required.`);
+      needsDocumentsMigration = true;
+      documentsDimChange = true;
+    } else if (!vecDocumentsMigrated) {
+      try {
+        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as { cnt: number };
+        const docCount = database.prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL').get() as { cnt: number };
+        needsDocumentsMigration = vecCount.cnt === 0 && docCount.cnt > 0;
+      } catch {
+        needsDocumentsMigration = false;
+      }
     }
   }
 
@@ -486,22 +503,24 @@ export function initVecTables(database: Database.Database): void {
         )
       `).run();
 
-      // Migrate existing embeddings
-      const docs = database
-        .prepare('SELECT id, embedding FROM documents WHERE embedding IS NOT NULL ORDER BY id')
-        .all() as Array<{ id: number; embedding: Buffer }>;
+      // Migrate existing embeddings (only if same dimensions — skip on dim change)
+      if (!documentsDimChange) {
+        const docs = database
+          .prepare('SELECT id, embedding FROM documents WHERE embedding IS NOT NULL ORDER BY id')
+          .all() as Array<{ id: number; embedding: Buffer }>;
 
-      if (docs.length > 0) {
-        const insertVec = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)');
-        const insertMap = database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)');
+        if (docs.length > 0) {
+          const insertVec = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)');
+          const insertMap = database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)');
 
-        const migrate = database.transaction(() => {
-          for (const doc of docs) {
-            const result = insertVec.run(doc.embedding);
-            insertMap.run(result.lastInsertRowid, doc.id);
-          }
-        });
-        migrate();
+          const migrate = database.transaction(() => {
+            for (const doc of docs) {
+              const result = insertVec.run(doc.embedding);
+              insertMap.run(result.lastInsertRowid, doc.id);
+            }
+          });
+          migrate();
+        }
       }
 
       // Store persistent migration flag to prevent re-running

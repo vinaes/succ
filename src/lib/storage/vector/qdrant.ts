@@ -211,7 +211,13 @@ export class QdrantVectorStore implements VectorStore {
       // New schema: info.config.params.vectors.dense.size (named)
       const vectors = info.config?.params?.vectors;
       if (vectors && typeof vectors === 'object' && 'dense' in vectors) {
-        // Has new schema with named vectors
+        // Has new schema with named vectors — check dimension match
+        const storedSize = (vectors as any).dense?.size;
+        if (storedSize != null && storedSize !== this.dimensions) {
+          logWarn('qdrant', `Collection "${name}" has ${storedSize} dims, need ${this.dimensions}. Recreating. Re-indexing required.`);
+          await client.deleteCollection(name);
+          await this.createMultiVectorCollection(name, type);
+        }
         this.hasMultiVectorSchema[key] = true;
       } else {
         // Old unnamed-vector schema — needs migration
