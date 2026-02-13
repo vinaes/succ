@@ -909,7 +909,7 @@ export class StorageDispatcher {
   // Hybrid Search — Approach C (BM25 + dense + RRF in single Qdrant call)
   // ===========================================================================
 
-  async hybridSearchCode(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {
+  async hybridSearchCode(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, filters?: { regex?: string; symbolType?: string }): Promise<any[]> {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
@@ -923,7 +923,7 @@ export class StorageDispatcher {
       return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh)).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
     }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha);
+    return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
   }
 
   async hybridSearchDocs(query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number): Promise<any[]> {

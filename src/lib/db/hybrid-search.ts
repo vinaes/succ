@@ -61,6 +61,13 @@ export interface HybridGlobalMemoryResult {
 // Hybrid Search Functions
 // ============================================================================
 
+export interface CodeSearchFilters {
+  /** Filter results to only those matching this regex against content */
+  regex?: string;
+  /** Filter results to only chunks with this symbol_type (function, method, class, interface, type_alias) */
+  symbolType?: string;
+}
+
 /**
  * Hybrid search combining BM25 and vector similarity.
  * Uses sqlite-vec for fast KNN vector search when available.
@@ -70,13 +77,15 @@ export interface HybridGlobalMemoryResult {
  * @param limit - Max results
  * @param threshold - Min similarity threshold
  * @param alpha - Weight: 0=pure BM25, 1=pure vector, 0.5=equal (default: 0.5)
+ * @param filters - Optional regex/symbol_type filters
  */
 export function hybridSearchCode(
   query: string,
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.25,
-  alpha: number = 0.5
+  alpha: number = 0.5,
+  filters?: CodeSearchFilters
 ): HybridSearchResult[] {
   const database = getDb();
 
@@ -242,15 +251,27 @@ export function hybridSearchCode(
 
   const queryTokens = query.toLowerCase().trim().split(/[\s,]+/).filter(Boolean);
 
+  // Pre-compile regex filter if provided (limit length to prevent ReDoS)
+  let regexFilter: RegExp | null = null;
+  if (filters?.regex && filters.regex.length <= 500) {
+    try { regexFilter = new RegExp(filters.regex, 'i'); } catch { /* invalid regex — skip */ }
+  }
+
   const results: HybridSearchResult[] = [];
   for (const c of combined) {
     const row = rowMap.get(c.docId);
     if (!row) continue;
 
+    // Apply symbol_type filter
+    const sym = symbolMap.get(c.docId);
+    if (filters?.symbolType && sym?.symbol_type !== filters.symbolType) continue;
+
+    // Apply regex filter against content
+    if (regexFilter && !regexFilter.test(row.content)) continue;
+
     let score = c.score;
 
     // Boost results where symbol_name matches query tokens
-    const sym = symbolMap.get(c.docId);
     if (sym?.symbol_name) {
       const symLower = sym.symbol_name.toLowerCase();
       for (const token of queryTokens) {

@@ -14,7 +14,7 @@ import {
 import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
 import { logError } from './fault-logger.js';
 
-import type { Chunk } from './chunker.js';
+import { enrichForEmbedding, type Chunk } from './chunker.js';
 export type { Chunk };
 
 export interface IndexerOptions {
@@ -201,8 +201,12 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     }
 
     try {
-      // 3. Single batch embedding for all chunks in batch (reuse content refs, no extra copy)
-      const allEmbeddings = await getEmbeddings(allChunksWithMeta.map(c => c.content));
+      // 3. Single batch embedding for all chunks in batch
+      // For code files, prepend symbol metadata to improve semantic embedding quality
+      const embeddingTexts = pathPrefix === 'code:'
+        ? allChunksWithMeta.map(c => enrichForEmbedding(c as Chunk))
+        : allChunksWithMeta.map(c => c.content);
+      const allEmbeddings = await getEmbeddings(embeddingTexts);
 
       // 4. Group by file and save
       const documentsByFile = new Map<number, Array<{

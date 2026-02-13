@@ -546,10 +546,10 @@ export async function updateGlobalMemoriesBm25Index(memoryId: number, content: s
 // ===========================================================================
 
 export async function hybridSearchCode(
-  query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number
+  query: string, queryEmbedding: number[], limit?: number, threshold?: number, alpha?: number, filters?: { regex?: string; symbolType?: string }
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha);
+  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
 }
 
 export async function hybridSearchDocs(
