@@ -235,6 +235,10 @@ export function buildIndex(
   const rawContent = new Map<number, string>();
   let totalLength = 0;
 
+  // Only store rawContent for code indexes (used for exact match boost).
+  // Docs/memories indexes never use rawContent — saves ~2x memory and serialization size.
+  const storeRawContent = tokenizer === 'code';
+
   for (const doc of docs) {
     // Use AST-enriched tokenizer when metadata is available (code search)
     let tokens: string[];
@@ -247,7 +251,7 @@ export function buildIndex(
     }
 
     docLengths.set(doc.id, tokens.length);
-    rawContent.set(doc.id, doc.content.toLowerCase());
+    if (storeRawContent) rawContent.set(doc.id, doc.content.toLowerCase());
     totalLength += tokens.length;
 
     const termFreq = new Map<string, number>();
@@ -297,7 +301,8 @@ export function addToIndex(
   index.avgDocLength = (oldTotal + tokens.length) / index.totalDocs;
 
   index.docLengths.set(doc.id, tokens.length);
-  index.rawContent.set(doc.id, doc.content.toLowerCase());
+  // Only store rawContent for code indexes (exact match boost)
+  if (tokenizer === 'code') index.rawContent.set(doc.id, doc.content.toLowerCase());
 
   const termFreq = new Map<string, number>();
   for (const token of tokens) {

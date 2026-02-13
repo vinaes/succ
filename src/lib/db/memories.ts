@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDb } from './connection.js';
+import { getDb, cachedPrepare } from './connection.js';
 import { sqliteVecAvailable, MemoryType } from './schema.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { logWarn } from '../fault-logger.js';
@@ -95,7 +95,7 @@ export function findSimilarMemory(
       for (const result of vecResults) {
         const similarity = 1 - result.distance;
         if (similarity >= threshold) {
-          const memory = database.prepare(
+          const memory = cachedPrepare(
             'SELECT id, content FROM memories WHERE id = ?'
           ).get(result.memory_id) as { id: number; content: string } | undefined;
           if (memory) {
@@ -110,7 +110,7 @@ export function findSimilarMemory(
   }
 
   // Brute-force fallback when sqlite-vec unavailable
-  const rows = database.prepare('SELECT id, content, embedding FROM memories').all() as Array<{
+  const rows = cachedPrepare('SELECT id, content, embedding FROM memories').all() as Array<{
     id: number;
     content: string;
     embedding: Buffer;
@@ -157,7 +157,6 @@ export function saveMemory(
     }
   }
 
-  const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
   const tagsJson = tags.length > 0 ? JSON.stringify(tags) : null;
   const qualityFactorsJson = qualityScore?.factors ? JSON.stringify(qualityScore.factors) : null;
@@ -166,8 +165,7 @@ export function saveMemory(
   const validFromStr = validFrom ? (validFrom instanceof Date ? validFrom.toISOString() : validFrom) : null;
   const validUntilStr = validUntil ? (validUntil instanceof Date ? validUntil.toISOString() : validUntil) : null;
 
-  const result = database
-    .prepare(`
+  const result = cachedPrepare(`
       INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, embedding)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
@@ -188,8 +186,8 @@ export function saveMemory(
   // Also insert into vec_memories for fast KNN search
   if (sqliteVecAvailable) {
     try {
-      const vecResult = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(embeddingBlob);
-      database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newId);
+      const vecResult = cachedPrepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(embeddingBlob);
+      cachedPrepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newId);
     } catch (err) {
       logWarn('memories', 'Vector insert failed for memory, semantic recall may not find it', { error: err instanceof Error ? err.message : String(err) });
     }
@@ -277,8 +275,7 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
   }
 
   // Brute-force fallback
-  const memories = database
-    .prepare('SELECT id, embedding FROM memories WHERE id != ?')
+  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?')
     .all(memoryId) as Array<{ id: number; embedding: Buffer }>;
 
   const similarities: Array<{ id: number; similarity: number }> = [];
@@ -502,9 +499,7 @@ export function searchMemories(
  * Get recent memories
  */
 export function getRecentMemories(limit: number = 10): Memory[] {
-  const database = getDb();
-  const rows = database
-    .prepare(`
+  const rows = cachedPrepare(`
       SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at
       FROM memories
       WHERE invalidated_by IS NULL
@@ -544,22 +539,20 @@ export function getRecentMemories(limit: number = 10): Memory[] {
  * Delete a memory by ID
  */
 export function deleteMemory(id: number): boolean {
-  const database = getDb();
-
   // Also delete from vec_memories using mapping table
   if (sqliteVecAvailable) {
     try {
-      const mapping = database.prepare('SELECT vec_rowid FROM vec_memories_map WHERE memory_id = ?').get(id) as { vec_rowid: number } | undefined;
+      const mapping = cachedPrepare('SELECT vec_rowid FROM vec_memories_map WHERE memory_id = ?').get(id) as { vec_rowid: number } | undefined;
       if (mapping) {
-        database.prepare('DELETE FROM vec_memories WHERE rowid = ?').run(mapping.vec_rowid);
-        database.prepare('DELETE FROM vec_memories_map WHERE memory_id = ?').run(id);
+        cachedPrepare('DELETE FROM vec_memories WHERE rowid = ?').run(mapping.vec_rowid);
+        cachedPrepare('DELETE FROM vec_memories_map WHERE memory_id = ?').run(id);
       }
     } catch (err) {
       logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
-  const result = database.prepare('DELETE FROM memories WHERE id = ?').run(id);
+  const result = cachedPrepare('DELETE FROM memories WHERE id = ?').run(id);
   if (result.changes > 0) {
     logDeletion('deleteMemory', 1, [id]);
     invalidateMemoriesBm25Index();
@@ -573,10 +566,9 @@ export function deleteMemory(id: number): boolean {
  * The memory remains in the database for historical queries and rollback.
  */
 export function invalidateMemory(memoryId: number, supersededById: number): boolean {
-  const database = getDb();
   const now = new Date().toISOString();
 
-  const result = database.prepare(`
+  const result = cachedPrepare(`
     UPDATE memories
     SET valid_until = ?, invalidated_by = ?
     WHERE id = ? AND invalidated_by IS NULL
@@ -590,9 +582,7 @@ export function invalidateMemory(memoryId: number, supersededById: number): bool
  * Used by the consolidation rollback (undo) feature.
  */
 export function restoreInvalidatedMemory(memoryId: number): boolean {
-  const database = getDb();
-
-  const result = database.prepare(`
+  const result = cachedPrepare(`
     UPDATE memories
     SET valid_until = NULL, invalidated_by = NULL
     WHERE id = ? AND invalidated_by IS NOT NULL
@@ -611,10 +601,8 @@ export function getConsolidationHistory(limit: number = 20): Array<{
   originalIds: number[];
   mergedAt: string;
 }> {
-  const database = getDb();
-
   // Find memories that have supersedes links (these are merge results)
-  const rows = database.prepare(`
+  const rows = cachedPrepare(`
     SELECT DISTINCT ml.source_id as merged_id, ml.created_at as merged_at
     FROM memory_links ml
     WHERE ml.relation = 'supersedes'
@@ -624,7 +612,7 @@ export function getConsolidationHistory(limit: number = 20): Array<{
 
   return rows.map(row => {
     const mergedMemory = getMemoryById(row.merged_id);
-    const originals = database.prepare(`
+    const originals = cachedPrepare(`
       SELECT target_id FROM memory_links
       WHERE source_id = ? AND relation = 'supersedes'
     `).all(row.merged_id) as Array<{ target_id: number }>;
@@ -650,24 +638,19 @@ export function getMemoryStats(): {
   by_type: Record<string, number>;
   stale_count: number; // Memories older than 30 days
 } {
-  const database = getDb();
-
-  const total = database.prepare('SELECT COUNT(*) as count FROM memories').get() as {
+  const total = cachedPrepare('SELECT COUNT(*) as count FROM memories').get() as {
     count: number;
   };
-  const active = database.prepare('SELECT COUNT(*) as count FROM memories WHERE invalidated_by IS NULL').get() as {
+  const active = cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE invalidated_by IS NULL').get() as {
     count: number;
   };
-  const oldest = database
-    .prepare('SELECT MIN(created_at) as oldest FROM memories WHERE invalidated_by IS NULL')
+  const oldest = cachedPrepare('SELECT MIN(created_at) as oldest FROM memories WHERE invalidated_by IS NULL')
     .get() as { oldest: string | null };
-  const newest = database
-    .prepare('SELECT MAX(created_at) as newest FROM memories WHERE invalidated_by IS NULL')
+  const newest = cachedPrepare('SELECT MAX(created_at) as newest FROM memories WHERE invalidated_by IS NULL')
     .get() as { newest: string | null };
 
   // Count by type (active only)
-  const typeCounts = database
-    .prepare('SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories WHERE invalidated_by IS NULL GROUP BY type')
+  const typeCounts = cachedPrepare('SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories WHERE invalidated_by IS NULL GROUP BY type')
     .all('observation') as Array<{ type: string; count: number }>;
   const by_type: Record<string, number> = {};
   for (const row of typeCounts) {
@@ -676,8 +659,7 @@ export function getMemoryStats(): {
 
   // Count stale memories (older than 30 days, active only)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const stale = database
-    .prepare('SELECT COUNT(*) as count FROM memories WHERE created_at < ? AND invalidated_by IS NULL')
+  const stale = cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE created_at < ? AND invalidated_by IS NULL')
     .get(thirtyDaysAgo) as { count: number };
 
   return {
@@ -700,8 +682,7 @@ export function deleteMemoriesOlderThan(date: Date): number {
   // Clean up vec_memories and vec_memories_map for affected memories
   if (sqliteVecAvailable) {
     try {
-      const affectedIds = database
-        .prepare('SELECT id FROM memories WHERE created_at < ?')
+      const affectedIds = cachedPrepare('SELECT id FROM memories WHERE created_at < ?')
         .all(date.toISOString()) as Array<{ id: number }>;
 
       if (affectedIds.length > 0) {
@@ -726,8 +707,7 @@ export function deleteMemoriesOlderThan(date: Date): number {
     }
   }
 
-  const result = database
-    .prepare('DELETE FROM memories WHERE created_at < ?')
+  const result = cachedPrepare('DELETE FROM memories WHERE created_at < ?')
     .run(date.toISOString());
   if (result.changes > 0) {
     logDeletion('deleteMemoriesOlderThan', result.changes, [], `older_than=${date.toISOString()}`);
@@ -743,8 +723,7 @@ export function deleteMemoriesByTag(tag: string): number {
   const database = getDb();
 
   // Get all memories with tags
-  const memories = database
-    .prepare('SELECT id, tags FROM memories WHERE tags IS NOT NULL')
+  const memories = cachedPrepare('SELECT id, tags FROM memories WHERE tags IS NOT NULL')
     .all() as Array<{ id: number; tags: string }>;
 
   const toDelete: number[] = [];
@@ -796,9 +775,7 @@ export function deleteMemoriesByTag(tag: string): number {
  * Get memory by ID
  */
 export function getMemoryById(id: number): Memory | null {
-  const database = getDb();
-  const row = database
-    .prepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at FROM memories WHERE id = ?')
+  const row = cachedPrepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at FROM memories WHERE id = ?')
     .get(id) as {
       id: number;
       content: string;
@@ -880,12 +857,11 @@ export function searchMemoriesAsOf(
   limit: number = 5,
   threshold: number = 0.3
 ): MemorySearchResult[] {
-  const database = getDb();
   const asOfStr = asOfDate.toISOString();
   const asOfTime = asOfDate.getTime();
 
   // Get memories that existed at that time
-  const rows = database.prepare(`
+  const rows = cachedPrepare(`
     SELECT * FROM memories
     WHERE created_at <= ?
   `).all(asOfStr) as Array<{
@@ -996,7 +972,7 @@ export function saveMemoriesBatch(
   }
 
   // Batch duplicate check: load all existing memories once
-  const existingRows = database.prepare('SELECT id, content, embedding FROM memories').all() as Array<{
+  const existingRows = cachedPrepare('SELECT id, content, embedding FROM memories').all() as Array<{
     id: number;
     content: string;
     embedding: Buffer;

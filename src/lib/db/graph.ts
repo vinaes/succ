@@ -1,4 +1,4 @@
-import { getDb } from './connection.js';
+import { getDb, cachedPrepare } from './connection.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { bufferToFloatArray } from './helpers.js';
 import { triggerAutoExport } from '../graph-scheduler.js';
@@ -56,8 +56,6 @@ export function createMemoryLink(
     validUntil?: string | Date;
   }
 ): { id: number; created: boolean } {
-  const database = getDb();
-
   // Convert Date objects to ISO strings
   const validFromStr = options?.validFrom
     ? (options.validFrom instanceof Date ? options.validFrom.toISOString() : options.validFrom)
@@ -67,8 +65,7 @@ export function createMemoryLink(
     : null;
 
   try {
-    const result = database
-      .prepare(`
+    const result = cachedPrepare(`
         INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
@@ -83,8 +80,7 @@ export function createMemoryLink(
   } catch (error: any) {
     // Link already exists (UNIQUE constraint)
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      const existing = database
-        .prepare('SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
+      const existing = cachedPrepare('SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
         .get(sourceId, targetId, relation) as { id: number };
       return { id: existing.id, created: false };
     }
@@ -96,16 +92,12 @@ export function createMemoryLink(
  * Delete a link between memories
  */
 export function deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): boolean {
-  const database = getDb();
-
   if (relation) {
-    const result = database
-      .prepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
+    const result = cachedPrepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
       .run(sourceId, targetId, relation);
     return result.changes > 0;
   } else {
-    const result = database
-      .prepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ?')
+    const result = cachedPrepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ?')
       .run(sourceId, targetId);
     return result.changes > 0;
   }
@@ -118,14 +110,10 @@ export function getMemoryLinks(memoryId: number): {
   outgoing: MemoryLink[];
   incoming: MemoryLink[];
 } {
-  const database = getDb();
-
-  const outgoing = database
-    .prepare('SELECT * FROM memory_links WHERE source_id = ?')
+  const outgoing = cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?')
     .all(memoryId) as MemoryLink[];
 
-  const incoming = database
-    .prepare('SELECT * FROM memory_links WHERE target_id = ?')
+  const incoming = cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?')
     .all(memoryId) as MemoryLink[];
 
   return { outgoing, incoming };
@@ -186,7 +174,6 @@ export function findConnectedMemories(
   memoryId: number,
   maxDepth: number = 2
 ): Array<{ memory: Memory; depth: number; path: number[] }> {
-  const database = getDb();
   const visited = new Set<number>([memoryId]);
   const results: Array<{ memory: Memory; depth: number; path: number[] }> = [];
 
@@ -198,13 +185,11 @@ export function findConnectedMemories(
 
     for (const { id, path } of currentLevel) {
       // Get outgoing links
-      const outgoing = database
-        .prepare('SELECT target_id FROM memory_links WHERE source_id = ?')
+      const outgoing = cachedPrepare('SELECT target_id FROM memory_links WHERE source_id = ?')
         .all(id) as Array<{ target_id: number }>;
 
       // Get incoming links
-      const incoming = database
-        .prepare('SELECT source_id FROM memory_links WHERE target_id = ?')
+      const incoming = cachedPrepare('SELECT source_id FROM memory_links WHERE target_id = ?')
         .all(id) as Array<{ source_id: number }>;
 
       const neighbors = [
@@ -243,18 +228,14 @@ export function findRelatedMemoriesForLinking(
   threshold: number = 0.75,
   maxLinks: number = 3
 ): Array<{ id: number; similarity: number }> {
-  const database = getDb();
-
-  const source = database
-    .prepare('SELECT id, embedding FROM memories WHERE id = ?')
+  const source = cachedPrepare('SELECT id, embedding FROM memories WHERE id = ?')
     .get(memoryId) as { id: number; embedding: Buffer } | undefined;
 
   if (!source) return [];
 
   const sourceEmbedding = bufferToFloatArray(source.embedding);
 
-  const memories = database
-    .prepare('SELECT id, embedding FROM memories WHERE id != ?')
+  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?')
     .all(memoryId) as Array<{ id: number; embedding: Buffer }>;
 
   const similarities: Array<{ id: number; similarity: number }> = [];
@@ -302,10 +283,7 @@ export function autoLinkSimilarMemories(
   threshold: number = 0.75,
   maxLinks: number = 3
 ): number {
-  const database = getDb();
-
-  const memories = database
-    .prepare('SELECT id, embedding FROM memories')
+  const memories = cachedPrepare('SELECT id, embedding FROM memories')
     .all() as Array<{ id: number; embedding: Buffer }>;
 
   let linksCreated = 0;
@@ -357,27 +335,21 @@ export function getGraphStats(): {
   isolated_memories: number;
   relations: Record<string, number>;
 } {
-  const database = getDb();
-
-  const totalMemories = (database
-    .prepare('SELECT COUNT(*) as count FROM memories')
+  const totalMemories = (cachedPrepare('SELECT COUNT(*) as count FROM memories')
     .get() as { count: number }).count;
 
-  const totalLinks = (database
-    .prepare('SELECT COUNT(*) as count FROM memory_links')
+  const totalLinks = (cachedPrepare('SELECT COUNT(*) as count FROM memory_links')
     .get() as { count: number }).count;
 
   // Count memories with no links
-  const isolatedCount = (database
-    .prepare(`
+  const isolatedCount = (cachedPrepare(`
       SELECT COUNT(*) as count FROM memories m
       WHERE NOT EXISTS (SELECT 1 FROM memory_links WHERE source_id = m.id OR target_id = m.id)
     `)
     .get() as { count: number }).count;
 
   // Count by relation type
-  const relationCounts = database
-    .prepare('SELECT relation, COUNT(*) as count FROM memory_links GROUP BY relation')
+  const relationCounts = cachedPrepare('SELECT relation, COUNT(*) as count FROM memory_links GROUP BY relation')
     .all() as Array<{ relation: string; count: number }>;
 
   const relations: Record<string, number> = {};
@@ -408,17 +380,14 @@ export function invalidateMemoryLink(
   targetId: number,
   relation?: LinkRelation
 ): boolean {
-  const database = getDb();
   const now = new Date().toISOString();
 
   if (relation) {
-    const result = database
-      .prepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND relation = ? AND valid_until IS NULL')
+    const result = cachedPrepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND relation = ? AND valid_until IS NULL')
       .run(now, sourceId, targetId, relation);
     return result.changes > 0;
   } else {
-    const result = database
-      .prepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND valid_until IS NULL')
+    const result = cachedPrepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND valid_until IS NULL')
       .run(now, sourceId, targetId);
     return result.changes > 0;
   }
@@ -434,11 +403,9 @@ export function getMemoryLinksAsOf(
   outgoing: MemoryLink[];
   incoming: MemoryLink[];
 } {
-  const database = getDb();
   const asOfStr = asOfDate.toISOString();
 
-  const outgoing = database
-    .prepare(`
+  const outgoing = cachedPrepare(`
       SELECT * FROM memory_links
       WHERE source_id = ?
         AND created_at <= ?
@@ -447,8 +414,7 @@ export function getMemoryLinksAsOf(
     `)
     .all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
 
-  const incoming = database
-    .prepare(`
+  const incoming = cachedPrepare(`
       SELECT * FROM memory_links
       WHERE target_id = ?
         AND created_at <= ?
@@ -468,7 +434,6 @@ export function findConnectedMemoriesAsOf(
   asOfDate: Date,
   maxDepth: number = 2
 ): Array<{ memory: Memory; depth: number; path: number[] }> {
-  const database = getDb();
   const asOfStr = asOfDate.toISOString();
   const visited = new Set<number>([memoryId]);
   const results: Array<{ memory: Memory; depth: number; path: number[] }> = [];
@@ -481,8 +446,7 @@ export function findConnectedMemoriesAsOf(
 
     for (const { id, path } of currentLevel) {
       // Get outgoing links that were valid at that time
-      const outgoing = database
-        .prepare(`
+      const outgoing = cachedPrepare(`
           SELECT target_id FROM memory_links
           WHERE source_id = ?
             AND created_at <= ?
@@ -492,8 +456,7 @@ export function findConnectedMemoriesAsOf(
         .all(id, asOfStr, asOfStr, asOfStr) as Array<{ target_id: number }>;
 
       // Get incoming links that were valid at that time
-      const incoming = database
-        .prepare(`
+      const incoming = cachedPrepare(`
           SELECT source_id FROM memory_links
           WHERE target_id = ?
             AND created_at <= ?
@@ -539,17 +502,14 @@ export function getGraphStatsAsOf(asOfDate: Date): {
   avg_links_per_memory: number;
   relations: Record<string, number>;
 } {
-  const database = getDb();
   const asOfStr = asOfDate.toISOString();
 
   // Count memories that existed at that time
-  const totalMemories = (database
-    .prepare('SELECT COUNT(*) as count FROM memories WHERE created_at <= ?')
+  const totalMemories = (cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE created_at <= ?')
     .get(asOfStr) as { count: number }).count;
 
   // Count links that were valid at that time
-  const totalLinks = (database
-    .prepare(`
+  const totalLinks = (cachedPrepare(`
       SELECT COUNT(*) as count FROM memory_links
       WHERE created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
@@ -558,8 +518,7 @@ export function getGraphStatsAsOf(asOfDate: Date): {
     .get(asOfStr, asOfStr, asOfStr) as { count: number }).count;
 
   // Count by relation type at that time
-  const relationCounts = database
-    .prepare(`
+  const relationCounts = cachedPrepare(`
       SELECT relation, COUNT(*) as count FROM memory_links
       WHERE created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
@@ -589,31 +548,26 @@ export function getGraphStatsAsOf(asOfDate: Date): {
  * Update tags for a memory.
  */
 export function updateMemoryEmbedding(memoryId: number, embedding: number[]): void {
-  const database = getDb();
   const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
-  database.prepare('UPDATE memories SET embedding = ? WHERE id = ?').run(embeddingBlob, memoryId);
+  cachedPrepare('UPDATE memories SET embedding = ? WHERE id = ?').run(embeddingBlob, memoryId);
 }
 
 export function getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Array<{ id: number; content: string }> {
-  const database = getDb();
-  return database.prepare('SELECT id, content FROM memories WHERE id > ? ORDER BY id LIMIT ?').all(afterId, limit) as Array<{ id: number; content: string }>;
+  return cachedPrepare('SELECT id, content FROM memories WHERE id > ? ORDER BY id LIMIT ?').all(afterId, limit) as Array<{ id: number; content: string }>;
 }
 
 export function getMemoryCount(): number {
-  const database = getDb();
-  const row = database.prepare('SELECT count(*) as count FROM memories').get() as { count: number };
+  const row = cachedPrepare('SELECT count(*) as count FROM memories').get() as { count: number };
   return row.count;
 }
 
 export function getMemoryEmbeddingCount(): number {
-  const database = getDb();
-  const row = database.prepare('SELECT count(*) as count FROM memories WHERE embedding IS NOT NULL').get() as { count: number };
+  const row = cachedPrepare('SELECT count(*) as count FROM memories WHERE embedding IS NOT NULL').get() as { count: number };
   return row.count;
 }
 
 export function updateMemoryTags(memoryId: number, tags: string[]): void {
-  const database = getDb();
-  database.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(tags), memoryId);
+  cachedPrepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(tags), memoryId);
 }
 
 /**
@@ -636,8 +590,7 @@ export function updateMemoryLink(linkId: number, updates: { relation?: string; w
  * Upsert centrality score for a memory.
  */
 export function upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): void {
-  const database = getDb();
-  database.prepare(
+  cachedPrepare(
     `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(memory_id) DO UPDATE SET degree = excluded.degree, normalized_degree = excluded.normalized_degree, updated_at = excluded.updated_at`

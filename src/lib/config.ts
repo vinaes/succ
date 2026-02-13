@@ -458,13 +458,12 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   // Safety: memory_consolidation requires GLOBAL opt-in.
   // Project config can DISABLE (false) but cannot ENABLE (true) on its own.
   // This prevents .succ/config.json from silently enabling destructive consolidation.
-  const globalConfigPath = path.join(os.homedir(), '.succ', 'config.json');
   let globalConsolidation: boolean | undefined;
   try {
-    if (fs.existsSync(globalConfigPath)) {
-      const globalCfg = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
-      globalConsolidation = globalCfg.idle_reflection?.operations?.memory_consolidation;
-    }
+    const globalCfg = loadGlobalConfig() as Record<string, unknown>;
+    const idleRef = globalCfg.idle_reflection as Record<string, unknown> | undefined;
+    const ops = idleRef?.operations as Record<string, unknown> | undefined;
+    globalConsolidation = ops?.memory_consolidation as boolean | undefined;
   } catch { /* ignore parse errors */ }
 
   // Rule: global must explicitly be true, AND merged value must not be false

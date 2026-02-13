@@ -2,6 +2,9 @@ import { getDb, getGlobalDb, onDbChange } from './connection.js';
 import * as bm25 from '../bm25.js';
 import { logWarn } from '../fault-logger.js';
 
+// Batch size for paginated index rebuilds — limits peak memory during full rebuild.
+const REBUILD_BATCH_SIZE = 5000;
+
 // ============================================================================
 // BM25 Index Management for Code
 // ============================================================================
@@ -30,24 +33,31 @@ function getCodeBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from documents — pass AST metadata for tokenizeCodeWithAST boost
-  const rows = database.prepare(
-    "SELECT id, content, symbol_name, signature FROM documents WHERE file_path LIKE 'code:%'"
-  ).all() as Array<{
-    id: number;
-    content: string;
-    symbol_name: string | null;
-    signature: string | null;
-  }>;
-
-  const docs: bm25.BM25Doc[] = rows.map(row => ({
-    id: row.id,
-    content: row.content,
-    symbolName: row.symbol_name ?? undefined,
-    signature: row.signature ?? undefined,
-  }));
-
-  codeBm25Index = bm25.buildIndex(docs, 'code');
+  // Build from documents in batches to limit peak memory
+  codeBm25Index = bm25.createEmptyIndex();
+  const stmt = database.prepare(
+    "SELECT id, content, symbol_name, signature FROM documents WHERE file_path LIKE 'code:%' ORDER BY id LIMIT ? OFFSET ?"
+  );
+  let offset = 0;
+  for (;;) {
+    const rows = stmt.all(REBUILD_BATCH_SIZE, offset) as Array<{
+      id: number;
+      content: string;
+      symbol_name: string | null;
+      signature: string | null;
+    }>;
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      bm25.addToIndex(codeBm25Index, {
+        id: row.id,
+        content: row.content,
+        symbolName: row.symbol_name ?? undefined,
+        signature: row.signature ?? undefined,
+      }, 'code');
+    }
+    offset += rows.length;
+    if (rows.length < REBUILD_BATCH_SIZE) break;
+  }
 
   // Store for future use
   saveCodeBm25Index();
@@ -117,13 +127,19 @@ function getDocsBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from documents (exclude code: prefix)
-  const rows = database.prepare("SELECT id, content FROM documents WHERE file_path NOT LIKE 'code:%'").all() as Array<{
-    id: number;
-    content: string;
-  }>;
-
-  docsBm25Index = bm25.buildIndex(rows, 'docs');
+  // Build from documents in batches to limit peak memory
+  docsBm25Index = bm25.createEmptyIndex();
+  const stmt = database.prepare("SELECT id, content FROM documents WHERE file_path NOT LIKE 'code:%' ORDER BY id LIMIT ? OFFSET ?");
+  let offset = 0;
+  for (;;) {
+    const rows = stmt.all(REBUILD_BATCH_SIZE, offset) as Array<{ id: number; content: string }>;
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      bm25.addToIndex(docsBm25Index, row, 'docs');
+    }
+    offset += rows.length;
+    if (rows.length < REBUILD_BATCH_SIZE) break;
+  }
 
   // Store for future use
   saveDocsBm25Index();
@@ -191,13 +207,21 @@ function getMemoriesBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from memories
-  const rows = database.prepare('SELECT id, content FROM memories').all() as Array<{
-    id: number;
-    content: string;
-  }>;
-
-  memoriesBm25Index = bm25.buildIndex(rows, 'docs'); // Use docs tokenizer with stemming
+  // Build from memories in batches to limit peak memory
+  memoriesBm25Index = bm25.createEmptyIndex();
+  {
+    const stmt = database.prepare('SELECT id, content FROM memories ORDER BY id LIMIT ? OFFSET ?');
+    let offset = 0;
+    for (;;) {
+      const rows = stmt.all(REBUILD_BATCH_SIZE, offset) as Array<{ id: number; content: string }>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        bm25.addToIndex(memoriesBm25Index, row, 'docs');
+      }
+      offset += rows.length;
+      if (rows.length < REBUILD_BATCH_SIZE) break;
+    }
+  }
 
   // Store for future use
   saveMemoriesBm25Index();
@@ -265,13 +289,21 @@ function getGlobalMemoriesBm25Index(): bm25.BM25Index {
     }
   }
 
-  // Build from memories
-  const rows = database.prepare('SELECT id, content FROM memories').all() as Array<{
-    id: number;
-    content: string;
-  }>;
-
-  globalMemoriesBm25Index = bm25.buildIndex(rows, 'docs'); // Use docs tokenizer with stemming
+  // Build from memories in batches to limit peak memory
+  globalMemoriesBm25Index = bm25.createEmptyIndex();
+  {
+    const stmt = database.prepare('SELECT id, content FROM memories ORDER BY id LIMIT ? OFFSET ?');
+    let offset = 0;
+    for (;;) {
+      const rows = stmt.all(REBUILD_BATCH_SIZE, offset) as Array<{ id: number; content: string }>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        bm25.addToIndex(globalMemoriesBm25Index, row, 'docs');
+      }
+      offset += rows.length;
+      if (rows.length < REBUILD_BATCH_SIZE) break;
+    }
+  }
 
   // Store for future use
   saveGlobalMemoriesBm25Index();
