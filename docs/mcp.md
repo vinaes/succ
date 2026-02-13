@@ -79,6 +79,47 @@ Claude will automatically use these tools when relevant — for example, searchi
 | `threshold` | number | 0.2 | Similarity threshold (0-1) |
 | `output` | `"full"` \| `"lean"` | `"full"` | `lean` returns file+lines only (saves tokens) |
 
+<details>
+<summary>succ_search examples</summary>
+
+**Search brain vault for embedding docs:**
+```
+query: "embedding"
+limit: 3
+```
+Returns matching brain vault chunks with file path, content preview, and similarity score:
+```
+1. .succ/brain/00_Inbox/2026-02-09 Observation (4525).md:1-6 (82.3%)
+   Local embedding mode uses Transformers.js, CPU-bound, achieves 50-100 chunks/sec...
+```
+
+**Browse recent documents:**
+```
+query: "*"
+limit: 10
+```
+Use `*` as a wildcard query to list the most recently indexed brain vault files.
+
+**Lean output for token-efficient navigation:**
+```
+query: "architecture"
+output: "lean"
+```
+Returns file paths and line ranges only — useful when you need to locate files before reading them:
+```
+1. .succ/brain/01_Projects/succ/Technical/Architecture.md:1-42 (78%)
+2. .succ/brain/01_Projects/succ/Systems/Storage.md:10-35 (71%)
+```
+
+**Raise threshold for precise matches:**
+```
+query: "PRD pipeline quality gates"
+threshold: 0.5
+```
+Higher threshold (default 0.2) filters out loosely related results — returns only strong semantic matches.
+
+</details>
+
 **succ_search_code** — Hybrid search in indexed source code (BM25 + semantic)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
