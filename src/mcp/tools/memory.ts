@@ -764,10 +764,17 @@ export function registerMemoryTools(server: McpServer) {
           }
         }
 
+        // Helper to parse tags (can be string or array depending on backend)
+        const parseTags = (t: string | string[] | null): string[] => {
+          if (!t) return [];
+          if (Array.isArray(t)) return t;
+          return t.split(',').map((s) => s.trim()).filter(Boolean);
+        };
+
         // Apply tag filter if specified
         if (tags && tags.length > 0) {
           localResults = localResults.filter((m) => {
-            const memTags = m.tags ? m.tags.split(',').map((t: string) => t.trim()) : [];
+            const memTags = parseTags(m.tags);
             return tags.some((t) => memTags.includes(t));
           });
         }
@@ -813,13 +820,6 @@ export function registerMemoryTools(server: McpServer) {
 
         // Global memories now use hybrid search (BM25 + vector)
         const globalResults = await hybridSearchGlobalMemories(query, queryEmbedding, limit, 0.3, retrievalConfig.bm25_alpha, tags, sinceDate);
-
-        // Helper to parse tags (can be string or array)
-        const parseTags = (t: string | string[] | null): string[] => {
-          if (!t) return [];
-          if (Array.isArray(t)) return t;
-          return t.split(',').map((s) => s.trim()).filter(Boolean);
-        };
 
         // Merge and sort by similarity
         let allResults = [
