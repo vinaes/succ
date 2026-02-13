@@ -85,6 +85,18 @@ export interface Chunk {
 }
 
 /**
+ * Build an enriched text for embedding by prepending symbol metadata.
+ * The original content is stored as-is in the DB; this enriched version
+ * is only used for embedding generation to improve semantic search quality.
+ */
+export function enrichForEmbedding(chunk: Chunk): string {
+  if (!chunk.symbolName && !chunk.signature) return chunk.content;
+  const type = chunk.symbolType || 'symbol';
+  const sig = chunk.signature ? `(${chunk.signature})` : '';
+  return `[${type}: ${chunk.symbolName}${sig}]\n${chunk.content}`;
+}
+
+/**
  * Split text into overlapping chunks
  */
 export function chunkText(text: string, filePath: string): Chunk[] {

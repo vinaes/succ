@@ -29,6 +29,13 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   'openai/text-embedding-3-small': 1536,
   'openai/text-embedding-3-large': 3072,
   'openai/text-embedding-ada-002': 1536,
+  'qwen/qwen3-embedding-0.6b': 1024,
+  'qwen/qwen3-embedding-4b': 2560,
+  'qwen/qwen3-embedding-8b': 4096,
+  'baai/bge-m3': 1024,
+  'mistralai/mistral-embed-2312': 1024,
+  'mistralai/codestral-embed-2505': 3072,
+  'google/gemini-embedding-001': 3072,
 };
 
 // Default timeout for API requests (30 seconds)
@@ -70,10 +77,11 @@ export function getModelDimension(model: string): number | undefined {
 }
 
 /**
- * Validate embedding dimension matches expected model dimension
+ * Validate embedding dimension matches expected model dimension.
+ * If configDimensions is set (MRL override), use that instead of model native dims.
  */
-function validateEmbedding(embedding: number[], model: string): void {
-  const expectedDim = MODEL_DIMENSIONS[model];
+function validateEmbedding(embedding: number[], model: string, configDimensions?: number): void {
+  const expectedDim = configDimensions ?? MODEL_DIMENSIONS[model];
   if (expectedDim && embedding.length !== expectedDim) {
     throw new Error(
       `Embedding dimension mismatch: expected ${expectedDim} for ${model}, got ${embedding.length}`
@@ -412,6 +420,7 @@ async function getApiEmbeddings(texts: string[]): Promise<number[][]> {
         body: JSON.stringify({
           model: taskCfg.model,
           input: batch,
+          ...(expectedDimensions ? { dimensions: expectedDimensions } : {}),
         }),
       });
 
@@ -424,15 +433,9 @@ async function getApiEmbeddings(texts: string[]): Promise<number[][]> {
       return data.data.map((d) => d.embedding);
     });
 
-    // Validate embeddings
+    // Validate embeddings (configDimensions overrides model native dims for MRL)
     for (const embedding of batchEmbeddings) {
-      validateEmbedding(embedding, getEmbeddingModel());
-      // Validate dimensions if configured
-      if (expectedDimensions && embedding.length !== expectedDimensions) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${expectedDimensions}, got ${embedding.length}`
-        );
-      }
+      validateEmbedding(embedding, getEmbeddingModel(), expectedDimensions);
     }
 
     results.push(...batchEmbeddings);
@@ -482,10 +485,11 @@ export async function getEmbedding(text: string): Promise<number[]> {
  */
 export function getEmbeddingInfo(): { mode: string; model: string; dimensions: number | undefined } {
   const taskCfg = getLLMTaskConfig('embeddings');
+  const config = getConfigWithOverride();
   return {
     mode: taskCfg.mode,
     model: taskCfg.model,
-    dimensions: getModelDimension(taskCfg.model),
+    dimensions: config.llm?.embeddings?.dimensions ?? getModelDimension(taskCfg.model),
   };
 }
 

@@ -147,13 +147,51 @@ export class PostgresBackend {
   }
 
   /**
+   * Get the current embedding dimensions from config.
+   */
+  private async getVectorDims(): Promise<number> {
+    try {
+      const { getEmbeddingInfo } = await import('../../embeddings.js');
+      return getEmbeddingInfo().dimensions ?? 384;
+    } catch {
+      return 384;
+    }
+  }
+
+  /**
    * Initialize database schema.
    */
   private async initSchema(): Promise<void> {
     const pool = await this.getPool();
+    const dims = await this.getVectorDims();
 
     // Enable pgvector extension
     await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+
+    // Migrate embedding column dimensions if they changed
+    for (const table of ['documents', 'memories', 'skills']) {
+      await pool.query(`
+        DO $$
+        DECLARE
+          current_dims INTEGER;
+        BEGIN
+          SELECT atttypmod INTO current_dims
+          FROM pg_attribute
+          WHERE attrelid = '${table}'::regclass
+            AND attname = 'embedding';
+          IF current_dims IS NOT NULL AND current_dims != ${dims} THEN
+            -- Drop IVFFlat index (incompatible across dimensions)
+            EXECUTE format('DROP INDEX IF EXISTS idx_%s_embedding', '${table}');
+            -- Clear old embeddings (incompatible dimensions)
+            EXECUTE format('UPDATE %I SET embedding = NULL', '${table}');
+            -- Alter column to new dimension
+            EXECUTE format('ALTER TABLE %I ALTER COLUMN embedding TYPE vector(%s)', '${table}', ${dims});
+          END IF;
+        EXCEPTION WHEN undefined_table THEN
+          NULL; -- Table doesn't exist yet, will be created below
+        END $$;
+      `);
+    }
 
     // Documents table
     // project_id: scopes documents to a specific project
@@ -166,7 +204,7 @@ export class PostgresBackend {
         content TEXT NOT NULL,
         start_line INTEGER NOT NULL,
         end_line INTEGER NOT NULL,
-        embedding vector(384),
+        embedding vector(${dims}),
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(project_id, file_path, chunk_index)
@@ -242,7 +280,7 @@ export class PostgresBackend {
         type TEXT DEFAULT 'observation',
         quality_score REAL,
         quality_factors JSONB,
-        embedding vector(384),
+        embedding vector(${dims}),
         access_count REAL DEFAULT 0,
         last_accessed TIMESTAMPTZ,
         valid_from TIMESTAMPTZ,
@@ -373,7 +411,7 @@ export class PostgresBackend {
         source TEXT NOT NULL,
         path TEXT,
         content TEXT,
-        embedding vector(384),
+        embedding vector(${dims}),
         skyll_id TEXT,
         usage_count INTEGER DEFAULT 0,
         last_used TIMESTAMPTZ,

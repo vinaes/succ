@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chunkText, chunkCode, chunkCodeAsync, extractFrontmatter, getChunkingStats, resetChunkingStats, Chunk } from './chunker.js';
+import { chunkText, chunkCode, chunkCodeAsync, enrichForEmbedding, extractFrontmatter, getChunkingStats, resetChunkingStats, Chunk } from './chunker.js';
 
 // Mock config
 vi.mock('./config.js', () => ({
@@ -484,6 +484,45 @@ export class Greeter {
       resetChunkingStats();
       expect(getChunkingStats().astFiles).toBe(0);
       expect(getChunkingStats().regexFiles).toBe(0);
+    });
+  });
+
+  describe('enrichForEmbedding', () => {
+    it('should return raw content when no symbol metadata', () => {
+      const chunk: Chunk = { content: 'const x = 1;', startLine: 1, endLine: 1 };
+      expect(enrichForEmbedding(chunk)).toBe('const x = 1;');
+    });
+
+    it('should prepend symbol type and name', () => {
+      const chunk: Chunk = {
+        content: 'function hello() { return "hi"; }',
+        startLine: 1, endLine: 1,
+        symbolName: 'hello', symbolType: 'function',
+      };
+      expect(enrichForEmbedding(chunk)).toBe(
+        '[function: hello]\nfunction hello() { return "hi"; }'
+      );
+    });
+
+    it('should include signature when present', () => {
+      const chunk: Chunk = {
+        content: 'function add(a: number, b: number): number { return a + b; }',
+        startLine: 1, endLine: 1,
+        symbolName: 'add', symbolType: 'function',
+        signature: 'a: number, b: number): number',
+      };
+      const result = enrichForEmbedding(chunk);
+      expect(result).toContain('[function: add(');
+      expect(result).toContain('a: number, b: number): number)');
+      expect(result).toContain('function add(a: number');
+    });
+
+    it('should use "symbol" as default type when symbolType is missing', () => {
+      const chunk: Chunk = {
+        content: 'code', startLine: 1, endLine: 1,
+        symbolName: 'Foo',
+      };
+      expect(enrichForEmbedding(chunk)).toBe('[symbol: Foo]\ncode');
     });
   });
 });

@@ -22,14 +22,16 @@ export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
   server.tool(
     'succ_search',
-    'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. In projects without .succ/, returns a hint to initialize or use global memory.',
+    'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. Output modes: full (default), lean (file+lines only, saves tokens). In projects without .succ/, returns a hint to initialize or use global memory.',
     {
       query: z.string().describe('The search query'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
       threshold: z.number().optional().default(0.2).describe('Similarity threshold 0-1 (default: 0.2)'),
+      output: z.enum(['full', 'lean']).optional().default('full')
+        .describe('Output mode: full (content blocks), lean (file+lines only, saves tokens)'),
       project_path: projectPathParam,
     },
-    async ({ query, limit, threshold, project_path }) => {
+    async ({ query, limit, threshold, output, project_path }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -90,12 +92,22 @@ export function registerSearchTools(server: McpServer) {
         // Track token savings
         await trackTokenSavings('search', query, results);
 
-        const formatted = results
-          .map((r, i) => {
-            const score = (r.similarity * 100).toFixed(1);
-            return `### ${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line} (${score}%)\n\n${r.content}`;
-          })
-          .join('\n\n---\n\n');
+        let formatted: string;
+        if (output === 'lean') {
+          formatted = results
+            .map((r, i) => {
+              const score = (r.similarity * 100).toFixed(1);
+              return `${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line} (${score}%)`;
+            })
+            .join('\n');
+        } else {
+          formatted = results
+            .map((r, i) => {
+              const score = (r.similarity * 100).toFixed(1);
+              return `### ${i + 1}. ${r.file_path}:${r.start_line}-${r.end_line} (${score}%)\n\n${r.content}`;
+            })
+            .join('\n\n---\n\n');
+        }
 
         // Readiness gate: assess result confidence
         const gateConfig = getReadinessGateConfig();
@@ -106,11 +118,12 @@ export function registerSearchTools(server: McpServer) {
           if (readinessHeader) readinessHeader += '\n\n';
         }
 
+        const modeLabel = output !== 'full' ? ` [${output}]` : '';
         return {
           content: [
             {
               type: 'text' as const,
-              text: `${readinessHeader}Found ${results.length} results for "${query}":\n\n${formatted}`,
+              text: `${readinessHeader}Found ${results.length} results for "${query}"${modeLabel}:\n\n${formatted}`,
             },
           ],
         };
@@ -133,14 +146,19 @@ export function registerSearchTools(server: McpServer) {
   // Tool: succ_search_code - Search indexed code (hybrid BM25 + vector)
   server.tool(
     'succ_search_code',
-    'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Requires project to be initialized with .succ/',
+    'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).',
     {
       query: z.string().describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
       threshold: z.number().optional().default(0.25).describe('Similarity threshold 0-1 (default: 0.25)'),
+      regex: z.string().optional().describe('Regex filter — only return results whose content matches this pattern'),
+      symbol_type: z.enum(['function', 'method', 'class', 'interface', 'type_alias']).optional()
+        .describe('Filter by AST symbol type (e.g., "function", "class")'),
+      output: z.enum(['full', 'lean', 'signatures']).optional().default('full')
+        .describe('Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'),
       project_path: projectPathParam,
     },
-    async ({ query, limit, threshold, project_path }) => {
+    async ({ query, limit, threshold, regex, symbol_type, output, project_path }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -156,8 +174,12 @@ export function registerSearchTools(server: McpServer) {
 
       try {
         const queryEmbedding = await getEmbedding(query);
+        // Build filters from optional params
+        const filters = (regex || symbol_type)
+          ? { regex, symbolType: symbol_type }
+          : undefined;
         // Hybrid search: BM25 + vector with RRF fusion
-        const codeResults = await hybridSearchCode(query, queryEmbedding, limit, threshold);
+        const codeResults = await hybridSearchCode(query, queryEmbedding, limit, threshold, undefined, filters);
 
         if (codeResults.length === 0) {
           return {
@@ -173,14 +195,37 @@ export function registerSearchTools(server: McpServer) {
         // Track token savings
         await trackTokenSavings('search_code', query, codeResults);
 
-        const formatted = codeResults
-          .map((r, i) => {
-            const score = (r.similarity * 100).toFixed(1);
-            // Remove code: prefix for display
-            const filePath = r.file_path.replace(/^code:/, '');
-            return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)\n\n\`\`\`\n${r.content}\n\`\`\``;
-          })
-          .join('\n\n---\n\n');
+        let formatted: string;
+        if (output === 'lean') {
+          // Lean mode: file paths + line ranges only (saves tokens)
+          formatted = codeResults
+            .map((r, i) => {
+              const score = (r.similarity * 100).toFixed(1);
+              const filePath = r.file_path.replace(/^code:/, '');
+              return `${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)`;
+            })
+            .join('\n');
+        } else if (output === 'signatures') {
+          // Signatures mode: symbol metadata only (minimal tokens)
+          formatted = codeResults
+            .map((r, i) => {
+              const score = (r.similarity * 100).toFixed(1);
+              const filePath = r.file_path.replace(/^code:/, '');
+              // Extract first line as a proxy for signature when full metadata isn't in result
+              const firstLine = r.content.split('\n')[0].trim();
+              return `${i + 1}. ${filePath}:${r.start_line} (${score}%) — ${firstLine}`;
+            })
+            .join('\n');
+        } else {
+          // Full mode: code blocks (default)
+          formatted = codeResults
+            .map((r, i) => {
+              const score = (r.similarity * 100).toFixed(1);
+              const filePath = r.file_path.replace(/^code:/, '');
+              return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)\n\n\`\`\`\n${r.content}\n\`\`\``;
+            })
+            .join('\n\n---\n\n');
+        }
 
         // Readiness gate: assess result confidence
         const codeGateConfig = getReadinessGateConfig();
@@ -191,11 +236,12 @@ export function registerSearchTools(server: McpServer) {
           if (codeReadinessHeader) codeReadinessHeader += '\n\n';
         }
 
+        const modeLabel = output !== 'full' ? ` [${output}]` : '';
         return {
           content: [
             {
               type: 'text' as const,
-              text: `${codeReadinessHeader}Found ${codeResults.length} code matches for "${query}":\n\n${formatted}`,
+              text: `${codeReadinessHeader}Found ${codeResults.length} code matches for "${query}"${modeLabel}:\n\n${formatted}`,
             },
           ],
         };

@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { getProjectRoot, getConfig } from '../lib/config.js';
-import { chunkCodeAsync, getChunkingStats, resetChunkingStats } from '../lib/chunker.js';
+import { chunkCodeAsync, enrichForEmbedding, getChunkingStats, resetChunkingStats } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
 import { getStoredEmbeddingDimension, clearCodeDocuments, upsertDocumentsBatchWithHashes, getFileHash, updateTokenFrequencies } from '../lib/storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from '../lib/bm25.js';
@@ -223,8 +223,8 @@ export async function indexCodeFile(filePath: string, options: { force?: boolean
     return { success: true, skipped: true, reason: 'No chunks generated (file too small or empty)' };
   }
 
-  // Generate embeddings
-  const texts = chunks.map(c => c.content);
+  // Generate embeddings — prepend symbol metadata for better semantic quality
+  const texts = chunks.map(c => enrichForEmbedding(c));
   const embeddings = await getEmbeddings(texts);
 
   // Prepare documents for upsert (with hash for each document, including AST metadata)
