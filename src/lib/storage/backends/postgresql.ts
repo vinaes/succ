@@ -495,6 +495,27 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)'
     );
 
+    // Migration: add correction_count and is_invariant for working memory pins
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'correction_count'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'is_invariant'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0;
+        END IF;
+      END $$;
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)'
+    );
+
     // Learning deltas table for session progress tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS learning_deltas (
@@ -1233,7 +1254,8 @@ export class PostgresBackend {
 
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
-             access_count, last_accessed, valid_from, valid_until, created_at
+             access_count, last_accessed, valid_from, valid_until,
+             correction_count, is_invariant, created_at
       FROM memories
     `;
     const params: any[] = [];
@@ -1273,6 +1295,75 @@ export class PostgresBackend {
       last_accessed: row.last_accessed,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
+      created_at: row.created_at,
+    }));
+  }
+
+  async incrementCorrectionCount(memoryId: number): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(
+      `UPDATE memories
+       SET correction_count = COALESCE(correction_count, 0) + 1
+       WHERE id = $1`,
+      [memoryId]
+    );
+  }
+
+  async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(
+      `UPDATE memories SET is_invariant = $1 WHERE id = $2`,
+      [isInvariant ? 1 : 0, memoryId]
+    );
+  }
+
+  async getPinnedMemories(threshold: number = 2): Promise<Memory[]> {
+    const pool = await this.getPool();
+
+    let query = `
+      SELECT id, content, tags, source, type, quality_score, quality_factors,
+             access_count, last_accessed, valid_from, valid_until,
+             correction_count, is_invariant, created_at
+      FROM memories
+    `;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (this.projectId) {
+      query += ` WHERE (LOWER(project_id) = $${paramIndex} OR project_id IS NULL) AND invalidated_by IS NULL`;
+      params.push(this.projectId);
+      paramIndex++;
+    } else {
+      query += ` WHERE project_id IS NULL AND invalidated_by IS NULL`;
+    }
+
+    query += ` AND (correction_count >= $${paramIndex} OR is_invariant = 1)`;
+    params.push(threshold);
+    paramIndex++;
+
+    query += ` ORDER BY is_invariant DESC, correction_count DESC, quality_score DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+      source: row.source,
+      type: row.type as MemoryType,
+      quality_score: row.quality_score,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
+      access_count: row.access_count ?? 0,
+      last_accessed: row.last_accessed,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!(row.is_invariant),
       created_at: row.created_at,
     }));
   }
