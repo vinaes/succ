@@ -52,12 +52,14 @@ succ analyze
 
 | Feature | Description |
 |---------|-------------|
-| **Hybrid Search** | Semantic embeddings + BM25 keyword matching |
+| **Hybrid Search** | Semantic embeddings + BM25 keyword matching with AST symbol boost |
+| **AST Code Indexing** | Tree-sitter parsing for 13 languages (TS, JS, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift) |
 | **Brain Vault** | Obsidian-compatible markdown knowledge base |
 | **Persistent Memory** | Decisions, learnings, patterns across sessions |
 | **Cross-Project** | Global memories shared between all projects |
 | **Knowledge Graph** | Link memories, LLM-enriched relations, community detection, centrality |
-| **MCP Native** | Claude uses succ tools directly |
+| **MCP Native** | 25+ tools — Claude uses succ tools directly |
+| **Web Search** | Real-time web search via Perplexity Sonar (quick, quality, deep research) |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 14-language instrumentation |
@@ -68,6 +70,8 @@ succ analyze
 <details>
 <summary>All features</summary>
 
+- **AST Code Indexing** — Tree-sitter parsing for 13 languages; symbol-aware BM25 tokenization boosts function/class names in search results
+- **Web Search** — Real-time search via Perplexity Sonar through OpenRouter (quick $1/MTok, quality $3-15/MTok, deep research); search history tracking with cost auditing
 - **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent, export workflow to Obsidian (Mermaid Gantt + dependency DAG)
 - **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
 - **Quality Gates** — Auto-detected (TypeScript, Go, Python, Rust) or custom; run after each task to verify code quality
@@ -152,7 +156,9 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 
 | Command | Description |
 |---------|-------------|
-| `succ index-code [path]` | Index source code |
+| `succ index-code [path]` | Index source code (AST chunking via tree-sitter) |
+| `succ index --memories` | Re-embed all memories with current embedding model |
+| `succ reindex` | Detect and fix stale/deleted index entries |
 | `succ chat <query>` | RAG chat with context |
 | `succ train-bpe` | Train BPE vocabulary from indexed code |
 | `succ forget` | Delete memories |
@@ -257,8 +263,12 @@ No API key required. Uses local embeddings by default.
 
 ```json
 {
-  "embedding_mode": "local",
-  "embedding_model": "Xenova/all-MiniLM-L6-v2",
+  "llm": {
+    "embeddings": {
+      "mode": "local",
+      "model": "Xenova/all-MiniLM-L6-v2"
+    }
+  },
   "chunk_size": 500,
   "chunk_overlap": 50
 }
@@ -270,8 +280,20 @@ No API key required. Uses local embeddings by default.
 **Local (default):**
 ```json
 {
-  "embedding_mode": "local",
-  "embedding_model": "Xenova/all-MiniLM-L6-v2"
+  "llm": { "embeddings": { "mode": "local" } }
+}
+```
+
+**Ollama (unified namespace):**
+```json
+{
+  "llm": {
+    "embeddings": {
+      "mode": "api",
+      "model": "nomic-embed-text",
+      "api_url": "http://localhost:11434/v1/embeddings"
+    }
+  }
 }
 ```
 
@@ -279,18 +301,21 @@ No API key required. Uses local embeddings by default.
 ```json
 {
   "embedding_mode": "openrouter",
-  "embedding_model": "openai/text-embedding-3-small",
   "openrouter_api_key": "sk-or-..."
 }
 ```
 
-**Custom API:**
+**MRL dimension override (Matryoshka models):**
 ```json
 {
-  "embedding_mode": "custom",
-  "embedding_api_url": "http://localhost:11434/v1/embeddings",
-  "embedding_model": "nomic-embed-text",
-  "embedding_dimensions": 768
+  "llm": {
+    "embeddings": {
+      "mode": "api",
+      "model": "nomic-embed-text-v1.5",
+      "api_url": "http://localhost:11434/v1/embeddings",
+      "dimensions": 256
+    }
+  }
 }
 ```
 
@@ -495,14 +520,15 @@ It is not supported for unattended background processing, cloud deployments, or 
 
 ## Hybrid Search
 
-Combines semantic embeddings with BM25 keyword search.
+Combines semantic embeddings with BM25 keyword search. Code search includes AST symbol boost — function and class names rank higher.
 
 | Aspect | Documents | Code |
 |--------|-----------|------|
-| Tokenizer | Markdown-aware + stemming | Naming convention splitter |
+| Tokenizer | Markdown-aware + stemming | Naming convention splitter + AST symbol boost |
 | Stemming | Yes | No |
 | Stop words | Filtered | Kept |
 | Segmentation | Standard | Ronin + BPE |
+| Symbol metadata | N/A | function, class, interface names via tree-sitter |
 
 Code tokenizer handles all naming conventions:
 

@@ -69,6 +69,60 @@ Can also be set via `OPENROUTER_API_KEY` environment variable.
 
 Controls how text is converted to vectors for semantic search.
 
+### Unified namespace: `llm.embeddings.*`
+
+Embeddings are configured under the `llm.embeddings` namespace, consistent with all other per-task LLM configs:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `llm.embeddings.mode` | `"local"` \| `"api"` | `"local"` | Embedding provider |
+| `llm.embeddings.model` | string | Mode-dependent | Model name |
+| `llm.embeddings.api_url` | string | - | API URL for custom/OpenRouter mode |
+| `llm.embeddings.api_key` | string | - | API key for endpoint |
+| `llm.embeddings.batch_size` | number | 32 | Batch size for API calls |
+| `llm.embeddings.dimensions` | number | auto | Override embedding dimensions (for MRL/Matryoshka models) |
+
+> **Note:** `llm.embeddings` only supports `"local"` and `"api"` modes — Claude CLI cannot generate embeddings.
+
+**Resolution chain:** `llm.embeddings.mode` → `llm.type` (if not `claude`) → `"local"` default.
+
+```json
+{
+  "llm": {
+    "embeddings": {
+      "mode": "api",
+      "model": "nomic-embed-text",
+      "api_url": "http://localhost:11434/v1/embeddings",
+      "batch_size": 64,
+      "dimensions": 256
+    }
+  }
+}
+```
+
+#### Matryoshka (MRL) Dimension Override
+
+Some models (e.g., `nomic-embed-text-v1.5`) support Matryoshka Representation Learning — variable output dimensions. Set `llm.embeddings.dimensions` to use a smaller dimension for faster search with minimal quality loss:
+
+```json
+{
+  "llm": {
+    "embeddings": {
+      "mode": "api",
+      "model": "nomic-embed-text-v1.5",
+      "api_url": "http://localhost:11434/v1/embeddings",
+      "dimensions": 256
+    }
+  }
+}
+```
+
+After changing dimensions, re-embed existing data: `succ index --force` and `succ index-code --force`, or `succ index --memories` to re-embed memories.
+
+### Legacy flat keys (still supported)
+
+The flat `embedding_*` keys are still functional but the `llm.embeddings.*` namespace takes priority when set.
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `embedding_mode` | `"local"` \| `"openrouter"` \| `"custom"` | `"local"` | Embedding provider |
@@ -107,12 +161,16 @@ Controls how text is converted to vectors for semantic search.
 }
 ```
 
-**Ollama:**
+**Ollama (unified namespace):**
 ```json
 {
-  "embedding_mode": "custom",
-  "embedding_api_url": "http://localhost:11434/v1/embeddings",
-  "embedding_model": "nomic-embed-text"
+  "llm": {
+    "embeddings": {
+      "mode": "api",
+      "model": "nomic-embed-text",
+      "api_url": "http://localhost:11434/v1/embeddings"
+    }
+  }
 }
 ```
 
@@ -1551,13 +1609,6 @@ succ_config_set key="error_reporting.level" value="error"
 {
   "openrouter_api_key": "sk-or-...",
 
-  "embedding_mode": "local",
-  "embedding_model": "Xenova/all-MiniLM-L6-v2",
-  "embedding_batch_size": 32,
-  "embedding_local_batch_size": 16,
-  "embedding_local_concurrency": 4,
-  "embedding_worker_pool_enabled": true,
-  "embedding_cache_size": 500,
   "chunk_size": 500,
   "chunk_overlap": 50,
 
@@ -1571,8 +1622,17 @@ succ_config_set key="error_reporting.level" value="error"
     },
     "openrouter": {
       "model": "anthropic/claude-3-haiku"
+    },
+    "embeddings": {
+      "mode": "local",
+      "model": "Xenova/all-MiniLM-L6-v2"
     }
   },
+
+  "embedding_local_batch_size": 16,
+  "embedding_local_concurrency": 4,
+  "embedding_worker_pool_enabled": true,
+  "embedding_cache_size": 500,
 
   "chat_llm": {
     "backend": "claude",
