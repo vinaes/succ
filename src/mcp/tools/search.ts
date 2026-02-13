@@ -197,32 +197,35 @@ export function registerSearchTools(server: McpServer) {
 
         let formatted: string;
         if (output === 'lean') {
-          // Lean mode: file paths + line ranges only (saves tokens)
+          // Lean mode: file paths + line ranges + symbol info (saves tokens)
           formatted = codeResults
             .map((r, i) => {
               const score = (r.similarity * 100).toFixed(1);
               const filePath = r.file_path.replace(/^code:/, '');
-              return `${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)`;
+              const sym = r.symbol_name ? ` [${r.symbol_type ?? 'symbol'}: ${r.symbol_name}]` : '';
+              return `${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)${sym}`;
             })
             .join('\n');
         } else if (output === 'signatures') {
-          // Signatures mode: symbol metadata only (minimal tokens)
+          // Signatures mode: symbol metadata (minimal tokens)
           formatted = codeResults
             .map((r, i) => {
               const score = (r.similarity * 100).toFixed(1);
               const filePath = r.file_path.replace(/^code:/, '');
-              // Extract first line as a proxy for signature when full metadata isn't in result
-              const firstLine = r.content.split('\n')[0].trim();
-              return `${i + 1}. ${filePath}:${r.start_line} (${score}%) — ${firstLine}`;
+              const sym = r.symbol_name
+                ? `${r.symbol_type ?? 'symbol'} ${r.symbol_name}`
+                : r.content.split('\n')[0].trim();
+              return `${i + 1}. ${filePath}:${r.start_line} (${score}%) — ${sym}`;
             })
             .join('\n');
         } else {
-          // Full mode: code blocks (default)
+          // Full mode: code blocks with symbol header (default)
           formatted = codeResults
             .map((r, i) => {
               const score = (r.similarity * 100).toFixed(1);
               const filePath = r.file_path.replace(/^code:/, '');
-              return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)\n\n\`\`\`\n${r.content}\n\`\`\``;
+              const sym = r.symbol_name ? ` — ${r.symbol_type ?? 'symbol'} \`${r.symbol_name}\`` : '';
+              return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)${sym}\n\n\`\`\`\n${r.content}\n\`\`\``;
             })
             .join('\n\n---\n\n');
         }

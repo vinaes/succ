@@ -293,6 +293,8 @@ export function hybridSearchCode(
       similarity: Math.min(score, 1.0),
       bm25Score: bm25Map.get(c.docId),
       vectorScore: vectorMap.get(c.docId),
+      symbol_name: sym?.symbol_name ?? undefined,
+      symbol_type: sym?.symbol_type ?? undefined,
     });
   }
 
