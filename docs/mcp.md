@@ -89,6 +89,56 @@ Claude will automatically use these tools when relevant — for example, searchi
 | `symbol_type` | `"function"` \| `"method"` \| `"class"` \| `"interface"` \| `"type_alias"` | — | Filter by AST symbol type |
 | `output` | `"full"` \| `"lean"` \| `"signatures"` | `"full"` | `lean` = file+lines, `signatures` = symbol names+signatures only |
 
+<details>
+<summary>succ_search_code examples</summary>
+
+**Find all async functions related to search:**
+```
+query: "search"
+regex: "async"
+```
+Returns only code chunks containing `async` — useful for filtering by keyword patterns that semantic search alone can't target.
+
+**Find only exported functions named "upsert*":**
+```
+query: "upsert"
+symbol_type: "function"
+```
+Filters results to `function` symbols only (excludes methods, classes, interfaces). Tree-sitter AST metadata is used for filtering, so results are accurate regardless of naming conventions.
+
+**Get a quick overview of hybrid search interfaces:**
+```
+query: "hybrid search"
+output: "signatures"
+```
+Returns symbol names and signatures without code bodies — compact output for discovery:
+```
+1. src/lib/storage/types.ts:181 (63%) — export interface HybridMemoryResult {
+2. src/lib/db/hybrid-search.ts:47 (62%) — export interface HybridGlobalMemoryResult {
+```
+
+**Lean output for config-related code:**
+```
+query: "config"
+output: "lean"
+```
+Returns file paths and line ranges only — minimal tokens for navigation:
+```
+1. src/lib/config.ts:1113-1242 (70.1%)
+2. src/lib/config.ts:42-103 (68.9%)
+```
+
+**Combine filters:**
+```
+query: "search"
+regex: "export async function"
+symbol_type: "function"
+limit: 10
+```
+Regex and symbol_type filters stack — both must match for a result to be included.
+
+</details>
+
 **succ_symbols** — Extract AST symbols from a source file via tree-sitter
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
