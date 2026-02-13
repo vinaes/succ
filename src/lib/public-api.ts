@@ -115,12 +115,6 @@ export { calculateAIReadinessScore, formatAIReadinessScore } from './ai-readines
 // --- Retention ---
 export { analyzeRetention } from './retention.js';
 
-// --- Indexing commands ---
-export { indexDocFile } from '../commands/index.js';
-export { analyzeFile } from '../commands/analyze.js';
-export { indexCodeFile } from '../commands/index-code.js';
-export { reindexFiles } from '../commands/reindex.js';
-
 // --- Checkpoints ---
 export { createCheckpoint, listCheckpoints } from './checkpoint.js';
 
@@ -156,8 +150,6 @@ export {
   detectLanguage,
   generateLogStatement,
   sessionToIndexEntry,
-  LOG_TEMPLATES,
-  EXTENSION_MAP,
 } from './debug/types.js';
 export type {
   DebugSession,

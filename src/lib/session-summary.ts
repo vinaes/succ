@@ -328,8 +328,7 @@ export async function sessionSummary(
   const fs = await import('fs');
 
   if (!fs.existsSync(transcriptPath)) {
-    logError('session-summary', `Transcript file not found: ${transcriptPath}`);
-    process.exit(1);
+    throw new Error(`Transcript file not found: ${transcriptPath}`);
   }
 
   const transcriptContent = fs.readFileSync(transcriptPath, 'utf-8');

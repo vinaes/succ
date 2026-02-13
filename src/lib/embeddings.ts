@@ -263,7 +263,7 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
   if (poolInitFailed) return null;
   if (config.embedding_worker_pool_enabled === false) return null;
   // Only use pool for batches large enough to benefit from parallelism
-  if (texts.length < 32) return null;
+  if (texts.length < 8) return null;
 
   try {
     if (!embeddingPool) {

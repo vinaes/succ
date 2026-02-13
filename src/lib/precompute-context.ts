@@ -272,8 +272,7 @@ export async function precomputeContextCLI(
   } = {}
 ): Promise<void> {
   if (!fs.existsSync(transcriptPath)) {
-    logError('precompute', `Transcript file not found: ${transcriptPath}`);
-    process.exit(1);
+    throw new Error(`Transcript file not found: ${transcriptPath}`);
   }
 
   const transcriptContent = fs.readFileSync(transcriptPath, 'utf-8');
