@@ -17,6 +17,7 @@ import {
   listPrds,
 } from './state.js';
 import type { Prd, Task, TaskAttempt, PrdExecution, ExecutionMode } from './types.js';
+import { NotFoundError } from '../errors.js';
 
 // ============================================================================
 // Public API
@@ -39,7 +40,7 @@ export function exportPrdToObsidian(
   const resolvedId = resolvePrdId(prdId);
   const prd = loadPrd(resolvedId);
   if (!prd) {
-    throw new Error(`PRD not found: ${resolvedId}`);
+    throw new NotFoundError(`PRD not found: ${resolvedId}`);
   }
 
   const tasks = loadTasks(resolvedId);
@@ -530,7 +531,7 @@ function resolvePrdId(prdId?: string): string {
   if (prdId) return prdId;
   const latest = findLatestPrd();
   if (!latest) {
-    throw new Error('No PRDs found. Create one with: succ prd generate "description"');
+    throw new NotFoundError('No PRDs found. Create one with: succ prd generate "description"');
   }
   return latest.id;
 }

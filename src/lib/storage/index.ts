@@ -13,6 +13,7 @@
 
 import { getConfig, getDbPath, getGlobalDbPath } from '../config.js';
 import { getStorageDispatcher } from './dispatcher.js';
+import { ConfigError } from '../errors.js';
 import type {
   MemoryType,
   LinkRelation,
@@ -80,13 +81,13 @@ export function validateStorageConfig(): void {
 
   if (config.backend === 'sqlite' && config.sqlite) {
     if (config.sqlite.busy_timeout !== undefined && config.sqlite.busy_timeout < 0) {
-      throw new Error('storage.sqlite.busy_timeout must be a positive number');
+      throw new ConfigError('storage.sqlite.busy_timeout must be a positive number');
     }
   }
 
   if (config.backend === 'postgresql') {
     if (!config.postgresql.connection_string && !config.postgresql.database) {
-      throw new Error(
+      throw new ConfigError(
         'PostgreSQL backend requires either connection_string or database in storage.postgresql config'
       );
     }
@@ -94,7 +95,7 @@ export function validateStorageConfig(): void {
 
   if (config.vector === 'qdrant') {
     if (config.qdrant.url && !config.qdrant.url.startsWith('http')) {
-      throw new Error('storage.qdrant.url must be a valid HTTP(S) URL');
+      throw new ConfigError('storage.qdrant.url must be a valid HTTP(S) URL');
     }
   }
 }

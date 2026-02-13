@@ -13,6 +13,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Types
@@ -98,8 +99,8 @@ function symlinkDependencies(projectRoot: string, worktreePath: string): void {
     if (fs.existsSync(source) && !fs.existsSync(target)) {
       try {
         fs.symlinkSync(source, target, 'junction');
-      } catch {
-        // Symlink failed (e.g. permissions) — gates may fail but execution continues
+      } catch (err) {
+        logWarn('prd', 'Failed to create node_modules symlink, quality gates may fail', { error: err instanceof Error ? err.message : String(err) });
       }
     }
   }

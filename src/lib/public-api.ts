@@ -166,6 +166,18 @@ export { extractSymbolsFromFile } from './tree-sitter/public.js';
 export type { ExtractSymbolsOptions, ExtractSymbolsResult } from './tree-sitter/public.js';
 export type { SymbolInfo, SymbolType } from './tree-sitter/types.js';
 
+// --- Errors ---
+export {
+  SuccError,
+  ConfigError,
+  StorageError,
+  ValidationError,
+  NetworkError,
+  NotFoundError,
+  DependencyError,
+  isSuccError,
+} from './errors.js';
+
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
 export type { LinkRelation, MemoryType } from './storage/types.js';

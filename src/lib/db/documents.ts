@@ -7,6 +7,7 @@ import { SearchResult } from './types.js';
 import { cosineSimilarity } from '../embeddings.js';
 import { invalidateCodeBm25Index, invalidateDocsBm25Index } from './bm25-indexes.js';
 import { getSuccDir } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 
 /**
  * Log document deletion events to .succ/document-audit.log for debugging.
@@ -106,8 +107,8 @@ export function upsertDocument(
         const vecResult = database.prepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(embeddingBlob);
         database.prepare('INSERT INTO vec_documents_map(vec_rowid, doc_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newDoc.id);
       }
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('documents', 'Vector insert failed for document, semantic search may not find it', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -190,8 +191,8 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
       }
     });
     transaction();
-  } catch {
-    // Ignore vec table errors
+  } catch (err) {
+    logWarn('documents', 'Batch vector insert failed, documents may not be semantically searchable', { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -273,8 +274,8 @@ export function deleteDocumentsByPath(filePath: string): void {
           database.prepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
         }
       }
-    } catch {
-      // Ignore vec table errors
+    } catch (err) {
+      logWarn('documents', 'Vector cleanup failed during document deletion', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -342,8 +343,8 @@ export function searchDocuments(
         results.sort((a, b) => b.similarity - a.similarity);
         return results.slice(0, limit);
       }
-    } catch {
-      // Fall through to brute-force
+    } catch (err) {
+      logWarn('documents', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 

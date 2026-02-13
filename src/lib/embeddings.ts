@@ -1,9 +1,10 @@
 import { getConfig, getConfigWithOverride, getLLMTaskConfig, LOCAL_MODEL } from './config.js';
 import { createHash } from 'crypto';
-import { logWarn } from './fault-logger.js';
+import { logWarn, logInfo } from './fault-logger.js';
 import os from 'os';
 import { NativeOrtSession } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
+import { NetworkError, ValidationError } from './errors.js';
 
 // Track which GPU backend is being used
 let gpuBackend: string | null = null;
@@ -83,13 +84,13 @@ export function getModelDimension(model: string): number | undefined {
 function validateEmbedding(embedding: number[], model: string, configDimensions?: number): void {
   const expectedDim = configDimensions ?? MODEL_DIMENSIONS[model];
   if (expectedDim && embedding.length !== expectedDim) {
-    throw new Error(
+    throw new ValidationError(
       `Embedding dimension mismatch: expected ${expectedDim} for ${model}, got ${embedding.length}`
     );
   }
   // Check for NaN/Infinity
   if (embedding.some((v) => !isFinite(v))) {
-    throw new Error('Embedding contains NaN or Infinity values');
+    throw new ValidationError('Embedding contains NaN or Infinity values');
   }
 }
 
@@ -112,7 +113,7 @@ async function fetchWithTimeout(
     return response;
   } catch (error: any) {
     if (error.name === 'AbortError') {
-      throw new Error(`Request timeout after ${timeoutMs}ms`);
+      throw new NetworkError(`Request timeout after ${timeoutMs}ms`);
     }
     throw error;
   } finally {
@@ -426,7 +427,7 @@ async function getApiEmbeddings(texts: string[]): Promise<number[][]> {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Embedding API error: ${response.status} - ${error}`);
+        throw new NetworkError(`Embedding API error: ${response.status} - ${error}`, response.status);
       }
 
       const data = (await response.json()) as EmbeddingResponse;
@@ -499,7 +500,7 @@ export function getEmbeddingInfo(): { mode: string; model: string; dimensions: n
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
-    throw new Error('Vectors must have same length');
+    throw new ValidationError('Vectors must have same length');
   }
 
   let dotProduct = 0;

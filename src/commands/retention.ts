@@ -22,6 +22,7 @@ import {
   formatRetentionAnalysis,
   type RetentionConfig,
 } from '../lib/retention.js';
+import { logWarn } from '../lib/fault-logger.js';
 
 export interface RetentionOptions {
   dryRun?: boolean;
@@ -109,8 +110,8 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
       try {
         await invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
         invalidated++;
-      } catch {
-        // Skip if already invalidated
+      } catch (err) {
+        logWarn('retention', 'Failed to invalidate memory during cleanup', { error: err instanceof Error ? err.message : String(err) });
       }
     }
 

@@ -11,6 +11,7 @@
  */
 
 import { getConfig } from './config.js';
+import { ValidationError } from './errors.js';
 
 // ============================================================================
 // Configuration
@@ -49,7 +50,10 @@ export const DEFAULT_TEMPORAL_CONFIG: TemporalConfig = {
  */
 export function getTemporalConfig(): TemporalConfig {
   const config = getConfig();
-  const userConfig = (config as any).temporal || {};
+  interface ConfigWithTemporal {
+    temporal?: Partial<TemporalConfig>;
+  }
+  const userConfig = (config as ConfigWithTemporal).temporal || {};
 
   return {
     enabled: userConfig.enabled ?? DEFAULT_TEMPORAL_CONFIG.enabled,
@@ -343,7 +347,7 @@ export function parseDuration(duration: string, fromDate: Date = new Date()): Da
   // Parse duration format
   const match = duration.match(/^(\d+)([dwmy])$/i);
   if (!match) {
-    throw new Error(`Invalid duration format: ${duration}. Use "7d", "2w", "1m", "1y" or ISO date.`);
+    throw new ValidationError(`Invalid duration format: ${duration}. Use "7d", "2w", "1m", "1y" or ISO date.`);
   }
 
   const value = parseInt(match[1], 10);

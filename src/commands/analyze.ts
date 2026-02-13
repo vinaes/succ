@@ -6,6 +6,7 @@ import { glob } from 'glob';
 import ora from 'ora';
 import { getProjectRoot, getSuccDir, getConfig, getLLMTaskConfig } from '../lib/config.js';
 import { withLock } from '../lib/lock.js';
+import { NetworkError, ValidationError } from '../lib/errors.js';
 import {
   loadAnalyzeState, saveAnalyzeState, getGitHead, getChangedFiles,
   hashFile, shouldRerunAgent, type AnalyzeState
@@ -957,7 +958,7 @@ ${agent.prompt}`;
   if (stdout) {
     await writeAgentOutput(agent, stdout);
   } else {
-    throw new Error('No output from Claude CLI');
+    throw new NetworkError('No output from Claude CLI');
   }
 }
 
@@ -1061,7 +1062,7 @@ async function runAgentsApi(
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`API error: ${response.status} - ${error}`);
+        throw new NetworkError(`API error: ${response.status} - ${error}`, response.status);
       }
 
       const data = (await response.json()) as {
@@ -1514,7 +1515,7 @@ async function callApiRaw(prompt: string, maxTokens: number): Promise<string> {
   });
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`API error: ${response.status} - ${error}`);
+    throw new NetworkError(`API error: ${response.status} - ${error}`, response.status);
   }
   const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
   return data.choices?.[0]?.message?.content || '';
@@ -1932,7 +1933,7 @@ async function callAnalyzeLLM(prompt: string, mode: 'claude' | 'api'): Promise<s
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`API error: ${response.status} - ${error}`);
+      throw new NetworkError(`API error: ${response.status} - ${error}`, response.status);
     }
 
     const data = (await response.json()) as {
@@ -1974,7 +1975,7 @@ async function analyzeFileRecursive(
   const chunks = await chunkCodeAsync(fileContent, absolutePath);
 
   if (chunks.length === 0) {
-    throw new Error('No chunks produced from file');
+    throw new ValidationError('No chunks produced from file');
   }
 
   // Step 2: Batch chunks to fit LLM context
@@ -2094,7 +2095,7 @@ CRITICAL FORMATTING RULES:
 
   const synthesized = await callAnalyzeLLM(synthesisPrompt, mode);
   if (!synthesized) {
-    throw new Error('Synthesis LLM call returned no content');
+    throw new NetworkError('Synthesis LLM call returned no content');
   }
 
   return synthesized;

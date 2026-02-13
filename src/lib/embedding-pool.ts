@@ -16,6 +16,7 @@ import { Worker } from 'worker_threads';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { DependencyError } from './errors.js';
 
 interface WorkerRequest {
   type: 'init' | 'embed' | 'shutdown';
@@ -114,7 +115,7 @@ export class EmbeddingPool {
    * Splits texts into chunks and distributes across workers.
    */
   async getEmbeddings(texts: string[]): Promise<number[][]> {
-    if (!this.initialized) throw new Error('Pool not initialized');
+    if (!this.initialized) throw new DependencyError('Pool not initialized');
     if (texts.length === 0) return [];
 
     // Split texts evenly across workers

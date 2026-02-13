@@ -13,7 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { logError, logWarn } from './fault-logger.js';
+import { logError, logWarn, logInfo } from './fault-logger.js';
 import {
   getAllSkills as getAllSkillsDb,
   searchSkillsDb,
@@ -192,9 +192,9 @@ export async function extractKeywords(
   const llmPrompt = KEYWORD_PROMPT.replace('{prompt}', prompt.slice(0, 500));
 
   try {
-    console.log(`[skills] Calling LLM for keyword extraction (backend=${config.backend})`);
+    logInfo('skills', `Calling LLM for keyword extraction (backend=${config.backend})`);
     const result = await callLLM(llmPrompt, config, 30000); // 30s timeout for slow models
-    console.log(`[skills] LLM result: ${result.slice(0, 200)}`);
+    logInfo('skills', `LLM result: ${result.slice(0, 200)}`);
 
     // Parse JSON response
     const jsonMatch = result.match(/\{[\s\S]*\}/);
@@ -204,7 +204,7 @@ export async function extractKeywords(
 
     const parsed = JSON.parse(jsonMatch[0]) as { keywords?: string[] };
     const keywords = Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 5) : [];
-    console.log(`[skills] Extracted keywords: ${JSON.stringify(keywords)}`);
+    logInfo('skills', `Extracted keywords: ${JSON.stringify(keywords)}`);
     return keywords;
   } catch (err) {
     logError('skills', 'Failed to extract keywords', err instanceof Error ? err : new Error(String(err)));
@@ -295,21 +295,21 @@ export async function rankSkillsWithLLM(
   }
 
   try {
-    console.log(`[skills] Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`);
+    logInfo('skills', `Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`);
     const result = await callLLM(llmPrompt, rankingConfig, 30000);
-    console.log(`[skills] Ranking result: ${result.slice(0, 300)}`);
+    logInfo('skills', `Ranking result: ${result.slice(0, 300)}`);
 
     // Parse JSON response
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.log(`[skills] No JSON found in ranking result`);
+      logInfo('skills', `No JSON found in ranking result`);
       return [];
     }
 
     const parsed = JSON.parse(jsonMatch[0]) as {
       suggestions?: Array<{ name: string; reason: string; confidence: number }>;
     };
-    console.log(`[skills] Parsed suggestions: ${JSON.stringify(parsed.suggestions)}`);
+    logInfo('skills', `Parsed suggestions: ${JSON.stringify(parsed.suggestions)}`);
 
     if (!Array.isArray(parsed.suggestions)) {
       return [];
@@ -322,7 +322,7 @@ export async function rankSkillsWithLLM(
       .map((s) => {
         const skill = candidates.find((c) => c.name === s.name);
         if (!skill) {
-          console.log(`[skills] Skill not found: ${s.name}`);
+          logInfo('skills', `Skill not found: ${s.name}`);
           return null;
         }
         return {
@@ -333,7 +333,7 @@ export async function rankSkillsWithLLM(
       })
       .filter((s): s is SkillSuggestion => s !== null);
 
-    console.log(`[skills] Final suggestions: ${mapped.length}`);
+    logInfo('skills', `Final suggestions: ${mapped.length}`);
     return mapped;
   } catch (err) {
     logError('skills', 'Failed to suggest skills', err instanceof Error ? err : new Error(String(err)));
@@ -353,7 +353,7 @@ export async function suggestSkills(
   // Check cache first
   const cached = getCachedSuggestions(userPrompt);
   if (cached) {
-    console.log('[skills] Returning cached suggestions');
+    logInfo('skills', 'Returning cached suggestions');
     return cached;
   }
 
@@ -386,9 +386,9 @@ export async function suggestSkills(
       }
 
       // Step 2: Search candidates (local first, then Skyll if enabled)
-      console.log(`[skills] Searching candidates for keywords: ${JSON.stringify(keywords)}`);
+      logInfo('skills', `Searching candidates for keywords: ${JSON.stringify(keywords)}`);
       const { skills: candidateSkills, topScore } = await searchSkillCandidates(keywords, 15);
-      console.log(`[skills] Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`);
+      logInfo('skills', `Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`);
 
       // Skyll fallback: if no local candidates or onlyWhenNoLocal is false
       const skyllConfig = config?.skyll || {};
@@ -419,7 +419,7 @@ export async function suggestSkills(
 
       // Fast path: if top BM25 score is very high, skip LLM ranking
       if (topScore >= BM25_FAST_PATH_THRESHOLD) {
-        console.log(`[skills] Fast path: topScore ${topScore.toFixed(2)} >= ${BM25_FAST_PATH_THRESHOLD}, skipping LLM ranking`);
+        logInfo('skills', `Fast path: topScore ${topScore.toFixed(2)} >= ${BM25_FAST_PATH_THRESHOLD}, skipping LLM ranking`);
         const fastPathResults: SkillSuggestion[] = candidates
           .slice(0, autoSuggest.max_suggestions)
           .map((skill) => ({

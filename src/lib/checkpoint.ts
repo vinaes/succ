@@ -20,6 +20,7 @@ import {
   bulkRestore,
 } from './storage/index.js';
 import { getSuccDir } from './config.js';
+import { NotFoundError, ValidationError } from './errors.js';
 
 // Checkpoint format version
 const CHECKPOINT_VERSION = '1.0';
@@ -270,7 +271,7 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
  */
 export function readCheckpoint(filePath: string): CheckpointData {
   if (!fs.existsSync(filePath)) {
-    throw new Error(`Checkpoint file not found: ${filePath}`);
+    throw new NotFoundError(`Checkpoint file not found: ${filePath}`);
   }
 
   let content: string;
@@ -285,7 +286,7 @@ export function readCheckpoint(filePath: string): CheckpointData {
   const checkpoint = JSON.parse(content) as CheckpointData;
 
   if (!checkpoint.version || !checkpoint.data) {
-    throw new Error('Invalid checkpoint format');
+    throw new ValidationError('Invalid checkpoint format');
   }
 
   return checkpoint;

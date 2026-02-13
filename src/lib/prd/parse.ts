@@ -11,6 +11,7 @@ import { PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
 import type { Task } from './types.js';
+import { ValidationError } from '../errors.js';
 
 // ============================================================================
 // Raw task shape from LLM (before normalization)
@@ -108,7 +109,7 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
   }
 
   if (!rawTasks) {
-    throw new Error('Failed to parse LLM response as JSON task array after retry. Response:\n' + response.slice(0, 500));
+    throw new ValidationError('Failed to parse LLM response as JSON task array after retry. Response:\n' + response.slice(0, 500));
   }
 
   // 5. Validate and normalize

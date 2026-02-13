@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import watcher from '@parcel/watcher';
 import type { AsyncSubscription, Event } from '@parcel/watcher';
 import { getProjectRoot } from '../lib/config.js';
+import { NotFoundError, ValidationError } from '../lib/errors.js';
 import { getEmbeddings } from '../lib/embeddings.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { withLock } from '../lib/lock.js';
@@ -472,12 +473,12 @@ export async function indexFileOnDemand(
   const relativePath = path.relative(projectRoot, absolutePath);
 
   if (!fs.existsSync(absolutePath)) {
-    throw new Error(`File not found: ${filePath}`);
+    throw new NotFoundError(`File not found: ${filePath}`);
   }
 
   const fileType = getFileType(filePath);
   if (!fileType) {
-    throw new Error(`Unknown file type: ${filePath}`);
+    throw new ValidationError(`Unknown file type: ${filePath}`);
   }
 
   if (fileType === 'code') {

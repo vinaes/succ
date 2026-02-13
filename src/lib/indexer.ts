@@ -12,7 +12,7 @@ import {
   updateTokenFrequencies,
 } from './storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
-import { logError } from './fault-logger.js';
+import { logError, logInfo } from './fault-logger.js';
 
 import { enrichForEmbedding, type Chunk } from './chunker.js';
 export type { Chunk };
@@ -319,7 +319,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
  * Print indexer results
  */
 export function printResults(result: IndexerResult, prefix: string = ''): void {
-  console.log();
+  console.log('');
   console.log(`Indexed ${result.totalChunks} ${prefix}chunks`);
   console.log(`  New files:     ${result.newFiles}`);
   console.log(`  Updated files: ${result.updatedFiles}`);

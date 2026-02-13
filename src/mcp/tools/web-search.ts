@@ -17,6 +17,7 @@ import { isApiConfigured, callOpenRouterSearch, type OpenRouterSearchResponse, t
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
 import type { WebSearchToolName } from '../../lib/storage/types.js';
+import { logWarn } from '../../lib/fault-logger.js';
 
 // Approximate pricing per 1M tokens (USD) — OpenRouter models with web search
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -74,8 +75,8 @@ async function recordSearchToDb(
       has_reasoning: hasReasoning,
       response_length_chars: responseLength,
     });
-  } catch {
-    // Non-critical — don't fail the search
+  } catch (err) {
+    logWarn('web-search', 'Failed to record web search stats', { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -89,8 +90,8 @@ async function checkBudget(dailyBudget: number): Promise<string | null> {
     if (spent >= dailyBudget) {
       return `Daily web search budget exceeded ($${spent.toFixed(4)} / $${dailyBudget}). Reset tomorrow or increase with: succ_config_set key="web_search.daily_budget_usd" value="..."`;
     }
-  } catch {
-    // Can't check budget — allow the search
+  } catch (err) {
+    logWarn('web-search', 'Failed to check daily budget, allowing search', { error: err instanceof Error ? err.message : String(err) });
   }
   return null;
 }

@@ -24,6 +24,7 @@
 
 import { getConfig, getProjectRoot } from '../config.js';
 import { logError, logWarn } from '../fault-logger.js';
+import { ConfigError } from '../errors.js';
 import type { PostgresBackend } from './backends/postgresql.js';
 import type { QdrantVectorStore } from './vector/qdrant.js';
 import type {
@@ -36,6 +37,53 @@ import type {
   WebSearchHistorySummary,
 } from './types.js';
 import type { DocumentUpsertMeta, MemoryUpsertMeta } from './vector/qdrant.js';
+
+// Internal SQL query result types
+interface SqlLearningDelta {
+  id: number;
+  timestamp: string;
+  source: string;
+  memories_before: number;
+  memories_after: number;
+  new_memories: number;
+  types_added: string | null;
+  avg_quality: number | null;
+  created_at: string;
+}
+
+interface SqlMemoryRow {
+  id: number;
+  content: string;
+  tags: string | null;
+  source: string | null;
+  type: string | null;
+  quality_score: number | null;
+  quality_factors: string | null;
+  access_count: number;
+  last_accessed: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  invalidated_by: number | null;
+  created_at: string;
+  embedding?: Buffer | null;
+}
+
+interface SqlMemoryWithEmbedding extends SqlMemoryRow {
+  embedding: Buffer;
+}
+
+interface SqlDocumentRow {
+  id: number;
+  file_path: string;
+  content: string;
+  start_line: number;
+  end_line: number;
+  embedding?: Buffer | null;
+}
+
+interface SqlDocumentWithEmbedding extends SqlDocumentRow {
+  embedding: Buffer;
+}
 
 // Dispatcher state
 let _backend: 'sqlite' | 'postgresql' = 'sqlite';
@@ -275,8 +323,13 @@ export class StorageDispatcher {
   ): Promise<Array<{ file_path: string; content: string; start_line: number; end_line: number; similarity: number }>> {
     if (this.hasQdrant()) {
       try {
-        const client = await (this.qdrant as any).getClient();
-        const name = (this.qdrant as any).collectionName('documents');
+        // Access Qdrant private methods via property access for backward compatibility
+        const qdrantAny = this.qdrant as unknown as {
+          getClient(): Promise<any>;
+          collectionName(type: string): string;
+        };
+        const client = await qdrantAny.getClient();
+        const name = qdrantAny.collectionName('documents');
         const qResults = await client.query(name, {
           query: queryEmbedding, using: 'dense', limit, score_threshold: threshold,
           params: { hnsw_ef: 128, exact: false }, with_payload: true,
@@ -1517,7 +1570,7 @@ export class StorageDispatcher {
     }
     sql += ' ORDER BY timestamp DESC LIMIT ?';
     params.push(limit);
-    return db.prepare(sql).all(...params) as any[];
+    return db.prepare(sql).all(...params) as SqlLearningDelta[];
   }
 
   // ===========================================================================
@@ -1619,8 +1672,16 @@ export class StorageDispatcher {
          END,
          quality_score DESC
        LIMIT ?`
-    ).all(...options.types, options.minQuality, options.limit) as any[];
-    return rows.map((r: any) => ({
+    ).all(...options.types, options.minQuality, options.limit) as Array<{
+      id: number;
+      content: string;
+      type: string | null;
+      tags: string | null;
+      source: string | null;
+      quality_score: number | null;
+      created_at: string;
+    }>;
+    return rows.map((r) => ({
       ...r,
       tags: r.tags ? JSON.parse(r.tags) : [],
     }));
@@ -1667,8 +1728,8 @@ export class StorageDispatcher {
     sql += ' ORDER BY id ASC';
 
     const params = options?.types?.length ? options.types : [];
-    const rows = db.prepare(sql).all(...params) as any[];
-    return rows.map((row: any) => ({
+    const rows = db.prepare(sql).all(...params) as SqlMemoryRow[];
+    return rows.map((row) => ({
       id: row.id, content: row.content,
       tags: row.tags ? JSON.parse(row.tags) : [],
       source: row.source, embedding: row.embedding
@@ -1970,7 +2031,7 @@ export class StorageDispatcher {
     const dryRun = options?.dryRun ?? false;
 
     if (this.vectorBackend !== 'qdrant' || !this.qdrant) {
-      throw new Error('Qdrant is not configured. Set storage.vector = "qdrant" in config.');
+      throw new ConfigError('Qdrant is not configured. Set storage.vector = "qdrant" in config.');
     }
 
     const stats = { memories: 0, globalMemories: 0, documents: 0 };
@@ -2023,14 +2084,14 @@ export class StorageDispatcher {
        LEFT JOIN memory_vec_mapping mv ON mv.memory_id = m.id
        LEFT JOIN memory_vec v ON v.rowid = mv.vec_rowid
        ORDER BY m.id`
-    ).all() as any[];
+    ).all() as SqlMemoryRow[];
 
     log(`Found ${rows.length} memories in SQLite`);
     if (dryRun || rows.length === 0) return rows.length;
 
     const items = rows
-      .filter((r: any) => r.embedding)
-      .map((r: any) => ({
+      .filter((r): r is SqlMemoryWithEmbedding => !!r.embedding)
+      .map((r) => ({
         id: r.id,
         embedding: Array.from(new Float32Array(r.embedding.buffer ?? r.embedding)),
         meta: {
@@ -2121,7 +2182,7 @@ export class StorageDispatcher {
          LEFT JOIN memory_vec_mapping mv ON mv.memory_id = m.id
          LEFT JOIN memory_vec v ON v.rowid = mv.vec_rowid
          ORDER BY m.id`
-      ).all() as any[];
+      ).all() as SqlMemoryRow[];
     } catch {
       // sqlite-vec tables may not exist — fall back to memory-only query (no embeddings)
       log('Global DB has no vector tables — fetching memories without embeddings');
@@ -2130,7 +2191,7 @@ export class StorageDispatcher {
                 quality_score, access_count, created_at, last_accessed,
                 valid_from, valid_until, invalidated_by
          FROM memories ORDER BY id`
-      ).all() as any[];
+      ).all() as SqlMemoryRow[];
     }
 
     log(`Found ${rows.length} global memories in SQLite`);
@@ -2196,14 +2257,14 @@ export class StorageDispatcher {
        LEFT JOIN document_vec_mapping dm ON dm.document_id = d.id
        LEFT JOIN document_vec v ON v.rowid = dm.vec_rowid
        ORDER BY d.id`
-    ).all() as any[];
+    ).all() as SqlDocumentRow[];
 
     log(`Found ${rows.length} documents in SQLite`);
     if (dryRun || rows.length === 0) return rows.length;
 
     const items = rows
-      .filter((r: any) => r.embedding)
-      .map((r: any) => ({
+      .filter((r): r is SqlDocumentWithEmbedding => !!r.embedding)
+      .map((r) => ({
         id: r.id,
         embedding: Array.from(new Float32Array(r.embedding.buffer ?? r.embedding)),
         meta: {

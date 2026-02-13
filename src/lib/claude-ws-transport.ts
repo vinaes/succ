@@ -17,6 +17,7 @@ import type { ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import type { ChatMessage } from './llm.js';
 import { getConfig } from './config.js';
+import { ValidationError } from './errors.js';
 
 // ============================================================================
 // Types
@@ -180,7 +181,7 @@ export class ClaudeWSTransport {
     const userMessages = messages.filter(m => m.role === 'user');
 
     if (userMessages.length === 0) {
-      throw new Error('[claude-ws] No user messages in chat');
+      throw new ValidationError('[claude-ws] No user messages in chat');
     }
 
     // For multi-turn: send each user message, collect last response

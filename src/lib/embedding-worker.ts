@@ -6,6 +6,7 @@
 
 import { parentPort } from 'worker_threads';
 import { NativeOrtSession } from './ort-session.js';
+import { DependencyError } from './errors.js';
 
 let session: NativeOrtSession | null = null;
 
@@ -42,7 +43,7 @@ if (parentPort) {
           break;
 
         case 'embed':
-          if (!session) throw new Error('Session not initialized');
+          if (!session) throw new DependencyError('Session not initialized');
           const embeddings = await session.embed(msg.texts || []);
           port.postMessage({ type: 'result', embeddings } as WorkerResponse);
           break;
