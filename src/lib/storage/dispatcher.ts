@@ -199,7 +199,7 @@ export class StorageDispatcher {
     symbolName?: string, symbolType?: string, signature?: string,
   ): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
-      const id = await this.postgres.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding);
+      const id = await this.postgres.upsertDocument(filePath, chunkIndex, content, startLine, endLine, embedding, symbolName, symbolType, signature);
       if (this.hasQdrant()) {
         try {
           await this.qdrant!.upsertDocumentWithPayload(id, embedding, {
@@ -935,14 +935,17 @@ export class StorageDispatcher {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
+    // Fetch extra results when post-filtering so we can still fill limit after filtering
+    const fetchLimit = filters ? lim * 3 : lim;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, lim, thresh, { codeOnly: true });
-        if (results.length > 0) return results;
+        let results = await this.qdrant!.hybridSearchDocuments(query, queryEmbedding, fetchLimit, thresh, { codeOnly: true });
+        if (results.length > 0) return this.applyCodeFilters(results, filters, lim);
       } catch (error) { this._warnQdrantFailure('hybridSearchCode failed, falling back', error); }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return (await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { codeOnly: true })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      const results = (await this.postgres.searchDocuments(queryEmbedding, fetchLimit, thresh, { codeOnly: true, symbolType: filters?.symbolType })).map(r => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      return this.applyCodeFilters(results, filters ? { regex: filters.regex } : undefined, lim);
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
@@ -992,6 +995,25 @@ export class StorageDispatcher {
     if (this.backend === 'postgresql' && this.postgres) return this.postgres.searchGlobalMemories(queryEmbedding, lim, thresh, tags);
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchGlobalMemories(query, queryEmbedding, limit, threshold, alpha, tags, since);
+  }
+
+  /** Post-filter code search results by regex and/or symbolType, then trim to limit. */
+  private applyCodeFilters(results: any[], filters: { regex?: string; symbolType?: string } | undefined, limit: number): any[] {
+    if (!filters) return results.slice(0, limit);
+
+    let regexFilter: RegExp | null = null;
+    if (filters.regex && filters.regex.length <= 500) {
+      try { regexFilter = new RegExp(filters.regex, 'i'); } catch { /* invalid regex — skip */ }
+    }
+
+    const filtered: any[] = [];
+    for (const r of results) {
+      if (filters.symbolType && r.symbol_type !== filters.symbolType) continue;
+      if (regexFilter && !regexFilter.test(r.content)) continue;
+      filtered.push(r);
+      if (filtered.length >= limit) break;
+    }
+    return filtered;
   }
 
   // ===========================================================================

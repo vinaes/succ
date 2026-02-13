@@ -89,6 +89,9 @@ export interface DocumentInput {
   startLine: number;
   endLine: number;
   embedding: number[];
+  symbolName?: string;
+  symbolType?: string;
+  signature?: string;
 }
 
 export interface DocumentBatch extends DocumentInput {}
