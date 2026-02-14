@@ -189,8 +189,13 @@ export async function callLLM(
   const temperature = options.temperature ?? config.temperature ?? 0.3;
 
   switch (config.backend) {
-    case 'claude':
+    case 'claude': {
+      if (getClaudeMode() === 'ws') {
+        const transport = await ClaudeWSTransport.getInstance();
+        return transport.send(prompt, { model: config.model, timeout });
+      }
       return runClaudeCLI(prompt, config.model, timeout);
+    }
 
     case 'api':
       return callApiLLM(
@@ -316,8 +321,15 @@ function buildClaudeArgs(options?: ClaudeCLIOptions): string[] {
   return args;
 }
 
+// Remove CLAUDECODE to allow spawning inside a Claude Code session
+const CLAUDE_SPAWN_ENV = (() => {
+  const env: Record<string, string | undefined> = { ...process.env, SUCC_SERVICE_SESSION: '1' };
+  delete env.CLAUDECODE;
+  return env;
+})();
+
 const CLAUDE_SPAWN_OPTIONS = {
-  env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+  env: CLAUDE_SPAWN_ENV,
   windowsHide: true,
 } as const;
 

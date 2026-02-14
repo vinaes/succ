@@ -326,9 +326,13 @@ export class ClaudeWSTransport {
     const model = llm.claude?.model || llm.model || 'haiku';
     args.push('--model', model);
 
+    // Remove CLAUDECODE to allow spawning inside a Claude Code session
+    const env: Record<string, string | undefined> = { ...process.env, SUCC_SERVICE_SESSION: '1' };
+    delete env.CLAUDECODE;
+
     this.cliProcess = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
+      env,
       windowsHide: true,
     });
 
