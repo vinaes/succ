@@ -25,7 +25,7 @@ The session-end hook needs proper path handling. Update with `succ init --force`
 
 ## MCP server not connecting
 
-1. Check `~/.claude/mcp_servers.json` has succ entry
+1. Check `~/.claude.json` has succ entry in `mcpServers`
 2. Restart Claude Code
 3. Run `succ-mcp` manually to check for errors
 

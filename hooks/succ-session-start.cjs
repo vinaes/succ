@@ -126,6 +126,7 @@ Without it, succ works in global-only mode and can't access project data.
 | Find functions/classes named X | succ_search_code symbol_type="function" |
 | Find code matching regex | succ_search_code regex="pattern" |
 | What symbols are in file X? | succ_symbols file="X" |
+| Fetch web page content | succ_fetch |
 | Find regex pattern in code | Grep |
 | List files by pattern | Glob |
 </decision-guide>
@@ -202,6 +203,7 @@ Without it, succ works in global-only mode and can't access project data.
 | Multi-step tasks, research | succ-general | general-purpose agent |
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
+| Web page fetch | succ_fetch | WebFetch |
 | Web search | succ_quick_search / succ_web_search | WebSearch / Brave |
 
 Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
