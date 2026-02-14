@@ -3,6 +3,9 @@ import {
   applyWorkingMemoryPipeline,
   applyDiversityFilter,
   detectInvariant,
+  detectInvariantWithEmbedding,
+  clearInvariantEmbeddingCache,
+  INVARIANT_REFERENCE_PHRASES,
   isPinned,
   getTagWeight,
   computeConfidenceDecay,
@@ -60,7 +63,7 @@ describe('detectInvariant', () => {
   });
 
   it('detects "do not" patterns', () => {
-    expect(detectInvariant("Do not access the database directly")).toBe(true);
+    expect(detectInvariant('Do not access the database directly')).toBe(true);
     expect(detectInvariant("Don't skip pre-commit hooks")).toBe(true);
   });
 
@@ -141,6 +144,66 @@ describe('detectInvariant', () => {
     expect(detectInvariant('Базу данных обновили вчера')).toBe(false);
     expect(detectInvariant('Die Datenbank wurde gestern aktualisiert')).toBe(false);
     expect(detectInvariant('数据库昨天更新了')).toBe(false);
+  });
+});
+
+// =============================================================================
+// detectInvariantWithEmbedding (embedding-based fallback)
+// =============================================================================
+describe('detectInvariantWithEmbedding', () => {
+  beforeEach(() => {
+    clearInvariantEmbeddingCache();
+    vi.restoreAllMocks();
+  });
+
+  it('returns false for empty embedding', async () => {
+    expect(await detectInvariantWithEmbedding('test', [])).toBe(false);
+  });
+
+  it('returns true when embedding is similar to invariant references', async () => {
+    // Mock the reference-embeddings module to return high similarity
+    vi.doMock('./reference-embeddings.js', () => ({
+      registerReferenceSet: vi.fn(),
+      maxSimilarityToReference: vi.fn().mockResolvedValue(0.75),
+    }));
+
+    // Re-import to pick up mocks — need to clear cache first
+    clearInvariantEmbeddingCache();
+    const { detectInvariantWithEmbedding: fn } = await import('./working-memory-pipeline.js');
+    const result = await fn('some invariant-like content', [0.1, 0.2, 0.3]);
+    expect(result).toBe(true);
+  });
+
+  it('returns false when embedding is not similar to invariant references', async () => {
+    vi.doMock('./reference-embeddings.js', () => ({
+      registerReferenceSet: vi.fn(),
+      maxSimilarityToReference: vi.fn().mockResolvedValue(0.2),
+    }));
+
+    clearInvariantEmbeddingCache();
+    const { detectInvariantWithEmbedding: fn } = await import('./working-memory-pipeline.js');
+    const result = await fn('just a normal observation', [0.1, 0.2, 0.3]);
+    expect(result).toBe(false);
+  });
+
+  it('returns false on error (non-fatal)', async () => {
+    vi.doMock('./reference-embeddings.js', () => ({
+      registerReferenceSet: vi.fn(() => {
+        throw new Error('test');
+      }),
+      maxSimilarityToReference: vi.fn().mockRejectedValue(new Error('test')),
+    }));
+
+    clearInvariantEmbeddingCache();
+    const { detectInvariantWithEmbedding: fn } = await import('./working-memory-pipeline.js');
+    const result = await fn('test', [0.1, 0.2, 0.3]);
+    expect(result).toBe(false);
+  });
+
+  it('exports INVARIANT_REFERENCE_PHRASES as non-empty array', () => {
+    expect(INVARIANT_REFERENCE_PHRASES).toBeDefined();
+    expect(INVARIANT_REFERENCE_PHRASES.length).toBeGreaterThanOrEqual(5);
+    expect(INVARIANT_REFERENCE_PHRASES.every((p) => typeof p === 'string')).toBe(true);
   });
 });
 
@@ -238,7 +301,12 @@ describe('computeConfidenceDecay', () => {
   });
 
   it('defaults quality to 0.5 when null', () => {
-    const result = computeConfidenceDecay(null, '2026-02-14T11:00:00Z', '2026-02-14T00:00:00Z', NOW);
+    const result = computeConfidenceDecay(
+      null,
+      '2026-02-14T11:00:00Z',
+      '2026-02-14T00:00:00Z',
+      NOW
+    );
     expect(result).toBeGreaterThan(0.49);
     expect(result).toBeLessThanOrEqual(0.5);
   });
@@ -295,17 +363,27 @@ describe('computePriorityScore', () => {
   it('is_invariant contributes 0.30', () => {
     const base = computePriorityScore(
       {
-        is_invariant: false, quality_score: 0.5, correction_count: 0,
-        type: 'observation', tags: [], access_count: 0,
-        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+        is_invariant: false,
+        quality_score: 0.5,
+        correction_count: 0,
+        type: 'observation',
+        tags: [],
+        access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z',
+        created_at: '2026-02-14T00:00:00Z',
       },
       NOW
     );
     const withInvariant = computePriorityScore(
       {
-        is_invariant: true, quality_score: 0.5, correction_count: 0,
-        type: 'observation', tags: [], access_count: 0,
-        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+        is_invariant: true,
+        quality_score: 0.5,
+        correction_count: 0,
+        type: 'observation',
+        tags: [],
+        access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z',
+        created_at: '2026-02-14T00:00:00Z',
       },
       NOW
     );
@@ -315,9 +393,14 @@ describe('computePriorityScore', () => {
   it('handles string tags (JSON)', () => {
     const score = computePriorityScore(
       {
-        is_invariant: false, quality_score: 0.5, correction_count: 0,
-        type: 'observation', tags: '["critical"]', access_count: 0,
-        last_accessed: '2026-02-14T11:00:00Z', created_at: '2026-02-14T00:00:00Z',
+        is_invariant: false,
+        quality_score: 0.5,
+        correction_count: 0,
+        type: 'observation',
+        tags: '["critical"]',
+        access_count: 0,
+        last_accessed: '2026-02-14T11:00:00Z',
+        created_at: '2026-02-14T00:00:00Z',
       },
       NOW
     );
@@ -329,9 +412,14 @@ describe('computePriorityScore', () => {
     expect(() =>
       computePriorityScore(
         {
-          is_invariant: false, quality_score: 0.5, correction_count: 0,
-          type: null, tags: null, access_count: 0,
-          last_accessed: null, created_at: '2026-02-14T00:00:00Z',
+          is_invariant: false,
+          quality_score: 0.5,
+          correction_count: 0,
+          type: null,
+          tags: null,
+          access_count: 0,
+          last_accessed: null,
+          created_at: '2026-02-14T00:00:00Z',
         },
         NOW
       )
@@ -607,7 +695,7 @@ describe('applyWorkingMemoryPipeline', () => {
     const result = applyWorkingMemoryPipeline(recent, 3, NOW, pinned);
 
     expect(result[0].id).toBe(100); // pinned first
-    expect(result[1].id).toBe(2);   // highest score
+    expect(result[1].id).toBe(2); // highest score
     expect(result.length).toBe(3);
   });
 
@@ -666,8 +754,8 @@ describe('applyDiversityFilter', () => {
     const sameVec = [1, 0, 0];
     const embeddings = new Map([
       [1, sameVec],
-      [2, sameVec],            // duplicate of 1
-      [3, [0, 1, 0]],          // different
+      [2, sameVec], // duplicate of 1
+      [3, [0, 1, 0]], // different
     ]);
     const getEmb = vi.fn().mockResolvedValue(embeddings);
 

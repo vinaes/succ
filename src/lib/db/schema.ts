@@ -251,16 +251,12 @@ export function initDb(database: Database.Database): void {
 
   // Migration: add correction_count and is_invariant columns for working memory pins
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
   } catch {
     // Column already exists, ignore
   }
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
   } catch {
     // Column already exists, ignore
   }
@@ -276,17 +272,13 @@ export function initDb(database: Database.Database): void {
 
   // Migration: add priority_score column for working memory ranking
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
   } catch {
     // Column already exists, ignore
   }
   try {
     database
-      .prepare(
-        `CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`
-      )
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`)
       .run();
   } catch {
     // Index already exists, ignore
@@ -771,16 +763,12 @@ export function initGlobalDb(database: Database.Database): void {
 
   // Migration: add correction_count and is_invariant columns for working memory pins
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
   } catch {
     // Column already exists, ignore
   }
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
   } catch {
     // Column already exists, ignore
   }
@@ -796,17 +784,13 @@ export function initGlobalDb(database: Database.Database): void {
 
   // Migration: add priority_score column for working memory ranking
   try {
-    database
-      .prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`)
-      .run();
+    database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
   } catch {
     // Column already exists, ignore
   }
   try {
     database
-      .prepare(
-        `CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`
-      )
+      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`)
       .run();
   } catch {
     // Index already exists, ignore

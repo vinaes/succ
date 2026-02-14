@@ -196,6 +196,73 @@ function calculateSpecificity(content: string): number {
   return Math.max(0, Math.min(1, score));
 }
 
+// ============================================================================
+// Embedding-based specificity (language-agnostic fallback)
+// ============================================================================
+
+/**
+ * Reference phrases for embedding-based specificity estimation.
+ * High-specificity: technical, actionable, detailed.
+ * Low-specificity: vague, generic, meaningless.
+ */
+const HIGH_SPECIFICITY_REFS = [
+  'Implement JWT authentication middleware for the REST API endpoints',
+  'Fix SQL injection vulnerability in the user registration handler',
+  'Configure nginx reverse proxy with SSL termination on port 443',
+  'Refactor the database schema to support multi-tenant isolation',
+  'Add retry logic with exponential backoff for failed API requests',
+];
+
+const LOW_SPECIFICITY_REFS = [
+  'This is good',
+  'Something happened with the code',
+  'Maybe we should change stuff',
+  'It works fine I think',
+];
+
+const SPECIFICITY_HIGH_SET = 'specificity-high';
+const SPECIFICITY_LOW_SET = 'specificity-low';
+let _specificityRefsRegistered = false;
+
+/**
+ * Estimate content specificity using embedding similarity to reference phrases.
+ * Returns 0-1 where higher = more specific/technical content.
+ * Language-agnostic — works for any language the embedding model supports.
+ */
+export async function estimateSpecificityByEmbedding(content: string): Promise<number> {
+  try {
+    const { registerReferenceSet, avgSimilarityToReference } =
+      await import('./reference-embeddings.js');
+    const { getEmbedding } = await import('./embeddings.js');
+
+    if (!_specificityRefsRegistered) {
+      registerReferenceSet(SPECIFICITY_HIGH_SET, HIGH_SPECIFICITY_REFS);
+      registerReferenceSet(SPECIFICITY_LOW_SET, LOW_SPECIFICITY_REFS);
+      _specificityRefsRegistered = true;
+    }
+
+    const contentEmb = await getEmbedding(content);
+    const [highSim, lowSim] = await Promise.all([
+      avgSimilarityToReference(contentEmb, SPECIFICITY_HIGH_SET),
+      avgSimilarityToReference(contentEmb, SPECIFICITY_LOW_SET),
+    ]);
+
+    // Normalize: ratio of high-specificity similarity to total
+    const total = highSim + lowSim;
+    if (total === 0) return 0.5;
+    return highSim / total;
+  } catch {
+    return 0.5; // neutral fallback
+  }
+}
+
+/**
+ * Clear cached specificity reference embeddings (for tests).
+ */
+export function clearSpecificityEmbeddingCache(): void {
+  _specificityRefsRegistered = false;
+}
+
 /**
  * Calculate clarity score
  * Higher for well-structured, readable content
@@ -271,6 +338,25 @@ export async function scoreWithLocal(
   try {
     // First, run quick heuristic checks
     const heuristicResult = scoreWithHeuristics(content, existingSimilarity);
+
+    // If heuristic specificity is uncertain (< 0.5), try embedding-based estimation.
+    // This helps non-EN/RU content that heuristic regex can't score fairly.
+    if (heuristicResult.factors.specificity < 0.5) {
+      try {
+        const embSpec = await estimateSpecificityByEmbedding(content);
+        if (embSpec > heuristicResult.factors.specificity) {
+          heuristicResult.factors.specificity = embSpec;
+          // Recalculate overall score with updated specificity
+          heuristicResult.score =
+            heuristicResult.factors.specificity * 0.3 +
+            heuristicResult.factors.clarity * 0.3 +
+            heuristicResult.factors.relevance * 0.2 +
+            heuristicResult.factors.uniqueness * 0.2;
+        }
+      } catch {
+        // Non-fatal — continue with heuristic score
+      }
+    }
 
     // If content is clearly low quality by heuristics, don't bother with ONNX
     // This catches: too short, vague words, generic praise, etc.

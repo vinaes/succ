@@ -119,7 +119,7 @@ export function getPinnedMemories(threshold: number = 2): Array<{
     ...row,
     access_count: row.access_count ?? 0,
     correction_count: row.correction_count ?? 0,
-    is_invariant: !!(row.is_invariant),
+    is_invariant: !!row.is_invariant,
     priority_score: row.priority_score ?? null,
   }));
 }

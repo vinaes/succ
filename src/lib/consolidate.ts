@@ -101,7 +101,7 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed ?? null,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from ?? null,
       valid_until: row.valid_until ?? null,
