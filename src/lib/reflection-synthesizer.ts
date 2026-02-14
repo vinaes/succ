@@ -10,7 +10,7 @@
 
 import { callLLM } from './llm.js';
 import { getEmbedding } from './embeddings.js';
-import { saveMemory, getMemoryById, updateMemoryTags } from './storage/index.js';
+import { saveMemory, getMemoryById, updateMemoryTags, findSimilarMemory } from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
 
 const SYNTHESIS_PROMPT = `You are analyzing a cluster of related observations from a developer's coding sessions.
@@ -32,6 +32,10 @@ Output as JSON array:
 
 const MIN_CLUSTER_SIZE = 5;
 const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;
+
+/** Semantic dedup threshold for synthesized reflections.
+ *  Lower than saveMemory's 0.92 to catch LLM paraphrases of the same insight. */
+const SYNTHESIS_DEDUP_THRESHOLD = 0.8;
 
 export interface SynthesisResult {
   clustersProcessed: number;
@@ -119,8 +123,20 @@ export async function synthesizeFromCommunities(
 
         if (!dryRun) {
           const embedding = await getEmbedding(pattern.content);
+
+          // Semantic dedup: check if a similar reflection already exists (0.80 threshold
+          // catches LLM paraphrases that saveMemory's 0.92 dedup would miss)
+          const existing = await findSimilarMemory(embedding, SYNTHESIS_DEDUP_THRESHOLD);
+          if (existing) {
+            result.duplicatesSkipped++;
+            log(
+              `[synthesizer] Skipped semantic duplicate (sim=${existing.similarity.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
+            );
+            continue;
+          }
+
           const memType = pattern.type === 'learning' ? 'learning' : 'pattern';
-          const saved = await saveMemory(
+          await saveMemory(
             pattern.content,
             embedding,
             ['reflection', 'synthesized'],
@@ -128,18 +144,10 @@ export async function synthesizeFromCommunities(
             {
               qualityScore: { score: 0.7, factors: { synthesized: 1 } },
               type: memType,
-              deduplicate: true,
             }
           );
-          if (saved.isDuplicate) {
-            result.duplicatesSkipped++;
-            log(
-              `[synthesizer] Skipped duplicate (sim=${saved.similarity?.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
-            );
-          } else {
-            result.patternsCreated++;
-            log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
-          }
+          result.patternsCreated++;
+          log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
         }
       }
 
