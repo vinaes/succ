@@ -262,6 +262,97 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
+    // Architecture / Brain Vault — inline overview + categorized doc index
+    const brainDir = path.join(succDir, 'brain');
+    if (fs.existsSync(brainDir)) {
+      try {
+        const archParts = [];
+
+        // Phase 1: Find and inline Architecture Overview (compact extract)
+        const knowledgeDir = path.join(brainDir, '02_Knowledge');
+        if (fs.existsSync(knowledgeDir)) {
+          const archFiles = fs.readdirSync(knowledgeDir)
+            .filter(f => /architect/i.test(f) && f.endsWith('.md'))
+            .sort(); // 00_Architecture.md first
+          if (archFiles.length > 0) {
+            const archContent = fs.readFileSync(path.join(knowledgeDir, archFiles[0]), 'utf8');
+            // Strip frontmatter
+            const body = archContent.replace(/^---[\s\S]*?\n---\s*\n/, '');
+            // Extract from start to second "---" or "## Tech Stack" — whichever comes first
+            // This gives us Overview + Core Mission (~15-20 lines)
+            const overviewEnd = body.search(/\n---\n|\n## Tech Stack|\n## Directory/);
+            const overview = overviewEnd > 0 ? body.slice(0, overviewEnd).trim() : body.slice(0, 1500).trim();
+            if (overview) {
+              archParts.push(overview);
+            }
+          }
+        }
+
+        // Phase 2: Collect remaining docs grouped by category
+        const scanDirs = [
+          { dir: '02_Knowledge', label: 'Knowledge & Research' },
+          { dir: '01_Projects', label: 'Projects' },
+          { dir: 'decisions', label: 'Decisions' },
+        ];
+        const docGroups = {};
+
+        for (const { dir, label } of scanDirs) {
+          const fullDir = path.join(brainDir, dir);
+          if (!fs.existsSync(fullDir)) continue;
+
+          const files = fs.readdirSync(fullDir, { withFileTypes: true });
+          for (const entry of files) {
+            if (entry.isDirectory()) continue;
+            if (!entry.name.endsWith('.md')) continue;
+
+            const filePath = path.join(fullDir, entry.name);
+            const stat = fs.statSync(filePath);
+            if (stat.size < 2048) continue;
+            // Skip architecture files (already inlined above)
+            if (/architect/i.test(entry.name)) continue;
+
+            // Read first 500 bytes for frontmatter/H1
+            const fd = fs.openSync(filePath, 'r');
+            const buf = Buffer.alloc(500);
+            fs.readSync(fd, buf, 0, 500, 0);
+            fs.closeSync(fd);
+            const head = buf.toString('utf8');
+
+            let description = '';
+            const fmMatch = head.match(/^---\s*\n([\s\S]*?)\n---/);
+            if (fmMatch) {
+              const descMatch = fmMatch[1].match(/description:\s*["']?([^"'\n]+)/);
+              if (descMatch) description = descMatch[1].trim();
+            }
+            if (!description) {
+              const h1Match = head.match(/^#\s+(.+)/m);
+              if (h1Match) description = h1Match[1].trim();
+            }
+
+            if (description) {
+              if (!docGroups[label]) docGroups[label] = [];
+              docGroups[label].push(`${entry.name}: ${description}`);
+            }
+          }
+        }
+
+        // Phase 3: Format grouped docs
+        const groupLines = [];
+        for (const [label, docs] of Object.entries(docGroups)) {
+          groupLines.push(`**${label}:** ${docs.join(' | ')}`);
+        }
+        if (groupLines.length > 0) {
+          archParts.push(groupLines.join('\n'));
+        }
+
+        if (archParts.length > 0) {
+          contextParts.push(`<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`);
+        }
+      } catch {
+        // Brain vault scan failed, not critical
+      }
+    }
+
     // Check if this is a compact event (after /compact)
     const isCompactEvent = hookInput.source === 'compact';
 
@@ -408,8 +499,41 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Recent memories via daemon API (only on fresh start, compact uses briefing instead)
+    // Pinned + recent memories via daemon API (only on fresh start, compact uses briefing instead)
     if (daemonPort && !isCompactEvent) {
+      const pinnedIds = new Set();
+
+      // Phase 1: Pinned memories (Tier 1 — correction_count >= 2 or is_invariant)
+      // Filter: skip observations (noisy subagent reports), limit to top 10 by priority_score
+      try {
+        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/pinned`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const allPinned = data.results || [];
+          // Display only non-observation pinned, sorted by priority, top 10
+          const displayPinned = allPinned
+            .filter((m) => m.type !== 'observation')
+            .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
+            .slice(0, 10);
+          if (displayPinned.length > 0) {
+            // Track ALL pinned IDs for dedup with recent (including filtered-out observations)
+            for (const m of allPinned) pinnedIds.add(m.id);
+            const lines = displayPinned.map((m) => {
+              const preview = m.content.slice(0, 100).replace(/\n/g, ' ');
+              const type = m.type || 'obs';
+              const reason = m.is_invariant ? 'invariant' : `corrected x${m.correction_count}`;
+              return `#${m.id} [${type}] (${reason}) ${preview}${m.content.length > 100 ? '...' : ''}`;
+            });
+            contextParts.push(`<pinned-memories count="${displayPinned.length}" total="${allPinned.length}" hint="Tier 1: always loaded, high confidence">\n${lines.join('\n')}\n</pinned-memories>`);
+          }
+        }
+      } catch {
+        // pinned memories not available
+      }
+
+      // Phase 2: Recent memories (excluding pinned to avoid duplication)
       try {
         const response = await fetch(`http://127.0.0.1:${daemonPort}/api/recall`, {
           method: 'POST',
@@ -419,7 +543,7 @@ Co-Authored-By order (succ always LAST):
         });
         if (response.ok) {
           const data = await response.json();
-          const memories = data.results || [];
+          const memories = (data.results || []).filter((m) => !pinnedIds.has(m.id));
           if (memories.length > 0) {
             const lines = memories.map((m) => {
               const preview = m.content.slice(0, 50).replace(/\n/g, ' ');

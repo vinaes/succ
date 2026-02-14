@@ -628,13 +628,17 @@ export class StorageDispatcher {
 
       // Auto-detect invariant content and set is_invariant + compute priority_score
       // Hybrid: regex fast path (8 languages) + embedding similarity fallback (any language)
+      // Skip observations — they're subagent reports/facts, not rules/constraints.
+      // Invariant detection only makes sense for decision/learning/pattern/error types.
       try {
-        const { detectInvariant, detectInvariantWithEmbedding } =
-          await import('../working-memory-pipeline.js');
-        const isInvariant =
-          detectInvariant(content) || (await detectInvariantWithEmbedding(content, embedding));
-        if (isInvariant) {
-          await this.setMemoryInvariant(savedId, true);
+        if (type !== 'observation') {
+          const { detectInvariant, detectInvariantWithEmbedding } =
+            await import('../working-memory-pipeline.js');
+          const isInvariant =
+            detectInvariant(content) || (await detectInvariantWithEmbedding(content, embedding));
+          if (isInvariant) {
+            await this.setMemoryInvariant(savedId, true);
+          }
         }
         await this.recomputePriorityScore(savedId);
       } catch {

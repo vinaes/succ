@@ -44,6 +44,8 @@ import {
   incrementMemoryAccessBatch,
   autoLinkSimilarMemories,
   getRecentMemories,
+  getPinnedMemories,
+  setMemoryInvariant,
   // Global memory
   saveGlobalMemory,
   closeGlobalDb,
@@ -924,6 +926,24 @@ export async function routeRequest(
     }
 
     return { results };
+  }
+
+  if (pathname === '/api/pinned' && method === 'GET') {
+    const pinned = await getPinnedMemories();
+    return { results: pinned };
+  }
+
+  if (pathname === '/api/pinned/cleanup' && method === 'POST') {
+    // Remove false invariant flags from observation-type memories
+    const pinned = await getPinnedMemories();
+    let cleaned = 0;
+    for (const mem of pinned) {
+      if (mem.type === 'observation' && mem.is_invariant) {
+        await setMemoryInvariant(mem.id, false);
+        cleaned++;
+      }
+    }
+    return { cleaned, total: pinned.length };
   }
 
   if (pathname === '/api/remember' && method === 'POST') {
