@@ -42,7 +42,6 @@ import {
   getStats,
   getMemoryStats,
   incrementMemoryAccessBatch,
-  autoLinkSimilarMemories,
   getRecentMemories,
   getPinnedMemories,
   setMemoryInvariant,
@@ -593,53 +592,44 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
     await Promise.all(parallelOps);
 
-    // ── Graph refinement: auto-link (depends on consolidation completing first) ──
-    let newLinksCreated = 0;
-    if (idleConfig.operations?.graph_refinement !== false) {
-      log(`[reflection] Running graph auto-link`);
-      const threshold = idleConfig.thresholds?.auto_link_threshold ?? 0.75;
-      newLinksCreated = (await autoLinkSimilarMemories(threshold)) || 0;
-      log(`[reflection] Created ${newLinksCreated} new links`);
-    }
+    // ── Graph cleanup: prune → enrich → orphans → communities → centrality ──
+    if (
+      idleConfig.operations?.graph_refinement !== false ||
+      idleConfig.operations?.graph_enrichment !== false
+    ) {
+      const shouldRun = memoriesChanged || session.lastLinkCount === undefined;
 
-    // ── Graph enrichment: enrich + proximity + communities + centrality ──
-    if (idleConfig.operations?.graph_enrichment !== false) {
-      const shouldEnrich =
-        newLinksCreated > 0 || memoriesChanged || session.lastLinkCount === undefined;
+      if (shouldRun) {
+        log(`[reflection] Running graph cleanup pipeline`);
 
-      if (shouldEnrich) {
-        log(`[reflection] Running graph enrichment`);
-
-        // 1. Enrich existing similar_to → semantic relations (LLM)
         try {
-          const { enrichExistingLinks } = await import('../lib/graph/llm-relations.js');
-          const r = await enrichExistingLinks({ limit: 20, batchSize: 5 });
-          log(`[reflection] Enriched ${r.enriched} links (${r.skipped} skipped)`);
-        } catch (err) {
-          log(`[reflection] Enrich failed: ${err}`);
-        }
+          const { graphCleanup } = await import('../lib/graph/cleanup.js');
+          const cleanupResult = await graphCleanup({
+            skipEnrich: idleConfig.operations?.graph_enrichment === false,
+            onProgress: (step, detail) => log(`[reflection] [${step}] ${detail}`),
+          });
+          log(
+            `[reflection] Cleanup: pruned ${cleanupResult.pruned}, enriched ${cleanupResult.enriched}, orphans ${cleanupResult.orphansConnected}, communities ${cleanupResult.communitiesDetected}, centrality ${cleanupResult.centralityUpdated}`
+          );
 
-        // 2. Proximity links from co-occurrence
-        try {
-          const { createProximityLinks } = await import('../lib/graph/contextual-proximity.js');
-          const r = await createProximityLinks({ minCooccurrence: 2 });
-          log(`[reflection] Created ${r.created} proximity links`);
-        } catch (err) {
-          log(`[reflection] Proximity failed: ${err}`);
-        }
+          // Proximity links from co-occurrence (not part of cleanup pipeline)
+          try {
+            const { createProximityLinks } =
+              await import('../lib/graph/contextual-proximity.js');
+            const r = await createProximityLinks({ minCooccurrence: 2 });
+            log(`[reflection] Created ${r.created} proximity links`);
+          } catch (err) {
+            log(`[reflection] Proximity failed: ${err}`);
+          }
 
-        // 3. Community detection + reflection synthesis
-        try {
-          const { detectCommunities } = await import('../lib/graph/community-detection.js');
-          const r = await detectCommunities({ minCommunitySize: 2 });
-          log(`[reflection] Found ${r.communities.length} communities`);
-
-          // 3b. Synthesize patterns from community clusters
-          if (r.communities.length > 0) {
+          // Synthesize patterns from community clusters (uses cleanup's community result)
+          if (cleanupResult.communityResult && cleanupResult.communityResult.communities.length > 0) {
             try {
               const { synthesizeFromCommunities } =
                 await import('../lib/reflection-synthesizer.js');
-              const synthResult = await synthesizeFromCommunities(r, { log });
+              const synthResult = await synthesizeFromCommunities(cleanupResult.communityResult, {
+                log,
+              });
               const hasSynthActivity =
                 synthResult.patternsCreated > 0 ||
                 synthResult.duplicatesSkipped > 0 ||
@@ -662,22 +652,13 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
               log(`[reflection] Synthesis failed: ${err}`);
             }
           }
-        } catch (err) {
-          log(`[reflection] Communities failed: ${err}`);
-        }
 
-        // 4. Centrality cache
-        try {
-          const { updateCentralityCache } = await import('../lib/graph/centrality.js');
-          const r = await updateCentralityCache();
-          log(`[reflection] Updated centrality for ${r.updated} memories`);
+          session.lastLinkCount = (session.lastLinkCount ?? 0) + cleanupResult.orphansConnected;
         } catch (err) {
-          log(`[reflection] Centrality failed: ${err}`);
+          log(`[reflection] Graph cleanup failed: ${err}`);
         }
-
-        session.lastLinkCount = (session.lastLinkCount ?? 0) + newLinksCreated;
       } else {
-        log(`[reflection] Skipping graph enrichment (no changes)`);
+        log(`[reflection] Skipping graph cleanup (no changes)`);
       }
     }
 

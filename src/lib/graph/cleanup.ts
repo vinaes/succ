@@ -12,7 +12,7 @@ import {
   createAutoLinks,
 } from '../storage/index.js';
 import { enrichExistingLinks } from './llm-relations.js';
-import { detectCommunities } from './community-detection.js';
+import { detectCommunities, type CommunityResult } from './community-detection.js';
 import { updateCentralityCache } from './centrality.js';
 
 export interface CleanupOptions {
@@ -40,6 +40,8 @@ export interface CleanupResult {
   orphansConnected: number;
   communitiesDetected: number;
   centralityUpdated: number;
+  /** Full community detection result (for downstream synthesis). Only set when finalize runs. */
+  communityResult?: CommunityResult;
 }
 
 export async function graphCleanup(options: CleanupOptions = {}): Promise<CleanupResult> {
@@ -124,6 +126,7 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
     if (!dryRun) {
       const communityResult = await detectCommunities();
       result.communitiesDetected = communityResult.communities.length;
+      result.communityResult = communityResult;
       onProgress?.('communities', `Detected ${result.communitiesDetected} communities (${communityResult.isolated} isolated)`);
     } else {
       result.communitiesDetected = -1; // unknown in dry-run
