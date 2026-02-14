@@ -10,7 +10,7 @@
 
 import { callLLM } from './llm.js';
 import { getEmbedding } from './embeddings.js';
-import { saveMemory, getMemoryById } from './storage/index.js';
+import { saveMemory, getMemoryById, updateMemoryTags } from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
 
 const SYNTHESIS_PROMPT = `You are analyzing a cluster of related observations from a developer's coding sessions.
@@ -36,6 +36,8 @@ const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;
 export interface SynthesisResult {
   clustersProcessed: number;
   patternsCreated: number;
+  duplicatesSkipped: number;
+  observationsMarked: number;
   errors: string[];
 }
 
@@ -48,7 +50,13 @@ export async function synthesizeFromCommunities(
   options: { dryRun?: boolean; log?: (msg: string) => void } = {}
 ): Promise<SynthesisResult> {
   const { dryRun = false, log = () => {} } = options;
-  const result: SynthesisResult = { clustersProcessed: 0, patternsCreated: 0, errors: [] };
+  const result: SynthesisResult = {
+    clustersProcessed: 0,
+    patternsCreated: 0,
+    duplicatesSkipped: 0,
+    observationsMarked: 0,
+    errors: [],
+  };
 
   // Filter to clusters large enough to synthesize
   const eligibleClusters = communityResult.communities.filter((c) => c.size >= MIN_CLUSTER_SIZE);
@@ -112,7 +120,7 @@ export async function synthesizeFromCommunities(
         if (!dryRun) {
           const embedding = await getEmbedding(pattern.content);
           const memType = pattern.type === 'learning' ? 'learning' : 'pattern';
-          await saveMemory(
+          const saved = await saveMemory(
             pattern.content,
             embedding,
             ['reflection', 'synthesized'],
@@ -120,16 +128,33 @@ export async function synthesizeFromCommunities(
             {
               qualityScore: { score: 0.7, factors: { synthesized: 1 } },
               type: memType,
+              deduplicate: true,
             }
           );
-          result.patternsCreated++;
-          log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
+          if (saved.isDuplicate) {
+            result.duplicatesSkipped++;
+            log(
+              `[synthesizer] Skipped duplicate (sim=${saved.similarity?.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
+            );
+          } else {
+            result.patternsCreated++;
+            log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
+          }
         }
       }
 
-      // Mark source observations as reflected (add 'reflected' tag)
-      // We don't modify existing memories' tags to keep it simple — the cluster
-      // detection will naturally avoid re-synthesis since patterns will be linked
+      // Mark source observations as 'reflected' so they aren't re-synthesized
+      if (!dryRun) {
+        for (const mem of memories) {
+          try {
+            const newTags = [...mem.tags, 'reflected'];
+            await updateMemoryTags(mem.id, newTags);
+            result.observationsMarked++;
+          } catch {
+            // Non-critical — worst case we re-process next cycle
+          }
+        }
+      }
     } catch (err) {
       result.errors.push(`Cluster ${cluster.id}: ${err}`);
     }
