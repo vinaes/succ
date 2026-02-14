@@ -247,10 +247,12 @@ export async function estimateSpecificityByEmbedding(content: string): Promise<n
       avgSimilarityToReference(contentEmb, SPECIFICITY_LOW_SET),
     ]);
 
-    // Normalize: ratio of high-specificity similarity to total
-    const total = highSim + lowSim;
+    // Clamp negatives (cosine range is -1..1), then normalize
+    const clampedHigh = Math.max(0, highSim);
+    const clampedLow = Math.max(0, lowSim);
+    const total = clampedHigh + clampedLow;
     if (total === 0) return 0.5;
-    return highSim / total;
+    return clampedHigh / total;
   } catch {
     return 0.5; // neutral fallback
   }
