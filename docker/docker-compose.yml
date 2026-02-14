@@ -17,7 +17,7 @@ services:
     container_name: succ-postgres
     environment:
       POSTGRES_USER: succ
-      POSTGRES_PASSWORD: succ_test_password
+      POSTGRES_PASSWORD: succ_test_password  # Development only — not a real credential
       POSTGRES_DB: succ
     ports:
       - "5433:5432"
