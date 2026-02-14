@@ -638,14 +638,21 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
               const { synthesizeFromCommunities } =
                 await import('../lib/reflection-synthesizer.js');
               const synthResult = await synthesizeFromCommunities(r, { log });
-              if (synthResult.patternsCreated > 0 || synthResult.duplicatesSkipped > 0) {
+              const hasSynthActivity =
+                synthResult.patternsCreated > 0 ||
+                synthResult.duplicatesSkipped > 0 ||
+                synthResult.reinforced > 0;
+              if (hasSynthActivity) {
                 log(
                   `[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters` +
+                    (synthResult.reinforced > 0
+                      ? `, reinforced ${synthResult.reinforced} existing`
+                      : '') +
                     (synthResult.duplicatesSkipped > 0
                       ? `, skipped ${synthResult.duplicatesSkipped} duplicates`
                       : '') +
                     (synthResult.observationsMarked > 0
-                      ? `, marked ${synthResult.observationsMarked} observations as reflected`
+                      ? `, marked ${synthResult.observationsMarked} as reflected`
                       : '')
                 );
               }
