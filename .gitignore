@@ -56,5 +56,13 @@ paper/
 *.bbl
 *.blg
 
+# Lint/build artifacts
+lint-*.txt
+lint-output.txt
+
+# Local directories (not for version control)
+md-succ-ai/
+scripts/
+
 # Windows
 nul

@@ -20,6 +20,7 @@ import path from 'path';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
+import { processRegistry } from '../lib/process-registry.js';
 import { processSessionEnd } from './session-processor.js';
 import { ValidationError, NotFoundError, NetworkError } from '../lib/errors.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
@@ -1406,6 +1407,9 @@ export function shutdownDaemon(): void {
     state.server.close();
     state.server = null;
   }
+
+  // Kill all spawned child processes (claude CLI, etc.)
+  processRegistry.killAll();
 
   // Cleanup DB connections
   closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));

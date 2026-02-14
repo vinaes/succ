@@ -9,6 +9,7 @@
 
 import spawn from 'cross-spawn';
 import type { ChildProcess } from 'child_process';
+import { processRegistry } from '../process-registry.js';
 
 // ============================================================================
 // Types
@@ -98,6 +99,8 @@ export class LoopExecutor implements AgentExecutor {
           windowsHide: true,
         });
 
+        if (this.process.pid) processRegistry.register(this.process.pid, 'claude-prd');
+
         // Write prompt to stdin and close it
         if (this.process.stdin) {
           this.process.stdin.write(prompt);
@@ -127,11 +130,13 @@ export class LoopExecutor implements AgentExecutor {
 
         this.process.on('close', (code) => {
           clearTimeout(timer);
+          if (this.process?.pid) processRegistry.unregister(this.process.pid);
           finish(code ?? 1);
         });
 
         this.process.on('error', (err) => {
           clearTimeout(timer);
+          if (this.process?.pid) processRegistry.unregister(this.process.pid);
           chunks.push(`\n[ERROR] ${err.message}\n`);
           finish(1);
         });
