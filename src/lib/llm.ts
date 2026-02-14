@@ -18,6 +18,7 @@ const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
 import { getConfig, getLLMTaskConfig, getApiKey, getApiUrl } from './config.js';
 import { ClaudeWSTransport } from './claude-ws-transport.js';
 import { NetworkError, ConfigError } from './errors.js';
+import { processRegistry } from './process-registry.js';
 
 // ============================================================================
 // Types
@@ -342,6 +343,8 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
       ...CLAUDE_SPAWN_OPTIONS,
     });
 
+    if (proc.pid) processRegistry.register(proc.pid, 'claude-cli');
+
     proc.stdin?.write(prompt);
     proc.stdin?.end();
 
@@ -363,6 +366,7 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
 
     proc.on('close', (code: number) => {
       clearTimeout(timer);
+      if (proc.pid) processRegistry.unregister(proc.pid);
       if (code === 0) {
         resolve(stdout.trim());
       } else {
@@ -372,6 +376,7 @@ export async function spawnClaudeCLI(prompt: string, options?: ClaudeCLIOptions)
 
     proc.on('error', (err: Error) => {
       clearTimeout(timer);
+      if (proc.pid) processRegistry.unregister(proc.pid);
       reject(err);
     });
   });

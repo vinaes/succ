@@ -199,6 +199,7 @@ export interface LLMConfig {
   max_tokens?: number; // Default max tokens (default: 2000)
   temperature?: number; // Default temperature (default: 0.3)
   transport?: 'process' | 'ws' | 'http'; // Claude transport mode
+  ws_idle_timeout?: number; // WS transport idle timeout in seconds (default: 300)
 
   // Claude-specific overrides
   claude?: {
