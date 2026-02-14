@@ -91,12 +91,7 @@ describe('gatherTaskContext', () => {
     expect(mockGetEmbedding).toHaveBeenCalledTimes(5);
 
     // Check first call args
-    expect(mockHybridSearch).toHaveBeenCalledWith(
-      'authentication',
-      [0.1, 0.2, 0.3],
-      3,
-      0.3,
-    );
+    expect(mockHybridSearch).toHaveBeenCalledWith('authentication', [0.1, 0.2, 0.3], 3, 0.3);
   });
 
   it('should limit queries to 5', async () => {
@@ -133,9 +128,7 @@ describe('gatherTaskContext', () => {
   });
 
   it('should default null type to observation', async () => {
-    mockHybridSearch.mockResolvedValue([
-      makeMemory(1, 'Some fact', null as unknown as string),
-    ]);
+    mockHybridSearch.mockResolvedValue([makeMemory(1, 'Some fact', null as unknown as string)]);
 
     const result = await gatherTaskContext(makeTask(), 'prd_test');
 
@@ -218,7 +211,7 @@ describe('gatherTaskContext', () => {
     await gatherTaskContext(task, 'prd_test');
 
     // Queries: title + 'handler.ts'
-    const queriedTerms = mockHybridSearch.mock.calls.map(c => c[0]);
+    const queriedTerms = mockHybridSearch.mock.calls.map((c) => c[0]);
     expect(queriedTerms).toContain('handler.ts');
   });
 
@@ -232,11 +225,6 @@ describe('gatherTaskContext', () => {
 
     // Only the title query
     expect(mockHybridSearch).toHaveBeenCalledTimes(1);
-    expect(mockHybridSearch).toHaveBeenCalledWith(
-      'Add auth module',
-      [0.1, 0.2, 0.3],
-      3,
-      0.3,
-    );
+    expect(mockHybridSearch).toHaveBeenCalledWith('Add auth module', [0.1, 0.2, 0.3], 3, 0.3);
   });
 });

@@ -36,7 +36,7 @@ export interface ExtractSymbolsResult {
  */
 export async function extractSymbolsFromFile(
   filePath: string,
-  options: ExtractSymbolsOptions = {},
+  options: ExtractSymbolsOptions = {}
 ): Promise<ExtractSymbolsResult> {
   const absolutePath = path.resolve(filePath);
 
@@ -50,13 +50,15 @@ export async function extractSymbolsFromFile(
 
   if (!language) {
     throw new ValidationError(
-      `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`,
+      `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`
     );
   }
 
   const tree = await parseCode(content, language);
   if (!tree) {
-    throw new ValidationError(`Failed to parse ${filePath} — tree-sitter grammar not available for ${language}`);
+    throw new ValidationError(
+      `Failed to parse ${filePath} — tree-sitter grammar not available for ${language}`
+    );
   }
 
   try {
@@ -64,7 +66,7 @@ export async function extractSymbolsFromFile(
 
     const filterType = options.type ?? 'all';
     if (filterType !== 'all') {
-      symbols = symbols.filter(s => s.type === filterType);
+      symbols = symbols.filter((s) => s.type === filterType);
     }
 
     return { symbols, language, file: filePath };

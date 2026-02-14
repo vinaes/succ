@@ -4,7 +4,10 @@ import path from 'path';
 import os from 'os';
 
 // Create a single temp directory for all tests to avoid file locking issues
-const tempDir = path.join(os.tmpdir(), `succ-db-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const tempDir = path.join(
+  os.tmpdir(),
+  `succ-db-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
 
 // Mock config to use temp directory
 vi.mock('./config.js', () => {
@@ -116,8 +119,22 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const docs = [
-        { filePath: 'batch-a.ts', chunkIndex: 0, content: 'a', startLine: 1, endLine: 5, embedding: new Array(384).fill(0.1) },
-        { filePath: 'batch-b.ts', chunkIndex: 0, content: 'b', startLine: 1, endLine: 5, embedding: new Array(384).fill(0.2) },
+        {
+          filePath: 'batch-a.ts',
+          chunkIndex: 0,
+          content: 'a',
+          startLine: 1,
+          endLine: 5,
+          embedding: new Array(384).fill(0.1),
+        },
+        {
+          filePath: 'batch-b.ts',
+          chunkIndex: 0,
+          content: 'b',
+          startLine: 1,
+          endLine: 5,
+          embedding: new Array(384).fill(0.2),
+        },
       ];
 
       db.upsertDocumentsBatch(docs);
@@ -197,7 +214,10 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.5);
-      const result = db.saveMemory('test memory content', embedding, ['test-tag'], 'test-source', { deduplicate: false, autoLink: false });
+      const result = db.saveMemory('test memory content', embedding, ['test-tag'], 'test-source', {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       expect(result.id).toBeDefined();
       expect(result.isDuplicate).toBe(false);
@@ -224,7 +244,10 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.6);
-      const result = db.saveMemory('get by id test', embedding, [], undefined, { deduplicate: false, autoLink: false });
+      const result = db.saveMemory('get by id test', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       const memory = db.getMemoryById(result.id);
       expect(memory).not.toBeNull();
@@ -249,19 +272,19 @@ describe('Database Module', () => {
       const batch = [
         {
           content: 'Batch test 1 unique content alpha',
-          embedding: new Array(384).fill(0).map((_, i) => i % 2 === 0 ? 0.1 : 0.9),
+          embedding: new Array(384).fill(0).map((_, i) => (i % 2 === 0 ? 0.1 : 0.9)),
           tags: ['batch', 'test1'],
           type: 'observation' as const,
         },
         {
           content: 'Batch test 2 unique content beta',
-          embedding: new Array(384).fill(0).map((_, i) => i % 3 === 0 ? 0.2 : 0.8),
+          embedding: new Array(384).fill(0).map((_, i) => (i % 3 === 0 ? 0.2 : 0.8)),
           tags: ['batch', 'test2'],
           type: 'decision' as const,
         },
         {
           content: 'Batch test 3 unique content gamma',
-          embedding: new Array(384).fill(0).map((_, i) => i % 5 === 0 ? 0.3 : 0.7),
+          embedding: new Array(384).fill(0).map((_, i) => (i % 5 === 0 ? 0.3 : 0.7)),
           tags: ['batch', 'test3'],
           type: 'learning' as const,
         },
@@ -274,7 +297,7 @@ describe('Database Module', () => {
       expect(result.saved + result.skipped).toBe(3);
 
       // At least verify the results structure
-      result.results.forEach(r => {
+      result.results.forEach((r) => {
         expect(r.reason === 'saved' || r.reason === 'duplicate').toBe(true);
         if (!r.isDuplicate) {
           expect(r.id).toBeDefined();
@@ -290,7 +313,10 @@ describe('Database Module', () => {
       const embedding2 = embedding1.slice(); // Exact copy - guaranteed duplicate
 
       // Save one memory first
-      db.saveMemory('Original memory for dup test', embedding1, [], undefined, { deduplicate: false, autoLink: false });
+      db.saveMemory('Original memory for dup test', embedding1, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       // Try to batch save with duplicate
       const batch = [
@@ -359,9 +385,24 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const batch = [
-        { content: 'Memory 0 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
-        { content: 'Memory 1 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
-        { content: 'Memory 2 index test', embedding: new Array(384).fill(0).map(() => Math.random()), tags: [], type: 'observation' as const },
+        {
+          content: 'Memory 0 index test',
+          embedding: new Array(384).fill(0).map(() => Math.random()),
+          tags: [],
+          type: 'observation' as const,
+        },
+        {
+          content: 'Memory 1 index test',
+          embedding: new Array(384).fill(0).map(() => Math.random()),
+          tags: [],
+          type: 'observation' as const,
+        },
+        {
+          content: 'Memory 2 index test',
+          embedding: new Array(384).fill(0).map(() => Math.random()),
+          tags: [],
+          type: 'observation' as const,
+        },
       ];
 
       const result = db.saveMemoriesBatch(batch);
@@ -404,8 +445,14 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.7);
-      const mem1 = db.saveMemory('link test 1', embedding, [], undefined, { deduplicate: false, autoLink: false });
-      const mem2 = db.saveMemory('link test 2', embedding, [], undefined, { deduplicate: false, autoLink: false });
+      const mem1 = db.saveMemory('link test 1', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
+      const mem2 = db.saveMemory('link test 2', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       const link = db.createMemoryLink(mem1.id, mem2.id, 'related', 1.0);
 
@@ -416,8 +463,14 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.8);
-      const mem1 = db.saveMemory('links get 1', embedding, [], undefined, { deduplicate: false, autoLink: false });
-      const mem2 = db.saveMemory('links get 2', embedding, [], undefined, { deduplicate: false, autoLink: false });
+      const mem1 = db.saveMemory('links get 1', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
+      const mem2 = db.saveMemory('links get 2', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       db.createMemoryLink(mem1.id, mem2.id, 'leads_to');
 
@@ -449,7 +502,14 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0.9);
-      db.saveGlobalMemory('global memory test', embedding, ['global-tag'], 'source', 'project-name', { deduplicate: false });
+      db.saveGlobalMemory(
+        'global memory test',
+        embedding,
+        ['global-tag'],
+        'source',
+        'project-name',
+        { deduplicate: false }
+      );
 
       const results = db.searchGlobalMemories(embedding, 5, 0.0);
 
@@ -472,8 +532,17 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const original = db.saveMemory('memory to invalidate', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
-      const keeper = db.saveMemory('keeper memory', embedding.map(v => v * 0.5), ['test'], undefined, { deduplicate: false, autoLink: false });
+      const original = db.saveMemory('memory to invalidate', embedding, ['test'], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
+      const keeper = db.saveMemory(
+        'keeper memory',
+        embedding.map((v) => v * 0.5),
+        ['test'],
+        undefined,
+        { deduplicate: false, autoLink: false }
+      );
 
       const success = db.invalidateMemory(original.id, keeper.id);
       expect(success).toBe(true);
@@ -488,11 +557,14 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const m = db.saveMemory('recent-but-invalidated', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      const m = db.saveMemory('recent-but-invalidated', embedding, ['test'], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
       db.invalidateMemory(m.id, 1);
 
       const recent = db.getRecentMemories(100);
-      const found = recent.find(r => r.id === m.id);
+      const found = recent.find((r) => r.id === m.id);
       expect(found).toBeUndefined();
     });
 
@@ -500,14 +572,17 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const m = db.saveMemory('to restore', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      const m = db.saveMemory('to restore', embedding, ['test'], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
       db.invalidateMemory(m.id, 999);
 
       const restored = db.restoreInvalidatedMemory(m.id);
       expect(restored).toBe(true);
 
       const recent = db.getRecentMemories(100);
-      const found = recent.find(r => r.id === m.id);
+      const found = recent.find((r) => r.id === m.id);
       expect(found).toBeDefined();
     });
 
@@ -515,7 +590,10 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const m = db.saveMemory('double invalidate', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      const m = db.saveMemory('double invalidate', embedding, ['test'], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
       db.invalidateMemory(m.id, 100);
 
       // Second invalidation should fail (already invalidated)
@@ -527,7 +605,10 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const m = db.saveMemory('never invalidated', embedding, ['test'], undefined, { deduplicate: false, autoLink: false });
+      const m = db.saveMemory('never invalidated', embedding, ['test'], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
 
       const restored = db.restoreInvalidatedMemory(m.id);
       expect(restored).toBe(false);
@@ -546,9 +627,24 @@ describe('Database Module', () => {
       const db = await import('./db/index.js');
 
       const embedding = new Array(384).fill(0).map(() => Math.random());
-      const original1 = db.saveMemory('original-hist-1', embedding, [], undefined, { deduplicate: false, autoLink: false });
-      const original2 = db.saveMemory('original-hist-2', embedding.map(v => v * 0.9), [], undefined, { deduplicate: false, autoLink: false });
-      const merged = db.saveMemory('merged-hist', embedding.map(v => v * 0.7), [], 'consolidation-llm', { deduplicate: false, autoLink: false });
+      const original1 = db.saveMemory('original-hist-1', embedding, [], undefined, {
+        deduplicate: false,
+        autoLink: false,
+      });
+      const original2 = db.saveMemory(
+        'original-hist-2',
+        embedding.map((v) => v * 0.9),
+        [],
+        undefined,
+        { deduplicate: false, autoLink: false }
+      );
+      const merged = db.saveMemory(
+        'merged-hist',
+        embedding.map((v) => v * 0.7),
+        [],
+        'consolidation-llm',
+        { deduplicate: false, autoLink: false }
+      );
 
       // Create supersedes links
       db.createMemoryLink(merged.id, original1.id, 'supersedes', 1.0);
@@ -557,7 +653,7 @@ describe('Database Module', () => {
       db.invalidateMemory(original2.id, merged.id);
 
       const history = db.getConsolidationHistory(10);
-      const entry = history.find(h => h.mergedMemoryId === merged.id);
+      const entry = history.find((h) => h.mergedMemoryId === merged.id);
       expect(entry).toBeDefined();
       expect(entry?.originalIds).toContain(original1.id);
       expect(entry?.originalIds).toContain(original2.id);

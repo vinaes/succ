@@ -59,10 +59,13 @@ export function getTemporalConfig(): TemporalConfig {
     enabled: userConfig.enabled ?? DEFAULT_TEMPORAL_CONFIG.enabled,
     semantic_weight: userConfig.semantic_weight ?? DEFAULT_TEMPORAL_CONFIG.semantic_weight,
     recency_weight: userConfig.recency_weight ?? DEFAULT_TEMPORAL_CONFIG.recency_weight,
-    decay_half_life_hours: userConfig.decay_half_life_hours ?? DEFAULT_TEMPORAL_CONFIG.decay_half_life_hours,
+    decay_half_life_hours:
+      userConfig.decay_half_life_hours ?? DEFAULT_TEMPORAL_CONFIG.decay_half_life_hours,
     decay_floor: userConfig.decay_floor ?? DEFAULT_TEMPORAL_CONFIG.decay_floor,
-    access_boost_enabled: userConfig.access_boost_enabled ?? DEFAULT_TEMPORAL_CONFIG.access_boost_enabled,
-    access_boost_factor: userConfig.access_boost_factor ?? DEFAULT_TEMPORAL_CONFIG.access_boost_factor,
+    access_boost_enabled:
+      userConfig.access_boost_enabled ?? DEFAULT_TEMPORAL_CONFIG.access_boost_enabled,
+    access_boost_factor:
+      userConfig.access_boost_factor ?? DEFAULT_TEMPORAL_CONFIG.access_boost_factor,
     max_access_boost: userConfig.max_access_boost ?? DEFAULT_TEMPORAL_CONFIG.max_access_boost,
     filter_expired: userConfig.filter_expired ?? DEFAULT_TEMPORAL_CONFIG.filter_expired,
   };
@@ -249,8 +252,11 @@ export function applyTemporalScoring<
     access_count?: number;
     valid_from?: string | null;
     valid_until?: string | null;
-  }
->(results: T[], config: TemporalConfig = getTemporalConfig()): (T & { temporal_score: TemporalScoreResult })[] {
+  },
+>(
+  results: T[],
+  config: TemporalConfig = getTemporalConfig()
+): (T & { temporal_score: TemporalScoreResult })[] {
   if (!config.enabled) {
     // Return results unchanged with default temporal data
     return results.map((r) => ({
@@ -288,7 +294,9 @@ export function applyTemporalScoring<
   });
 
   // Filter expired if enabled
-  const filtered = config.filter_expired ? scored.filter((r) => !r.temporal_score.isExpired) : scored;
+  const filtered = config.filter_expired
+    ? scored.filter((r) => !r.temporal_score.isExpired)
+    : scored;
 
   // Re-sort by final score
   filtered.sort((a, b) => b.similarity - a.similarity);
@@ -347,7 +355,9 @@ export function parseDuration(duration: string, fromDate: Date = new Date()): Da
   // Parse duration format
   const match = duration.match(/^(\d+)([dwmy])$/i);
   if (!match) {
-    throw new ValidationError(`Invalid duration format: ${duration}. Use "7d", "2w", "1m", "1y" or ISO date.`);
+    throw new ValidationError(
+      `Invalid duration format: ${duration}. Use "7d", "2w", "1m", "1y" or ISO date.`
+    );
   }
 
   const value = parseInt(match[1], 10);

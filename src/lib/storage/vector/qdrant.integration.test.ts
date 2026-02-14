@@ -77,7 +77,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
         // Brief delay for Qdrant to finish deletion before recreating
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 200));
         await store.init(DIMENSIONS);
       }
     }, 30_000);
@@ -122,7 +122,7 @@ describe('Qdrant Vector Store Integration', async () => {
 
       // Verify it exists
       let results = await store.searchDocuments(embedding, 10, 0.0);
-      const found = results.some(r => r.id === 100);
+      const found = results.some((r) => r.id === 100);
       expect(found).toBe(true);
 
       // Delete it
@@ -130,7 +130,7 @@ describe('Qdrant Vector Store Integration', async () => {
 
       // Verify it's gone
       results = await store.searchDocuments(embedding, 10, 0.0);
-      const stillFound = results.some(r => r.id === 100);
+      const stillFound = results.some((r) => r.id === 100);
       expect(stillFound).toBe(false);
     });
 
@@ -160,7 +160,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
         // Brief delay for Qdrant to finish deletion before recreating
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 200));
         await store.init(DIMENSIONS);
       }
     }, 30_000);
@@ -183,7 +183,7 @@ describe('Qdrant Vector Store Integration', async () => {
       await store.deleteMemoryVector(200);
 
       const results = await store.searchMemories(embedding, 10, 0.9);
-      const found = results.some(r => r.id === 200);
+      const found = results.some((r) => r.id === 200);
       expect(found).toBe(false);
     });
   });
@@ -198,7 +198,7 @@ describe('Qdrant Vector Store Integration', async () => {
           // Collection might not exist
         }
         // Brief delay for Qdrant to finish deletion before recreating
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 200));
         await store.init(DIMENSIONS);
       }
     }, 30_000);
@@ -221,7 +221,7 @@ describe('Qdrant Vector Store Integration', async () => {
       await store.deleteGlobalMemoryVector(300);
 
       const results = await store.searchGlobalMemories(embedding, 10, 0.9);
-      const found = results.some(r => r.id === 300);
+      const found = results.some((r) => r.id === 300);
       expect(found).toBe(false);
     });
   });

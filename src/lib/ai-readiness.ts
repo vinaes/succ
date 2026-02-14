@@ -44,16 +44,16 @@ export type MetricName = keyof typeof METRIC_WEIGHTS;
 export interface MetricResult {
   name: MetricName;
   label: string;
-  score: number;       // Points earned (out of max)
-  maxScore: number;    // Maximum possible points
-  details: string;     // Human-readable details
-  suggestions?: string[];  // Suggestions for improvement
+  score: number; // Points earned (out of max)
+  maxScore: number; // Maximum possible points
+  details: string; // Human-readable details
+  suggestions?: string[]; // Suggestions for improvement
 }
 
 export interface AIReadinessScore {
-  totalScore: number;  // 0-100
-  maxScore: number;    // Always 100
-  stars: number;       // 1-5 stars
+  totalScore: number; // 0-100
+  maxScore: number; // Always 100
+  stars: number; // 1-5 stars
   metrics: MetricResult[];
   suggestions: string[];
 }
@@ -74,11 +74,8 @@ export function calculateBrainVaultScore(): MetricResult {
   const suggestions: string[] = [];
 
   // Check CLAUDE.md
-  const claudeMdPaths = [
-    path.join(succDir, 'CLAUDE.md'),
-    path.join(getProjectRoot(), 'CLAUDE.md'),
-  ];
-  const claudeMdExists = claudeMdPaths.some(p => fs.existsSync(p));
+  const claudeMdPaths = [path.join(succDir, 'CLAUDE.md'), path.join(getProjectRoot(), 'CLAUDE.md')];
+  const claudeMdExists = claudeMdPaths.some((p) => fs.existsSync(p));
   if (claudeMdExists) {
     score += 10;
     details.push('CLAUDE.md exists');
@@ -276,7 +273,9 @@ export function calculateSoulDocumentScore(): MetricResult {
     score,
     maxScore,
     details,
-    suggestions: hasCustomContent ? undefined : ['Customize your soul.md with personal preferences'],
+    suggestions: hasCustomContent
+      ? undefined
+      : ['Customize your soul.md with personal preferences'],
   };
 }
 
@@ -333,7 +332,7 @@ export function calculateHooksActiveScore(): MetricResult {
   ];
 
   for (const hook of hookChecks) {
-    const exists = hook.paths.some(p => fs.existsSync(path.join(hooksDir, p)));
+    const exists = hook.paths.some((p) => fs.existsSync(path.join(hooksDir, p)));
     if (exists) {
       score += hook.points;
       details.push(hook.name);
@@ -381,7 +380,7 @@ export function calculateAgentsConfiguredScore(): MetricResult {
   let agentCount = 0;
   try {
     const files = fs.readdirSync(agentsDir);
-    agentCount = files.filter(f => f.endsWith('.md')).length;
+    agentCount = files.filter((f) => f.endsWith('.md')).length;
   } catch {
     // Ignore errors
   }
@@ -630,7 +629,9 @@ export async function calculateAIReadinessScore(): Promise<AIReadinessScore> {
 
   // Collect all suggestions, prioritized by impact
   const allSuggestions: string[] = [];
-  const metricsByMissingPoints = [...metrics].sort((a, b) => (b.maxScore - b.score) - (a.maxScore - a.score));
+  const metricsByMissingPoints = [...metrics].sort(
+    (a, b) => b.maxScore - b.score - (a.maxScore - a.score)
+  );
 
   for (const metric of metricsByMissingPoints) {
     if (metric.suggestions) {
@@ -707,7 +708,16 @@ function countSourceFiles(dir: string, extensions: string[]): number {
   let count = 0;
 
   // Directories to skip
-  const skipDirs = ['node_modules', '.git', 'dist', 'build', '.succ', '.claude', 'vendor', '__pycache__'];
+  const skipDirs = [
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    '.succ',
+    '.claude',
+    'vendor',
+    '__pycache__',
+  ];
 
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -740,14 +750,15 @@ function checkSoulCustomization(content: string): boolean {
   ];
 
   // Check if all template markers are still present (means not customized)
-  const hasAllMarkers = templateMarkers.every(marker => content.includes(marker));
+  const hasAllMarkers = templateMarkers.every((marker) => content.includes(marker));
 
   // Check if there's substantial custom content
-  const lines = content.split('\n').filter(line => line.trim().length > 0);
+  const lines = content.split('\n').filter((line) => line.trim().length > 0);
   const hasSubstantialContent = lines.length > 30;
 
   // Check for custom sections (not in default template)
-  const hasCustomSections = content.includes('## My Preferences') ||
+  const hasCustomSections =
+    content.includes('## My Preferences') ||
     content.includes('## About Me') ||
     content.includes('## Code Style') ||
     (content.includes('Preferred frameworks:') && !!content.match(/Preferred frameworks:\s*\S+/));

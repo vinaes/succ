@@ -49,14 +49,14 @@ export function applyMMR<T extends MMRItem>(
   results: T[],
   queryEmbedding: number[],
   lambda: number = 0.8,
-  limit?: number,
+  limit?: number
 ): T[] {
   // Nothing to rerank
   if (results.length <= 1) return results;
 
   // Filter to results that have embeddings — skip those without
-  const withEmbedding = results.filter(r => r.embedding && r.embedding.length > 0);
-  const withoutEmbedding = results.filter(r => !r.embedding || r.embedding.length === 0);
+  const withEmbedding = results.filter((r) => r.embedding && r.embedding.length > 0);
+  const withoutEmbedding = results.filter((r) => !r.embedding || r.embedding.length === 0);
 
   if (withEmbedding.length === 0) return results;
 

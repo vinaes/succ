@@ -22,7 +22,11 @@ export async function score(options: ScoreOptions = {}): Promise<void> {
       console.log(formatAIReadinessScore(result));
     }
   } catch (error: any) {
-    logError('score', `Error calculating score:: ${error.message}`, error instanceof Error ? error : undefined);
+    logError(
+      'score',
+      `Error calculating score:: ${error.message}`,
+      error instanceof Error ? error : undefined
+    );
 
     console.error('Error calculating score:', error.message);
     process.exit(1);

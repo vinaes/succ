@@ -42,14 +42,14 @@ import { NotFoundError, ValidationError } from '../errors.js';
 
 export interface RunOptions {
   mode?: 'loop' | 'team';
-  concurrency?: number;  // Max parallel workers in team mode (default: 3)
+  concurrency?: number; // Max parallel workers in team mode (default: 3)
   resume?: boolean;
-  taskId?: string;       // Run a specific task only
+  taskId?: string; // Run a specific task only
   dryRun?: boolean;
   maxIterations?: number;
-  noBranch?: boolean;    // Skip branch isolation
+  noBranch?: boolean; // Skip branch isolation
   model?: string;
-  force?: boolean;       // Force resume even if another runner may be active
+  force?: boolean; // Force resume even if another runner may be active
 }
 
 export interface RunResult {
@@ -117,7 +117,9 @@ function resetWorkingTree(cwd: string): void {
     git('checkout -- .', cwd);
     git('clean -fd -e .succ', cwd);
   } catch (err) {
-    logWarn('prd', 'Failed to reset worktree', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('prd', 'Failed to reset worktree', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -130,7 +132,12 @@ function resetWorkingTree(cwd: string): void {
  * Workers can recall memories, record learnings, and flag dead-ends.
  */
 export const WORKER_ALLOWED_TOOLS = [
-  'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+  'Bash',
+  'Read',
+  'Write',
+  'Edit',
+  'Glob',
+  'Grep',
   'mcp__succ__succ_recall',
   'mcp__succ__succ_remember',
   'mcp__succ__succ_dead_end',
@@ -156,10 +163,7 @@ export function buildMcpConfig(): Record<string, { command: string; args?: strin
 /**
  * Run a PRD — execute its tasks in order with quality gates.
  */
-export async function runPrd(
-  prdId: string,
-  options: RunOptions = {},
-): Promise<RunResult> {
+export async function runPrd(prdId: string, options: RunOptions = {}): Promise<RunResult> {
   const root = getProjectRoot();
 
   // 1. Load PRD and tasks
@@ -167,7 +171,8 @@ export async function runPrd(
   if (!prd) throw new NotFoundError(`PRD not found: ${prdId}`);
 
   const tasks = loadTasks(prdId);
-  if (tasks.length === 0) throw new ValidationError(`No tasks for PRD ${prdId}. Run: succ prd parse ${prdId}`);
+  if (tasks.length === 0)
+    throw new ValidationError(`No tasks for PRD ${prdId}. Run: succ prd parse ${prdId}`);
 
   // 2. Validate task graph
   const validation = validateTaskGraph(tasks);
@@ -193,11 +198,14 @@ export async function runPrd(
   if (options.resume) {
     // Resume existing execution
     const existing = loadExecution(prdId);
-    if (!existing) throw new ValidationError(`No execution state for ${prdId}. Start fresh without --resume`);
+    if (!existing)
+      throw new ValidationError(`No execution state for ${prdId}. Start fresh without --resume`);
 
     // Validate PRD status
-    if (prd.status === 'completed') throw new ValidationError(`PRD ${prdId} already completed. Nothing to resume.`);
-    if (prd.status === 'archived') throw new ValidationError(`PRD ${prdId} is archived. Unarchive first.`);
+    if (prd.status === 'completed')
+      throw new ValidationError(`PRD ${prdId} already completed. Nothing to resume.`);
+    if (prd.status === 'archived')
+      throw new ValidationError(`PRD ${prdId} is archived. Unarchive first.`);
 
     // Check branch exists
     if (!options.noBranch) {
@@ -213,7 +221,7 @@ export async function runPrd(
       if (!options.force) {
         throw new ValidationError(
           `Another runner (PID ${existing.pid}) may still be running.\n` +
-          `Use --force to override, or kill the process first.`
+            `Use --force to override, or kill the process first.`
         );
       }
     }
@@ -310,71 +318,71 @@ export async function runPrd(
         execution,
       });
     } else {
-    // Sequential execution (loop mode)
-    const executor = getClaudeMode() === 'ws' ? new WSExecutor() : new LoopExecutor();
-    for (let iteration = 1; iteration <= execution.max_iterations; iteration++) {
-      execution.iteration = iteration;
-      saveExecution(execution);
+      // Sequential execution (loop mode)
+      const executor = getClaudeMode() === 'ws' ? new WSExecutor() : new LoopExecutor();
+      for (let iteration = 1; iteration <= execution.max_iterations; iteration++) {
+        execution.iteration = iteration;
+        saveExecution(execution);
 
-      const allComplete = tasks.every(t => t.status === 'completed' || t.status === 'skipped');
-      if (allComplete) break;
+        const allComplete = tasks.every((t) => t.status === 'completed' || t.status === 'skipped');
+        if (allComplete) break;
 
-      if (iteration > 1) {
-        appendProgress(prdId, `--- Iteration ${iteration} ---`);
-        console.log(`\n--- Iteration ${iteration} ---`);
-      }
+        if (iteration > 1) {
+          appendProgress(prdId, `--- Iteration ${iteration} ---`);
+          console.log(`\n--- Iteration ${iteration} ---`);
+        }
 
-      // Get execution order
-      const sorted = topologicalSort(tasks);
+        // Get execution order
+        const sorted = topologicalSort(tasks);
 
-      for (const task of sorted) {
-        if (task.status === 'completed' || task.status === 'skipped') continue;
-        if (!allDependenciesMet(task, tasks)) {
-          // Check if dependencies are failed — skip this task
-          const hasFailedDep = task.depends_on.some(depId => {
-            const dep = tasks.find(t => t.id === depId);
-            return dep && dep.status === 'failed';
-          });
-          if (hasFailedDep) {
-            task.status = 'skipped';
-            task.updated_at = new Date().toISOString();
-            appendProgress(prdId, `Skipped ${task.id} "${task.title}" — dependency failed`);
-            console.log(`[-] Skipping ${task.id}: dependency failed`);
+        for (const task of sorted) {
+          if (task.status === 'completed' || task.status === 'skipped') continue;
+          if (!allDependenciesMet(task, tasks)) {
+            // Check if dependencies are failed — skip this task
+            const hasFailedDep = task.depends_on.some((depId) => {
+              const dep = tasks.find((t) => t.id === depId);
+              return dep && dep.status === 'failed';
+            });
+            if (hasFailedDep) {
+              task.status = 'skipped';
+              task.updated_at = new Date().toISOString();
+              appendProgress(prdId, `Skipped ${task.id} "${task.title}" — dependency failed`);
+              console.log(`[-] Skipping ${task.id}: dependency failed`);
+              continue;
+            }
             continue;
           }
-          continue;
+
+          // Optional: run only specific task
+          if (options.taskId && task.id !== options.taskId) continue;
+
+          await executeTask(task, prd, tasks, execution, executor, model, root, prdId);
+
+          // Save state after each task
+          saveTasks(prdId, tasks);
+          prd.stats = computeStats(tasks);
+          savePrd(prd);
+
+          // Escalation: critical task failed -> pause
+          if (task.status === 'failed' && task.priority === 'critical') {
+            appendProgress(prdId, `PAUSED — critical task ${task.id} failed`);
+            console.log(`\n[!] Critical task ${task.id} failed. Execution paused.`);
+            console.log(`Fix manually, then: succ prd run ${prdId} --resume`);
+            saveExecution(execution);
+            return {
+              prd,
+              success: false,
+              tasksCompleted: tasks.filter((t) => t.status === 'completed').length,
+              tasksFailed: tasks.filter((t) => t.status === 'failed').length,
+              branch: execution.branch,
+            };
+          }
         }
 
-        // Optional: run only specific task
-        if (options.taskId && task.id !== options.taskId) continue;
-
-        await executeTask(task, prd, tasks, execution, executor, model, root, prdId);
-
-        // Save state after each task
-        saveTasks(prdId, tasks);
-        prd.stats = computeStats(tasks);
-        savePrd(prd);
-
-        // Escalation: critical task failed -> pause
-        if (task.status === 'failed' && task.priority === 'critical') {
-          appendProgress(prdId, `PAUSED — critical task ${task.id} failed`);
-          console.log(`\n[!] Critical task ${task.id} failed. Execution paused.`);
-          console.log(`Fix manually, then: succ prd run ${prdId} --resume`);
-          saveExecution(execution);
-          return {
-            prd,
-            success: false,
-            tasksCompleted: tasks.filter(t => t.status === 'completed').length,
-            tasksFailed: tasks.filter(t => t.status === 'failed').length,
-            branch: execution.branch,
-          };
-        }
+        // Check if we can break early
+        const remaining = tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress');
+        if (remaining.length === 0) break;
       }
-
-      // Check if we can break early
-      const remaining = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
-      if (remaining.length === 0) break;
-    }
     } // end else (loop mode)
   } finally {
     // 6. Branch teardown
@@ -401,7 +409,7 @@ export async function runPrd(
   }
 
   // 7. Finalize
-  const allComplete = tasks.every(t => t.status === 'completed' || t.status === 'skipped');
+  const allComplete = tasks.every((t) => t.status === 'completed' || t.status === 'skipped');
   prd.status = allComplete ? 'completed' : 'failed';
   prd.completed_at = new Date().toISOString();
   prd.stats = computeStats(tasks);
@@ -426,7 +434,9 @@ export async function runPrd(
   if (!options.noBranch) {
     console.log(`\nReview: git diff ${execution.original_branch}...${execution.branch}`);
     console.log(`Merge:  git merge ${execution.branch}`);
-    console.log(`PR:     gh pr create --base ${execution.original_branch} --head ${execution.branch}`);
+    console.log(
+      `PR:     gh pr create --base ${execution.original_branch} --head ${execution.branch}`
+    );
   }
 
   return result;
@@ -444,7 +454,7 @@ async function executeTask(
   executor: LoopExecutor | WSExecutor,
   model: string,
   root: string,
-  prdId: string,
+  prdId: string
 ): Promise<void> {
   console.log(`\n[~] ${task.id}: ${task.title}`);
   task.status = 'in_progress';
@@ -492,7 +502,8 @@ async function executeTask(
     // Check for BLOCKED response
     if (result.output.includes('BLOCKED:')) {
       taskAttempt.status = 'failed';
-      taskAttempt.error = result.output.match(/BLOCKED:(.*)/)?.[1]?.trim() ?? 'Agent reported blocked';
+      taskAttempt.error =
+        result.output.match(/BLOCKED:(.*)/)?.[1]?.trim() ?? 'Agent reported blocked';
       console.log(`  [x] Agent reported BLOCKED: ${taskAttempt.error}`);
       appendProgress(prdId, `${task.id} attempt ${attempt} BLOCKED: ${taskAttempt.error}`);
       task.status = 'failed';
@@ -524,8 +535,8 @@ async function executeTask(
         console.log('  [+] All gates passed');
       } else {
         taskAttempt.status = 'failed';
-        const failedGates = gateResults.filter(r => !r.passed && r.gate.required);
-        taskAttempt.error = `Gates failed: ${failedGates.map(r => r.gate.type).join(', ')}`;
+        const failedGates = gateResults.filter((r) => !r.passed && r.gate.required);
+        taskAttempt.error = `Gates failed: ${failedGates.map((r) => r.gate.type).join(', ')}`;
         console.log(`  [x] Gates failed:\n${formatGateResults(gateResults)}`);
         appendProgress(prdId, `${task.id} attempt ${attempt} gates failed: ${taskAttempt.error}`);
         resetWorkingTree(root);
@@ -558,7 +569,7 @@ async function executeTask(
         // Track actually modified files
         taskAttempt.files_actually_modified = getModifiedFiles(root);
         const unpredicted = taskAttempt.files_actually_modified.filter(
-          f => !task.files_to_modify.includes(f)
+          (f) => !task.files_to_modify.includes(f)
         );
         if (unpredicted.length > 0) {
           const warning = `Task ${task.id} modified unpredicted files: ${unpredicted.join(', ')}`;
@@ -589,21 +600,21 @@ function showDryRun(
   tasks: Task[],
   validation: ReturnType<typeof validateTaskGraph>,
   mode: 'loop' | 'team',
-  concurrency: number,
+  concurrency: number
 ): RunResult {
   console.log(`\n[DRY RUN] PRD: ${prd.title} (${prd.id})`);
   console.log(`Mode: ${mode}${mode === 'team' ? ` (concurrency: ${concurrency})` : ''}\n`);
 
   if (mode === 'team') {
     // Show parallelization waves — simulate dispatch to show concurrency
-    const simTasks = tasks.map(t => ({ ...t }));
+    const simTasks = tasks.map((t) => ({ ...t }));
     let wave = 1;
-    while (simTasks.some(t => t.status === 'pending')) {
+    while (simTasks.some((t) => t.status === 'pending')) {
       // Inline ready-task check (same logic as getReadyTasks but without the import)
-      const ready = simTasks.filter(t => {
+      const ready = simTasks.filter((t) => {
         if (t.status !== 'pending') return false;
-        return t.depends_on.every(depId => {
-          const dep = simTasks.find(d => d.id === depId);
+        return t.depends_on.every((depId) => {
+          const dep = simTasks.find((d) => d.id === depId);
           return dep && (dep.status === 'completed' || dep.status === 'skipped');
         });
       });
@@ -618,7 +629,7 @@ function showDryRun(
 
       // Simulate completion for next wave
       for (const task of batch) {
-        const sim = simTasks.find(t => t.id === task.id);
+        const sim = simTasks.find((t) => t.id === task.id);
         if (sim) sim.status = 'completed';
       }
       wave++;

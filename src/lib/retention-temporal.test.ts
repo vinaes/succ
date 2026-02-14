@@ -184,8 +184,8 @@ describe('Retention + Temporal Decay', () => {
       old.setDate(old.getDate() - 365);
 
       const memories: MemoryForRetention[] = [
-        makeMemory({ id: 1, quality_score: 0.9, created_at: now.toISOString() }),  // keep
-        makeMemory({ id: 2, quality_score: 0.1, created_at: old.toISOString(), access_count: 0 }),  // delete
+        makeMemory({ id: 1, quality_score: 0.9, created_at: now.toISOString() }), // keep
+        makeMemory({ id: 2, quality_score: 0.1, created_at: old.toISOString(), access_count: 0 }), // delete
       ];
 
       const analysis = analyzeRetention(memories, { use_temporal_decay: true });
@@ -206,8 +206,28 @@ describe('Retention + Temporal Decay', () => {
   describe('calculateRetentionStats', () => {
     it('calculates correct averages', () => {
       const results = [
-        { memoryId: 1, content: 'a', qualityScore: 0.8, accessCount: 5, ageDays: 10, recencyFactor: 0.9, accessBoost: 1.5, effectiveScore: 0.6, tier: 'keep' as const },
-        { memoryId: 2, content: 'b', qualityScore: 0.4, accessCount: 1, ageDays: 30, recencyFactor: 0.7, accessBoost: 1.1, effectiveScore: 0.2, tier: 'warn' as const },
+        {
+          memoryId: 1,
+          content: 'a',
+          qualityScore: 0.8,
+          accessCount: 5,
+          ageDays: 10,
+          recencyFactor: 0.9,
+          accessBoost: 1.5,
+          effectiveScore: 0.6,
+          tier: 'keep' as const,
+        },
+        {
+          memoryId: 2,
+          content: 'b',
+          qualityScore: 0.4,
+          accessCount: 1,
+          ageDays: 30,
+          recencyFactor: 0.7,
+          accessBoost: 1.1,
+          effectiveScore: 0.2,
+          tier: 'warn' as const,
+        },
       ];
 
       const stats = calculateRetentionStats(results);

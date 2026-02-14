@@ -28,10 +28,7 @@ export interface TaskContext {
  * Queries hybridSearchMemories for relevant memories and dead-ends based on
  * the task's context_queries and description.
  */
-export async function gatherTaskContext(
-  task: Task,
-  prdId: string,
-): Promise<TaskContext> {
+export async function gatherTaskContext(task: Task, prdId: string): Promise<TaskContext> {
   const recalled: string[] = [];
   const deadEnds: string[] = [];
 
@@ -44,7 +41,7 @@ export async function gatherTaskContext(
     const queries = [
       ...task.context_queries,
       task.title,
-      ...task.files_to_modify.map(f => f.split('/').pop() ?? f),
+      ...task.files_to_modify.map((f) => f.split('/').pop() ?? f),
     ];
 
     // Deduplicate results across queries
@@ -80,12 +77,9 @@ export async function gatherTaskContext(
   const progress = loadProgress(prdId);
 
   return {
-    recalled_memories: recalled.length > 0
-      ? recalled.join('\n')
-      : '(No relevant memories found)',
-    dead_end_warnings: deadEnds.length > 0
-      ? deadEnds.join('\n')
-      : '(No dead-ends recorded for this area)',
+    recalled_memories: recalled.length > 0 ? recalled.join('\n') : '(No relevant memories found)',
+    dead_end_warnings:
+      deadEnds.length > 0 ? deadEnds.join('\n') : '(No dead-ends recorded for this area)',
     progress_so_far: progress || '(No progress recorded yet)',
   };
 }

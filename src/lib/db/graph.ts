@@ -10,14 +10,14 @@ import { logWarn } from '../fault-logger.js';
 // ============================================================================
 
 export const LINK_RELATIONS = [
-  'related',      // Generic relation
-  'caused_by',    // A was caused by B
-  'leads_to',     // A leads to B
-  'similar_to',   // A is similar to B
-  'contradicts',  // A contradicts B
-  'implements',   // A implements B (decision → code)
-  'supersedes',   // A supersedes/replaces B
-  'references',   // A references B
+  'related', // Generic relation
+  'caused_by', // A was caused by B
+  'leads_to', // A leads to B
+  'similar_to', // A is similar to B
+  'contradicts', // A contradicts B
+  'implements', // A implements B (decision → code)
+  'supersedes', // A supersedes/replaces B
+  'references', // A references B
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
@@ -29,14 +29,26 @@ export interface MemoryLink {
   relation: LinkRelation;
   weight: number;
   // Temporal validity
-  valid_from: string | null;  // When relationship became valid
+  valid_from: string | null; // When relationship became valid
   valid_until: string | null; // When relationship expired/was invalidated
   created_at: string;
 }
 
 export interface MemoryWithLinks extends Memory {
-  outgoing_links: Array<{ target_id: number; relation: LinkRelation; weight: number; valid_from: string | null; valid_until: string | null }>;
-  incoming_links: Array<{ source_id: number; relation: LinkRelation; weight: number; valid_from: string | null; valid_until: string | null }>;
+  outgoing_links: Array<{
+    target_id: number;
+    relation: LinkRelation;
+    weight: number;
+    valid_from: string | null;
+    valid_until: string | null;
+  }>;
+  incoming_links: Array<{
+    source_id: number;
+    relation: LinkRelation;
+    weight: number;
+    valid_from: string | null;
+    valid_until: string | null;
+  }>;
 }
 
 // ============================================================================
@@ -58,21 +70,24 @@ export function createMemoryLink(
 ): { id: number; created: boolean } {
   // Convert Date objects to ISO strings
   const validFromStr = options?.validFrom
-    ? (options.validFrom instanceof Date ? options.validFrom.toISOString() : options.validFrom)
+    ? options.validFrom instanceof Date
+      ? options.validFrom.toISOString()
+      : options.validFrom
     : null;
   const validUntilStr = options?.validUntil
-    ? (options.validUntil instanceof Date ? options.validUntil.toISOString() : options.validUntil)
+    ? options.validUntil instanceof Date
+      ? options.validUntil.toISOString()
+      : options.validUntil
     : null;
 
   try {
     const result = cachedPrepare(`
         INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
         VALUES (?, ?, ?, ?, ?, ?)
-      `)
-      .run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
+      `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
 
     // Schedule auto-export if enabled (async, non-blocking)
-    triggerAutoExport().catch(err => {
+    triggerAutoExport().catch((err) => {
       logWarn('graph', err instanceof Error ? err.message : 'Auto-export failed');
     });
 
@@ -80,8 +95,9 @@ export function createMemoryLink(
   } catch (error: any) {
     // Link already exists (UNIQUE constraint)
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      const existing = cachedPrepare('SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
-        .get(sourceId, targetId, relation) as { id: number };
+      const existing = cachedPrepare(
+        'SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?'
+      ).get(sourceId, targetId, relation) as { id: number };
       return { id: existing.id, created: false };
     }
     throw error;
@@ -91,14 +107,20 @@ export function createMemoryLink(
 /**
  * Delete a link between memories
  */
-export function deleteMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): boolean {
+export function deleteMemoryLink(
+  sourceId: number,
+  targetId: number,
+  relation?: LinkRelation
+): boolean {
   if (relation) {
-    const result = cachedPrepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?')
-      .run(sourceId, targetId, relation);
+    const result = cachedPrepare(
+      'DELETE FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?'
+    ).run(sourceId, targetId, relation);
     return result.changes > 0;
   } else {
-    const result = cachedPrepare('DELETE FROM memory_links WHERE source_id = ? AND target_id = ?')
-      .run(sourceId, targetId);
+    const result = cachedPrepare(
+      'DELETE FROM memory_links WHERE source_id = ? AND target_id = ?'
+    ).run(sourceId, targetId);
     return result.changes > 0;
   }
 }
@@ -110,11 +132,13 @@ export function getMemoryLinks(memoryId: number): {
   outgoing: MemoryLink[];
   incoming: MemoryLink[];
 } {
-  const outgoing = cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?')
-    .all(memoryId) as MemoryLink[];
+  const outgoing = cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(
+    memoryId
+  ) as MemoryLink[];
 
-  const incoming = cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?')
-    .all(memoryId) as MemoryLink[];
+  const incoming = cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(
+    memoryId
+  ) as MemoryLink[];
 
   return { outgoing, incoming };
 }
@@ -149,14 +173,14 @@ export function getMemoryWithLinks(
 
   return {
     ...memory,
-    outgoing_links: links.outgoing.filter(filterLink).map(l => ({
+    outgoing_links: links.outgoing.filter(filterLink).map((l) => ({
       target_id: l.target_id,
       relation: l.relation as LinkRelation,
       weight: l.weight,
       valid_from: l.valid_from,
       valid_until: l.valid_until,
     })),
-    incoming_links: links.incoming.filter(filterLink).map(l => ({
+    incoming_links: links.incoming.filter(filterLink).map((l) => ({
       source_id: l.source_id,
       relation: l.relation as LinkRelation,
       weight: l.weight,
@@ -185,17 +209,16 @@ export function findConnectedMemories(
 
     for (const { id, path } of currentLevel) {
       // Get outgoing links
-      const outgoing = cachedPrepare('SELECT target_id FROM memory_links WHERE source_id = ?')
-        .all(id) as Array<{ target_id: number }>;
+      const outgoing = cachedPrepare('SELECT target_id FROM memory_links WHERE source_id = ?').all(
+        id
+      ) as Array<{ target_id: number }>;
 
       // Get incoming links
-      const incoming = cachedPrepare('SELECT source_id FROM memory_links WHERE target_id = ?')
-        .all(id) as Array<{ source_id: number }>;
+      const incoming = cachedPrepare('SELECT source_id FROM memory_links WHERE target_id = ?').all(
+        id
+      ) as Array<{ source_id: number }>;
 
-      const neighbors = [
-        ...outgoing.map(r => r.target_id),
-        ...incoming.map(r => r.source_id),
-      ];
+      const neighbors = [...outgoing.map((r) => r.target_id), ...incoming.map((r) => r.source_id)];
 
       for (const neighborId of neighbors) {
         if (!visited.has(neighborId)) {
@@ -228,15 +251,17 @@ export function findRelatedMemoriesForLinking(
   threshold: number = 0.75,
   maxLinks: number = 3
 ): Array<{ id: number; similarity: number }> {
-  const source = cachedPrepare('SELECT id, embedding FROM memories WHERE id = ?')
-    .get(memoryId) as { id: number; embedding: Buffer } | undefined;
+  const source = cachedPrepare('SELECT id, embedding FROM memories WHERE id = ?').get(memoryId) as
+    | { id: number; embedding: Buffer }
+    | undefined;
 
   if (!source) return [];
 
   const sourceEmbedding = bufferToFloatArray(source.embedding);
 
-  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?')
-    .all(memoryId) as Array<{ id: number; embedding: Buffer }>;
+  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?').all(
+    memoryId
+  ) as Array<{ id: number; embedding: Buffer }>;
 
   const similarities: Array<{ id: number; similarity: number }> = [];
 
@@ -279,12 +304,11 @@ export function createAutoLinks(
  * Auto-link similar memories based on embedding similarity
  * Useful for building initial graph structure
  */
-export function autoLinkSimilarMemories(
-  threshold: number = 0.75,
-  maxLinks: number = 3
-): number {
-  const memories = cachedPrepare('SELECT id, embedding FROM memories')
-    .all() as Array<{ id: number; embedding: Buffer }>;
+export function autoLinkSimilarMemories(threshold: number = 0.75, maxLinks: number = 3): number {
+  const memories = cachedPrepare('SELECT id, embedding FROM memories').all() as Array<{
+    id: number;
+    embedding: Buffer;
+  }>;
 
   let linksCreated = 0;
 
@@ -335,22 +359,26 @@ export function getGraphStats(): {
   isolated_memories: number;
   relations: Record<string, number>;
 } {
-  const totalMemories = (cachedPrepare('SELECT COUNT(*) as count FROM memories')
-    .get() as { count: number }).count;
+  const totalMemories = (
+    cachedPrepare('SELECT COUNT(*) as count FROM memories').get() as { count: number }
+  ).count;
 
-  const totalLinks = (cachedPrepare('SELECT COUNT(*) as count FROM memory_links')
-    .get() as { count: number }).count;
+  const totalLinks = (
+    cachedPrepare('SELECT COUNT(*) as count FROM memory_links').get() as { count: number }
+  ).count;
 
   // Count memories with no links
-  const isolatedCount = (cachedPrepare(`
+  const isolatedCount = (
+    cachedPrepare(`
       SELECT COUNT(*) as count FROM memories m
       WHERE NOT EXISTS (SELECT 1 FROM memory_links WHERE source_id = m.id OR target_id = m.id)
-    `)
-    .get() as { count: number }).count;
+    `).get() as { count: number }
+  ).count;
 
   // Count by relation type
-  const relationCounts = cachedPrepare('SELECT relation, COUNT(*) as count FROM memory_links GROUP BY relation')
-    .all() as Array<{ relation: string; count: number }>;
+  const relationCounts = cachedPrepare(
+    'SELECT relation, COUNT(*) as count FROM memory_links GROUP BY relation'
+  ).all() as Array<{ relation: string; count: number }>;
 
   const relations: Record<string, number> = {};
   for (const row of relationCounts) {
@@ -383,12 +411,14 @@ export function invalidateMemoryLink(
   const now = new Date().toISOString();
 
   if (relation) {
-    const result = cachedPrepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND relation = ? AND valid_until IS NULL')
-      .run(now, sourceId, targetId, relation);
+    const result = cachedPrepare(
+      'UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND relation = ? AND valid_until IS NULL'
+    ).run(now, sourceId, targetId, relation);
     return result.changes > 0;
   } else {
-    const result = cachedPrepare('UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND valid_until IS NULL')
-      .run(now, sourceId, targetId);
+    const result = cachedPrepare(
+      'UPDATE memory_links SET valid_until = ? WHERE source_id = ? AND target_id = ? AND valid_until IS NULL'
+    ).run(now, sourceId, targetId);
     return result.changes > 0;
   }
 }
@@ -411,8 +441,7 @@ export function getMemoryLinksAsOf(
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `)
-    .all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
 
   const incoming = cachedPrepare(`
       SELECT * FROM memory_links
@@ -420,8 +449,7 @@ export function getMemoryLinksAsOf(
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `)
-    .all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
 
   return { outgoing, incoming };
 }
@@ -452,8 +480,7 @@ export function findConnectedMemoriesAsOf(
             AND created_at <= ?
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until > ?)
-        `)
-        .all(id, asOfStr, asOfStr, asOfStr) as Array<{ target_id: number }>;
+        `).all(id, asOfStr, asOfStr, asOfStr) as Array<{ target_id: number }>;
 
       // Get incoming links that were valid at that time
       const incoming = cachedPrepare(`
@@ -462,13 +489,9 @@ export function findConnectedMemoriesAsOf(
             AND created_at <= ?
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until > ?)
-        `)
-        .all(id, asOfStr, asOfStr, asOfStr) as Array<{ source_id: number }>;
+        `).all(id, asOfStr, asOfStr, asOfStr) as Array<{ source_id: number }>;
 
-      const neighbors = [
-        ...outgoing.map(r => r.target_id),
-        ...incoming.map(r => r.source_id),
-      ];
+      const neighbors = [...outgoing.map((r) => r.target_id), ...incoming.map((r) => r.source_id)];
 
       for (const neighborId of neighbors) {
         if (!visited.has(neighborId)) {
@@ -505,17 +528,21 @@ export function getGraphStatsAsOf(asOfDate: Date): {
   const asOfStr = asOfDate.toISOString();
 
   // Count memories that existed at that time
-  const totalMemories = (cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE created_at <= ?')
-    .get(asOfStr) as { count: number }).count;
+  const totalMemories = (
+    cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE created_at <= ?').get(asOfStr) as {
+      count: number;
+    }
+  ).count;
 
   // Count links that were valid at that time
-  const totalLinks = (cachedPrepare(`
+  const totalLinks = (
+    cachedPrepare(`
       SELECT COUNT(*) as count FROM memory_links
       WHERE created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `)
-    .get(asOfStr, asOfStr, asOfStr) as { count: number }).count;
+    `).get(asOfStr, asOfStr, asOfStr) as { count: number }
+  ).count;
 
   // Count by relation type at that time
   const relationCounts = cachedPrepare(`
@@ -524,8 +551,7 @@ export function getGraphStatsAsOf(asOfDate: Date): {
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
       GROUP BY relation
-    `)
-    .all(asOfStr, asOfStr, asOfStr) as Array<{ relation: string; count: number }>;
+    `).all(asOfStr, asOfStr, asOfStr) as Array<{ relation: string; count: number }>;
 
   const relations: Record<string, number> = {};
   for (const row of relationCounts) {
@@ -552,8 +578,14 @@ export function updateMemoryEmbedding(memoryId: number, embedding: number[]): vo
   cachedPrepare('UPDATE memories SET embedding = ? WHERE id = ?').run(embeddingBlob, memoryId);
 }
 
-export function getMemoriesNeedingReembedding(limit: number = 100, afterId: number = 0): Array<{ id: number; content: string }> {
-  return cachedPrepare('SELECT id, content FROM memories WHERE id > ? ORDER BY id LIMIT ?').all(afterId, limit) as Array<{ id: number; content: string }>;
+export function getMemoriesNeedingReembedding(
+  limit: number = 100,
+  afterId: number = 0
+): Array<{ id: number; content: string }> {
+  return cachedPrepare('SELECT id, content FROM memories WHERE id > ? ORDER BY id LIMIT ?').all(
+    afterId,
+    limit
+  ) as Array<{ id: number; content: string }>;
 }
 
 export function getMemoryCount(): number {
@@ -562,7 +594,9 @@ export function getMemoryCount(): number {
 }
 
 export function getMemoryEmbeddingCount(): number {
-  const row = cachedPrepare('SELECT count(*) as count FROM memories WHERE embedding IS NOT NULL').get() as { count: number };
+  const row = cachedPrepare(
+    'SELECT count(*) as count FROM memories WHERE embedding IS NOT NULL'
+  ).get() as { count: number };
   return row.count;
 }
 
@@ -573,13 +607,25 @@ export function updateMemoryTags(memoryId: number, tags: string[]): void {
 /**
  * Update a memory link's relation, weight, and/or enrichment flag.
  */
-export function updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): void {
+export function updateMemoryLink(
+  linkId: number,
+  updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+): void {
   const database = getDb();
   const sets: string[] = [];
   const params: (string | number)[] = [];
-  if (updates.relation !== undefined) { sets.push('relation = ?'); params.push(updates.relation); }
-  if (updates.weight !== undefined) { sets.push('weight = ?'); params.push(updates.weight); }
-  if (updates.llmEnriched !== undefined) { sets.push('llm_enriched = ?'); params.push(updates.llmEnriched ? 1 : 0); }
+  if (updates.relation !== undefined) {
+    sets.push('relation = ?');
+    params.push(updates.relation);
+  }
+  if (updates.weight !== undefined) {
+    sets.push('weight = ?');
+    params.push(updates.weight);
+  }
+  if (updates.llmEnriched !== undefined) {
+    sets.push('llm_enriched = ?');
+    params.push(updates.llmEnriched ? 1 : 0);
+  }
   if (sets.length > 0) {
     params.push(linkId);
     database.prepare(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = ?`).run(...params);
@@ -589,7 +635,11 @@ export function updateMemoryLink(linkId: number, updates: { relation?: string; w
 /**
  * Upsert centrality score for a memory.
  */
-export function upsertCentralityScore(memoryId: number, degree: number, normalizedDegree: number): void {
+export function upsertCentralityScore(
+  memoryId: number,
+  degree: number,
+  normalizedDegree: number
+): void {
   cachedPrepare(
     `INSERT INTO memory_centrality (memory_id, degree, normalized_degree, updated_at)
      VALUES (?, ?, ?, datetime('now'))
@@ -604,9 +654,11 @@ export function getCentralityScores(memoryIds: number[]): Map<number, number> {
   if (memoryIds.length === 0) return new Map();
   const database = getDb();
   const placeholders = memoryIds.map(() => '?').join(',');
-  const rows = database.prepare(
-    `SELECT memory_id, normalized_degree FROM memory_centrality WHERE memory_id IN (${placeholders})`
-  ).all(...memoryIds) as Array<{ memory_id: number; normalized_degree: number }>;
+  const rows = database
+    .prepare(
+      `SELECT memory_id, normalized_degree FROM memory_centrality WHERE memory_id IN (${placeholders})`
+    )
+    .all(...memoryIds) as Array<{ memory_id: number; normalized_degree: number }>;
   const map = new Map<number, number>();
   for (const row of rows) map.set(row.memory_id, row.normalized_degree);
   return map;

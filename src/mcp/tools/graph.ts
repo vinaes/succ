@@ -26,15 +26,34 @@ export function registerGraphTools(server: McpServer) {
     'succ_link',
     'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.',
     {
-      action: z.enum(['create', 'delete', 'show', 'graph', 'auto', 'enrich', 'proximity', 'communities', 'centrality', 'export']).describe(
-        'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export)'
-      ),
+      action: z
+        .enum([
+          'create',
+          'delete',
+          'show',
+          'graph',
+          'auto',
+          'enrich',
+          'proximity',
+          'communities',
+          'centrality',
+          'export',
+        ])
+        .describe(
+          'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export)'
+        ),
       source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
       target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
-      relation: z.enum(LINK_RELATIONS).optional().describe(
-        'Relation type: related, caused_by, leads_to, similar_to, contradicts, implements, supersedes, references'
-      ),
-      threshold: z.number().optional().describe('Similarity threshold for auto-linking (default: 0.75)'),
+      relation: z
+        .enum(LINK_RELATIONS)
+        .optional()
+        .describe(
+          'Relation type: related, caused_by, leads_to, similar_to, contradicts, implements, supersedes, references'
+        ),
+      threshold: z
+        .number()
+        .optional()
+        .describe('Similarity threshold for auto-linking (default: 0.75)'),
       project_path: projectPathParam,
     },
     async ({ action, source_id, target_id, relation, threshold, project_path }) => {
@@ -44,73 +63,91 @@ export function registerGraphTools(server: McpServer) {
           case 'create': {
             if (!source_id || !target_id) {
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: 'Both source_id and target_id are required to create a link.',
-                }],
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'Both source_id and target_id are required to create a link.',
+                  },
+                ],
               };
             }
 
             const result = await createMemoryLink(source_id, target_id, relation || 'related');
 
             return {
-              content: [{
-                type: 'text' as const,
-                text: result.created
-                  ? `Created link: memory #${source_id} --[${relation || 'related'}]--> memory #${target_id}`
-                  : `Link already exists (id: ${result.id})`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: result.created
+                    ? `Created link: memory #${source_id} --[${relation || 'related'}]--> memory #${target_id}`
+                    : `Link already exists (id: ${result.id})`,
+                },
+              ],
             };
           }
 
           case 'delete': {
             if (!source_id || !target_id) {
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: 'Both source_id and target_id are required to delete a link.',
-                }],
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'Both source_id and target_id are required to delete a link.',
+                  },
+                ],
               };
             }
 
             const deleted = await deleteMemoryLink(source_id, target_id, relation);
 
             return {
-              content: [{
-                type: 'text' as const,
-                text: deleted
-                  ? `Deleted link between memory #${source_id} and #${target_id}`
-                  : 'No matching link found.',
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: deleted
+                    ? `Deleted link between memory #${source_id} and #${target_id}`
+                    : 'No matching link found.',
+                },
+              ],
             };
           }
 
           case 'show': {
             if (!source_id) {
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: 'source_id is required to show a memory with its links.',
-                }],
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'source_id is required to show a memory with its links.',
+                  },
+                ],
               };
             }
 
             const memory = await getMemoryWithLinks(source_id);
             if (!memory) {
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: `Memory #${source_id} not found.`,
-                }],
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Memory #${source_id} not found.`,
+                  },
+                ],
               };
             }
 
-            const outLinks = memory.outgoing_links.length > 0
-              ? memory.outgoing_links.map((l: any) => `  → #${l.target_id} (${l.relation})`).join('\n')
-              : '  (none)';
-            const inLinks = memory.incoming_links.length > 0
-              ? memory.incoming_links.map((l: any) => `  ← #${l.source_id} (${l.relation})`).join('\n')
-              : '  (none)';
+            const outLinks =
+              memory.outgoing_links.length > 0
+                ? memory.outgoing_links
+                    .map((l: any) => `  → #${l.target_id} (${l.relation})`)
+                    .join('\n')
+                : '  (none)';
+            const inLinks =
+              memory.incoming_links.length > 0
+                ? memory.incoming_links
+                    .map((l: any) => `  ← #${l.source_id} (${l.relation})`)
+                    .join('\n')
+                : '  (none)';
 
             const text = `Memory #${memory.id}:
 ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}
@@ -132,9 +169,10 @@ ${inLinks}`;
           case 'graph': {
             const stats = await getGraphStats();
 
-            const relationStats = Object.entries(stats.relations)
-              .map(([r, c]) => `  ${r}: ${c}`)
-              .join('\n') || '  (no links)';
+            const relationStats =
+              Object.entries(stats.relations)
+                .map(([r, c]) => `  ${r}: ${c}`)
+                .join('\n') || '  (no links)';
 
             const text = `Knowledge Graph Statistics:
 
@@ -156,10 +194,12 @@ ${relationStats}`;
             const created = await autoLinkSimilarMemories(th, 3);
 
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Auto-linked similar memories (threshold: ${th}). Created ${created} new links.`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Auto-linked similar memories (threshold: ${th}). Created ${created} new links.`,
+                },
+              ],
             };
           }
 
@@ -167,33 +207,42 @@ ${relationStats}`;
             const { enrichExistingLinks } = await import('../../lib/graph/llm-relations.js');
             const result = await enrichExistingLinks({ batchSize: 5 });
             return {
-              content: [{
-                type: 'text' as const,
-                text: `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`,
+                },
+              ],
             };
           }
 
           case 'proximity': {
-            const { createProximityLinks } = await import('../../lib/graph/contextual-proximity.js');
+            const { createProximityLinks } =
+              await import('../../lib/graph/contextual-proximity.js');
             const result = await createProximityLinks({ minCooccurrence: 2 });
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`,
+                },
+              ],
             };
           }
 
           case 'communities': {
             const { detectCommunities } = await import('../../lib/graph/community-detection.js');
             const result = await detectCommunities();
-            const summary = result.communities.map(c => `  Community ${c.id}: ${c.size} members`).join('\n');
+            const summary = result.communities
+              .map((c) => `  Community ${c.id}: ${c.size} members`)
+              .join('\n');
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.\n${summary}`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.\n${summary}`,
+                },
+              ],
             };
           }
 
@@ -201,10 +250,12 @@ ${relationStats}`;
             const { updateCentralityCache } = await import('../../lib/graph/centrality.js');
             const result = await updateCentralityCache();
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Updated centrality scores for ${result.updated} memories.`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Updated centrality scores for ${result.updated} memories.`,
+                },
+              ],
             };
           }
 
@@ -217,27 +268,33 @@ ${relationStats}`;
               };
             }
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Exported ${result.memoriesExported} memories and ${result.linksExported} links to Obsidian brain vault.`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Exported ${result.memoriesExported} memories and ${result.linksExported} links to Obsidian brain vault.`,
+                },
+              ],
             };
           }
 
           default:
             return {
-              content: [{
-                type: 'text' as const,
-                text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, or export.',
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, or export.',
+                },
+              ],
             };
         }
       } catch (error: any) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error: ${error.message}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: ${error.message}`,
+            },
+          ],
           isError: true,
         };
       } finally {
@@ -264,39 +321,49 @@ ${relationStats}`;
           const memory = await getMemoryById(memory_id);
           if (!memory) {
             return {
-              content: [{
-                type: 'text' as const,
-                text: `Memory #${memory_id} not found.`,
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Memory #${memory_id} not found.`,
+                },
+              ],
             };
           }
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Memory #${memory_id} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`,
-            }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Memory #${memory_id} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`,
+              },
+            ],
           };
         }
 
-        const formatted = connected.map(({ memory, depth: d, path: memPath }) => {
-          const pathStr = memPath.map((id: number) => `#${id}`).join(' → ');
-          return `[Depth ${d}] Memory #${memory.id} (${pathStr})
+        const formatted = connected
+          .map(({ memory, depth: d, path: memPath }) => {
+            const pathStr = memPath.map((id: number) => `#${id}`).join(' → ');
+            return `[Depth ${d}] Memory #${memory.id} (${pathStr})
   ${memory.content.substring(0, 150)}${memory.content.length > 150 ? '...' : ''}
   Tags: ${memory.tags.join(', ') || '(none)'}`;
-        }).join('\n\n');
+          })
+          .join('\n\n');
 
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Found ${connected.length} connected memories from #${memory_id} (max depth: ${depth}):\n\n${formatted}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Found ${connected.length} connected memories from #${memory_id} (max depth: ${depth}):\n\n${formatted}`,
+            },
+          ],
         };
       } catch (error: any) {
         return {
-          content: [{
-            type: 'text' as const,
-            text: `Error exploring: ${error.message}`,
-          }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error exploring: ${error.message}`,
+            },
+          ],
           isError: true,
         };
       } finally {

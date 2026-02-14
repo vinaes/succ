@@ -92,7 +92,7 @@ function getSuccMcpCommand(): { command: string; args: string[] } {
 function isEditorDetected(editor: EditorConfig): boolean {
   const platform = process.platform;
   const paths = editor.detectPaths[platform] || editor.detectPaths.linux;
-  return paths.some(p => fs.existsSync(p));
+  return paths.some((p) => fs.existsSync(p));
 }
 
 function hasExistingSuccConfig(configPath: string, format: 'object' | 'array'): boolean {

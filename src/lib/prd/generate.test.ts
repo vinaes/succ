@@ -60,8 +60,8 @@ describe('discoverProjectRoots', () => {
 
     const roots = discoverProjectRoots(tmpDir);
     expect(roots).toHaveLength(2);
-    const frontend = roots.find(r => r.relPath === 'frontend');
-    const backend = roots.find(r => r.relPath === 'backend');
+    const frontend = roots.find((r) => r.relPath === 'frontend');
+    const backend = roots.find((r) => r.relPath === 'backend');
     expect(frontend).toBeDefined();
     expect(frontend!.configs.has('package.json')).toBe(true);
     expect(backend).toBeDefined();
@@ -73,7 +73,7 @@ describe('discoverProjectRoots', () => {
     fs.writeFileSync(path.join(tmpDir, 'apps', 'web', 'package.json'), '{}');
 
     const roots = discoverProjectRoots(tmpDir);
-    const web = roots.find(r => r.relPath === 'apps/web');
+    const web = roots.find((r) => r.relPath === 'apps/web');
     expect(web).toBeDefined();
     expect(web!.configs.has('package.json')).toBe(true);
   });
@@ -102,7 +102,7 @@ describe('discoverProjectRoots', () => {
 
     // depth 2 should NOT reach a/b/c (that's depth 3)
     const roots = discoverProjectRoots(tmpDir, 2);
-    const deep = roots.find(r => r.relPath === 'a/b/c');
+    const deep = roots.find((r) => r.relPath === 'a/b/c');
     expect(deep).toBeUndefined();
   });
 
@@ -113,8 +113,8 @@ describe('discoverProjectRoots', () => {
 
     const roots = discoverProjectRoots(tmpDir);
     expect(roots).toHaveLength(2);
-    expect(roots.find(r => r.relPath === '')).toBeDefined();
-    expect(roots.find(r => r.relPath === 'backend')).toBeDefined();
+    expect(roots.find((r) => r.relPath === '')).toBeDefined();
+    expect(roots.find((r) => r.relPath === 'backend')).toBeDefined();
   });
 
   it('should return empty for a directory with no config files', () => {
@@ -163,7 +163,7 @@ describe('detectGatesForRoot', () => {
     const root: ProjectRoot = { relPath: '', configs: new Set(['go.mod']) };
     const gates = detectGatesForRoot(root, tmpDir);
 
-    const types = gates.map(g => `${g.type}:${g.command}`);
+    const types = gates.map((g) => `${g.type}:${g.command}`);
     expect(types).toContain('build:go build ./...');
     expect(types).toContain('test:go test ./...');
     expect(types).toContain('lint:go vet ./...');
@@ -177,7 +177,7 @@ describe('detectGatesForRoot', () => {
     };
     const gates = detectGatesForRoot(root, tmpDir);
 
-    const lintGate = gates.find(g => g.command.includes('golangci-lint'));
+    const lintGate = gates.find((g) => g.command.includes('golangci-lint'));
     expect(lintGate).toBeDefined();
     expect(lintGate!.required).toBe(false);
   });
@@ -188,15 +188,15 @@ describe('detectGatesForRoot', () => {
     const root: ProjectRoot = { relPath: 'backend', configs: new Set(['go.mod']) };
     const gates = detectGatesForRoot(root, tmpDir);
 
-    expect(gates.some(g => g.command === 'cd "backend" && go build ./...')).toBe(true);
-    expect(gates.some(g => g.command === 'cd "backend" && go test ./...')).toBe(true);
-    expect(gates.some(g => g.command === 'cd "backend" && go vet ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "backend" && go build ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "backend" && go test ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "backend" && go vet ./...')).toBe(true);
   });
 
   it('should detect vitest and use npx vitest run', () => {
     fs.writeFileSync(
       path.join(tmpDir, 'package.json'),
-      JSON.stringify({ scripts: { test: 'vitest' } }),
+      JSON.stringify({ scripts: { test: 'vitest' } })
     );
     const root: ProjectRoot = { relPath: '', configs: new Set(['package.json']) };
     const gates = detectGatesForRoot(root, tmpDir);
@@ -209,7 +209,7 @@ describe('detectGatesForRoot', () => {
     fs.mkdirSync(path.join(tmpDir, 'frontend'));
     fs.writeFileSync(
       path.join(tmpDir, 'frontend', 'package.json'),
-      JSON.stringify({ scripts: { test: 'vitest' } }),
+      JSON.stringify({ scripts: { test: 'vitest' } })
     );
     const root: ProjectRoot = { relPath: 'frontend', configs: new Set(['package.json']) };
     const gates = detectGatesForRoot(root, tmpDir);
@@ -230,8 +230,8 @@ describe('detectGatesForRoot', () => {
     const gates = detectGatesForRoot(root, tmpDir);
 
     expect(gates).toHaveLength(2);
-    expect(gates.some(g => g.command === 'cargo build')).toBe(true);
-    expect(gates.some(g => g.command === 'cargo test')).toBe(true);
+    expect(gates.some((g) => g.command === 'cargo build')).toBe(true);
+    expect(gates.some((g) => g.command === 'cargo test')).toBe(true);
   });
 
   it('should handle nested path with forward slashes', () => {
@@ -240,13 +240,13 @@ describe('detectGatesForRoot', () => {
     const root: ProjectRoot = { relPath: 'apps/api', configs: new Set(['go.mod']) };
     const gates = detectGatesForRoot(root, tmpDir);
 
-    expect(gates.some(g => g.command === 'cd "apps/api" && go build ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "apps/api" && go build ./...')).toBe(true);
   });
 
   it('should skip package.json with default npm test placeholder', () => {
     fs.writeFileSync(
       path.join(tmpDir, 'package.json'),
-      JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } }),
+      JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } })
     );
     const root: ProjectRoot = { relPath: '', configs: new Set(['package.json']) };
     const gates = detectGatesForRoot(root, tmpDir);
@@ -265,13 +265,17 @@ vi.mock('../config.js', () => {
   return {
     getProjectRoot: () => _projectRoot,
     getConfig: () => _config,
-    __setProjectRoot: (root: string) => { _projectRoot = root; },
-    __setConfig: (cfg: Record<string, unknown>) => { _config = cfg; },
+    __setProjectRoot: (root: string) => {
+      _projectRoot = root;
+    },
+    __setConfig: (cfg: Record<string, unknown>) => {
+      _config = cfg;
+    },
   };
 });
 
 // Import mocked helpers — the cast is needed because these are test-only exports
- 
+
 const configMock: any = await import('../config.js');
 const __setProjectRoot: (r: string) => void = configMock.__setProjectRoot;
 const __setConfig: (c: Record<string, unknown>) => void = configMock.__setConfig;
@@ -293,7 +297,7 @@ describe('detectQualityGates (config-driven)', () => {
     fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), '{}');
     const gates = detectQualityGates();
 
-    expect(gates.some(g => g.type === 'typecheck')).toBe(true);
+    expect(gates.some((g) => g.type === 'typecheck')).toBe(true);
   });
 
   it('should add config gates alongside auto-detected', () => {
@@ -303,8 +307,8 @@ describe('detectQualityGates (config-driven)', () => {
     };
     const gates = detectQualityGates(cfg);
 
-    expect(gates.some(g => g.type === 'typecheck')).toBe(true);
-    expect(gates.some(g => g.command === 'dotnet build')).toBe(true);
+    expect(gates.some((g) => g.type === 'typecheck')).toBe(true);
+    expect(gates.some((g) => g.command === 'dotnet build')).toBe(true);
   });
 
   it('should skip auto-detect when auto_detect is false', () => {
@@ -326,7 +330,7 @@ describe('detectQualityGates (config-driven)', () => {
     };
     const gates = detectQualityGates(cfg);
 
-    expect(gates.some(g => g.type === 'typecheck')).toBe(false);
+    expect(gates.some((g) => g.type === 'typecheck')).toBe(false);
   });
 
   it('should add subdirectory gates with cd prefix', () => {
@@ -360,19 +364,17 @@ describe('detectQualityGates (config-driven)', () => {
     const gates = detectQualityGates(cfg);
 
     // Root typecheck should still be there
-    expect(gates.some(g => g.type === 'typecheck' && !g.command.includes('cd '))).toBe(true);
+    expect(gates.some((g) => g.type === 'typecheck' && !g.command.includes('cd '))).toBe(true);
     // api should have build and lint but NOT test
-    expect(gates.some(g => g.command === 'cd "api" && go build ./...')).toBe(true);
-    expect(gates.some(g => g.command === 'cd "api" && go vet ./...')).toBe(true);
-    expect(gates.some(g => g.command === 'cd "api" && go test ./...')).toBe(false);
+    expect(gates.some((g) => g.command === 'cd "api" && go build ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "api" && go vet ./...')).toBe(true);
+    expect(gates.some((g) => g.command === 'cd "api" && go test ./...')).toBe(false);
   });
 
   it('should respect required and timeout_ms from config', () => {
     const cfg: QualityGatesConfig = {
       auto_detect: false,
-      gates: [
-        { type: 'test', command: 'pytest', required: false, timeout_ms: 300000 },
-      ],
+      gates: [{ type: 'test', command: 'pytest', required: false, timeout_ms: 300000 }],
     };
     const gates = detectQualityGates(cfg);
 

@@ -14,11 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { logError, logWarn, logInfo } from './fault-logger.js';
-import {
-  getAllSkills as getAllSkillsDb,
-  upsertSkill,
-  trackSkillUsageDb,
-} from './storage/index.js';
+import { getAllSkills as getAllSkillsDb, upsertSkill, trackSkillUsageDb } from './storage/index.js';
 import { getConfig } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
@@ -168,13 +164,21 @@ export function invalidateSkillsIndex(): void {
  * Call LLM with skills-specific config
  * Wraps the shared LLM module with local config mapping
  */
-async function callLLM(prompt: string, config: LLMConfig, timeout: number = 15000): Promise<string> {
-  return sharedCallLLM(prompt, { timeout, maxTokens: 500 }, {
-    backend: config.backend,
-    model: config.model,
-    endpoint: config.endpoint,
-    apiKey: config.apiKey,
-  });
+async function callLLM(
+  prompt: string,
+  config: LLMConfig,
+  timeout: number = 15000
+): Promise<string> {
+  return sharedCallLLM(
+    prompt,
+    { timeout, maxTokens: 500 },
+    {
+      backend: config.backend,
+      model: config.model,
+      endpoint: config.endpoint,
+      apiKey: config.apiKey,
+    }
+  );
 }
 
 // ============================================================================
@@ -184,10 +188,7 @@ async function callLLM(prompt: string, config: LLMConfig, timeout: number = 1500
 /**
  * Extract technical keywords from user prompt using LLM
  */
-export async function extractKeywords(
-  prompt: string,
-  config: LLMConfig
-): Promise<string[]> {
+export async function extractKeywords(prompt: string, config: LLMConfig): Promise<string[]> {
   const llmPrompt = KEYWORD_PROMPT.replace('{prompt}', prompt.slice(0, 500));
 
   try {
@@ -206,7 +207,11 @@ export async function extractKeywords(
     logInfo('skills', `Extracted keywords: ${JSON.stringify(keywords)}`);
     return keywords;
   } catch (err) {
-    logError('skills', 'Failed to extract keywords', err instanceof Error ? err : new Error(String(err)));
+    logError(
+      'skills',
+      'Failed to extract keywords',
+      err instanceof Error ? err : new Error(String(err))
+    );
     return [];
   }
 }
@@ -250,7 +255,9 @@ export async function searchSkillCandidates(
 
   // Sort by BM25 score order
   const idToScore = new Map(results.map((r) => [r.docId, r.score]));
-  const sortedSkills = rows.sort((a, b) => (idToScore.get(b.id!) || 0) - (idToScore.get(a.id!) || 0));
+  const sortedSkills = rows.sort(
+    (a, b) => (idToScore.get(b.id!) || 0) - (idToScore.get(a.id!) || 0)
+  );
 
   return {
     skills: sortedSkills,
@@ -294,7 +301,10 @@ export async function rankSkillsWithLLM(
   }
 
   try {
-    logInfo('skills', `Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`);
+    logInfo(
+      'skills',
+      `Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`
+    );
     const result = await callLLM(llmPrompt, rankingConfig, 30000);
     logInfo('skills', `Ranking result: ${result.slice(0, 300)}`);
 
@@ -335,7 +345,11 @@ export async function rankSkillsWithLLM(
     logInfo('skills', `Final suggestions: ${mapped.length}`);
     return mapped;
   } catch (err) {
-    logError('skills', 'Failed to suggest skills', err instanceof Error ? err : new Error(String(err)));
+    logError(
+      'skills',
+      'Failed to suggest skills',
+      err instanceof Error ? err : new Error(String(err))
+    );
     return [];
   }
 }
@@ -369,10 +383,7 @@ export async function suggestSkills(
 
   // Fallback chain - api first, then claude
   const backends: LLMBackend[] = ['api', 'claude'];
-  const orderedBackends = [
-    llmConfig.backend,
-    ...backends.filter((b) => b !== llmConfig.backend),
-  ];
+  const orderedBackends = [llmConfig.backend, ...backends.filter((b) => b !== llmConfig.backend)];
 
   for (const backend of orderedBackends) {
     try {
@@ -387,7 +398,10 @@ export async function suggestSkills(
       // Step 2: Search candidates (local first, then Skyll if enabled)
       logInfo('skills', `Searching candidates for keywords: ${JSON.stringify(keywords)}`);
       const { skills: candidateSkills, topScore } = await searchSkillCandidates(keywords, 15);
-      logInfo('skills', `Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`);
+      logInfo(
+        'skills',
+        `Found ${candidateSkills.length} local candidates (topScore: ${topScore.toFixed(2)})`
+      );
 
       // Skyll fallback: if no local candidates or onlyWhenNoLocal is false
       const skyllConfig = config?.skyll || {};
@@ -402,13 +416,15 @@ export async function suggestSkills(
           if (skyllResults.length > 0) {
             // Merge: local first, then Skyll (avoiding duplicates by name)
             const existingNames = new Set(candidates.map((c) => c.name.toLowerCase()));
-            const newSkills = skyllResults.filter(
-              (s) => !existingNames.has(s.name.toLowerCase())
-            );
+            const newSkills = skyllResults.filter((s) => !existingNames.has(s.name.toLowerCase()));
             candidates = [...candidates, ...newSkills].slice(0, 15);
           }
         } catch (err) {
-          logError('skills', 'Skyll search failed', err instanceof Error ? err : new Error(String(err)));
+          logError(
+            'skills',
+            'Skyll search failed',
+            err instanceof Error ? err : new Error(String(err))
+          );
         }
       }
 
@@ -418,7 +434,10 @@ export async function suggestSkills(
 
       // Fast path: if top BM25 score is very high, skip LLM ranking
       if (topScore >= BM25_FAST_PATH_THRESHOLD) {
-        logInfo('skills', `Fast path: topScore ${topScore.toFixed(2)} >= ${BM25_FAST_PATH_THRESHOLD}, skipping LLM ranking`);
+        logInfo(
+          'skills',
+          `Fast path: topScore ${topScore.toFixed(2)} >= ${BM25_FAST_PATH_THRESHOLD}, skipping LLM ranking`
+        );
         const fastPathResults: SkillSuggestion[] = candidates
           .slice(0, autoSuggest.max_suggestions)
           .map((skill) => ({
@@ -442,7 +461,11 @@ export async function suggestSkills(
       cacheSuggestions(userPrompt, ranked);
       return ranked;
     } catch (err) {
-      logError('skills', 'Backend suggestion failed', err instanceof Error ? err : new Error(String(err)));
+      logError(
+        'skills',
+        'Backend suggestion failed',
+        err instanceof Error ? err : new Error(String(err))
+      );
       // Try next backend
     }
   }

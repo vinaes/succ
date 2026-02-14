@@ -16,11 +16,7 @@ vi.mock('../../lib/config.js', () => ({
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerDebugTools } from './debug.js';
-import {
-  loadSession,
-  listSessions,
-  generateSessionId,
-} from '../../lib/debug/state.js';
+import { loadSession, listSessions, generateSessionId } from '../../lib/debug/state.js';
 import type { DebugSession } from '../../lib/debug/types.js';
 import { getSuccDir } from '../../lib/config.js';
 
@@ -260,7 +256,11 @@ describe('succ_debug: abandon', () => {
 describe('succ_debug: status', () => {
   it('shows active session status', async () => {
     await callTool('succ_debug', { action: 'create', bug_description: 'Memory leak in worker' });
-    await callTool('succ_debug', { action: 'hypothesis', description: 'Unbounded cache', confidence: 'high' });
+    await callTool('succ_debug', {
+      action: 'hypothesis',
+      description: 'Unbounded cache',
+      confidence: 'high',
+    });
 
     const result = await callTool('succ_debug', { action: 'status' });
 

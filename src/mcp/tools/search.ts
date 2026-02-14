@@ -26,8 +26,15 @@ export function registerSearchTools(server: McpServer) {
     {
       query: z.string().describe('The search query'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
-      threshold: z.number().optional().default(0.2).describe('Similarity threshold 0-1 (default: 0.2)'),
-      output: z.enum(['full', 'lean']).optional().default('full')
+      threshold: z
+        .number()
+        .optional()
+        .default(0.2)
+        .describe('Similarity threshold 0-1 (default: 0.2)'),
+      output: z
+        .enum(['full', 'lean'])
+        .optional()
+        .default('full')
         .describe('Output mode: full (content blocks), lean (file+lines only, saves tokens)'),
       project_path: projectPathParam,
     },
@@ -53,10 +60,12 @@ export function registerSearchTools(server: McpServer) {
           const recentDocs = await getRecentDocuments(limit);
           if (recentDocs.length === 0) {
             return {
-              content: [{
-                type: 'text' as const,
-                text: 'No documents indexed. Run `succ index` to index documentation.',
-              }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'No documents indexed. Run `succ index` to index documentation.',
+                },
+              ],
             };
           }
 
@@ -67,10 +76,12 @@ export function registerSearchTools(server: McpServer) {
             .join('\n\n---\n\n');
 
           return {
-            content: [{
-              type: 'text' as const,
-              text: `Found ${recentDocs.length} recent documents:\n\n${formatted}`,
-            }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${recentDocs.length} recent documents:\n\n${formatted}`,
+              },
+            ],
           };
         }
 
@@ -148,14 +159,30 @@ export function registerSearchTools(server: McpServer) {
     'succ_search_code',
     'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).',
     {
-      query: z.string().describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
+      query: z
+        .string()
+        .describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
-      threshold: z.number().optional().default(0.25).describe('Similarity threshold 0-1 (default: 0.25)'),
-      regex: z.string().optional().describe('Regex filter — only return results whose content matches this pattern'),
-      symbol_type: z.enum(['function', 'method', 'class', 'interface', 'type_alias']).optional()
+      threshold: z
+        .number()
+        .optional()
+        .default(0.25)
+        .describe('Similarity threshold 0-1 (default: 0.25)'),
+      regex: z
+        .string()
+        .optional()
+        .describe('Regex filter — only return results whose content matches this pattern'),
+      symbol_type: z
+        .enum(['function', 'method', 'class', 'interface', 'type_alias'])
+        .optional()
         .describe('Filter by AST symbol type (e.g., "function", "class")'),
-      output: z.enum(['full', 'lean', 'signatures']).optional().default('full')
-        .describe('Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'),
+      output: z
+        .enum(['full', 'lean', 'signatures'])
+        .optional()
+        .default('full')
+        .describe(
+          'Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'
+        ),
       project_path: projectPathParam,
     },
     async ({ query, limit, threshold, regex, symbol_type, output, project_path }) => {
@@ -175,11 +202,16 @@ export function registerSearchTools(server: McpServer) {
       try {
         const queryEmbedding = await getEmbedding(query);
         // Build filters from optional params
-        const filters = (regex || symbol_type)
-          ? { regex, symbolType: symbol_type }
-          : undefined;
+        const filters = regex || symbol_type ? { regex, symbolType: symbol_type } : undefined;
         // Hybrid search: BM25 + vector with RRF fusion
-        const codeResults = await hybridSearchCode(query, queryEmbedding, limit, threshold, undefined, filters);
+        const codeResults = await hybridSearchCode(
+          query,
+          queryEmbedding,
+          limit,
+          threshold,
+          undefined,
+          filters
+        );
 
         if (codeResults.length === 0) {
           return {
@@ -217,10 +249,18 @@ export function registerSearchTools(server: McpServer) {
                 sym = `${r.symbol_type ?? 'symbol'} ${r.symbol_name}`;
               } else {
                 // Fallback: find first meaningful line (skip doc comments, blank lines)
-                const firstLine = r.content.split('\n')
-                  .map((l: string) => l.trim())
-                  .find((l: string) => l && !l.startsWith('/**') && !l.startsWith('*') && !l.startsWith('*/') && !l.startsWith('//'))
-                  ?? r.content.split('\n')[0].trim();
+                const firstLine =
+                  r.content
+                    .split('\n')
+                    .map((l: string) => l.trim())
+                    .find(
+                      (l: string) =>
+                        l &&
+                        !l.startsWith('/**') &&
+                        !l.startsWith('*') &&
+                        !l.startsWith('*/') &&
+                        !l.startsWith('//')
+                    ) ?? r.content.split('\n')[0].trim();
                 sym = firstLine;
               }
               return `${i + 1}. ${filePath}:${r.start_line} (${score}%) — ${sym}`;
@@ -232,7 +272,9 @@ export function registerSearchTools(server: McpServer) {
             .map((r, i) => {
               const score = (r.similarity * 100).toFixed(1);
               const filePath = r.file_path.replace(/^code:/, '');
-              const sym = r.symbol_name ? ` — ${r.symbol_type ?? 'symbol'} \`${r.symbol_name}\`` : '';
+              const sym = r.symbol_name
+                ? ` — ${r.symbol_type ?? 'symbol'} \`${r.symbol_name}\``
+                : '';
               return `### ${i + 1}. ${filePath}:${r.start_line}-${r.end_line} (${score}%)${sym}\n\n\`\`\`\n${r.content}\n\`\`\``;
             })
             .join('\n\n---\n\n');

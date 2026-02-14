@@ -456,14 +456,22 @@ These keys still work but will be removed in a future version. Use `llm.*` inste
 
 Controls automatic quality scoring of memories.
 
+### Unified namespace: `llm.quality.*`
+
+Quality scoring is configured under the `llm.quality` namespace, consistent with other per-task LLM configs:
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `quality_scoring_enabled` | boolean | true | Enable quality scoring |
-| `quality_scoring_mode` | `"local"` \| `"custom"` \| `"openrouter"` | `"local"` | Scoring method |
-| `quality_scoring_model` | string | - | Model for LLM-based scoring |
-| `quality_scoring_api_url` | string | - | API URL for custom mode |
-| `quality_scoring_api_key` | string | - | API key for custom mode |
 | `quality_scoring_threshold` | number | 0 | Min score to keep (0-1) |
+| `llm.quality.mode` | `"local"` \| `"api"` | `"local"` | Scoring provider |
+| `llm.quality.model` | string | - | Model for LLM-based scoring |
+| `llm.quality.api_url` | string | - | API URL for custom mode |
+| `llm.quality.api_key` | string | - | API key for custom mode |
+
+### Legacy flat keys (deprecated)
+
+The flat `quality_scoring_mode/model/api_url/api_key` keys still work but the `llm.quality.*` namespace takes priority.
 
 ### Example: Filter Low-Quality Memories
 
@@ -1423,6 +1431,50 @@ LLM-powered skill discovery and suggestions.
 
 ---
 
+## Web Fetch Settings
+
+Controls the `succ_fetch` MCP tool which fetches URLs and converts to clean Markdown via md.succ.ai.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `md_api_url` | string | `"https://md.succ.ai"` | Base URL of the md.succ.ai conversion service |
+
+Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser fallback for JS-heavy pages. Returns full content without summarization or truncation.
+
+```json
+{
+  "md_api_url": "https://md.succ.ai"
+}
+```
+
+---
+
+## Retrieval Settings
+
+Fine-tune search result ranking and expansion.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retrieval.quality_boost_enabled` | boolean | false | Boost results by quality score |
+| `retrieval.quality_boost_weight` | number | 0.15 | Weight of quality boost (0-1) |
+| `retrieval.mmr_enabled` | boolean | false | Enable Maximal Marginal Relevance for diversity |
+| `retrieval.mmr_lambda` | number | 0.8 | MMR trade-off: 1.0 = pure relevance, 0.0 = pure diversity |
+| `retrieval.query_expansion_enabled` | boolean | false | Expand queries with synonyms/related terms |
+| `retrieval.query_expansion_mode` | string | from `llm.type` | LLM backend for expansion |
+
+```json
+{
+  "retrieval": {
+    "mmr_enabled": true,
+    "mmr_lambda": 0.7,
+    "quality_boost_enabled": true,
+    "quality_boost_weight": 0.15
+  }
+}
+```
+
+---
+
 ## Web Search Settings
 
 Real-time web search via Perplexity Sonar models through OpenRouter. Requires `openrouter_api_key`.
@@ -1644,8 +1696,9 @@ succ_config_set key="error_reporting.level" value="error"
   },
 
   "quality_scoring_enabled": true,
-  "quality_scoring_mode": "local",
   "quality_scoring_threshold": 0.3,
+
+  "md_api_url": "https://md.succ.ai",
 
   "sensitive_filter_enabled": true,
   "sensitive_auto_redact": false,

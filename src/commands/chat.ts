@@ -16,10 +16,7 @@ interface ChatOptions {
  * Uses the chat_llm config for interactive chat.
  * Falls back to main llm config if chat_llm not configured.
  */
-export async function chat(
-  query: string,
-  options: ChatOptions = {}
-): Promise<void> {
+export async function chat(query: string, options: ChatOptions = {}): Promise<void> {
   const { limit = 5, threshold = 0.2, verbose = false } = options;
 
   if (verbose) {

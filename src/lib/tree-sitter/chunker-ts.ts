@@ -30,7 +30,7 @@ const MAX_CHUNK_CHARS = 4000;
  */
 export async function chunkCodeWithTreeSitter(
   content: string,
-  filePath: string,
+  filePath: string
 ): Promise<TreeSitterChunk[] | null> {
   // Check if language is recognized
   const ext = filePath.split('.').pop() || '';
@@ -110,7 +110,7 @@ export async function chunkCodeWithTreeSitter(
     }
 
     // Filter empty chunks and split oversized ones
-    const filtered = chunks.filter(c => c.content.trim().length > 0);
+    const filtered = chunks.filter((c) => c.content.trim().length > 0);
     return filtered.flatMap(splitLargeChunk);
   } finally {
     // Free the tree to avoid memory leaks
@@ -127,11 +127,7 @@ export async function chunkCodeWithTreeSitter(
  * - Decorator lines (e.g., @decorator)
  * - Blank lines between decorator/comment groups and the definition
  */
-function findChunkStart(
-  symbol: SymbolInfo,
-  lines: string[],
-  minRow: number,
-): number {
+function findChunkStart(symbol: SymbolInfo, lines: string[], minRow: number): number {
   let start = symbol.startRow;
 
   // Walk backward to include comments and decorators

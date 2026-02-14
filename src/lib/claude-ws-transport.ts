@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import type { ChatMessage } from './llm.js';
 import { getConfig } from './config.js';
 import { ValidationError } from './errors.js';
+import { processRegistry } from './process-registry.js';
 
 // ============================================================================
 // Types
@@ -82,7 +83,14 @@ interface NDJSONKeepAlive {
   type: 'keep_alive';
 }
 
-type NDJSONMessage = NDJSONSystemInit | NDJSONAssistant | NDJSONResult | NDJSONControlRequest | NDJSONControlResponse | NDJSONKeepAlive | { type: string; [key: string]: unknown };
+type NDJSONMessage =
+  | NDJSONSystemInit
+  | NDJSONAssistant
+  | NDJSONResult
+  | NDJSONControlRequest
+  | NDJSONControlResponse
+  | NDJSONKeepAlive
+  | { type: string; [key: string]: unknown };
 
 // ============================================================================
 // ClaudeWSTransport — Singleton
@@ -97,6 +105,10 @@ export class ClaudeWSTransport {
   private pending: PendingRequest | null = null;
   private queue: Array<() => void> = [];
   private processing = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Default idle timeout (5 min). Override via llm.ws_idle_timeout (seconds). */
+  private static readonly DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
   private readyResolve: (() => void) | null = null;
   private readyReject: ((err: Error) => void) | null = null;
@@ -177,8 +189,8 @@ export class ClaudeWSTransport {
     await this.readyPromise;
 
     // Find system message if any and prepend to first user message
-    const systemMsg = messages.find(m => m.role === 'system');
-    const userMessages = messages.filter(m => m.role === 'user');
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const userMessages = messages.filter((m) => m.role === 'user');
 
     if (userMessages.length === 0) {
       throw new ValidationError('[claude-ws] No user messages in chat');
@@ -217,8 +229,13 @@ export class ClaudeWSTransport {
 
     logInfo('ws-transport', `Ready (port=${this.port}, session=${this.sessionId})`);
 
+    // Start idle timer — if no requests come, shut down after timeout
+    this.resetIdleTimer();
+
     // Cleanup on process exit
-    const cleanup = () => { ClaudeWSTransport.shutdown(); };
+    const cleanup = () => {
+      ClaudeWSTransport.shutdown();
+    };
     process.on('beforeExit', cleanup);
     process.on('SIGTERM', cleanup);
     process.on('SIGINT', cleanup);
@@ -255,7 +272,7 @@ export class ClaudeWSTransport {
         socket.on('message', (data) => {
           const raw = data.toString();
           // NDJSON: multiple JSON objects separated by newlines
-          const lines = raw.split('\n').filter(l => l.trim());
+          const lines = raw.split('\n').filter((l) => l.trim());
           for (const line of lines) {
             try {
               const msg = JSON.parse(line) as NDJSONMessage;
@@ -276,7 +293,11 @@ export class ClaudeWSTransport {
         });
 
         socket.on('error', (err) => {
-          logError('ws-transport', `Socket error: ${err.message}`, err instanceof Error ? err : new Error(String(err)));
+          logError(
+            'ws-transport',
+            `Socket error: ${err.message}`,
+            err instanceof Error ? err : new Error(String(err))
+          );
         });
       });
     });
@@ -286,12 +307,16 @@ export class ClaudeWSTransport {
     const sdkUrl = `ws://127.0.0.1:${this.port}`;
 
     const args = [
-      '--sdk-url', sdkUrl,
+      '--sdk-url',
+      sdkUrl,
       '--print',
-      '--output-format', 'stream-json',
-      '--input-format', 'stream-json',
+      '--output-format',
+      'stream-json',
+      '--input-format',
+      'stream-json',
       '--no-session-persistence',
-      '-p', '',
+      '-p',
+      '',
     ];
 
     // WS mode always uses Claude API — resolve model from config.
@@ -306,6 +331,8 @@ export class ClaudeWSTransport {
       env: { ...process.env, SUCC_SERVICE_SESSION: '1' },
       windowsHide: true,
     });
+
+    if (this.cliProcess.pid) processRegistry.register(this.cliProcess.pid, 'claude-ws');
 
     // Log stderr for debugging
     this.cliProcess.stderr?.on('data', (data: Buffer) => {
@@ -325,6 +352,7 @@ export class ClaudeWSTransport {
 
     this.cliProcess.on('close', (code) => {
       logInfo('ws-transport', `CLI process exited (code=${code})`);
+      if (this.cliProcess?.pid) processRegistry.unregister(this.cliProcess.pid);
       this.cliProcess = null;
       this.rejectPending(new Error(`[claude-ws] CLI exited with code ${code}`));
     });
@@ -338,11 +366,30 @@ export class ClaudeWSTransport {
   }
 
   private async stop(): Promise<void> {
+    this.clearIdleTimer();
     this.rejectPending(new Error('[claude-ws] Shutting down'));
 
     if (this.cliProcess) {
-      this.cliProcess.kill('SIGTERM');
+      const proc = this.cliProcess;
+      if (proc.pid) processRegistry.unregister(proc.pid);
       this.cliProcess = null;
+
+      // Try graceful SIGTERM first
+      proc.kill('SIGTERM');
+
+      // Force-kill after 3s if still alive (cross-platform: SIGKILL on unix, taskkill on win)
+      const forceKillTimer = setTimeout(() => {
+        try {
+          if (proc.pid && !proc.killed) {
+            proc.kill('SIGKILL');
+          }
+        } catch {
+          // Already dead — fine
+        }
+      }, 3000);
+      forceKillTimer.unref(); // Don't keep event loop alive
+
+      proc.on('close', () => clearTimeout(forceKillTimer));
     }
 
     if (this.ws) {
@@ -421,9 +468,11 @@ export class ClaudeWSTransport {
         if (this.pending) {
           clearTimeout(this.pending.timer);
           if (resultMsg.is_error || resultMsg.subtype.startsWith('error')) {
-            this.pending.reject(new Error(
-              `[claude-ws] CLI error: ${resultMsg.subtype} — ${resultMsg.result || 'unknown'}`
-            ));
+            this.pending.reject(
+              new Error(
+                `[claude-ws] CLI error: ${resultMsg.subtype} — ${resultMsg.result || 'unknown'}`
+              )
+            );
           } else {
             // Use collected assistant text, fall back to result text
             const text = this.pending.responseText.trim() || resultMsg.result?.trim() || '';
@@ -473,10 +522,44 @@ export class ClaudeWSTransport {
   }
 
   // ============================================================================
+  // Idle timeout — shut down CLI if no requests for IDLE_TIMEOUT_MS
+  // ============================================================================
+
+  private getIdleTimeoutMs(): number {
+    try {
+      const config = getConfig();
+      const seconds = config.llm?.ws_idle_timeout;
+      if (typeof seconds === 'number' && seconds > 0) {
+        return seconds * 1000;
+      }
+    } catch {
+      // Config not available — use default
+    }
+    return ClaudeWSTransport.DEFAULT_IDLE_TIMEOUT_MS;
+  }
+
+  private resetIdleTimer(): void {
+    this.clearIdleTimer();
+    const timeoutMs = this.getIdleTimeoutMs();
+    this.idleTimer = setTimeout(() => {
+      logInfo('ws-transport', `Idle timeout (${timeoutMs / 1000}s) — shutting down CLI process`);
+      ClaudeWSTransport.shutdown();
+    }, timeoutMs);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  // ============================================================================
   // Request queue (serial — one prompt at a time)
   // ============================================================================
 
   private enqueue(prompt: string, opts?: WSSendOptions): Promise<string> {
+    this.clearIdleTimer(); // Active work — don't idle-kill
     return new Promise<string>((resolve, reject) => {
       const work = () => {
         this.processing = true;
@@ -495,6 +578,9 @@ export class ClaudeWSTransport {
     const next = this.queue.shift();
     if (next) {
       next();
+    } else {
+      // Queue empty, no active work — start idle countdown
+      this.resetIdleTimer();
     }
   }
 
@@ -502,7 +588,7 @@ export class ClaudeWSTransport {
     prompt: string,
     opts: WSSendOptions | undefined,
     resolve: (text: string) => void,
-    reject: (err: Error) => void,
+    reject: (err: Error) => void
   ): void {
     if (!this.ws || this.ws.readyState !== 1) {
       reject(new Error('[claude-ws] Not connected'));

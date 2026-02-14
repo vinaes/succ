@@ -68,10 +68,7 @@ export function detectExecutionProvider(
   }
 }
 
-function resolveExplicitDevice(
-  device: string,
-  platform: string
-): OrtProviderResult {
+function resolveExplicitDevice(device: string, platform: string): OrtProviderResult {
   switch (device) {
     case 'directml':
       if (platform !== 'win32') {

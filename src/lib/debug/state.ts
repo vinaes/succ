@@ -85,7 +85,7 @@ function saveIndex(entries: DebugSessionIndexEntry[]): void {
 
 function upsertIndex(entry: DebugSessionIndexEntry): void {
   const entries = loadIndex();
-  const idx = entries.findIndex(e => e.id === entry.id);
+  const idx = entries.findIndex((e) => e.id === entry.id);
   if (idx >= 0) {
     entries[idx] = entry;
   } else {
@@ -116,18 +116,18 @@ export function deleteSession(sessionId: string): void {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  const entries = loadIndex().filter(e => e.id !== sessionId);
+  const entries = loadIndex().filter((e) => e.id !== sessionId);
   saveIndex(entries);
 }
 
 export function listSessions(includeResolved = false): DebugSessionIndexEntry[] {
   const entries = loadIndex();
   if (includeResolved) return entries;
-  return entries.filter(e => e.status === 'active');
+  return entries.filter((e) => e.status === 'active');
 }
 
 export function findActiveSession(): DebugSessionIndexEntry | null {
-  const active = loadIndex().filter(e => e.status === 'active');
+  const active = loadIndex().filter((e) => e.status === 'active');
   if (active.length === 0) return null;
   return active.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
 }

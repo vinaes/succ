@@ -55,7 +55,7 @@ Or if running from source:
 | `succ_score` | Get AI-readiness score (how ready is project for AI) |
 | `succ_config` | Show current configuration with all effective values |
 | `succ_config_set` | Update config value (key=value). Saves to ~/.succ/config.json |
-| `succ_checkpoint` | Create/list/restore/info backups of succ data |
+| `succ_checkpoint` | Create/list backups of succ data |
 | `succ_debug` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
 | `succ_prd_generate` | Generate PRD from feature description |
 | `succ_prd_list` | List all PRDs |
@@ -66,6 +66,7 @@ Or if running from source:
 | `succ_web_search` | Quality web search (default: Perplexity Sonar Pro, configurable) |
 | `succ_deep_research` | Deep multi-step research (default: Perplexity Deep Research, configurable) |
 | `succ_web_search_history` | View past web searches with filtering — costs, usage stats |
+| `succ_fetch` | Fetch any URL and convert to clean Markdown via md.succ.ai (Readability + Playwright). No content summarization or truncation. Prefer over built-in WebFetch |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 
@@ -201,9 +202,18 @@ Supported languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, 
 **succ_checkpoint** — Create/manage backups of succ data
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `action` | `"create"` \| `"list"` \| `"restore"` \| `"info"` | *required* | Operation to perform |
+| `action` | `"create"` \| `"list"` | *required* | Operation to perform |
 | `compress` | boolean | false | Compress backup file |
-| `file` | string | — | Backup file path (for restore) |
+| `include_brain` | boolean | true | Include brain vault in backup |
+| `include_documents` | boolean | true | Include indexed documents |
+
+> **Note:** `restore` is available via CLI only (`succ checkpoint restore <file>`), not via MCP.
+
+**succ_fetch** — Fetch any URL and convert to clean Markdown
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | string (URL) | *required* | URL to fetch and convert to markdown |
+| `format` | `"markdown"` \| `"json"` | `"markdown"` | Output format: `markdown` returns clean content, `json` includes metadata (tokens, quality, extraction method) |
 
 **succ_web_search_history** — View past web searches
 | Parameter | Type | Default | Description |
@@ -282,6 +292,7 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 | **Consolidate** | `succ consolidate` | — | Heavy: merges/deduplicates memories |
 | **Dead-end tracking** | — | `succ_dead_end` | Light: record failed approaches |
 | **Web search history** | — | `succ_web_search_history` | Light: search cost/usage audit |
+| **Web fetch** | — | `succ_fetch` | Light: fetch + convert via md.succ.ai |
 | **Session tools** | `succ session-summary`, `succ precompute-context` | — | Heavy: processes transcripts |
 
 ### Design Principles

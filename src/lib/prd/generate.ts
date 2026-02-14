@@ -35,20 +35,35 @@ export interface GenerateResult {
 
 /** Config files we scan for when detecting project roots. */
 const CONFIG_FILES = [
-  'tsconfig.json', 'package.json', 'go.mod',
-  'pyproject.toml', 'setup.py', 'Cargo.toml', '.golangci.yml',
+  'tsconfig.json',
+  'package.json',
+  'go.mod',
+  'pyproject.toml',
+  'setup.py',
+  'Cargo.toml',
+  '.golangci.yml',
 ];
 
 /** Directories to skip during subdirectory scanning. */
 const IGNORE_DIRS = new Set([
-  'node_modules', 'dist', '.git', '.succ', '.claude', 'vendor',
-  'coverage', '.next', '.cache', '__pycache__', 'build', 'out',
+  'node_modules',
+  'dist',
+  '.git',
+  '.succ',
+  '.claude',
+  'vendor',
+  'coverage',
+  '.next',
+  '.cache',
+  '__pycache__',
+  'build',
+  'out',
 ]);
 
 /** A directory that contains project config files. */
 export interface ProjectRoot {
-  relPath: string;        // '' for root, 'frontend', 'apps/web', etc.
-  configs: Set<string>;   // config file basenames found
+  relPath: string; // '' for root, 'frontend', 'apps/web', etc.
+  configs: Set<string>; // config file basenames found
 }
 
 /**
@@ -125,12 +140,8 @@ export function discoverProjectRoots(root: string, maxDepth = 2): ProjectRoot[] 
  */
 export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): QualityGate[] {
   const gates: QualityGate[] = [];
-  const dir = projectRoot.relPath
-    ? path.join(absRoot, projectRoot.relPath)
-    : absRoot;
-  const prefix = projectRoot.relPath
-    ? `cd "${projectRoot.relPath.replace(/\\/g, '/')}" && `
-    : '';
+  const dir = projectRoot.relPath ? path.join(absRoot, projectRoot.relPath) : absRoot;
+  const prefix = projectRoot.relPath ? `cd "${projectRoot.relPath.replace(/\\/g, '/')}" && ` : '';
 
   // TypeScript
   if (projectRoot.configs.has('tsconfig.json')) {
@@ -145,7 +156,9 @@ export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): Q
       const testScript = pkg.scripts?.test ?? '';
       if (testScript && testScript !== 'echo "Error: no test specified" && exit 1') {
         if (testScript.includes('vitest') && !testScript.includes('--run')) {
-          gates.push(createGate('test', prefix + 'npx vitest run --exclude "**/*integration*test*"'));
+          gates.push(
+            createGate('test', prefix + 'npx vitest run --exclude "**/*integration*test*"')
+          );
         } else {
           gates.push(createGate('test', prefix + testScript));
         }
@@ -184,12 +197,15 @@ export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): Q
 /**
  * Convert a GateConfig from config.json into a QualityGate.
  */
-function gateFromConfig(cfg: { type: string; command: string; required?: boolean; timeout_ms?: number }, prefix = ''): QualityGate {
+function gateFromConfig(
+  cfg: { type: string; command: string; required?: boolean; timeout_ms?: number },
+  prefix = ''
+): QualityGate {
   return createGate(
     cfg.type as QualityGate['type'],
     prefix + cfg.command,
     cfg.required ?? true,
-    cfg.timeout_ms,
+    cfg.timeout_ms
   );
 }
 
@@ -208,8 +224,8 @@ export function detectQualityGates(configOverride?: QualityGatesConfig): Quality
   // Auto-detect from project files (default: true)
   if (gatesCfg?.auto_detect !== false) {
     const projectRoots = discoverProjectRoots(root);
-    const rootEntry = projectRoots.find(r => r.relPath === '');
-    const subEntries = projectRoots.filter(r => r.relPath !== '');
+    const rootEntry = projectRoots.find((r) => r.relPath === '');
+    const subEntries = projectRoots.filter((r) => r.relPath !== '');
     const rootConfigTypes = new Set<string>();
 
     if (rootEntry) {
@@ -218,9 +234,7 @@ export function detectQualityGates(configOverride?: QualityGatesConfig): Quality
     }
 
     for (const sub of subEntries) {
-      const uniqueConfigs = new Set(
-        [...sub.configs].filter(c => !rootConfigTypes.has(c))
-      );
+      const uniqueConfigs = new Set([...sub.configs].filter((c) => !rootConfigTypes.has(c)));
       if (uniqueConfigs.size === 0) continue;
       const filtered: ProjectRoot = { relPath: sub.relPath, configs: uniqueConfigs };
       gates.push(...detectGatesForRoot(filtered, root));
@@ -298,7 +312,7 @@ export async function generatePrd(
   description: string,
   options: {
     mode?: ExecutionMode;
-    gates?: string;        // comma-separated gate specs
+    gates?: string; // comma-separated gate specs
     autoParse?: boolean;
     model?: string;
   } = {}
@@ -308,21 +322,22 @@ export async function generatePrd(
   const contextStr = formatContext(context);
 
   // 2. Build prompt
-  const prompt = PRD_GENERATE_PROMPT
-    .replace('{codebase_context}', contextStr)
-    .replace('{description}', description);
+  const prompt = PRD_GENERATE_PROMPT.replace('{codebase_context}', contextStr).replace(
+    '{description}',
+    description
+  );
 
   // 3. Call LLM to generate PRD markdown
   const markdown = await callLLMWithFallback(prompt, {
     maxTokens: 6000,
     temperature: 0.5,
-    timeout: 120_000,  // PRD generation needs more time than default 30s
+    timeout: 120_000, // PRD generation needs more time than default 30s
   });
 
   // 4. Detect or parse quality gates
   let qualityGates: QualityGate[];
   if (options.gates) {
-    qualityGates = options.gates.split(',').map(s => parseGateSpec(s.trim()));
+    qualityGates = options.gates.split(',').map((s) => parseGateSpec(s.trim()));
   } else {
     qualityGates = detectQualityGates();
   }
@@ -396,10 +411,7 @@ function extractOutOfScope(markdown: string): string[] {
  */
 function extractListSection(markdown: string, sectionName: string): string[] {
   // Match section header and content until next section
-  const pattern = new RegExp(
-    `##\\s+${sectionName}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`,
-    'i'
-  );
+  const pattern = new RegExp(`##\\s+${sectionName}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
   const match = markdown.match(pattern);
   if (!match) return [];
 

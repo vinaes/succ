@@ -18,9 +18,9 @@ import { hasApiKey, getLLMTaskConfig } from '../lib/config.js';
 
 // Default Ollama models to benchmark (small, fast models good for classification)
 const OLLAMA_MODELS = [
-  'qwen2.5:0.5b',    // Smallest, fastest
-  'gemma2:2b',       // Good balance
-  'phi3:mini',       // Microsoft's efficient model
+  'qwen2.5:0.5b', // Smallest, fastest
+  'gemma2:2b', // Good balance
+  'phi3:mini', // Microsoft's efficient model
 ];
 
 interface BenchmarkResult {
@@ -48,12 +48,14 @@ const testCases = [
   // HIGH QUALITY - specific, technical, actionable
   {
     name: 'EN: Technical bug fix',
-    content: 'Fixed bug in `handleAuth` function in src/auth.ts:42 where JWT tokens were not validated properly',
+    content:
+      'Fixed bug in `handleAuth` function in src/auth.ts:42 where JWT tokens were not validated properly',
     expected: 'high',
   },
   {
     name: 'RU: Technical bug fix',
-    content: 'Исправил баг в функции `handleAuth` в файле src/auth.ts:42, где JWT токены неправильно валидировались',
+    content:
+      'Исправил баг в функции `handleAuth` в файле src/auth.ts:42, где JWT токены неправильно валидировались',
     expected: 'high',
   },
   {
@@ -72,29 +74,34 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   },
   {
     name: 'Architecture decision',
-    content: 'Decision: Use PostgreSQL with pgvector extension for semantic search instead of dedicated vector database. Rationale: simpler infrastructure, good enough performance for our scale, single source of truth.',
+    content:
+      'Decision: Use PostgreSQL with pgvector extension for semantic search instead of dedicated vector database. Rationale: simpler infrastructure, good enough performance for our scale, single source of truth.',
     expected: 'high',
   },
   {
     name: 'RU: Architecture decision',
-    content: 'Решение: Использовать PostgreSQL с pgvector вместо отдельной векторной БД. Причина: проще инфраструктура, достаточная производительность для нашего масштаба, единый источник данных.',
+    content:
+      'Решение: Использовать PostgreSQL с pgvector вместо отдельной векторной БД. Причина: проще инфраструктура, достаточная производительность для нашего масштаба, единый источник данных.',
     expected: 'high',
   },
 
   // MEDIUM QUALITY - somewhat specific but less actionable
   {
     name: 'General observation',
-    content: 'The authentication module uses JWT tokens for session management and refresh tokens for long-lived sessions.',
+    content:
+      'The authentication module uses JWT tokens for session management and refresh tokens for long-lived sessions.',
     expected: 'medium',
   },
   {
     name: 'RU: General observation',
-    content: 'Модуль аутентификации использует JWT токены для управления сессиями и refresh токены для долгоживущих сессий.',
+    content:
+      'Модуль аутентификации использует JWT токены для управления сессиями и refresh токены для долгоживущих сессий.',
     expected: 'medium',
   },
   {
     name: 'Mixed language',
-    content: 'Добавил feature для `UserService` класса - теперь поддерживает batch operations с retry logic',
+    content:
+      'Добавил feature для `UserService` класса - теперь поддерживает batch operations с retry logic',
     expected: 'medium',
   },
 
@@ -209,7 +216,9 @@ async function getOllamaModels(url: string = 'http://localhost:11434'): Promise<
 /**
  * Run quality scoring benchmark
  */
-export async function benchmarkQuality(options: { api?: boolean; ollama?: boolean; models?: string; ollamaUrl?: string } = {}): Promise<void> {
+export async function benchmarkQuality(
+  options: { api?: boolean; ollama?: boolean; models?: string; ollamaUrl?: string } = {}
+): Promise<void> {
   const { api = false, ollama = false, models, ollamaUrl = 'http://localhost:11434' } = options;
 
   console.log('═══════════════════════════════════════════════════════════');
@@ -234,8 +243,10 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
   console.log('└─────────────────────────────────────────────────────────────┘');
 
   console.log('\n  Loading model (first run may download ~50MB)...');
-  const localResult = await benchmarkMode('local', 'Xenova/nli-deberta-v3-xsmall', async (content) =>
-    scoreWithLocal(content)
+  const localResult = await benchmarkMode(
+    'local',
+    'Xenova/nli-deberta-v3-xsmall',
+    async (content) => scoreWithLocal(content)
   );
   allResults.push(localResult);
 
@@ -250,13 +261,11 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
       const availableModels = await getOllamaModels(ollamaUrl);
 
       // Parse models from CLI or use defaults
-      const modelsToTest = models
-        ? models.split(',').map((m) => m.trim())
-        : OLLAMA_MODELS;
+      const modelsToTest = models ? models.split(',').map((m) => m.trim()) : OLLAMA_MODELS;
 
       for (const model of modelsToTest) {
         // Check if model is available
-        const isAvailable = availableModels.some(m => m.startsWith(model.split(':')[0]));
+        const isAvailable = availableModels.some((m) => m.startsWith(model.split(':')[0]));
 
         console.log('\n┌─────────────────────────────────────────────────────────────┐');
         console.log(`│ OLLAMA (${model.padEnd(49)}) │`);
@@ -290,9 +299,7 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
       const apiUrl = qualityCfg.api_url;
 
       // Parse models from CLI or use defaults
-      const modelsToTest = models
-        ? models.split(',').map((m) => m.trim())
-        : API_MODELS;
+      const modelsToTest = models ? models.split(',').map((m) => m.trim()) : API_MODELS;
 
       for (const model of modelsToTest) {
         console.log('\n┌─────────────────────────────────────────────────────────────┐');
@@ -319,9 +326,15 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
   console.log('                    TIMING RESULTS                          ');
   console.log('═══════════════════════════════════════════════════════════');
 
-  console.log('\n┌─────────────────────────────────────────────────────┬──────────┬──────────┬──────────┐');
-  console.log('│ Mode / Model                                        │ Avg (ms) │ Min (ms) │ Max (ms) │');
-  console.log('├─────────────────────────────────────────────────────┼──────────┼──────────┼──────────┤');
+  console.log(
+    '\n┌─────────────────────────────────────────────────────┬──────────┬──────────┬──────────┐'
+  );
+  console.log(
+    '│ Mode / Model                                        │ Avg (ms) │ Min (ms) │ Max (ms) │'
+  );
+  console.log(
+    '├─────────────────────────────────────────────────────┼──────────┼──────────┼──────────┤'
+  );
 
   for (const result of allResults) {
     const t = result.timing;
@@ -332,7 +345,9 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
     console.log(`│ ${name} │ ${avg} │ ${min} │ ${max} │`);
   }
 
-  console.log('└─────────────────────────────────────────────────────┴──────────┴──────────┴──────────┘');
+  console.log(
+    '└─────────────────────────────────────────────────────┴──────────┴──────────┴──────────┘'
+  );
 
   // ============ ACCURACY SUMMARY ============
   console.log('\n═══════════════════════════════════════════════════════════');
@@ -350,17 +365,17 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
     const medExpected = testCases.filter((t) => t.expected === 'medium').map((t) => t.name);
     const lowExpected = testCases.filter((t) => t.expected === 'low').map((t) => t.name);
 
-    const avgHigh = a.scores
-      .filter((s) => highExpected.includes(s.name))
-      .reduce((sum, s) => sum + s.score, 0) / highExpected.length;
+    const avgHigh =
+      a.scores.filter((s) => highExpected.includes(s.name)).reduce((sum, s) => sum + s.score, 0) /
+      highExpected.length;
 
-    const avgMed = a.scores
-      .filter((s) => medExpected.includes(s.name))
-      .reduce((sum, s) => sum + s.score, 0) / medExpected.length;
+    const avgMed =
+      a.scores.filter((s) => medExpected.includes(s.name)).reduce((sum, s) => sum + s.score, 0) /
+      medExpected.length;
 
-    const avgLow = a.scores
-      .filter((s) => lowExpected.includes(s.name))
-      .reduce((sum, s) => sum + s.score, 0) / lowExpected.length;
+    const avgLow =
+      a.scores.filter((s) => lowExpected.includes(s.name)).reduce((sum, s) => sum + s.score, 0) /
+      lowExpected.length;
 
     console.log(`  HIGH quality (expected ≥0.65):   ${(avgHigh * 100).toFixed(0)}% avg`);
     console.log(`  MEDIUM quality (expected ~0.5):  ${(avgMed * 100).toFixed(0)}% avg`);
@@ -370,7 +385,9 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
     // Quality discrimination score (higher is better)
     const discrimination = avgHigh - avgLow;
     const emoji = discrimination >= 0.3 ? '✓' : discrimination >= 0.15 ? '~' : '✗';
-    console.log(`  Discrimination: ${emoji} ${discrimination >= 0.3 ? 'Good' : discrimination >= 0.15 ? 'Fair' : 'Poor'}`);
+    console.log(
+      `  Discrimination: ${emoji} ${discrimination >= 0.3 ? 'Good' : discrimination >= 0.15 ? 'Fair' : 'Poor'}`
+    );
   }
 
   // ============ DETAILED SCORES ============
@@ -379,7 +396,9 @@ export async function benchmarkQuality(options: { api?: boolean; ollama?: boolea
   console.log('═══════════════════════════════════════════════════════════');
 
   // Print table header
-  const modeHeaders = allResults.map((r) => r.timing.mode.substring(0, 10).padStart(10)).join(' │ ');
+  const modeHeaders = allResults
+    .map((r) => r.timing.mode.substring(0, 10).padStart(10))
+    .join(' │ ');
   console.log(`\n${'Test Case'.padEnd(25)} │ ${modeHeaders} │ Expected`);
   console.log('─'.repeat(25 + 3 + allResults.length * 13 + 10));
 

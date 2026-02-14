@@ -94,11 +94,14 @@ describe('language loading', () => {
 
 describe('parsing', () => {
   it('parses TypeScript code', async () => {
-    const tree = await parseCode(`
+    const tree = await parseCode(
+      `
 function hello(name: string): string {
   return 'Hello, ' + name;
 }
-    `, 'typescript');
+    `,
+      'typescript'
+    );
 
     expect(tree).not.toBeNull();
     expect(tree!.rootNode.type).toBe('program');
@@ -107,14 +110,17 @@ function hello(name: string): string {
   }, 30_000);
 
   it('parses Python code', async () => {
-    const tree = await parseCode(`
+    const tree = await parseCode(
+      `
 def hello(name):
     return f"Hello, {name}"
 
 class Greeter:
     def __init__(self, name):
         self.name = name
-    `, 'python');
+    `,
+      'python'
+    );
 
     expect(tree).not.toBeNull();
     expect(tree!.rootNode.type).toBe('module');

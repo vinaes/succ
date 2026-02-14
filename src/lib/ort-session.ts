@@ -96,20 +96,18 @@ export class NativeOrtSession {
 
     // Some models require token_type_ids
     if (this.session.inputNames.includes('token_type_ids')) {
-      feeds.token_type_ids = new ort.Tensor(
-        'int64',
-        new BigInt64Array(batchSize * seqLen),
-        [batchSize, seqLen]
-      );
+      feeds.token_type_ids = new ort.Tensor('int64', new BigInt64Array(batchSize * seqLen), [
+        batchSize,
+        seqLen,
+      ]);
     }
 
     // Run inference
     const results = await this.session.run(feeds);
 
     // Get output — model outputs last_hidden_state or similar
-    const outputKey = 'last_hidden_state' in results
-      ? 'last_hidden_state'
-      : this.session.outputNames[0];
+    const outputKey =
+      'last_hidden_state' in results ? 'last_hidden_state' : this.session.outputNames[0];
     const output = results[outputKey];
     const hiddenDim = output.dims[output.dims.length - 1];
     const outputData = output.data as Float32Array;
@@ -163,7 +161,7 @@ export async function resolveModelPath(modelName: string): Promise<string> {
 
   throw new DependencyError(
     `ONNX model file not found for '${modelName}'. ` +
-    `Ensure the model has ONNX exports (e.g., Xenova/ models on HuggingFace).`
+      `Ensure the model has ONNX exports (e.g., Xenova/ models on HuggingFace).`
   );
 }
 
@@ -215,7 +213,8 @@ function findHfHubCache(modelName: string): string | null {
 function getHfCacheDir(): string {
   if (process.env.HF_HOME) return path.join(process.env.HF_HOME, 'hub');
   if (process.env.HUGGINGFACE_HUB_CACHE) return process.env.HUGGINGFACE_HUB_CACHE;
-  if (process.env.XDG_CACHE_HOME) return path.join(process.env.XDG_CACHE_HOME, 'huggingface', 'hub');
+  if (process.env.XDG_CACHE_HOME)
+    return path.join(process.env.XDG_CACHE_HOME, 'huggingface', 'hub');
   return path.join(os.homedir(), '.cache', 'huggingface', 'hub');
 }
 

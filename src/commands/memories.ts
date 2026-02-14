@@ -15,7 +15,12 @@ import {
   closeGlobalDb,
 } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
-import { getConfig, getProjectRoot, getIdleReflectionConfig, getLLMTaskConfig } from '../lib/config.js';
+import {
+  getConfig,
+  getProjectRoot,
+  getIdleReflectionConfig,
+  getLLMTaskConfig,
+} from '../lib/config.js';
 import type { LLMBackend } from '../lib/llm.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../lib/quality.js';
 import { scanSensitive, formatMatches } from '../lib/sensitive-filter.js';
@@ -81,7 +86,9 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
           const projectStr = memory.project ? ` (project: ${memory.project})` : '';
 
           console.log(`• [GLOBAL] ${date}${tagStr}${projectStr}`);
-          console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
+          console.log(
+            `  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`
+          );
           console.log();
         }
         return;
@@ -112,12 +119,13 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         const date = new Date(memory.created_at).toLocaleDateString();
         const tagStr = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
         const sourceStr = memory.source ? ` (from: ${memory.source})` : '';
-        const qualityStr = memory.quality_score !== null
-          ? ` ${formatQualityBrief(memory.quality_score)}`
-          : '';
+        const qualityStr =
+          memory.quality_score !== null ? ` ${formatQualityBrief(memory.quality_score)}` : '';
 
         console.log(`• ${date}${tagStr}${sourceStr}${qualityStr}`);
-        console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
+        console.log(
+          `  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`
+        );
         console.log();
       }
       return;
@@ -147,7 +155,9 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
           const projectStr = memory.project ? ` (project: ${memory.project})` : '';
 
           console.log(`• [GLOBAL] ${date}${tagStr}${projectStr} (${similarity}% match)`);
-          console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
+          console.log(
+            `  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`
+          );
           console.log();
         }
         return;
@@ -168,12 +178,13 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         const date = new Date(memory.created_at).toLocaleDateString();
         const similarity = (memory.similarity * 100).toFixed(0);
         const tagStr = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
-        const qualityStr = memory.quality_score !== null
-          ? ` ${formatQualityBrief(memory.quality_score)}`
-          : '';
+        const qualityStr =
+          memory.quality_score !== null ? ` ${formatQualityBrief(memory.quality_score)}` : '';
 
         console.log(`• ${date}${tagStr} (${similarity}% match)${qualityStr}`);
-        console.log(`  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`);
+        console.log(
+          `  ${memory.content.substring(0, 200)}${memory.content.length > 200 ? '...' : ''}`
+        );
         console.log();
       }
     }
@@ -195,21 +206,35 @@ interface RememberOptions {
   skipSensitiveCheck?: boolean;
   redactSensitive?: boolean;
   // Temporal validity
-  validFrom?: string;   // When fact becomes valid (e.g., "2024-01-01" or "7d")
-  validUntil?: string;  // When fact expires (e.g., "2024-12-31" or "30d")
+  validFrom?: string; // When fact becomes valid (e.g., "2024-01-01" or "7d")
+  validUntil?: string; // When fact expires (e.g., "2024-12-31" or "30d")
   // LLM extraction
-  extract?: boolean;    // Force extract structured facts using LLM
-  noExtract?: boolean;  // Disable LLM extraction (override config default)
-  api?: boolean;        // Use API mode (OpenAI-compatible endpoint)
-  model?: string;       // Model to use for extraction
-  apiUrl?: string;      // API URL for LLM endpoint
+  extract?: boolean; // Force extract structured facts using LLM
+  noExtract?: boolean; // Disable LLM extraction (override config default)
+  api?: boolean; // Use API mode (OpenAI-compatible endpoint)
+  model?: string; // Model to use for extraction
+  apiUrl?: string; // API URL for LLM endpoint
 }
 
 /**
  * Save a new memory from CLI
  */
 export async function remember(content: string, options: RememberOptions = {}): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, extract, noExtract, api, model, apiUrl } = options;
+  const {
+    tags,
+    source,
+    global: useGlobal,
+    skipQuality,
+    skipSensitiveCheck,
+    redactSensitive,
+    validFrom,
+    validUntil,
+    extract,
+    noExtract,
+    api,
+    model,
+    apiUrl,
+  } = options;
 
   try {
     const config = getConfig();
@@ -221,7 +246,19 @@ export async function remember(content: string, options: RememberOptions = {}): 
 
     // LLM extraction mode: extract structured facts from content
     if (useExtract) {
-      await rememberWithExtraction(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, api, model, apiUrl });
+      await rememberWithExtraction(content, {
+        tags,
+        source,
+        global: useGlobal,
+        skipQuality,
+        skipSensitiveCheck,
+        redactSensitive,
+        validFrom,
+        validUntil,
+        api,
+        model,
+        apiUrl,
+      });
       return;
     }
 
@@ -233,7 +270,11 @@ export async function remember(content: string, options: RememberOptions = {}): 
       try {
         validFromDate = parseDuration(validFrom);
       } catch (e: any) {
-        logError('memories', `Invalid --valid-from: ${e.message}`, e instanceof Error ? e : undefined);
+        logError(
+          'memories',
+          `Invalid --valid-from: ${e.message}`,
+          e instanceof Error ? e : undefined
+        );
         console.error(`Invalid --valid-from: ${e.message}`);
         process.exit(1);
       }
@@ -243,7 +284,11 @@ export async function remember(content: string, options: RememberOptions = {}): 
       try {
         validUntilDate = parseDuration(validUntil);
       } catch (e: any) {
-        logError('memories', `Invalid --valid-until: ${e.message}`, e instanceof Error ? e : undefined);
+        logError(
+          'memories',
+          `Invalid --valid-until: ${e.message}`,
+          e instanceof Error ? e : undefined
+        );
         console.error(`Invalid --valid-until: ${e.message}`);
         process.exit(1);
       }
@@ -262,7 +307,9 @@ export async function remember(content: string, options: RememberOptions = {}): 
           // Auto-redact and continue
           content = scanResult.redactedText;
           console.log(`✓ Sensitive data redacted automatically.`);
-          console.log(`  Redacted content: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+          console.log(
+            `  Redacted content: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`
+          );
           console.log();
         } else {
           // Block by default
@@ -304,7 +351,9 @@ export async function remember(content: string, options: RememberOptions = {}): 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
       const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
       if (result.isDuplicate) {
-        console.log(`⚠ Similar global memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
+        console.log(
+          `⚠ Similar global memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`
+        );
         console.log(`  Skipped duplicate.`);
       } else {
         console.log(`✓ Remembered globally (id: ${result.id})${tagStr}${qualityStr}`);
@@ -314,7 +363,9 @@ export async function remember(content: string, options: RememberOptions = {}): 
     } else {
       // Save to local memory with quality score and validity period
       const result = await saveMemory(content, embedding, tagList, source, {
-        qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+        qualityScore: qualityScore
+          ? { score: qualityScore.score, factors: qualityScore.factors }
+          : undefined,
         validFrom: validFromDate,
         validUntil: validUntilDate,
       });
@@ -322,11 +373,14 @@ export async function remember(content: string, options: RememberOptions = {}): 
 
       const tagStr = tagList.length > 0 ? ` [${tagList.join(', ')}]` : '';
       const qualityStr = qualityScore ? ` ${formatQualityScore(qualityScore)}` : '';
-      const validityStr = (validFromDate || validUntilDate)
-        ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
-        : '';
+      const validityStr =
+        validFromDate || validUntilDate
+          ? ` (valid: ${validFromDate ? validFromDate.toLocaleDateString() : '∞'} → ${validUntilDate ? validUntilDate.toLocaleDateString() : '∞'})`
+          : '';
       if (result.isDuplicate) {
-        console.log(`⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`);
+        console.log(
+          `⚠ Similar memory exists (id: ${result.id}, ${((result.similarity || 0) * 100).toFixed(0)}% similar)`
+        );
         console.log(`  Skipped duplicate.`);
       } else {
         console.log(`✓ Remembered (id: ${result.id})${tagStr}${qualityStr}${validityStr}`);
@@ -334,7 +388,11 @@ export async function remember(content: string, options: RememberOptions = {}): 
       }
     }
   } catch (error: any) {
-    logError('memories', `Error saving memory:: ${error.message}`, error instanceof Error ? error : undefined);
+    logError(
+      'memories',
+      `Error saving memory:: ${error.message}`,
+      error instanceof Error ? error : undefined
+    );
 
     console.error('Error saving memory:', error.message);
     console.error(error.stack);
@@ -351,7 +409,19 @@ async function rememberWithExtraction(
   content: string,
   options: Omit<RememberOptions, 'extract'>
 ): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil, api, model, apiUrl } = options;
+  const {
+    tags,
+    source,
+    global: useGlobal,
+    skipQuality,
+    skipSensitiveCheck,
+    redactSensitive,
+    validFrom,
+    validUntil,
+    api,
+    model,
+    apiUrl,
+  } = options;
   const config = getConfig();
   const idleConfig = getIdleReflectionConfig();
 
@@ -389,7 +459,16 @@ async function rememberWithExtraction(
   if (facts.length === 0) {
     console.log('No meaningful facts extracted. Saving original content as-is.');
     // Fall back to saving the original content
-    await saveSingleFact(content, { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil });
+    await saveSingleFact(content, {
+      tags,
+      source,
+      global: useGlobal,
+      skipQuality,
+      skipSensitiveCheck,
+      redactSensitive,
+      validFrom,
+      validUntil,
+    });
     return;
   }
 
@@ -422,7 +501,9 @@ async function rememberWithExtraction(
         if (redactSensitive || config.sensitive_auto_redact) {
           factContent = scanResult.redactedText;
         } else {
-          console.log(`  ⚠ [${fact.type}] Skipped (sensitive info): "${fact.content.substring(0, 50)}..."`);
+          console.log(
+            `  ⚠ [${fact.type}] Skipped (sensitive info): "${fact.content.substring(0, 50)}..."`
+          );
           skipped++;
           continue;
         }
@@ -440,14 +521,21 @@ async function rememberWithExtraction(
       if (!skipQuality && config.quality_scoring_enabled !== false) {
         qualityScore = await scoreMemory(factContent);
         if (!passesQualityThreshold(qualityScore)) {
-          console.log(`  ⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 50)}..."`);
+          console.log(
+            `  ⚠ [${fact.type}] Skipped (low quality): "${fact.content.substring(0, 50)}..."`
+          );
           skipped++;
           continue;
         }
       }
 
       if (useGlobal) {
-        const result = await saveGlobalMemory(factContent, embedding, factTags, source || 'extraction');
+        const result = await saveGlobalMemory(
+          factContent,
+          embedding,
+          factTags,
+          source || 'extraction'
+        );
         if (result.isDuplicate) {
           console.log(`  ⚠ [${fact.type}] Duplicate: "${fact.content.substring(0, 50)}..."`);
           skipped++;
@@ -457,7 +545,9 @@ async function rememberWithExtraction(
         }
       } else {
         const result = await saveMemory(factContent, embedding, factTags, source || 'extraction', {
-          qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+          qualityScore: qualityScore
+            ? { score: qualityScore.score, factors: qualityScore.factors }
+            : undefined,
           validFrom: validFromDate,
           validUntil: validUntilDate,
         });
@@ -488,7 +578,16 @@ async function saveSingleFact(
   content: string,
   options: Omit<RememberOptions, 'extract' | 'local' | 'openrouter' | 'model' | 'apiUrl'>
 ): Promise<void> {
-  const { tags, source, global: useGlobal, skipQuality, skipSensitiveCheck, redactSensitive, validFrom, validUntil } = options;
+  const {
+    tags,
+    source,
+    global: useGlobal,
+    skipQuality,
+    skipSensitiveCheck,
+    redactSensitive,
+    validFrom,
+    validUntil,
+  } = options;
   const config = getConfig();
   const tagList = tags ? tags.split(',').map((t) => t.trim()) : [];
 
@@ -510,7 +609,9 @@ async function saveSingleFact(
       if (redactSensitive || config.sensitive_auto_redact) {
         content = scanResult.redactedText;
       } else {
-        console.log(`⚠ Sensitive information detected. Use --redact-sensitive or --skip-sensitive.`);
+        console.log(
+          `⚠ Sensitive information detected. Use --redact-sensitive or --skip-sensitive.`
+        );
         closeDb();
         closeGlobalDb();
         return;
@@ -537,7 +638,9 @@ async function saveSingleFact(
     console.log(`✓ Remembered globally (id: ${result.id})`);
   } else {
     const result = await saveMemory(content, embedding, tagList, source, {
-      qualityScore: qualityScore ? { score: qualityScore.score, factors: qualityScore.factors } : undefined,
+      qualityScore: qualityScore
+        ? { score: qualityScore.score, factors: qualityScore.factors }
+        : undefined,
       validFrom: validFromDate,
       validUntil: validUntilDate,
     });
@@ -563,7 +666,11 @@ export async function memoryStats(): Promise<void> {
       console.log(`  Newest: ${new Date(stats.newest_memory).toLocaleDateString()}`);
     }
   } catch (error: any) {
-    logError('memories', `Error getting stats:: ${error.message}`, error instanceof Error ? error : undefined);
+    logError(
+      'memories',
+      `Error getting stats:: ${error.message}`,
+      error instanceof Error ? error : undefined
+    );
 
     console.error('Error getting stats:', error.message);
     closeDb();
@@ -599,7 +706,9 @@ export async function forget(options: ForgetOptions): Promise<void> {
 
       if (deleted) {
         console.log(`✓ Forgot memory ${id}:`);
-        console.log(`  "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`);
+        console.log(
+          `  "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`
+        );
       } else {
         console.log(`Failed to delete memory ${id}`);
       }

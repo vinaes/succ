@@ -104,13 +104,11 @@ describe('EmbeddingPool', () => {
     const promise = pool.getEmbeddings(['text1', 'text2']);
 
     // Workers should receive embed messages — respond with results
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Each worker gets one text (2 texts / 2 workers = 1 each)
     for (const w of createdWorkers) {
-      const embedCalls = w.postMessage.mock.calls.filter(
-        (c: any[]) => c[0]?.type === 'embed'
-      );
+      const embedCalls = w.postMessage.mock.calls.filter((c: any[]) => c[0]?.type === 'embed');
       if (embedCalls.length > 0) {
         if (embedCalls[0][0].texts[0] === 'text1') {
           w.emit('message', { type: 'result', embeddings: [embedding1] });

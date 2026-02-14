@@ -20,11 +20,19 @@ import path from 'path';
 
 import { createSessionManager, createIdleWatcher, type SessionState } from './sessions.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
+import { processRegistry } from '../lib/process-registry.js';
 import { processSessionEnd } from './session-processor.js';
 import { ValidationError, NotFoundError, NetworkError } from '../lib/errors.js';
 import { startWatcher, stopWatcher, getWatcherStatus, indexFileOnDemand } from './watcher.js';
 import { startAnalyzer, stopAnalyzer, getAnalyzerStatus, triggerAnalysis } from './analyzer.js';
-import { getProjectRoot, getSuccDir, getIdleReflectionConfig, getIdleWatcherConfig, getConfig, getObserverConfig } from '../lib/config.js';
+import {
+  getProjectRoot,
+  getSuccDir,
+  getIdleReflectionConfig,
+  getIdleWatcherConfig,
+  getConfig,
+  getObserverConfig,
+} from '../lib/config.js';
 import {
   hybridSearchDocs,
   hybridSearchCode,
@@ -50,8 +58,19 @@ import { scanSensitive } from '../lib/sensitive-filter.js';
 import { generateCompactBriefing } from '../lib/compact-briefing.js';
 import { callLLM } from '../lib/llm.js';
 import { extractSessionSummary } from '../lib/session-summary.js';
-import { recordTranscriptTokens, recordExtraction, resetTranscriptCounter, loadBudgets, flushBudgets, removeBudget } from '../lib/token-budget.js';
-import { appendObservations, removeObservations, cleanupStaleObservations } from '../lib/session-observations.js';
+import {
+  recordTranscriptTokens,
+  recordExtraction,
+  resetTranscriptCounter,
+  loadBudgets,
+  flushBudgets,
+  removeBudget,
+} from '../lib/token-budget.js';
+import {
+  appendObservations,
+  removeObservations,
+  cleanupStaleObservations,
+} from '../lib/session-observations.js';
 import { REFLECTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -138,7 +157,11 @@ function getProgressFilePath(sessionId: string): string {
 export function appendToProgressFile(sessionId: string, briefing: string): void {
   const progressPath = getProgressFilePath(sessionId);
   const timestamp = new Date().toISOString();
-  const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  const timeStr = new Date().toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   let content = '';
   if (!fs.existsSync(progressPath)) {
@@ -156,7 +179,10 @@ export function appendToProgressFile(sessionId: string, briefing: string): void 
  * Read tail of transcript file (for fallback when no progress file)
  * Returns the last maxBytes of the file, starting from a complete line
  */
-export function readTailTranscript(transcriptPath: string, maxBytes: number = 2 * 1024 * 1024): string {
+export function readTailTranscript(
+  transcriptPath: string,
+  maxBytes: number = 2 * 1024 * 1024
+): string {
   if (!fs.existsSync(transcriptPath)) {
     return '';
   }
@@ -182,8 +208,8 @@ export function readTailTranscript(transcriptPath: string, maxBytes: number = 2 
 // Briefing Pre-Generation
 // ============================================================================
 
-const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000;  // 5 minutes
-const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000;  // Re-generate after 5KB growth
+const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000; // Re-generate after 5KB growth
 // const BRIEFING_PREGENERATE_IDLE_MS = 120 * 1000;  // Pre-generate after 2 min idle
 
 /**
@@ -228,7 +254,9 @@ async function preGenerateBriefing(sessionId: string, transcriptPath: string): P
         generatedAt: Date.now(),
         transcriptSize: currentSize,
       });
-      log(`[briefing] Pre-generated for session ${sessionId.slice(0, 8)} (${result.briefing.length} chars)`);
+      log(
+        `[briefing] Pre-generated for session ${sessionId.slice(0, 8)} (${result.briefing.length} chars)`
+      );
     } else {
       log(`[briefing] Pre-generation failed: ${result.error}`);
     }
@@ -243,7 +271,10 @@ async function preGenerateBriefing(sessionId: string, transcriptPath: string): P
  * Get cached briefing or generate on-demand
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function getCachedBriefing(sessionId: string, transcriptPath: string): Promise<{ briefing?: string; cached: boolean }> {
+async function getCachedBriefing(
+  sessionId: string,
+  transcriptPath: string
+): Promise<{ briefing?: string; cached: boolean }> {
   const cached = briefingCache.get(sessionId);
 
   if (cached) {
@@ -309,7 +340,9 @@ function log(message: string): void {
   try {
     fs.appendFileSync(getDaemonLogFile(), line);
   } catch (err) {
-    logWarn('daemon', 'Failed to write daemon log', { error: err instanceof Error ? err.message : String(err) });
+    logWarn('daemon', 'Failed to write daemon log', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Also write to stderr for debugging
@@ -349,7 +382,7 @@ async function writeReflection(
   try {
     reflectionText = await callLLM(prompt, {
       timeout: 60000,
-      useSleepAgent: true,  // Use sleep_agent config if available
+      useSleepAgent: true, // Use sleep_agent config if available
     });
   } catch (err) {
     log(`[reflection] LLM call failed: ${err}`);
@@ -378,10 +411,11 @@ ${reflectionText.trim()}
 
   fs.writeFileSync(reflectionFile, content);
 
-  // Also save to memory
+  // Also save to memory (with dedup to prevent duplicate reflections)
   const embedding = await getEmbedding(reflectionText.trim());
   await saveMemory(reflectionText.trim(), embedding, ['reflection'], 'observation', {
     qualityScore: { score: 0.6, factors: { hasContext: 1 } },
+    deduplicate: true,
   });
 }
 
@@ -420,7 +454,9 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
         log(`[reflection] Transcript unchanged (${currentSize}b), skipping briefing`);
       }
       session.lastTranscriptSize = currentSize;
-    } catch { /* transcript file gone — skip size check */ }
+    } catch {
+      /* transcript file gone — skip size check */
+    }
 
     // Check memory count for consolidation skip
     const memStats = await getMemoryStats();
@@ -442,7 +478,7 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
         // Read new content and track real token count via budget
         const newBytes = currentSize - lastObsSize;
         const timeThresholdMs = observerConfig.max_minutes * 60 * 1000;
-        const enoughTime = (now - lastObsTime) >= timeThresholdMs;
+        const enoughTime = now - lastObsTime >= timeThresholdMs;
 
         // Use byte-estimated token check first (cheap), then verify with real count
         const estimatedTokens = Math.ceil(newBytes / 3.5);
@@ -453,11 +489,14 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
           // Track real tokens in budget
           const realTokens = recordTranscriptTokens(sessionId, newContent);
-          log(`[observer] Triggering extraction (tokens: ~${realTokens}, time: ${Math.round((now - lastObsTime) / 60000)}min)`);
+          log(
+            `[observer] Triggering extraction (tokens: ~${realTokens}, time: ${Math.round((now - lastObsTime) / 60000)}min)`
+          );
 
           if (newContent.length > 200) {
             const result = await extractSessionSummary(newContent, { verbose: false });
-            recordExtraction(sessionId,
+            recordExtraction(
+              sessionId,
               result.transcriptTokens ?? 0,
               result.summaryTokens ?? 0,
               result.factsExtracted,
@@ -467,17 +506,21 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
             // Persist extraction metadata to session observations (append-only)
             if (result.factsSaved > 0) {
-              appendObservations(sessionId, [{
-                content: `Extracted ${result.factsExtracted} facts, saved ${result.factsSaved}`,
-                type: 'observation',
-                tags: ['mid-session'],
-                extractedAt: new Date().toISOString(),
-                source: 'mid-session-observer',
-                transcriptOffset: currentSize,
-                memoryId: null,
-              }]);
+              appendObservations(sessionId, [
+                {
+                  content: `Extracted ${result.factsExtracted} facts, saved ${result.factsSaved}`,
+                  type: 'observation',
+                  tags: ['mid-session'],
+                  extractedAt: new Date().toISOString(),
+                  source: 'mid-session-observer',
+                  transcriptOffset: currentSize,
+                  memoryId: null,
+                },
+              ]);
             }
-            log(`[observer] Extracted ${result.factsExtracted} facts, saved ${result.factsSaved} (skipped ${result.factsSkipped})`);
+            log(
+              `[observer] Extracted ${result.factsExtracted} facts, saved ${result.factsSaved} (skipped ${result.factsSkipped})`
+            );
           }
 
           session.lastObservation = now;
@@ -502,7 +545,9 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
       if (briefingResult.success && briefingResult.briefing) {
         appendToProgressFile(sessionId, briefingResult.briefing);
-        log(`[reflection] Appended briefing to progress file (${briefingResult.briefing.length} chars)`);
+        log(
+          `[reflection] Appended briefing to progress file (${briefingResult.briefing.length} chars)`
+        );
       } else {
         log(`[reflection] Failed to generate briefing for ${sessionId}`);
       }
@@ -514,30 +559,34 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
     // memory_consolidation - skip if no new memories (disabled by default, opt-in only)
     if (memoriesChanged && idleConfig.operations?.memory_consolidation === true) {
-      parallelOps.push((async () => {
-        const threshold = idleConfig.thresholds?.similarity_for_merge ?? 0.92;
-        const limit = idleConfig.max_memories_to_process ?? 50;
+      parallelOps.push(
+        (async () => {
+          const threshold = idleConfig.thresholds?.similarity_for_merge ?? 0.92;
+          const limit = idleConfig.max_memories_to_process ?? 50;
 
-        log(`[reflection] Running memory consolidation (threshold=${threshold}, limit=${limit})`);
-        const { consolidate } = await import('../commands/consolidate.js');
-        await consolidate({
-          threshold: String(threshold),
-          limit: String(limit),
-          llm: true,
-          verbose: false,
-        });
-        log(`[reflection] Memory consolidation complete`);
-      })());
+          log(`[reflection] Running memory consolidation (threshold=${threshold}, limit=${limit})`);
+          const { consolidate } = await import('../commands/consolidate.js');
+          await consolidate({
+            threshold: String(threshold),
+            limit: String(limit),
+            llm: true,
+            verbose: false,
+          });
+          log(`[reflection] Memory consolidation complete`);
+        })()
+      );
     }
 
     // retention_cleanup - independent (always runs if enabled)
     if (globalConfig.retention?.enabled && idleConfig.operations?.retention_cleanup !== false) {
-      parallelOps.push((async () => {
-        log(`[reflection] Running retention cleanup`);
-        const { retention } = await import('../commands/retention.js');
-        await retention({ apply: true, verbose: false });
-        log(`[reflection] Retention cleanup complete`);
-      })());
+      parallelOps.push(
+        (async () => {
+          log(`[reflection] Running retention cleanup`);
+          const { retention } = await import('../commands/retention.js');
+          await retention({ apply: true, verbose: false });
+          log(`[reflection] Retention cleanup complete`);
+        })()
+      );
     }
 
     await Promise.all(parallelOps);
@@ -553,7 +602,8 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
     // ── Graph enrichment: enrich + proximity + communities + centrality ──
     if (idleConfig.operations?.graph_enrichment !== false) {
-      const shouldEnrich = newLinksCreated > 0 || memoriesChanged || session.lastLinkCount === undefined;
+      const shouldEnrich =
+        newLinksCreated > 0 || memoriesChanged || session.lastLinkCount === undefined;
 
       if (shouldEnrich) {
         log(`[reflection] Running graph enrichment`);
@@ -563,14 +613,18 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
           const { enrichExistingLinks } = await import('../lib/graph/llm-relations.js');
           const r = await enrichExistingLinks({ limit: 20, batchSize: 5 });
           log(`[reflection] Enriched ${r.enriched} links (${r.skipped} skipped)`);
-        } catch (err) { log(`[reflection] Enrich failed: ${err}`); }
+        } catch (err) {
+          log(`[reflection] Enrich failed: ${err}`);
+        }
 
         // 2. Proximity links from co-occurrence
         try {
           const { createProximityLinks } = await import('../lib/graph/contextual-proximity.js');
           const r = await createProximityLinks({ minCooccurrence: 2 });
           log(`[reflection] Created ${r.created} proximity links`);
-        } catch (err) { log(`[reflection] Proximity failed: ${err}`); }
+        } catch (err) {
+          log(`[reflection] Proximity failed: ${err}`);
+        }
 
         // 3. Community detection + reflection synthesis
         try {
@@ -581,21 +635,43 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
           // 3b. Synthesize patterns from community clusters
           if (r.communities.length > 0) {
             try {
-              const { synthesizeFromCommunities } = await import('../lib/reflection-synthesizer.js');
+              const { synthesizeFromCommunities } =
+                await import('../lib/reflection-synthesizer.js');
               const synthResult = await synthesizeFromCommunities(r, { log });
-              if (synthResult.patternsCreated > 0) {
-                log(`[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters`);
+              const hasSynthActivity =
+                synthResult.patternsCreated > 0 ||
+                synthResult.duplicatesSkipped > 0 ||
+                synthResult.reinforced > 0;
+              if (hasSynthActivity) {
+                log(
+                  `[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters` +
+                    (synthResult.reinforced > 0
+                      ? `, reinforced ${synthResult.reinforced} existing`
+                      : '') +
+                    (synthResult.duplicatesSkipped > 0
+                      ? `, skipped ${synthResult.duplicatesSkipped} duplicates`
+                      : '') +
+                    (synthResult.observationsMarked > 0
+                      ? `, marked ${synthResult.observationsMarked} as reflected`
+                      : '')
+                );
               }
-            } catch (err) { log(`[reflection] Synthesis failed: ${err}`); }
+            } catch (err) {
+              log(`[reflection] Synthesis failed: ${err}`);
+            }
           }
-        } catch (err) { log(`[reflection] Communities failed: ${err}`); }
+        } catch (err) {
+          log(`[reflection] Communities failed: ${err}`);
+        }
 
         // 4. Centrality cache
         try {
           const { updateCentralityCache } = await import('../lib/graph/centrality.js');
           const r = await updateCentralityCache();
           log(`[reflection] Updated centrality for ${r.updated} memories`);
-        } catch (err) { log(`[reflection] Centrality failed: ${err}`); }
+        } catch (err) {
+          log(`[reflection] Centrality failed: ${err}`);
+        }
 
         session.lastLinkCount = (session.lastLinkCount ?? 0) + newLinksCreated;
       } else {
@@ -672,7 +748,9 @@ export async function parseBody(req: http.IncomingMessage): Promise<any> {
       try {
         resolve(data ? JSON.parse(data) : {});
       } catch (err) {
-        logWarn('daemon', 'Invalid JSON in HTTP request body', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('daemon', 'Invalid JSON in HTTP request body', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         resolve({});
       }
     });
@@ -681,7 +759,12 @@ export async function parseBody(req: http.IncomingMessage): Promise<any> {
 }
 
 /** @internal Exported for testing */
-export async function routeRequest(method: string, pathname: string, searchParams: URLSearchParams, body: any): Promise<any> {
+export async function routeRequest(
+  method: string,
+  pathname: string,
+  searchParams: URLSearchParams,
+  body: any
+): Promise<any> {
   // Health check
   if (pathname === '/health') {
     return {
@@ -717,13 +800,15 @@ export async function routeRequest(method: string, pathname: string, searchParam
     try {
       const d = await getStorageDispatcher();
       await d.flushSessionCounters('daemon-session');
-    } catch (err) { log(`[session] Failed to flush session counters: ${err}`); }
+    } catch (err) {
+      log(`[session] Failed to flush session counters: ${err}`);
+    }
 
     // Unregister the session immediately (don't block on processing)
     const removed = sessionManager!.unregister(session_id);
-    clearBriefingCache(session_id);  // Clean up any cached briefing
-    removeBudget(session_id);  // Clean up token budget
-    removeObservations(session_id);  // Clean up observation JSONL
+    clearBriefingCache(session_id); // Clean up any cached briefing
+    removeBudget(session_id); // Clean up token budget
+    removeObservations(session_id); // Clean up observation JSONL
     flushBudgets();
     log(`[session] Unregistered: ${session_id} (removed=${removed})`);
 
@@ -736,7 +821,9 @@ export async function routeRequest(method: string, pathname: string, searchParam
       (async () => {
         try {
           const result = await processSessionEnd(transcriptFile, session_id, log);
-          log(`[session] Processing complete for ${session_id}: summary=${result.summary.length}chars, learnings=${result.learnings.length}, saved=${result.saved}`);
+          log(
+            `[session] Processing complete for ${session_id}: summary=${result.summary.length}chars, learnings=${result.learnings.length}, saved=${result.saved}`
+          );
         } catch (err) {
           log(`[session] Processing failed for ${session_id}: ${err}`);
         } finally {
@@ -763,7 +850,9 @@ export async function routeRequest(method: string, pathname: string, searchParam
       // Auto-register if session not found (with transcript_path if provided)
       sessionManager!.register(session_id, transcript_path || '', is_service);
       session = sessionManager!.activity(session_id, type);
-      log(`[session] Auto-registered and activity: ${session_id} (${type})${is_service ? ' (service)' : ''}`);
+      log(
+        `[session] Auto-registered and activity: ${session_id} (${type})${is_service ? ' (service)' : ''}`
+      );
     } else if (transcript_path && !session.transcriptPath) {
       // Update transcript path if not set
       session.transcriptPath = transcript_path;
@@ -838,7 +927,15 @@ export async function routeRequest(method: string, pathname: string, searchParam
   }
 
   if (pathname === '/api/remember' && method === 'POST') {
-    const { content, tags = [], type = 'observation', source, global = false, valid_from, valid_until } = body;
+    const {
+      content,
+      tags = [],
+      type = 'observation',
+      source,
+      global = false,
+      valid_from,
+      valid_until,
+    } = body;
     if (!content) {
       throw new ValidationError('content required');
     }
@@ -929,7 +1026,16 @@ export async function routeRequest(method: string, pathname: string, searchParam
   // Compact briefing endpoint (for /compact hook)
   // Supports pre-generated cache for instant responses
   if (pathname === '/api/briefing' && method === 'POST') {
-    const { transcript, transcript_path, session_id, format, include_learnings, include_memories, max_memories, use_cache } = body;
+    const {
+      transcript,
+      transcript_path,
+      session_id,
+      format,
+      include_learnings,
+      include_memories,
+      max_memories,
+      use_cache,
+    } = body;
 
     // Try cached briefing first if session_id provided and use_cache not explicitly false
     if (session_id && use_cache !== false) {
@@ -937,7 +1043,9 @@ export async function routeRequest(method: string, pathname: string, searchParam
       if (cached) {
         const age = Date.now() - cached.generatedAt;
         if (age < BRIEFING_CACHE_MAX_AGE_MS) {
-          log(`[briefing] Serving cached briefing for ${session_id.slice(0, 8)} (age: ${Math.round(age / 1000)}s)`);
+          log(
+            `[briefing] Serving cached briefing for ${session_id.slice(0, 8)} (age: ${Math.round(age / 1000)}s)`
+          );
           return { success: true, briefing: cached.briefing, cached: true };
         }
       }
@@ -997,10 +1105,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   // Watch service endpoints
   if (pathname === '/api/watch/start' && method === 'POST') {
     const { patterns, includeCode } = body;
-    const watchState = await startWatcher(
-      { patterns, includeCode },
-      log
-    );
+    const watchState = await startWatcher({ patterns, includeCode }, log);
     return {
       success: true,
       active: watchState.active,
@@ -1030,10 +1135,7 @@ export async function routeRequest(method: string, pathname: string, searchParam
   // Analyze service endpoints
   if (pathname === '/api/analyze/start' && method === 'POST') {
     const { intervalMinutes, mode } = body;
-    const analyzeState = startAnalyzer(
-      { intervalMinutes, mode },
-      log
-    );
+    const analyzeState = startAnalyzer({ intervalMinutes, mode }, log);
     return {
       success: true,
       active: analyzeState.active,
@@ -1152,7 +1254,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
         }
       }
     } catch (err) {
-      logWarn('daemon', 'Failed to read daemon PID file', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('daemon', 'Failed to read daemon PID file', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -1206,7 +1310,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   }
 
   if (!server.listening) {
-    throw new NetworkError(`Could not find available port in range ${portStart}-${portStart + MAX_PORT_ATTEMPTS}`);
+    throw new NetworkError(
+      `Could not find available port in range ${portStart}-${portStart + MAX_PORT_ATTEMPTS}`
+    );
   }
 
   // Save state
@@ -1229,7 +1335,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     checkIntervalSeconds: watcherConfig.check_interval,
     idleMinutes: watcherConfig.idle_minutes,
     reflectionCooldownMinutes: watcherConfig.reflection_cooldown_minutes,
-    preGenerateIdleSeconds: 120,  // Pre-generate briefing after 2 min idle
+    preGenerateIdleSeconds: 120, // Pre-generate briefing after 2 min idle
     log,
   });
   idleWatcher.start();
@@ -1305,7 +1411,7 @@ export function shutdownDaemon(): void {
   }
 
   // Stop watch service (async, but we're shutting down so fire-and-forget)
-  stopWatcher(log).catch(err => log(`[shutdown] Watcher stop failed: ${err}`));
+  stopWatcher(log).catch((err) => log(`[shutdown] Watcher stop failed: ${err}`));
 
   // Stop analyze service
   stopAnalyzer(log);
@@ -1316,8 +1422,11 @@ export function shutdownDaemon(): void {
     state.server = null;
   }
 
+  // Kill all spawned child processes (claude CLI, etc.)
+  processRegistry.killAll();
+
   // Cleanup DB connections
-  closeStorageDispatcher().catch(err => log(`[shutdown] Storage close failed: ${err}`));
+  closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
   cleanupQualityScoring();
   closeDb();

@@ -5,7 +5,12 @@ import { fileURLToPath } from 'url';
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
-import { getProjectRoot, getSuccDir, isOnboardingCompleted, markOnboardingCompleted } from '../lib/config.js';
+import {
+  getProjectRoot,
+  getSuccDir,
+  isOnboardingCompleted,
+  markOnboardingCompleted,
+} from '../lib/config.js';
 import { runStaticWizard, runAiOnboarding } from '../lib/onboarding/index.js';
 import { logWarn } from '../lib/fault-logger.js';
 import {
@@ -145,16 +150,46 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Create MOC (Map of Content) files for each major folder
   const mocFiles = [
     { path: path.join(succDir, 'brain', '00_Inbox', 'Inbox.md'), content: getInboxMocTemplate() },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, `${projectName}.md`), content: getProjectMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'), content: getDecisionsMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'), content: getFeaturesMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Files', 'Files.md'), content: getFilesMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'), content: getTechnicalMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'), content: getSystemsMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'), content: getStrategyMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions', 'Sessions.md'), content: getSessionsMocTemplate(projectName) },
-    { path: path.join(succDir, 'brain', '02_Knowledge', 'Knowledge.md'), content: getKnowledgeMocTemplate() },
-    { path: path.join(succDir, 'brain', '03_Archive', 'Archive.md'), content: getArchiveMocTemplate() },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, `${projectName}.md`),
+      content: getProjectMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'),
+      content: getDecisionsMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'),
+      content: getFeaturesMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Files', 'Files.md'),
+      content: getFilesMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'),
+      content: getTechnicalMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'),
+      content: getSystemsMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'),
+      content: getStrategyMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions', 'Sessions.md'),
+      content: getSessionsMocTemplate(projectName),
+    },
+    {
+      path: path.join(succDir, 'brain', '02_Knowledge', 'Knowledge.md'),
+      content: getKnowledgeMocTemplate(),
+    },
+    {
+      path: path.join(succDir, 'brain', '03_Archive', 'Archive.md'),
+      content: getArchiveMocTemplate(),
+    },
   ];
 
   for (const moc of mocFiles) {
@@ -194,13 +229,21 @@ export async function init(options: InitOptions = {}): Promise<void> {
         // Try to copy from package hooks/ directory (source of truth)
         if (fs.existsSync(srcPath)) {
           fs.copyFileSync(srcPath, destPath);
-          log(options.force && fs.existsSync(destPath) ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+          log(
+            options.force && fs.existsSync(destPath)
+              ? `Updated hooks/${hookFile}`
+              : `Created hooks/${hookFile}`
+          );
         } else {
           // Fallback to inline templates for backwards compatibility
           const hookContent = getHookContent(hookFile);
           if (hookContent) {
             fs.writeFileSync(destPath, hookContent);
-            log(options.force && fs.existsSync(destPath) ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+            log(
+              options.force && fs.existsSync(destPath)
+                ? `Updated hooks/${hookFile}`
+                : `Created hooks/${hookFile}`
+            );
           }
         }
       }
@@ -252,7 +295,11 @@ export async function init(options: InitOptions = {}): Promise<void> {
     if (!fs.existsSync(destPath) || options.force) {
       if (fs.existsSync(srcPath)) {
         fs.copyFileSync(srcPath, destPath);
-        log(options.force && fs.existsSync(destPath) ? `Updated agents/${agentFile}` : `Created agents/${agentFile}`);
+        log(
+          options.force && fs.existsSync(destPath)
+            ? `Updated agents/${agentFile}`
+            : `Created agents/${agentFile}`
+        );
       }
     }
   }
@@ -380,12 +427,36 @@ export async function init(options: InitOptions = {}): Promise<void> {
                 const existingCommand = existing.hooks?.[0]?.command || '';
 
                 // Check for succ hook files (prefixed with "succ-")
-                if (succCommand.includes('succ-session-start.cjs') && existingCommand.includes('succ-session-start.cjs')) return true;
-                if (succCommand.includes('succ-session-end.cjs') && existingCommand.includes('succ-session-end.cjs')) return true;
-                if (succCommand.includes('succ-stop-reflection.cjs') && existingCommand.includes('succ-stop-reflection.cjs')) return true;
-                if (succCommand.includes('succ-user-prompt.cjs') && existingCommand.includes('succ-user-prompt.cjs')) return true;
-                if (succCommand.includes('succ-post-tool.cjs') && existingCommand.includes('succ-post-tool.cjs')) return true;
-                if (succCommand.includes('succ-pre-tool.cjs') && existingCommand.includes('succ-pre-tool.cjs')) return true;
+                if (
+                  succCommand.includes('succ-session-start.cjs') &&
+                  existingCommand.includes('succ-session-start.cjs')
+                )
+                  return true;
+                if (
+                  succCommand.includes('succ-session-end.cjs') &&
+                  existingCommand.includes('succ-session-end.cjs')
+                )
+                  return true;
+                if (
+                  succCommand.includes('succ-stop-reflection.cjs') &&
+                  existingCommand.includes('succ-stop-reflection.cjs')
+                )
+                  return true;
+                if (
+                  succCommand.includes('succ-user-prompt.cjs') &&
+                  existingCommand.includes('succ-user-prompt.cjs')
+                )
+                  return true;
+                if (
+                  succCommand.includes('succ-post-tool.cjs') &&
+                  existingCommand.includes('succ-post-tool.cjs')
+                )
+                  return true;
+                if (
+                  succCommand.includes('succ-pre-tool.cjs') &&
+                  existingCommand.includes('succ-pre-tool.cjs')
+                )
+                  return true;
                 // For Notification hooks, check matcher
                 if (succMatcher && existing.matcher === succMatcher) return true;
 
@@ -428,10 +499,16 @@ export async function init(options: InitOptions = {}): Promise<void> {
               // Remove hooks from global succ install (contains /hooks/succ- pattern)
               if (cmd.includes('/hooks/succ-') || cmd.includes('\\hooks\\succ-')) return false;
               // Also remove any legacy hooks with succ hook names
-              if (cmd.includes('session-start.cjs') || cmd.includes('session-end.cjs') ||
-                  cmd.includes('stop-reflection.cjs') || cmd.includes('user-prompt.cjs') ||
-                  cmd.includes('post-tool.cjs') || cmd.includes('pre-tool.cjs') ||
-                  cmd.includes('idle-reflection.cjs')) return false;
+              if (
+                cmd.includes('session-start.cjs') ||
+                cmd.includes('session-end.cjs') ||
+                cmd.includes('stop-reflection.cjs') ||
+                cmd.includes('user-prompt.cjs') ||
+                cmd.includes('post-tool.cjs') ||
+                cmd.includes('pre-tool.cjs') ||
+                cmd.includes('idle-reflection.cjs')
+              )
+                return false;
               return true;
             });
             if (nonSuccHooks.length > 0) {
@@ -451,7 +528,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
             finalSettings.hooks[hookType] = hookConfig;
           } else {
             type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
-            finalSettings.hooks[hookType] = [...finalSettings.hooks[hookType], ...(hookConfig as HookEntry[])];
+            finalSettings.hooks[hookType] = [
+              ...finalSettings.hooks[hookType],
+              ...(hookConfig as HookEntry[]),
+            ];
           }
         }
 
@@ -675,7 +755,7 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
         const apiKey = await password({
           message: 'API key:',
           mask: '*',
-          validate: (val: string) => val?.trim() ? true : 'API key is required',
+          validate: (val: string) => (val?.trim() ? true : 'API key is required'),
         });
         targetConfig.llm.api_key = apiKey;
       }
@@ -738,11 +818,14 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       targetConfig.llm.analyze.model = analyzeModel;
 
       // Prompt for API key if cloud provider and not already set
-      if (!targetConfig.llm.api_key && (analyzeApiUrl.includes('openrouter.ai') || analyzeApiUrl.includes('openai.com'))) {
+      if (
+        !targetConfig.llm.api_key &&
+        (analyzeApiUrl.includes('openrouter.ai') || analyzeApiUrl.includes('openai.com'))
+      ) {
         const apiKey = await password({
           message: 'API key:',
           mask: '*',
-          validate: (val: string) => val?.trim() ? true : 'API key is required',
+          validate: (val: string) => (val?.trim() ? true : 'API key is required'),
         });
         targetConfig.llm.api_key = apiKey;
       }
@@ -884,9 +967,10 @@ function addMcpServer(_projectRoot: string): 'added' | 'exists' | 'failed' {
     // No cwd specified - MCP server will use Claude Code's current working directory
     // This allows it to work with whichever project Claude is currently in
     // Windows: npx is a .cmd script, needs cmd /c wrapper for spawn
-    claudeConfig.mcpServers.succ = process.platform === 'win32'
-      ? { command: 'cmd', args: ['/c', 'npx', '--yes', 'succ-mcp'] }
-      : { command: 'npx', args: ['--yes', 'succ-mcp'] };
+    claudeConfig.mcpServers.succ =
+      process.platform === 'win32'
+        ? { command: 'cmd', args: ['/c', 'npx', '--yes', 'succ-mcp'] }
+        : { command: 'npx', args: ['--yes', 'succ-mcp'] };
 
     // Write config
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));

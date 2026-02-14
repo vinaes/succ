@@ -247,10 +247,7 @@ export function chunkCode(content: string, filePath: string): Chunk[] {
       /^(public|private|protected)?\s*(static)?\s*(final)?\s*(class|interface|enum)\s+\w+/,
       /^(public|private|protected)?\s*(static)?\s*\w+\s+\w+\s*\(/,
     ],
-    kt: [
-      /^(fun|suspend\s+fun)\s+\w+/,
-      /^(class|interface|object|data\s+class)\s+\w+/,
-    ],
+    kt: [/^(fun|suspend\s+fun)\s+\w+/, /^(class|interface|object|data\s+class)\s+\w+/],
   };
 
   // Map extensions to pattern keys
@@ -413,10 +410,7 @@ export function extractFrontmatter(content: string): {
         let value: unknown = line.slice(colonIndex + 1).trim();
 
         // Remove quotes
-        if (
-          (value as string).startsWith('"') &&
-          (value as string).endsWith('"')
-        ) {
+        if ((value as string).startsWith('"') && (value as string).endsWith('"')) {
           value = (value as string).slice(1, -1);
         }
 

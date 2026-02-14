@@ -11,7 +11,13 @@
 
 import fs from 'fs';
 import path from 'path';
-import { createDaemonClient, getDaemonPort, getDaemonPid, getDaemonStatus, ensureDaemonRunning } from '../daemon/client.js';
+import {
+  createDaemonClient,
+  getDaemonPort,
+  getDaemonPid,
+  getDaemonStatus,
+  ensureDaemonRunning,
+} from '../daemon/client.js';
 import { getSuccDir } from '../lib/config.js';
 import { logError } from '../lib/fault-logger.js';
 
@@ -53,7 +59,9 @@ export async function daemonStatus(options: DaemonOptions = {}): Promise<void> {
 /**
  * List active sessions
  */
-export async function daemonSessions(options: DaemonOptions & { all?: boolean } = {}): Promise<void> {
+export async function daemonSessions(
+  options: DaemonOptions & { all?: boolean } = {}
+): Promise<void> {
   const client = createDaemonClient();
 
   if (!(await client.isRunning())) {
@@ -185,7 +193,10 @@ export async function daemonLogs(options: DaemonOptions & { lines?: number } = {
 /**
  * Main daemon command dispatcher
  */
-export async function daemon(subcommand: string, options: DaemonOptions & { force?: boolean; lines?: number; all?: boolean } = {}): Promise<void> {
+export async function daemon(
+  subcommand: string,
+  options: DaemonOptions & { force?: boolean; lines?: number; all?: boolean } = {}
+): Promise<void> {
   switch (subcommand) {
     case 'status':
       await daemonStatus(options);

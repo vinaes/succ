@@ -82,7 +82,7 @@ export interface StorageBackend {
     embeddingBlob: Buffer,
     symbolName?: string,
     symbolType?: string,
-    signature?: string,
+    signature?: string
   ): number;
 
   /**
@@ -186,7 +186,11 @@ export interface StorageBackend {
   setFileHash(filePath: string, hash: string): void;
   deleteFileHash(filePath: string): void;
   getAllFileHashes(): Map<string, string>;
-  getAllFileHashesWithTimestamps(): Array<{ file_path: string; content_hash: string; indexed_at: string }>;
+  getAllFileHashesWithTimestamps(): Array<{
+    file_path: string;
+    content_hash: string;
+    indexed_at: string;
+  }>;
 
   // ============================================================================
   // Local Memories
@@ -409,10 +413,7 @@ export interface StorageBackend {
   /**
    * Find connected memories via BFS.
    */
-  findConnectedMemories(
-    memoryId: number,
-    maxDepth: number
-  ): ConnectedMemory[];
+  findConnectedMemories(memoryId: number, maxDepth: number): ConnectedMemory[];
 
   /**
    * Auto-link similar memories.
@@ -432,11 +433,7 @@ export interface StorageBackend {
   /**
    * Invalidate (soft delete) a memory link.
    */
-  invalidateMemoryLink(
-    sourceId: number,
-    targetId: number,
-    relation?: LinkRelation
-  ): boolean;
+  invalidateMemoryLink(sourceId: number, targetId: number, relation?: LinkRelation): boolean;
 
   /**
    * Get graph statistics as of a specific date.
@@ -455,7 +452,10 @@ export interface StorageBackend {
   /**
    * Update a memory link's relation, weight, and enrichment flag.
    */
-  updateMemoryLink(linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }): void;
+  updateMemoryLink(
+    linkId: number,
+    updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+  ): void;
 
   /**
    * Upsert centrality score cache for a memory.

@@ -91,7 +91,13 @@ vi.mock('../../lib/storage/index.js', () => ({
 import { registerWebSearchTools } from './web-search.js';
 import { isApiConfigured, callOpenRouterSearch } from '../../lib/llm.js';
 import { getWebSearchConfig } from '../../lib/config.js';
-import { saveMemory, recordWebSearch, getTodayWebSearchSpend, getWebSearchHistory, getWebSearchSummary } from '../../lib/storage/index.js';
+import {
+  saveMemory,
+  recordWebSearch,
+  getTodayWebSearchSpend,
+  getWebSearchHistory,
+  getWebSearchSummary,
+} from '../../lib/storage/index.js';
 
 // ============================================================================
 // Mock McpServer
@@ -171,7 +177,7 @@ describe('Web Search MCP Tools', () => {
         'perplexity/sonar',
         15000,
         2000,
-        0.1,
+        0.1
       );
     });
 
@@ -212,7 +218,7 @@ describe('Web Search MCP Tools', () => {
         expect.any(Float32Array),
         ['web-search', 'auto-saved'],
         'succ_quick_search',
-        { type: 'observation' },
+        { type: 'observation' }
       );
     });
 
@@ -228,7 +234,7 @@ describe('Web Search MCP Tools', () => {
         expect.any(String),
         expect.any(Number),
         expect.any(Number),
-        expect.any(Number),
+        expect.any(Number)
       );
     });
   });
@@ -247,7 +253,7 @@ describe('Web Search MCP Tools', () => {
         'perplexity/sonar-pro',
         30000,
         4000,
-        0.1,
+        0.1
       );
       expect(result.content[0].text).toContain('TypeScript 5.8 introduced');
       expect(result.content[0].text).toContain('**Sources:**');
@@ -267,7 +273,7 @@ describe('Web Search MCP Tools', () => {
         expect.any(String),
         expect.any(Number),
         expect.any(Number),
-        expect.any(Number),
+        expect.any(Number)
       );
     });
 
@@ -280,7 +286,7 @@ describe('Web Search MCP Tools', () => {
         'perplexity/sonar',
         expect.any(Number),
         expect.any(Number),
-        expect.any(Number),
+        expect.any(Number)
       );
     });
 
@@ -370,7 +376,7 @@ describe('Web Search MCP Tools', () => {
         'perplexity/sonar-deep-research',
         120000,
         8000,
-        0.1,
+        0.1
       );
     });
 
@@ -465,7 +471,7 @@ describe('Web Search MCP Tools', () => {
           query: 'test query',
           prompt_tokens: 100,
           completion_tokens: 200,
-        }),
+        })
       );
     });
 
@@ -492,7 +498,7 @@ describe('Web Search MCP Tools', () => {
         expect.any(Float32Array),
         ['web-search', 'auto-saved'],
         'succ_web_search',
-        { type: 'observation' },
+        { type: 'observation' }
       );
       expect(result.content[0].text).toContain('Saved to memory');
     });
@@ -515,7 +521,7 @@ describe('Web Search MCP Tools', () => {
         expect.any(Float32Array),
         ['deep-research', 'auto-saved'],
         'succ_deep_research',
-        { type: 'learning' },
+        { type: 'learning' }
       );
     });
 
@@ -554,7 +560,12 @@ describe('Web Search MCP Tools', () => {
     });
 
     it('should handle duplicate detection', async () => {
-      vi.mocked(saveMemory).mockResolvedValueOnce({ id: 42, isDuplicate: true, existingId: 10, similarity: 0.95 });
+      vi.mocked(saveMemory).mockResolvedValueOnce({
+        id: 42,
+        isDuplicate: true,
+        existingId: 10,
+        similarity: 0.95,
+      });
 
       const handler = toolHandlers.get('succ_web_search')!;
       const result = await handler({ query: 'test', save_to_memory: true });
@@ -572,7 +583,10 @@ describe('Web Search MCP Tools', () => {
       vi.mocked(getWebSearchSummary).mockResolvedValueOnce({
         total_searches: 5,
         total_cost_usd: 0.0123,
-        by_tool: { succ_web_search: { count: 3, cost: 0.01 }, succ_quick_search: { count: 2, cost: 0.0023 } },
+        by_tool: {
+          succ_web_search: { count: 3, cost: 0.01 },
+          succ_quick_search: { count: 2, cost: 0.0023 },
+        },
         today_searches: 2,
         today_cost_usd: 0.005,
       });
@@ -627,7 +641,7 @@ describe('Web Search MCP Tools', () => {
           tool_name: 'succ_quick_search',
           date_from: '2025-01-01',
           limit: 5,
-        }),
+        })
       );
     });
   });

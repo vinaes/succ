@@ -61,7 +61,7 @@ export function runGate(gate: QualityGate, cwd: string): GateResult {
     const err = error as { stdout?: string; stderr?: string; message?: string };
     const output = tailTruncate(
       [err.stdout, err.stderr, err.message].filter(Boolean).join('\n'),
-      5000,
+      5000
     );
     return {
       gate,
@@ -81,14 +81,14 @@ export function runGate(gate: QualityGate, cwd: string): GateResult {
  * Continues running all gates even if one fails (to give full picture).
  */
 export function runAllGates(gates: QualityGate[], cwd: string): GateResult[] {
-  return gates.map(gate => runGate(gate, cwd));
+  return gates.map((gate) => runGate(gate, cwd));
 }
 
 /**
  * Check if all required gates passed.
  */
 export function allRequiredPassed(results: GateResult[]): boolean {
-  return results.every(r => r.passed || !r.gate.required);
+  return results.every((r) => r.passed || !r.gate.required);
 }
 
 /**

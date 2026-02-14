@@ -10,7 +10,13 @@
 
 import { callLLM } from './llm.js';
 import { getEmbedding } from './embeddings.js';
-import { saveMemory, getMemoryById } from './storage/index.js';
+import {
+  saveMemory,
+  getMemoryById,
+  updateMemoryTags,
+  findSimilarMemory,
+  incrementCorrectionCount,
+} from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
 
 const SYNTHESIS_PROMPT = `You are analyzing a cluster of related observations from a developer's coding sessions.
@@ -33,9 +39,16 @@ Output as JSON array:
 const MIN_CLUSTER_SIZE = 5;
 const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;
 
+/** Semantic dedup threshold for synthesized reflections.
+ *  Lower than saveMemory's 0.92 to catch LLM paraphrases of the same insight. */
+const SYNTHESIS_DEDUP_THRESHOLD = 0.8;
+
 export interface SynthesisResult {
   clustersProcessed: number;
   patternsCreated: number;
+  duplicatesSkipped: number;
+  reinforced: number;
+  observationsMarked: number;
   errors: string[];
 }
 
@@ -48,10 +61,17 @@ export async function synthesizeFromCommunities(
   options: { dryRun?: boolean; log?: (msg: string) => void } = {}
 ): Promise<SynthesisResult> {
   const { dryRun = false, log = () => {} } = options;
-  const result: SynthesisResult = { clustersProcessed: 0, patternsCreated: 0, errors: [] };
+  const result: SynthesisResult = {
+    clustersProcessed: 0,
+    patternsCreated: 0,
+    duplicatesSkipped: 0,
+    reinforced: 0,
+    observationsMarked: 0,
+    errors: [],
+  };
 
   // Filter to clusters large enough to synthesize
-  const eligibleClusters = communityResult.communities.filter(c => c.size >= MIN_CLUSTER_SIZE);
+  const eligibleClusters = communityResult.communities.filter((c) => c.size >= MIN_CLUSTER_SIZE);
 
   if (eligibleClusters.length === 0) {
     log('[synthesizer] No clusters large enough for synthesis');
@@ -65,8 +85,11 @@ export async function synthesizeFromCommunities(
       for (const memId of cluster.members.slice(0, MAX_OBSERVATIONS_PER_SYNTHESIS)) {
         const mem = await getMemoryById(memId);
         if (mem && mem.type === 'observation') {
-          const tags = Array.isArray(mem.tags) ? mem.tags
-            : (typeof mem.tags === 'string' ? JSON.parse(mem.tags || '[]') : []);
+          const tags = Array.isArray(mem.tags)
+            ? mem.tags
+            : typeof mem.tags === 'string'
+              ? JSON.parse(mem.tags || '[]')
+              : [];
           // Skip already-reflected observations
           if (!tags.includes('reflected')) {
             memories.push({ id: mem.id, content: mem.content, tags, type: mem.type });
@@ -77,9 +100,7 @@ export async function synthesizeFromCommunities(
       if (memories.length < MIN_CLUSTER_SIZE) continue;
 
       // Build observation text
-      const observationText = memories
-        .map((m, i) => `${i + 1}. ${m.content}`)
-        .join('\n');
+      const observationText = memories.map((m, i) => `${i + 1}. ${m.content}`).join('\n');
 
       const prompt = SYNTHESIS_PROMPT.replace('{observations}', observationText);
 
@@ -110,19 +131,59 @@ export async function synthesizeFromCommunities(
 
         if (!dryRun) {
           const embedding = await getEmbedding(pattern.content);
+
+          // Semantic dedup: check if a similar memory already exists (0.80 threshold
+          // catches LLM paraphrases that saveMemory's 0.92 dedup would miss)
+          const existing = await findSimilarMemory(embedding, SYNTHESIS_DEDUP_THRESHOLD);
+          if (existing) {
+            // Reinforce patterns/learnings — increment correction_count so they
+            // eventually pin (Tier 1) if the daemon keeps seeing the same insight.
+            // Skip observations — they're too noisy to reinforce automatically.
+            const existingMem = await getMemoryById(existing.id);
+            const existingType = existingMem?.type;
+            if (existingType === 'pattern' || existingType === 'learning') {
+              await incrementCorrectionCount(existing.id);
+              result.reinforced++;
+              log(
+                `[synthesizer] Reinforced existing ${existingType} #${existing.id} (sim=${existing.similarity.toFixed(2)}): ${existing.content.substring(0, 60)}...`
+              );
+            } else {
+              result.duplicatesSkipped++;
+              log(
+                `[synthesizer] Skipped duplicate ${existingType ?? 'unknown'} (sim=${existing.similarity.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
+              );
+            }
+            continue;
+          }
+
           const memType = pattern.type === 'learning' ? 'learning' : 'pattern';
-          await saveMemory(pattern.content, embedding, ['reflection', 'synthesized'], 'reflection', {
-            qualityScore: { score: 0.7, factors: { synthesized: 1 } },
-            type: memType,
-          });
+          await saveMemory(
+            pattern.content,
+            embedding,
+            ['reflection', 'synthesized'],
+            'reflection',
+            {
+              qualityScore: { score: 0.7, factors: { synthesized: 1 } },
+              type: memType,
+            }
+          );
           result.patternsCreated++;
           log(`[synthesizer] Created ${memType}: ${pattern.content.substring(0, 80)}...`);
         }
       }
 
-      // Mark source observations as reflected (add 'reflected' tag)
-      // We don't modify existing memories' tags to keep it simple — the cluster
-      // detection will naturally avoid re-synthesis since patterns will be linked
+      // Mark source observations as 'reflected' so they aren't re-synthesized
+      if (!dryRun) {
+        for (const mem of memories) {
+          try {
+            const newTags = [...mem.tags, 'reflected'];
+            await updateMemoryTags(mem.id, newTags);
+            result.observationsMarked++;
+          } catch {
+            // Non-critical — worst case we re-process next cycle
+          }
+        }
+      }
     } catch (err) {
       result.errors.push(`Cluster ${cluster.id}: ${err}`);
     }

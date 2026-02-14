@@ -7,8 +7,12 @@
 
 import { getConfig, getLLMTaskConfig, invalidateConfigCache } from '../lib/config.js';
 import { getEmbeddingInfo, getEmbedding, getModelDimension } from '../lib/embeddings.js';
-import { initStorageDispatcher, getStoredEmbeddingDimension,
-  getMemoryCount, getMemoryEmbeddingCount } from '../lib/storage/index.js';
+import {
+  initStorageDispatcher,
+  getStoredEmbeddingDimension,
+  getMemoryCount,
+  getMemoryEmbeddingCount,
+} from '../lib/storage/index.js';
 import { configSet } from './config.js';
 
 /**
@@ -58,7 +62,9 @@ export async function embeddingInfo(): Promise<void> {
     console.log(`  Memories:   ${memWithEmb}/${memTotal} have embeddings`);
 
     if (storedDim && info.dimensions && storedDim !== info.dimensions) {
-      console.log(`\n  WARNING: Dimension mismatch! Stored=${storedDim}, Config=${info.dimensions}`);
+      console.log(
+        `\n  WARNING: Dimension mismatch! Stored=${storedDim}, Config=${info.dimensions}`
+      );
       console.log('  Run: succ index --force && succ index --memories');
     }
   } catch (err) {
@@ -110,7 +116,9 @@ export async function embeddingMigrate(options: MigrateOptions): Promise<void> {
     console.log('  -y, --yes           Skip confirmation');
     console.log('');
     console.log('Current:');
-    console.log(`  Model: ${currentInfo.model} (${currentInfo.dimensions ?? '?'} dims, mode: ${currentInfo.mode})`);
+    console.log(
+      `  Model: ${currentInfo.model} (${currentInfo.dimensions ?? '?'} dims, mode: ${currentInfo.mode})`
+    );
     return;
   }
 
@@ -121,8 +129,12 @@ export async function embeddingMigrate(options: MigrateOptions): Promise<void> {
 
   console.log('Embedding Migration');
   console.log('===================');
-  console.log(`  Current: ${currentInfo.model} (${currentInfo.dimensions ?? '?'} dims, mode: ${currentInfo.mode})`);
-  console.log(`  New:     ${effectiveModel} (${effectiveDims ?? '?'} dims${newMode ? `, mode: ${newMode}` : ''})`);
+  console.log(
+    `  Current: ${currentInfo.model} (${currentInfo.dimensions ?? '?'} dims, mode: ${currentInfo.mode})`
+  );
+  console.log(
+    `  New:     ${effectiveModel} (${effectiveDims ?? '?'} dims${newMode ? `, mode: ${newMode}` : ''})`
+  );
 
   if (nativeDims && newDims && newDims !== nativeDims) {
     console.log(`  MRL:     ${nativeDims} native -> ${newDims} truncated`);
@@ -131,12 +143,14 @@ export async function embeddingMigrate(options: MigrateOptions): Promise<void> {
   // Confirm
   if (!options.yes) {
     const inquirer = await import('inquirer');
-    const { confirm } = await inquirer.default.prompt([{
-      type: 'confirm',
-      name: 'confirm',
-      message: 'Apply changes? You will need to reindex after this.',
-      default: true,
-    }]);
+    const { confirm } = await inquirer.default.prompt([
+      {
+        type: 'confirm',
+        name: 'confirm',
+        message: 'Apply changes? You will need to reindex after this.',
+        default: true,
+      },
+    ]);
     if (!confirm) {
       console.log('Cancelled.');
       return;
@@ -179,7 +193,9 @@ export async function embeddingMigrate(options: MigrateOptions): Promise<void> {
   } catch (err) {
     console.error(`  FAILED: ${(err as Error).message}`);
     console.error('  Config was updated but the new model may not work.');
-    console.error('  Fix the issue or revert with: succ embedding migrate --model <old-model> --dims <old-dims>');
+    console.error(
+      '  Fix the issue or revert with: succ embedding migrate --model <old-model> --dims <old-dims>'
+    );
     return;
   }
 

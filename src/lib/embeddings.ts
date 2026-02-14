@@ -55,7 +55,11 @@ let poolInitFailed = false; // Don't retry if pool init failed
  */
 export function cleanupEmbeddings(): void {
   if (nativeSession) {
-    nativeSession.dispose().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Session dispose failed'));
+    nativeSession
+      .dispose()
+      .catch((err) =>
+        logWarn('embeddings', err instanceof Error ? err.message : 'Session dispose failed')
+      );
     nativeSession = null;
     embeddingCache.clear();
     // Hint GC if available
@@ -64,7 +68,11 @@ export function cleanupEmbeddings(): void {
     }
   }
   if (embeddingPool) {
-    embeddingPool.shutdown().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Pool shutdown failed'));
+    embeddingPool
+      .shutdown()
+      .catch((err) =>
+        logWarn('embeddings', err instanceof Error ? err.message : 'Pool shutdown failed')
+      );
     embeddingPool = null;
   }
 }
@@ -223,7 +231,7 @@ async function getNativeSession(): Promise<NativeOrtSession> {
     gpuBackend = providerResult.provider;
     console.log(
       `Loading native ORT session: ${embeddingModel} ` +
-      `(${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})...`
+        `(${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})...`
     );
 
     nativeSession = new NativeOrtSession({
@@ -281,7 +289,11 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
     logWarn('embeddings', `Worker pool failed, falling back to single-threaded: ${msg}`);
     poolInitFailed = true;
     if (embeddingPool) {
-      embeddingPool.shutdown().catch(err => logWarn('embeddings', err instanceof Error ? err.message : 'Pool cleanup failed'));
+      embeddingPool
+        .shutdown()
+        .catch((err) =>
+          logWarn('embeddings', err instanceof Error ? err.message : 'Pool cleanup failed')
+        );
       embeddingPool = null;
     }
     return null;
@@ -379,7 +391,6 @@ export async function checkApiHealth(): Promise<{ ok: boolean; error?: string }>
   }
 }
 
-
 /**
  * Get embeddings from API endpoint (OpenRouter, Ollama, llama.cpp, LM Studio, etc.)
  * Expects OpenAI-compatible /v1/embeddings endpoint (with retry and timeout)
@@ -426,7 +437,10 @@ async function getApiEmbeddings(texts: string[]): Promise<number[][]> {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new NetworkError(`Embedding API error: ${response.status} - ${error}`, response.status);
+        throw new NetworkError(
+          `Embedding API error: ${response.status} - ${error}`,
+          response.status
+        );
       }
 
       const data = (await response.json()) as EmbeddingResponse;
@@ -483,7 +497,11 @@ export async function getEmbedding(text: string): Promise<number[]> {
 /**
  * Get info about current embedding configuration
  */
-export function getEmbeddingInfo(): { mode: string; model: string; dimensions: number | undefined } {
+export function getEmbeddingInfo(): {
+  mode: string;
+  model: string;
+  dimensions: number | undefined;
+} {
   const taskCfg = getLLMTaskConfig('embeddings');
   const config = getConfigWithOverride();
   return {

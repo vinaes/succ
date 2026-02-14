@@ -16,12 +16,7 @@ import {
   formatDuration,
   sanitizeMermaid,
 } from './export.js';
-import {
-  loadPrd,
-  loadTasks,
-  loadExecution,
-  findLatestPrd,
-} from './state.js';
+import { loadPrd, loadTasks, loadExecution, findLatestPrd } from './state.js';
 
 // ============================================================================
 // Test fixtures
@@ -184,24 +179,30 @@ describe('PRD Export', () => {
       const prd = makePrd();
       const tasks = [
         makeTask('task_001', 1, {
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:00:00.000Z',
-            completed_at: '2026-02-08T13:01:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:00:00.000Z',
+              completed_at: '2026-02-08T13:01:00.000Z',
+            }),
+          ],
         }),
         makeTask('task_002', 2, {
           depends_on: ['task_001'],
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:01:30.000Z',
-            completed_at: '2026-02-08T13:02:30.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:01:30.000Z',
+              completed_at: '2026-02-08T13:02:30.000Z',
+            }),
+          ],
         }),
         makeTask('task_003', 3, {
           depends_on: ['task_002'],
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:03:00.000Z',
-            completed_at: '2026-02-08T13:05:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:03:00.000Z',
+              completed_at: '2026-02-08T13:05:00.000Z',
+            }),
+          ],
         }),
       ];
 
@@ -221,11 +222,13 @@ describe('PRD Export', () => {
       const tasks = [
         makeTask('task_001', 1, {
           status: 'failed',
-          attempts: [makeAttempt(1, {
-            status: 'failed',
-            started_at: '2026-02-08T13:00:00.000Z',
-            completed_at: '2026-02-08T13:01:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              status: 'failed',
+              started_at: '2026-02-08T13:00:00.000Z',
+              completed_at: '2026-02-08T13:01:00.000Z',
+            }),
+          ],
         }),
       ];
 
@@ -235,9 +238,7 @@ describe('PRD Export', () => {
 
     it('should handle tasks with no attempts', () => {
       const prd = makePrd();
-      const tasks = [
-        makeTask('task_001', 1, { attempts: [] }),
-      ];
+      const tasks = [makeTask('task_001', 1, { attempts: [] })];
 
       const gantt = generateGanttChart(prd, tasks, null);
       expect(gantt).toContain('gantt');
@@ -255,22 +256,28 @@ describe('PRD Export', () => {
       const prd = makePrd({ execution_mode: 'team' });
       const tasks = [
         makeTask('task_001', 1, {
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:00:00.000Z',
-            completed_at: '2026-02-08T13:05:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:00:00.000Z',
+              completed_at: '2026-02-08T13:05:00.000Z',
+            }),
+          ],
         }),
         makeTask('task_002', 2, {
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:00:30.000Z',
-            completed_at: '2026-02-08T13:04:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:00:30.000Z',
+              completed_at: '2026-02-08T13:04:00.000Z',
+            }),
+          ],
         }),
         makeTask('task_003', 3, {
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:01:00.000Z',
-            completed_at: '2026-02-08T13:03:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:01:00.000Z',
+              completed_at: '2026-02-08T13:03:00.000Z',
+            }),
+          ],
         }),
       ];
 
@@ -358,10 +365,12 @@ describe('PRD Export', () => {
       const tasks = [
         makeTask('task_001', 1, {
           title: 'Setup types',
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:00:00.000Z',
-            completed_at: '2026-02-08T13:01:05.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:00:00.000Z',
+              completed_at: '2026-02-08T13:01:05.000Z',
+            }),
+          ],
         }),
       ];
 
@@ -371,10 +380,7 @@ describe('PRD Export', () => {
     });
 
     it('should handle tasks with no dependencies', () => {
-      const tasks = [
-        makeTask('task_001', 1),
-        makeTask('task_002', 2),
-      ];
+      const tasks = [makeTask('task_001', 1), makeTask('task_002', 2)];
 
       const graph = generateDependencyGraph(tasks);
       expect(graph).not.toContain('-->');
@@ -390,17 +396,21 @@ describe('PRD Export', () => {
       const prd = makePrd();
       const tasks = [
         makeTask('task_001', 1, {
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:00:00.000Z',
-            completed_at: '2026-02-08T13:01:00.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:00:00.000Z',
+              completed_at: '2026-02-08T13:01:00.000Z',
+            }),
+          ],
         }),
         makeTask('task_002', 2, {
           depends_on: ['task_001'],
-          attempts: [makeAttempt(1, {
-            started_at: '2026-02-08T13:01:30.000Z',
-            completed_at: '2026-02-08T13:02:30.000Z',
-          })],
+          attempts: [
+            makeAttempt(1, {
+              started_at: '2026-02-08T13:01:30.000Z',
+              completed_at: '2026-02-08T13:02:30.000Z',
+            }),
+          ],
         }),
       ];
 
@@ -418,13 +428,13 @@ describe('PRD Export', () => {
 
       // Check all files were written
       const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-      const filenames = writeCalls.map(c => String(c[0]));
+      const filenames = writeCalls.map((c) => String(c[0]));
 
-      expect(filenames.some(f => f.includes('Overview.md'))).toBe(true);
-      expect(filenames.some(f => f.includes('Dependencies.md'))).toBe(true);
-      expect(filenames.some(f => f.includes('Timeline.md'))).toBe(true);
-      expect(filenames.some(f => f.includes('task_001.md'))).toBe(true);
-      expect(filenames.some(f => f.includes('task_002.md'))).toBe(true);
+      expect(filenames.some((f) => f.includes('Overview.md'))).toBe(true);
+      expect(filenames.some((f) => f.includes('Dependencies.md'))).toBe(true);
+      expect(filenames.some((f) => f.includes('Timeline.md'))).toBe(true);
+      expect(filenames.some((f) => f.includes('task_001.md'))).toBe(true);
+      expect(filenames.some((f) => f.includes('task_002.md'))).toBe(true);
     });
 
     it('should use latest PRD when no ID provided', () => {
@@ -458,9 +468,7 @@ describe('PRD Export', () => {
 
     it('should skip Timeline for draft PRDs with no timestamps', () => {
       const prd = makePrd({ status: 'draft' });
-      const tasks = [
-        makeTask('task_001', 1, { status: 'pending', attempts: [] }),
-      ];
+      const tasks = [makeTask('task_001', 1, { status: 'pending', attempts: [] })];
 
       vi.mocked(loadPrd).mockReturnValue(prd);
       vi.mocked(loadTasks).mockReturnValue(tasks);
@@ -471,8 +479,8 @@ describe('PRD Export', () => {
       expect(result.filesCreated).toBe(3);
 
       const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-      const filenames = writeCalls.map(c => String(c[0]));
-      expect(filenames.some(f => f.includes('Timeline.md'))).toBe(false);
+      const filenames = writeCalls.map((c) => String(c[0]));
+      expect(filenames.some((f) => f.includes('Timeline.md'))).toBe(false);
     });
   });
 
@@ -492,7 +500,7 @@ describe('PRD Export', () => {
       exportPrdToObsidian('prd_test123');
 
       const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-      const overviewCall = writeCalls.find(c => String(c[0]).includes('Overview.md'));
+      const overviewCall = writeCalls.find((c) => String(c[0]).includes('Overview.md'));
       expect(overviewCall).toBeDefined();
 
       const content = String(overviewCall![1]);
@@ -516,13 +524,15 @@ describe('PRD Export', () => {
     it('should include frontmatter, criteria, attempts, and gates', () => {
       const prd = makePrd();
       const task = makeTask('task_001', 1, {
-        attempts: [makeAttempt(1, {
-          gate_results: [
-            { gate: makeGate('typecheck'), passed: true, output: '', duration_ms: 3000 },
-            { gate: makeGate('test'), passed: true, output: '', duration_ms: 5000 },
-          ],
-          files_actually_modified: ['src/file.ts', 'src/other.ts'],
-        })],
+        attempts: [
+          makeAttempt(1, {
+            gate_results: [
+              { gate: makeGate('typecheck'), passed: true, output: '', duration_ms: 3000 },
+              { gate: makeGate('test'), passed: true, output: '', duration_ms: 5000 },
+            ],
+            files_actually_modified: ['src/file.ts', 'src/other.ts'],
+          }),
+        ],
       });
 
       vi.mocked(loadPrd).mockReturnValue(prd);
@@ -532,7 +542,7 @@ describe('PRD Export', () => {
       exportPrdToObsidian('prd_test123');
 
       const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-      const taskCall = writeCalls.find(c => String(c[0]).includes('task_001.md'));
+      const taskCall = writeCalls.find((c) => String(c[0]).includes('task_001.md'));
       expect(taskCall).toBeDefined();
 
       const content = String(taskCall![1]);
@@ -551,10 +561,12 @@ describe('PRD Export', () => {
       const prd = makePrd();
       const task = makeTask('task_001', 1, {
         status: 'failed',
-        attempts: [makeAttempt(1, {
-          status: 'failed',
-          error: 'TypeScript compilation failed',
-        })],
+        attempts: [
+          makeAttempt(1, {
+            status: 'failed',
+            error: 'TypeScript compilation failed',
+          }),
+        ],
       });
 
       vi.mocked(loadPrd).mockReturnValue(prd);
@@ -564,7 +576,7 @@ describe('PRD Export', () => {
       exportPrdToObsidian('prd_test123');
 
       const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-      const taskCall = writeCalls.find(c => String(c[0]).includes('task_001.md'));
+      const taskCall = writeCalls.find((c) => String(c[0]).includes('task_001.md'));
       const content = String(taskCall![1]);
       expect(content).toContain('## Error');
       expect(content).toContain('TypeScript compilation failed');
