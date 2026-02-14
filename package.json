@@ -1,6 +1,6 @@
 {
   "name": "succ",
-  "version": "1.3.3",
+  "version": "1.3.5",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "main": "./dist/cli.js",
@@ -55,7 +55,7 @@
     "cursor",
     "windsurf"
   ],
-  "author": "cpz",
+  "author": "vinaes",
   "license": "FSL-1.1-Apache-2.0",
   "repository": {
     "type": "git",
