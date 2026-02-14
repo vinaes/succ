@@ -1414,17 +1414,30 @@ function extractTemporalSubqueries(query: string): string[] {
 /**
  * Async version with LLM fallback for languages not covered by regex.
  * Fast path: regex (sync, 0ms). Slow path: LLM decomposition (any language).
+ * Only invokes LLM when query contains non-Latin/Cyrillic characters (likely unsupported language).
  */
 async function extractTemporalSubqueriesAsync(query: string): Promise<string[]> {
   // Fast path: regex handles EN + RU
   const regexResult = extractTemporalSubqueries(query);
   if (regexResult.length > 1) return regexResult;
 
-  // Slow path: LLM decomposition for other languages
+  // Only invoke LLM if the query contains characters outside Latin/Cyrillic scripts
+  // This avoids unnecessary LLM calls for EN/RU queries that simply have no temporal range
+  const hasNonLatinCyrillic = /[^\u0000-\u024F\u0400-\u04FF\s\d\p{P}]/u.test(query);
+  if (!hasNonLatinCyrillic) return [query];
+
+  // Slow path: LLM decomposition for other languages (CJK, Arabic, etc.)
   try {
-    const { callLLM } = await import('../../lib/llm.js');
-    const result = await callLLM(
-      `Extract temporal sub-queries from this search query. If the query asks about a time range (e.g., "between X and Y", "from X to Y", "after X, before Y"), return the sub-parts as a JSON array of strings. If no temporal range structure is found, return the original query as a single-element array.\n\nQuery: "${query.replace(/"/g, '\\"')}"\n\nReturn ONLY a valid JSON array of strings, nothing else.`,
+    const { callLLMChat } = await import('../../lib/llm.js');
+    const result = await callLLMChat(
+      [
+        {
+          role: 'system',
+          content:
+            'Extract temporal sub-queries from the user\'s search query. If the query asks about a time range (e.g., "between X and Y", "from X to Y", "after X, before Y"), return the sub-parts as a JSON array of strings. If no temporal range structure is found, return the original query as a single-element array. Return ONLY a valid JSON array of strings, nothing else.',
+        },
+        { role: 'user', content: query },
+      ],
       { maxTokens: 200 }
     );
     const parsed = JSON.parse(result.trim());
