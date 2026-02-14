@@ -43,7 +43,7 @@ describe('fetchAsMarkdown', () => {
         method: 'readability',
         quality: { score: 0.85, grade: 'A' },
         time_ms: 234,
-      }),
+      })
     );
 
     const result = await fetchAsMarkdown('https://example.com');
@@ -57,9 +57,7 @@ describe('fetchAsMarkdown', () => {
   });
 
   it('uses config md_api_url as base URL', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ content: 'test', title: '', url: '' }),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ content: 'test', title: '', url: '' }));
 
     await fetchAsMarkdown('https://example.com');
 
@@ -67,38 +65,32 @@ describe('fetchAsMarkdown', () => {
       expect.stringContaining('https://md.test.local/'),
       expect.objectContaining({
         headers: { Accept: 'application/json' },
-      }),
+      })
     );
   });
 
   it('allows baseUrl override via options', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ content: 'test', title: '', url: '' }),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ content: 'test', title: '', url: '' }));
 
     await fetchAsMarkdown('https://example.com', { baseUrl: 'https://custom.api' });
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('https://custom.api/'),
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 
   it('throws on HTTP error', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ error: 'not found' }, 404),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ error: 'not found' }, 404));
 
     await expect(fetchAsMarkdown('https://bad.url')).rejects.toThrow('md.succ.ai error: HTTP 404');
   });
 
   it('throws on conversion error in response', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ error: 'All conversion methods failed' }),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ error: 'All conversion methods failed' }));
 
     await expect(fetchAsMarkdown('https://spa.site')).rejects.toThrow(
-      'md.succ.ai conversion failed',
+      'md.succ.ai conversion failed'
     );
   });
 
@@ -114,7 +106,7 @@ describe('fetchAsMarkdown', () => {
         content: '# Minimal',
         title: 'Min',
         url: 'https://min.com',
-      }),
+      })
     );
 
     const result = await fetchAsMarkdown('https://min.com');
@@ -128,9 +120,7 @@ describe('fetchAsMarkdown', () => {
   });
 
   it('encodes URL in path', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ content: 'ok', title: '', url: '' }),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ content: 'ok', title: '', url: '' }));
 
     await fetchAsMarkdown('https://example.com/path?q=hello world');
 
@@ -146,9 +136,7 @@ describe('fetchAsMarkdown', () => {
   });
 
   it('applies timeout from options', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mockJsonResponse({ content: 'ok', title: '', url: '' }),
-    );
+    mockFetch.mockResolvedValueOnce(mockJsonResponse({ content: 'ok', title: '', url: '' }));
 
     await fetchAsMarkdown('https://example.com', { timeout: 5000 });
 

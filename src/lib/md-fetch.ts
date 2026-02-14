@@ -39,7 +39,10 @@ export interface MdFetchOptions {
  * @param options - Optional base URL and timeout overrides
  * @returns Parsed conversion result with markdown content and metadata
  */
-export async function fetchAsMarkdown(url: string, options?: MdFetchOptions): Promise<MdFetchResult> {
+export async function fetchAsMarkdown(
+  url: string,
+  options?: MdFetchOptions
+): Promise<MdFetchResult> {
   let baseUrl = options?.baseUrl;
   if (!baseUrl) {
     try {

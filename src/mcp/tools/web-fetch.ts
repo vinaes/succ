@@ -8,7 +8,12 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { projectPathParam, applyProjectPath, createToolResponse, createErrorResponse } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 import { fetchAsMarkdown } from '../../lib/md-fetch.js';
 
 const COMPONENT = 'web-fetch';
@@ -23,7 +28,7 @@ export function registerWebFetchTools(server: McpServer) {
         .enum(['markdown', 'json'])
         .optional()
         .describe(
-          'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)',
+          'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)'
         ),
       project_path: projectPathParam,
     },
@@ -69,8 +74,12 @@ export function registerWebFetchTools(server: McpServer) {
         return createToolResponse(lines);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
-        return createErrorResponse(`Failed to fetch ${url}: ${msg}`, COMPONENT, error instanceof Error ? error : undefined);
+        return createErrorResponse(
+          `Failed to fetch ${url}: ${msg}`,
+          COMPONENT,
+          error instanceof Error ? error : undefined
+        );
       }
-    },
+    }
   );
 }
