@@ -12,7 +12,6 @@ import {
   computePriorityScore,
   PinnedMemoryError,
   PIN_THRESHOLD,
-  DIVERSITY_THRESHOLD,
 } from './working-memory-pipeline.js';
 import type { WorkingMemoryCandidate } from './working-memory-pipeline.js';
 

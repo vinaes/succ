@@ -1423,7 +1423,7 @@ async function extractTemporalSubqueriesAsync(query: string): Promise<string[]> 
 
   // Only invoke LLM if the query contains characters outside Latin/Cyrillic scripts
   // This avoids unnecessary LLM calls for EN/RU queries that simply have no temporal range
-  const hasNonLatinCyrillic = /[^\u0000-\u024F\u0400-\u04FF\s\d\p{P}]/u.test(query);
+  const hasNonLatinCyrillic = /[^\u0020-\u024F\u0400-\u04FF\s\d\p{P}]/u.test(query);
   if (!hasNonLatinCyrillic) return [query];
 
   // Slow path: LLM decomposition for other languages (CJK, Arabic, etc.)
