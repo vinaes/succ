@@ -148,7 +148,7 @@ function stripCommentSyntax(text: string): string {
       .replace(/^\/\*\*?\s*/, '')
       .replace(/\s*\*\/$/, '')
       .split('\n')
-      .map(line => line.replace(/^\s*\*\s?/, ''))
+      .map((line) => line.replace(/^\s*\*\s?/, ''))
       .join('\n')
       .trim();
   }
@@ -157,14 +157,14 @@ function stripCommentSyntax(text: string): string {
   if (text.startsWith('//')) {
     return text
       .split('\n')
-      .map(line => line.replace(/^\s*\/\/\s?/, ''))
+      .map((line) => line.replace(/^\s*\/\/\s?/, ''))
       .join('\n')
       .trim();
   }
   if (text.startsWith('#')) {
     return text
       .split('\n')
-      .map(line => line.replace(/^\s*#\s?/, ''))
+      .map((line) => line.replace(/^\s*#\s?/, ''))
       .join('\n')
       .trim();
   }
@@ -173,7 +173,7 @@ function stripCommentSyntax(text: string): string {
   if (text.startsWith('///')) {
     return text
       .split('\n')
-      .map(line => line.replace(/^\s*\/\/\/\s?/, ''))
+      .map((line) => line.replace(/^\s*\/\/\/\s?/, ''))
       .join('\n')
       .trim();
   }
@@ -201,7 +201,7 @@ function stripCommentSyntax(text: string): string {
 export async function extractSymbols(
   tree: Tree,
   sourceCode: string,
-  language: string,
+  language: string
 ): Promise<SymbolInfo[]> {
   const query = await getQuery(language);
   if (!query) return [];
@@ -210,13 +210,11 @@ export async function extractSymbols(
   const symbols: SymbolInfo[] = [];
 
   // Separate doc captures from definition captures
-  const docCaptures = captures.filter(c => c.name === 'doc');
-  const nameCaptures = captures.filter(c => c.name === 'name');
+  const docCaptures = captures.filter((c) => c.name === 'doc');
+  const nameCaptures = captures.filter((c) => c.name === 'name');
 
   // Group captures by pattern index — each match has a @name and a @definition.*
-  const definitionCaptures = captures.filter(c =>
-    c.name.startsWith('definition.')
-  );
+  const definitionCaptures = captures.filter((c) => c.name.startsWith('definition.'));
 
   for (const defCapture of definitionCaptures) {
     const symbolType = captureNameToSymbolType(defCapture.name);
@@ -225,10 +223,11 @@ export async function extractSymbols(
     // Find the @name capture for this definition
     // It should be a descendant of the definition node
     const defNode = defCapture.node;
-    const nameCapture = nameCaptures.find(nc =>
-      nc.patternIndex === defCapture.patternIndex &&
-      nc.node.startIndex >= defNode.startIndex &&
-      nc.node.endIndex <= defNode.endIndex,
+    const nameCapture = nameCaptures.find(
+      (nc) =>
+        nc.patternIndex === defCapture.patternIndex &&
+        nc.node.startIndex >= defNode.startIndex &&
+        nc.node.endIndex <= defNode.endIndex
     );
 
     const name = nameCapture?.node.text;
@@ -263,10 +262,10 @@ export async function extractSymbols(
 export async function extractFunctions(
   tree: Tree,
   sourceCode: string,
-  language: string,
+  language: string
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
-  return symbols.filter(s => s.type === 'function' || s.type === 'method');
+  return symbols.filter((s) => s.type === 'function' || s.type === 'method');
 }
 
 /**
@@ -275,10 +274,10 @@ export async function extractFunctions(
 export async function extractClasses(
   tree: Tree,
   sourceCode: string,
-  language: string,
+  language: string
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
-  return symbols.filter(s => s.type === 'class');
+  return symbols.filter((s) => s.type === 'class');
 }
 
 /**
@@ -287,10 +286,10 @@ export async function extractClasses(
 export async function extractInterfaces(
   tree: Tree,
   sourceCode: string,
-  language: string,
+  language: string
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
-  return symbols.filter(s => s.type === 'interface');
+  return symbols.filter((s) => s.type === 'interface');
 }
 
 /**
@@ -299,10 +298,10 @@ export async function extractInterfaces(
 export async function extractTypes(
   tree: Tree,
   sourceCode: string,
-  language: string,
+  language: string
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
-  return symbols.filter(s => s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct');
+  return symbols.filter((s) => s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct');
 }
 
 /**
@@ -340,7 +339,9 @@ export function extractIdentifiers(rootNode: Node): string[] {
  */
 export function resetQueryCache(): void {
   for (const query of queryCache.values()) {
-    try { query.delete(); } catch {
+    try {
+      query.delete();
+    } catch {
       // intentional
     }
   }

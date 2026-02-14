@@ -97,11 +97,12 @@ function parseFactsResponse(response: string): ExtractedFact[] {
 
     // Validate and normalize facts
     return parsed
-      .filter((f: any) =>
-        f.content &&
-        typeof f.content === 'string' &&
-        f.content.length >= 50 &&
-        ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
+      .filter(
+        (f: any) =>
+          f.content &&
+          typeof f.content === 'string' &&
+          f.content.length >= 50 &&
+          ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
       )
       .map((f: any) => ({
         content: f.content.trim(),
@@ -249,7 +250,9 @@ export async function extractSessionSummary(
   }
 
   if (verbose) {
-    console.log(`Using ${llmOptions.mode} mode for extraction (model: ${llmOptions.model || 'default'})`);
+    console.log(
+      `Using ${llmOptions.mode} mode for extraction (model: ${llmOptions.model || 'default'})`
+    );
   }
 
   // Extract facts from transcript
@@ -281,7 +284,9 @@ export async function extractSessionSummary(
       console.log('\nDry run - facts that would be saved:');
       for (const fact of facts) {
         console.log(`  [${fact.type}] ${fact.content.substring(0, 100)}...`);
-        console.log(`    Tags: ${fact.tags.join(', ')} | Confidence: ${(fact.confidence * 100).toFixed(0)}%`);
+        console.log(
+          `    Tags: ${fact.tags.join(', ')} | Confidence: ${(fact.confidence * 100).toFixed(0)}%`
+        );
       }
     }
     result.factsSaved = 0;
@@ -291,9 +296,11 @@ export async function extractSessionSummary(
     const saveResult = await saveFactsAsMemories(
       facts,
       minQuality,
-      verbose ? (current, total) => {
-        process.stdout.write(`\rSaving fact ${current}/${total}...`);
-      } : undefined
+      verbose
+        ? (current, total) => {
+            process.stdout.write(`\rSaving fact ${current}/${total}...`);
+          }
+        : undefined
     );
 
     result.factsSaved = saveResult.saved;

@@ -8,9 +8,20 @@
 export type DebugSessionStatus = 'active' | 'resolved' | 'abandoned';
 export type HypothesisResult = 'pending' | 'confirmed' | 'refuted';
 export type DebugLanguage =
-  | 'typescript' | 'javascript' | 'python' | 'go' | 'rust'
-  | 'java' | 'ruby' | 'php' | 'swift' | 'kotlin'
-  | 'c' | 'cpp' | 'csharp' | 'unknown';
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'ruby'
+  | 'php'
+  | 'swift'
+  | 'kotlin'
+  | 'c'
+  | 'cpp'
+  | 'csharp'
+  | 'unknown';
 
 export interface Hypothesis {
   id: number;

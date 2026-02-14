@@ -17,7 +17,7 @@ import { ValidationError } from '../errors.js';
  * Returns tasks in execution order. Throws on circular dependencies.
  */
 export function topologicalSort(tasks: Task[]): Task[] {
-  const taskMap = new Map(tasks.map(t => [t.id, t]));
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
   const visited = new Set<string>();
   const inStack = new Set<string>();
   const sorted: Task[] = [];
@@ -58,7 +58,7 @@ export function topologicalSort(tasks: Task[]): Task[] {
  */
 export function allDependenciesMet(task: Task, tasks: Task[]): boolean {
   if (task.depends_on.length === 0) return true;
-  const taskMap = new Map(tasks.map(t => [t.id, t]));
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
   for (const depId of task.depends_on) {
     const dep = taskMap.get(depId);
@@ -87,7 +87,7 @@ export interface ValidationResult {
 export function validateTaskGraph(tasks: Task[]): ValidationResult {
   const warnings: string[] = [];
   const errors: string[] = [];
-  const taskIds = new Set(tasks.map(t => t.id));
+  const taskIds = new Set(tasks.map((t) => t.id));
 
   // 1. Check for circular dependencies
   try {
@@ -110,7 +110,7 @@ export function validateTaskGraph(tasks: Task[]): ValidationResult {
     for (let j = i + 1; j < tasks.length; j++) {
       const a = tasks[i];
       const b = tasks[j];
-      const overlap = a.files_to_modify.filter(f => b.files_to_modify.includes(f));
+      const overlap = a.files_to_modify.filter((f) => b.files_to_modify.includes(f));
       if (overlap.length > 0) {
         const hasDep = a.depends_on.includes(b.id) || b.depends_on.includes(a.id);
         if (!hasDep) {

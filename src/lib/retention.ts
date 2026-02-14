@@ -19,7 +19,11 @@
  */
 
 import type { MemoryForRetention } from './storage/index.js';
-import { exponentialDecay, calculateAccessBoost as temporalAccessBoost, getTemporalConfig } from './temporal.js';
+import {
+  exponentialDecay,
+  calculateAccessBoost as temporalAccessBoost,
+  getTemporalConfig,
+} from './temporal.js';
 
 // Default configuration
 export const DEFAULT_RETENTION_CONFIG = {
@@ -118,15 +122,21 @@ export function calculateEffectiveScore(
       temporalConfig.decay_half_life_hours,
       temporalConfig.decay_floor
     );
-    accessBoost = 1 + temporalAccessBoost(
-      memory.access_count,
-      temporalConfig.access_boost_factor,
-      temporalConfig.max_access_boost
-    );
+    accessBoost =
+      1 +
+      temporalAccessBoost(
+        memory.access_count,
+        temporalConfig.access_boost_factor,
+        temporalConfig.max_access_boost
+      );
   } else {
     // Legacy: hyperbolic decay
     recencyFactor = calculateRecencyFactor(ageDays, cfg.decay_rate);
-    accessBoost = calculateAccessBoost(memory.access_count, cfg.access_weight, cfg.max_access_boost);
+    accessBoost = calculateAccessBoost(
+      memory.access_count,
+      cfg.access_weight,
+      cfg.max_access_boost
+    );
   }
 
   // Calculate effective score
@@ -194,9 +204,9 @@ export interface RetentionStats {
   avgAccessCount: number;
   // Score distribution
   scoreDistribution: {
-    high: number;    // >= 0.6
-    medium: number;  // >= 0.3 && < 0.6
-    low: number;     // >= 0.15 && < 0.3
+    high: number; // >= 0.6
+    medium: number; // >= 0.3 && < 0.6
+    low: number; // >= 0.15 && < 0.3
     critical: number; // < 0.15
   };
 }
@@ -296,7 +306,9 @@ export function formatRetentionAnalysis(
     for (let i = 0; i < showCount; i++) {
       const m = analysis.delete[i];
       const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
-      lines.push(`  [${m.memoryId}] score=${m.effectiveScore} age=${m.ageDays}d access=${m.accessCount}`);
+      lines.push(
+        `  [${m.memoryId}] score=${m.effectiveScore} age=${m.ageDays}d access=${m.accessCount}`
+      );
       lines.push(`      "${preview}${m.content.length > 60 ? '...' : ''}"`);
     }
     if (!verbose && analysis.delete.length > 10) {
@@ -310,7 +322,9 @@ export function formatRetentionAnalysis(
     lines.push('## Warning (approaching delete threshold)');
     for (const m of analysis.warn.slice(0, 10)) {
       const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
-      lines.push(`  [${m.memoryId}] score=${m.effectiveScore} age=${m.ageDays}d access=${m.accessCount}`);
+      lines.push(
+        `  [${m.memoryId}] score=${m.effectiveScore} age=${m.ageDays}d access=${m.accessCount}`
+      );
       lines.push(`      "${preview}${m.content.length > 60 ? '...' : ''}"`);
     }
     if (analysis.warn.length > 10) {
@@ -331,19 +345,23 @@ function percent(part: number, total: number): string {
  * Format retention stats for MCP tool output (JSON-friendly).
  */
 export function formatRetentionStatsForMcp(stats: RetentionStats): string {
-  return JSON.stringify({
-    total: stats.totalMemories,
-    tiers: {
-      keep: stats.keepCount,
-      warn: stats.warnCount,
-      delete: stats.deleteCount,
+  return JSON.stringify(
+    {
+      total: stats.totalMemories,
+      tiers: {
+        keep: stats.keepCount,
+        warn: stats.warnCount,
+        delete: stats.deleteCount,
+      },
+      averages: {
+        effective_score: stats.avgEffectiveScore,
+        quality_score: stats.avgQualityScore,
+        age_days: stats.avgAgeDays,
+        access_count: stats.avgAccessCount,
+      },
+      distribution: stats.scoreDistribution,
     },
-    averages: {
-      effective_score: stats.avgEffectiveScore,
-      quality_score: stats.avgQualityScore,
-      age_days: stats.avgAgeDays,
-      access_count: stats.avgAccessCount,
-    },
-    distribution: stats.scoreDistribution,
-  }, null, 2);
+    null,
+    2
+  );
 }

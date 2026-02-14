@@ -68,7 +68,7 @@ export interface CheckpointCentrality {
 }
 
 export interface CheckpointBrainFile {
-  path: string;  // relative to .succ/brain/
+  path: string; // relative to .succ/brain/
   content: string;
 }
 
@@ -95,18 +95,18 @@ export interface CheckpointData {
 }
 
 export interface CreateCheckpointOptions {
-  includeBrain?: boolean;      // Include brain vault markdown files (default: true)
-  includeDocuments?: boolean;  // Include indexed documents (default: true)
-  includeConfig?: boolean;     // Include config (default: true)
-  compress?: boolean;          // Gzip compress output (default: false)
-  outputPath?: string;         // Custom output path
+  includeBrain?: boolean; // Include brain vault markdown files (default: true)
+  includeDocuments?: boolean; // Include indexed documents (default: true)
+  includeConfig?: boolean; // Include config (default: true)
+  compress?: boolean; // Gzip compress output (default: false)
+  outputPath?: string; // Custom output path
 }
 
 export interface RestoreCheckpointOptions {
-  overwrite?: boolean;         // Overwrite existing data (default: false)
-  restoreBrain?: boolean;      // Restore brain vault files (default: true)
-  restoreDocuments?: boolean;  // Restore documents (default: true)
-  restoreConfig?: boolean;     // Restore config (default: false - safer)
+  overwrite?: boolean; // Overwrite existing data (default: false)
+  restoreBrain?: boolean; // Restore brain vault files (default: true)
+  restoreDocuments?: boolean; // Restore documents (default: true)
+  restoreConfig?: boolean; // Restore config (default: false - safer)
 }
 
 /**
@@ -156,8 +156,14 @@ function getProjectName(): string {
 
 function getSuccVersion(): string {
   try {
-    const packagePath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'package.json');
-    const normalizedPath = process.platform === 'win32' ? packagePath.replace(/^\/([A-Za-z]):/, '$1:') : packagePath;
+    const packagePath = path.join(
+      path.dirname(new URL(import.meta.url).pathname),
+      '..',
+      '..',
+      'package.json'
+    );
+    const normalizedPath =
+      process.platform === 'win32' ? packagePath.replace(/^\/([A-Za-z]):/, '$1:') : packagePath;
     const pkg = JSON.parse(fs.readFileSync(normalizedPath, 'utf8'));
     return pkg.version || 'unknown';
   } catch {
@@ -182,35 +188,52 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
 
   // Gather data via dispatcher (routes to PG or SQLite)
   const memoriesRaw = await getAllMemoriesForExport();
-  const memories: CheckpointMemory[] = memoriesRaw.map(m => ({
-    id: m.id, content: m.content, tags: m.tags,
-    source: m.source, embedding: m.embedding, type: m.type,
-    quality_score: m.quality_score, quality_factors: m.quality_factors,
-    access_count: m.access_count, last_accessed: m.last_accessed,
+  const memories: CheckpointMemory[] = memoriesRaw.map((m) => ({
+    id: m.id,
+    content: m.content,
+    tags: m.tags,
+    source: m.source,
+    embedding: m.embedding,
+    type: m.type,
+    quality_score: m.quality_score,
+    quality_factors: m.quality_factors,
+    access_count: m.access_count,
+    last_accessed: m.last_accessed,
     created_at: m.created_at,
   }));
 
   let documents: CheckpointDocument[] = [];
   if (includeDocuments) {
     const docsRaw = await getAllDocumentsForExport();
-    documents = docsRaw.map(d => ({
-      id: d.id, file_path: d.file_path, chunk_index: d.chunk_index,
-      content: d.content, start_line: d.start_line, end_line: d.end_line,
-      embedding: d.embedding, created_at: d.created_at,
+    documents = docsRaw.map((d) => ({
+      id: d.id,
+      file_path: d.file_path,
+      chunk_index: d.chunk_index,
+      content: d.content,
+      start_line: d.start_line,
+      end_line: d.end_line,
+      embedding: d.embedding,
+      created_at: d.created_at,
     }));
   }
 
   const linksRaw = await getAllMemoryLinksForExport();
-  const memoryLinks: CheckpointMemoryLink[] = linksRaw.map(l => ({
-    id: l.id, source_id: l.source_id, target_id: l.target_id,
-    relation: l.relation, weight: l.weight, created_at: l.created_at,
+  const memoryLinks: CheckpointMemoryLink[] = linksRaw.map((l) => ({
+    id: l.id,
+    source_id: l.source_id,
+    target_id: l.target_id,
+    relation: l.relation,
+    weight: l.weight,
+    created_at: l.created_at,
     llm_enriched: l.llm_enriched,
   }));
 
   const centralityRaw = await getAllCentralityForExport();
-  const memoryCentrality: CheckpointCentrality[] = centralityRaw.map(c => ({
-    memory_id: c.memory_id, degree: c.degree,
-    normalized_degree: c.normalized_degree, updated_at: c.updated_at,
+  const memoryCentrality: CheckpointCentrality[] = centralityRaw.map((c) => ({
+    memory_id: c.memory_id,
+    degree: c.degree,
+    normalized_degree: c.normalized_degree,
+    updated_at: c.updated_at,
   }));
 
   const brainFiles = includeBrain ? getBrainVaultFiles() : [];
@@ -233,7 +256,14 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
     created_at: new Date().toISOString(),
     project_name: getProjectName(),
     succ_version: getSuccVersion(),
-    data: { memories, documents, memory_links: memoryLinks, memory_centrality: memoryCentrality, config, brain_vault: brainFiles },
+    data: {
+      memories,
+      documents,
+      memory_links: memoryLinks,
+      memory_centrality: memoryCentrality,
+      config,
+      brain_vault: brainFiles,
+    },
     stats: {
       memories_count: memories.length,
       documents_count: documents.length,
@@ -318,24 +348,39 @@ export async function restoreCheckpoint(
 
   // Route all bulk DB operations through the storage dispatcher
   const restoreResult = await bulkRestore({
-    memories: checkpoint.data.memories.map(m => ({
-      id: m.id, content: m.content, tags: m.tags, source: m.source,
-      embedding: m.embedding, type: m.type,
-      quality_score: m.quality_score, quality_factors: m.quality_factors,
-      access_count: m.access_count, last_accessed: m.last_accessed,
+    memories: checkpoint.data.memories.map((m) => ({
+      id: m.id,
+      content: m.content,
+      tags: m.tags,
+      source: m.source,
+      embedding: m.embedding,
+      type: m.type,
+      quality_score: m.quality_score,
+      quality_factors: m.quality_factors,
+      access_count: m.access_count,
+      last_accessed: m.last_accessed,
       created_at: m.created_at,
     })),
-    memoryLinks: checkpoint.data.memory_links.map(l => ({
-      source_id: l.source_id, target_id: l.target_id,
-      relation: l.relation, weight: l.weight,
-      created_at: l.created_at, llm_enriched: l.llm_enriched,
+    memoryLinks: checkpoint.data.memory_links.map((l) => ({
+      source_id: l.source_id,
+      target_id: l.target_id,
+      relation: l.relation,
+      weight: l.weight,
+      created_at: l.created_at,
+      llm_enriched: l.llm_enriched,
     })),
     centrality: checkpoint.data.memory_centrality ?? [],
-    documents: restoreDocuments ? checkpoint.data.documents.map(d => ({
-      file_path: d.file_path, chunk_index: d.chunk_index,
-      content: d.content, start_line: d.start_line, end_line: d.end_line,
-      embedding: d.embedding, created_at: d.created_at,
-    })) : [],
+    documents: restoreDocuments
+      ? checkpoint.data.documents.map((d) => ({
+          file_path: d.file_path,
+          chunk_index: d.chunk_index,
+          content: d.content,
+          start_line: d.start_line,
+          end_line: d.end_line,
+          embedding: d.embedding,
+          created_at: d.created_at,
+        }))
+      : [],
     overwrite,
     restoreDocuments,
   });
@@ -400,9 +445,10 @@ export function listCheckpoints(): Array<{
     return [];
   }
 
-  const files = fs.readdirSync(checkpointsDir)
-    .filter(f => f.endsWith('.json') || f.endsWith('.json.gz'))
-    .map(name => {
+  const files = fs
+    .readdirSync(checkpointsDir)
+    .filter((f) => f.endsWith('.json') || f.endsWith('.json.gz'))
+    .map((name) => {
       const filePath = path.join(checkpointsDir, name);
       const stats = fs.statSync(filePath);
 
@@ -415,8 +461,11 @@ export function listCheckpoints(): Array<{
       }
 
       return {
-        name, path: filePath, size: stats.size,
-        compressed: name.endsWith('.gz'), created_at,
+        name,
+        path: filePath,
+        size: stats.size,
+        compressed: name.endsWith('.gz'),
+        created_at,
       };
     })
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));

@@ -62,14 +62,15 @@ export async function parsePrd(
   const contextStr = formatContext(context);
 
   // 2. Build prompt
-  const prompt = PRD_PARSE_PROMPT
-    .replace('{codebase_context}', contextStr)
-    .replace('{prd_content}', prdContent);
+  const prompt = PRD_PARSE_PROMPT.replace('{codebase_context}', contextStr).replace(
+    '{prd_content}',
+    prdContent
+  );
 
   const llmOpts = {
     maxTokens: 8000,
-    temperature: 0.2,  // Low temperature for structured output
-    timeout: 120_000,  // Parsing needs more time than default 30s
+    temperature: 0.2, // Low temperature for structured output
+    timeout: 120_000, // Parsing needs more time than default 30s
   };
 
   // 3. Call LLM (with backend fallback on transport errors)
@@ -94,11 +95,14 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
   // 4c. If local LLM can't produce JSON, escalate to a stronger backend
   if (!rawTasks) {
     const currentBackend = getLLMConfig().backend;
-    const escalateBackends = ['api', 'claude'].filter(b => b !== currentBackend) as LLMBackend[];
+    const escalateBackends = ['api', 'claude'].filter((b) => b !== currentBackend) as LLMBackend[];
 
     for (const backend of escalateBackends) {
       try {
-        logWarn('prd', `Escalating PRD parse to '${backend}' backend after local LLM failed to produce valid JSON`);
+        logWarn(
+          'prd',
+          `Escalating PRD parse to '${backend}' backend after local LLM failed to produce valid JSON`
+        );
         response = await callLLM(prompt, llmOpts, { backend });
         rawTasks = extractJson(response);
         if (rawTasks) break;
@@ -109,7 +113,10 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
   }
 
   if (!rawTasks) {
-    throw new ValidationError('Failed to parse LLM response as JSON task array after retry. Response:\n' + response.slice(0, 500));
+    throw new ValidationError(
+      'Failed to parse LLM response as JSON task array after retry. Response:\n' +
+        response.slice(0, 500)
+    );
   }
 
   // 5. Validate and normalize
@@ -134,7 +141,7 @@ function asTaskArray(parsed: unknown): RawTask[] | null {
   // Object wrapper — find the first array value
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const values = Object.values(parsed as Record<string, unknown>);
-    const arr = values.find(v => Array.isArray(v));
+    const arr = values.find((v) => Array.isArray(v));
     if (arr) return arr as RawTask[];
   }
   return null;
@@ -148,8 +155,8 @@ function asTaskArray(parsed: unknown): RawTask[] | null {
 function fixMalformedJson(text: string): string {
   // Remove single-line // comments that appear outside of JSON strings.
   // Only strip // that follows whitespace, comma, or line start — avoids breaking URLs.
-  let fixed = text.replace(/^(\s*)\/\/[^\n]*/gm, '');  // Line-start comments
-  fixed = fixed.replace(/,(\s*)\/\/[^\n]*/g, ',');      // After-comma comments
+  let fixed = text.replace(/^(\s*)\/\/[^\n]*/gm, ''); // Line-start comments
+  fixed = fixed.replace(/,(\s*)\/\/[^\n]*/g, ','); // After-comma comments
   // Remove trailing commas before ] or }
   fixed = fixed.replace(/,\s*([}\]])/g, '$1');
   return fixed;
@@ -223,7 +230,7 @@ function normalizeTasks(rawTasks: RawTask[], prdId: string, warnings: string[]):
     const sequence = raw.sequence ?? index + 1;
 
     // Normalize depends_on: convert sequence numbers to task IDs
-    const dependsOn = (raw.depends_on ?? []).map(dep => {
+    const dependsOn = (raw.depends_on ?? []).map((dep) => {
       // If it's already a task ID (task_XXX format), keep it
       if (typeof dep === 'string' && dep.startsWith('task_')) return dep;
       // If it's a number or numeric string, convert to task ID
@@ -237,7 +244,9 @@ function normalizeTasks(rawTasks: RawTask[], prdId: string, warnings: string[]):
     }
 
     if (!raw.files_to_modify || raw.files_to_modify.length === 0) {
-      warnings.push(`Task ${sequence} "${raw.title}": no files_to_modify — may conflict with other tasks`);
+      warnings.push(
+        `Task ${sequence} "${raw.title}": no files_to_modify — may conflict with other tasks`
+      );
     }
 
     return createTask({
@@ -282,7 +291,7 @@ function validateTasks(tasks: Task[], warnings: string[]): void {
     visited.add(taskId);
     inStack.add(taskId);
 
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (task) {
       for (const dep of task.depends_on) {
         if (hasCycle(dep)) return true;
@@ -301,12 +310,12 @@ function validateTasks(tasks: Task[], warnings: string[]): void {
   }
 
   // Check for file overlap without dependency
-  const taskIds = new Set(tasks.map(t => t.id));
+  const taskIds = new Set(tasks.map((t) => t.id));
   for (let i = 0; i < tasks.length; i++) {
     for (let j = i + 1; j < tasks.length; j++) {
       const a = tasks[i];
       const b = tasks[j];
-      const overlap = a.files_to_modify.filter(f => b.files_to_modify.includes(f));
+      const overlap = a.files_to_modify.filter((f) => b.files_to_modify.includes(f));
       if (overlap.length > 0) {
         const hasDep = a.depends_on.includes(b.id) || b.depends_on.includes(a.id);
         if (!hasDep) {

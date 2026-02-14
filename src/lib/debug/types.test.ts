@@ -54,9 +54,20 @@ describe('EXTENSION_MAP', () => {
 
 describe('LOG_TEMPLATES', () => {
   const languages: DebugLanguage[] = [
-    'typescript', 'javascript', 'python', 'go', 'rust',
-    'java', 'ruby', 'php', 'swift', 'kotlin',
-    'c', 'cpp', 'csharp', 'unknown',
+    'typescript',
+    'javascript',
+    'python',
+    'go',
+    'rust',
+    'java',
+    'ruby',
+    'php',
+    'swift',
+    'kotlin',
+    'c',
+    'cpp',
+    'csharp',
+    'unknown',
   ];
 
   it('has template for every DebugLanguage', () => {
@@ -177,8 +188,22 @@ describe('sessionToIndexEntry', () => {
       bug_description: 'Tests fail with ECONNREFUSED on CI',
       language: 'typescript',
       hypotheses: [
-        { id: 1, description: 'Port conflict', confidence: 'high', evidence: '', test: '', result: 'pending' },
-        { id: 2, description: 'Missing env var', confidence: 'medium', evidence: '', test: '', result: 'refuted' },
+        {
+          id: 1,
+          description: 'Port conflict',
+          confidence: 'high',
+          evidence: '',
+          test: '',
+          result: 'pending',
+        },
+        {
+          id: 2,
+          description: 'Missing env var',
+          confidence: 'medium',
+          evidence: '',
+          test: '',
+          result: 'refuted',
+        },
       ],
       instrumented_files: [],
       iteration: 1,

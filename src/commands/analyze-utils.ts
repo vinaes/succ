@@ -45,13 +45,11 @@ export function sanitizeFilename(name: string): string {
 export function buildMocContent(
   type: 'systems' | 'features',
   projectName: string,
-  items: Array<{ name: string; description: string; keyFile: string }>,
+  items: Array<{ name: string; description: string; keyFile: string }>
 ): string {
   const typeLabel = type === 'systems' ? 'Systems' : 'Features';
   const typeSingular = type === 'systems' ? 'system' : 'feature';
-  const parentLink = type === 'systems'
-    ? `[[Architecture Overview]]`
-    : `[[${projectName}]]`;
+  const parentLink = type === 'systems' ? `[[Architecture Overview]]` : `[[${projectName}]]`;
 
   const lines: string[] = [
     '---',
@@ -70,7 +68,9 @@ export function buildMocContent(
   if (items.length === 0) {
     lines.push(`No ${type} documented yet.`);
   } else {
-    lines.push(`| ${typeSingular[0].toUpperCase() + typeSingular.slice(1)} | Description | Key File |`);
+    lines.push(
+      `| ${typeSingular[0].toUpperCase() + typeSingular.slice(1)} | Description | Key File |`
+    );
     lines.push('|--------|-------------|----------|');
     for (const item of items) {
       lines.push(`| [[${item.name}]] | ${item.description} | \`${item.keyFile}\` |`);
@@ -95,11 +95,9 @@ export function buildMocContent(
 export function buildItemPrompt(
   type: 'systems' | 'features',
   projectName: string,
-  item: ProfileItem,
+  item: ProfileItem
 ): string {
-  const parentLink = type === 'systems'
-    ? '[[Systems Overview]]'
-    : '[[Features Overview]]';
+  const parentLink = type === 'systems' ? '[[Systems Overview]]' : '[[Features Overview]]';
 
   const frontmatter = [
     '---',
@@ -202,7 +200,7 @@ Output ONLY the markdown document. No preamble, no explanations.`;
 export function gatherItemContext(
   projectRoot: string,
   item: ProfileItem,
-  broadHeader: string,
+  broadHeader: string
 ): string {
   const parts: string[] = [broadHeader];
 
@@ -213,7 +211,9 @@ export function gatherItemContext(
       try {
         const content = fs.readFileSync(keyFilePath, 'utf-8').slice(0, 8000);
         parts.push(`## Key File: ${item.keyFile}\n\`\`\`\n${content}\n\`\`\`\n`);
-      } catch { /* skip unreadable */ }
+      } catch {
+        /* skip unreadable */
+      }
     }
   }
 
@@ -222,8 +222,11 @@ export function gatherItemContext(
     const keyDir = path.dirname(path.join(projectRoot, item.keyFile));
     if (fs.existsSync(keyDir)) {
       try {
-        const siblings = fs.readdirSync(keyDir)
-          .filter(f => f !== path.basename(item.keyFile) && /\.(ts|js|py|rs|go|java|rb)$/i.test(f))
+        const siblings = fs
+          .readdirSync(keyDir)
+          .filter(
+            (f) => f !== path.basename(item.keyFile) && /\.(ts|js|py|rs|go|java|rb)$/i.test(f)
+          )
           .slice(0, 3);
         for (const sibling of siblings) {
           const siblingPath = path.join(keyDir, sibling);
@@ -231,9 +234,13 @@ export function gatherItemContext(
             const content = fs.readFileSync(siblingPath, 'utf-8').slice(0, 3000);
             const relPath = path.relative(projectRoot, siblingPath).replace(/\\/g, '/');
             parts.push(`## ${relPath}\n\`\`\`\n${content}\n\`\`\`\n`);
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
 
@@ -244,7 +251,8 @@ export function gatherItemContext(
  * Run multi-pass: individual API calls per system/feature with concurrency control.
  */
 export async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPassResult> {
-  const { type, projectName, items, callLLM, concurrency, broadContext, projectRoot, onProgress } = opts;
+  const { type, projectName, items, callLLM, concurrency, broadContext, projectRoot, onProgress } =
+    opts;
   const succeeded: Array<{ name: string; content: string }> = [];
   const failed: Array<{ name: string; error: string }> = [];
 
@@ -257,7 +265,9 @@ export async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPa
       running++;
       return;
     }
-    await new Promise<void>(resolve => { waiters.push(resolve); });
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
     running++;
   };
 
@@ -276,7 +286,7 @@ export async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPa
     await acquireSlot();
 
     // 200ms stagger to avoid rate limiting bursts
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const safeName = sanitizeFilename(item.name);
     const prompt = buildItemPrompt(type, projectName, item);
@@ -289,7 +299,7 @@ export async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPa
         if (!raw || raw.trim().length < 50) {
           lastError = 'Empty or too-short response';
           if (attempt === 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
           continue;
         }
@@ -302,7 +312,7 @@ export async function runMultiPassItems(opts: MultiPassOptions): Promise<MultiPa
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
         if (attempt === 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
     }
@@ -354,7 +364,10 @@ export function cleanMarkdownOutput(content: string): string {
  * Parse multi-file output from agents that create multiple files
  * Format: ===FILE: filename.md===\ncontent\n===FILE: next.md===
  */
-export function parseMultiFileOutput(content: string, baseDir: string): Array<{ path: string; content: string }> {
+export function parseMultiFileOutput(
+  content: string,
+  baseDir: string
+): Array<{ path: string; content: string }> {
   const files: Array<{ path: string; content: string }> = [];
   const cleaned = cleanMarkdownOutput(content);
 
@@ -377,7 +390,7 @@ export function parseMultiFileOutput(content: string, baseDir: string): Array<{ 
       if (fileContent) {
         files.push({
           path: path.join(baseDir, filename),
-          content: fileContent
+          content: fileContent,
         });
       }
     }
@@ -405,9 +418,15 @@ export function cleanAgentSubfiles(outputDir: string, overviewPath: string): voi
 
     // Skip non-analyze files (decision exports, session logs, MOC stubs, manual docs)
     const lowerEntry = entry.toLowerCase();
-    if (lowerEntry.startsWith('2026-') || lowerEntry.startsWith('2025-') ||
-        lowerEntry === 'sessions.md' || lowerEntry === 'decisions.md' ||
-        lowerEntry === 'technical.md' || lowerEntry === 'strategy.md') continue;
+    if (
+      lowerEntry.startsWith('2026-') ||
+      lowerEntry.startsWith('2025-') ||
+      lowerEntry === 'sessions.md' ||
+      lowerEntry === 'decisions.md' ||
+      lowerEntry === 'technical.md' ||
+      lowerEntry === 'strategy.md'
+    )
+      continue;
 
     const filePath = path.join(outputDir, entry);
     try {
@@ -559,10 +578,7 @@ relevance: high
 **Conventions:** [[Conventions]]
 `;
 
-  fs.writeFileSync(
-    path.join(brainDir, '01_Projects', projectName, `${projectName}.md`),
-    projectMd
-  );
+  fs.writeFileSync(path.join(brainDir, '01_Projects', projectName, `${projectName}.md`), projectMd);
 
   // Learnings
   const learningsMd = `# Learnings

@@ -82,10 +82,10 @@ export async function applyCentralityBoost<T extends { id?: number; similarity: 
   if (!config.enabled || results.length === 0) return results;
 
   const boostWeight = config.boost_weight ?? 0.1;
-  const memoryIds = results.filter(r => r.id != null).map(r => r.id!);
+  const memoryIds = results.filter((r) => r.id != null).map((r) => r.id!);
   const centralities = await getCentralityScores(memoryIds);
 
-  const boosted = results.map(r => {
+  const boosted = results.map((r) => {
     if (r.id == null) return r;
     const c = centralities.get(r.id) ?? 0;
     return { ...r, similarity: Math.min(1.0, r.similarity + c * boostWeight) };

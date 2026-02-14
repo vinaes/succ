@@ -34,7 +34,13 @@ describe('Session Counters', () => {
     hybridSearchMemories: vi.fn(async () => []),
     hybridSearchDocs: vi.fn(async () => []),
     hybridSearchCode: vi.fn(async () => []),
-    getMemoryStats: vi.fn(() => ({ total_memories: 10, by_type: {}, oldest_memory: null, newest_memory: null, stale_count: 0 })),
+    getMemoryStats: vi.fn(() => ({
+      total_memories: 10,
+      by_type: {},
+      oldest_memory: null,
+      newest_memory: null,
+      stale_count: 0,
+    })),
     getDb: vi.fn(() => ({
       prepare: vi.fn(() => ({ run: vi.fn() })),
     })),
@@ -128,7 +134,11 @@ describe('Session Counters', () => {
     });
 
     it('should increment memoriesDuplicated for global duplicates', async () => {
-      sqliteMock.saveGlobalMemory.mockReturnValueOnce({ id: 1, isDuplicate: true, similarity: 0.97 });
+      sqliteMock.saveGlobalMemory.mockReturnValueOnce({
+        id: 1,
+        isDuplicate: true,
+        similarity: 0.97,
+      });
       const result = await dispatcher.saveGlobalMemory('test', [0.1], ['tag1']);
       expect(result.created).toBe(false);
       const c = dispatcher.getSessionCounters();

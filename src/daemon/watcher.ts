@@ -23,11 +23,7 @@ import {
   deleteFileHash,
 } from '../lib/storage/index.js';
 import { indexCodeFile } from '../commands/index-code.js';
-import {
-  DOC_EXTENSIONS,
-  shouldIgnorePath,
-  getFileType,
-} from '../lib/patterns.js';
+import { DOC_EXTENSIONS, shouldIgnorePath, getFileType } from '../lib/patterns.js';
 
 // Re-export for backwards compatibility
 export { CODE_EXTENSIONS, DOC_EXTENSIONS } from '../lib/patterns.js';
@@ -184,10 +180,7 @@ async function indexCode(
 /**
  * Remove a document file from index
  */
-async function removeDocFile(
-  relativePath: string,
-  log: (msg: string) => void
-): Promise<void> {
+async function removeDocFile(relativePath: string, log: (msg: string) => void): Promise<void> {
   await withLock('watch-remove', async () => {
     await deleteDocumentsByPath(relativePath);
     await deleteFileHash(relativePath);
@@ -198,10 +191,7 @@ async function removeDocFile(
 /**
  * Remove a code file from index
  */
-async function removeCodeFile(
-  relativePath: string,
-  log: (msg: string) => void
-): Promise<void> {
+async function removeCodeFile(relativePath: string, log: (msg: string) => void): Promise<void> {
   await withLock('watch-remove-code', async () => {
     await deleteDocumentsByPath(relativePath);
     await deleteFileHash(`code:${relativePath}`);
@@ -232,7 +222,10 @@ export async function startWatcher(
   const debounceMs = config.debounceMs ?? 5000; // 5 seconds debounce per file
 
   const pending = new Map<string, NodeJS.Timeout>();
-  const pendingBatch = new Map<string, { event: Event; fileType: 'code' | 'doc'; relativePath: string }>();
+  const pendingBatch = new Map<
+    string,
+    { event: Event; fileType: 'code' | 'doc'; relativePath: string }
+  >();
   let batchTimer: NodeJS.Timeout | null = null;
   const BATCH_FLUSH_MS = 2000; // Collect events for 2s before processing batch
 
@@ -245,25 +238,25 @@ export async function startWatcher(
     pendingBatch.clear();
 
     // Filter out files that no longer exist
-    const validFiles = batch.filter(f => fs.existsSync(f.event.path));
+    const validFiles = batch.filter((f) => fs.existsSync(f.event.path));
     if (validFiles.length === 0) return;
 
     log(`[watch] Processing batch of ${validFiles.length} files`);
 
     // Group by type for efficient processing
-    const codeFiles = validFiles.filter(f => f.fileType === 'code');
-    const docFiles = validFiles.filter(f => f.fileType === 'doc');
+    const codeFiles = validFiles.filter((f) => f.fileType === 'code');
+    const docFiles = validFiles.filter((f) => f.fileType === 'doc');
 
     // Process all files in parallel
     const results = await Promise.allSettled([
-      ...codeFiles.map(async f => {
+      ...codeFiles.map(async (f) => {
         const action = f.event.type === 'create' ? '+' : '~';
         log(`[watch] [${action}] ${f.relativePath}`);
         watcherState!.lastChange = Date.now();
         watcherState!.watchedFiles.add(f.relativePath);
         await indexCode(f.event.path, f.relativePath, log);
       }),
-      ...docFiles.map(async f => {
+      ...docFiles.map(async (f) => {
         const action = f.event.type === 'create' ? '+' : '~';
         log(`[watch] [${action}] ${f.relativePath}`);
         watcherState!.lastChange = Date.now();
@@ -466,9 +459,7 @@ export async function indexFileOnDemand(
   log: (msg: string) => void
 ): Promise<void> {
   const projectRoot = getProjectRoot();
-  const absolutePath = path.isAbsolute(filePath)
-    ? filePath
-    : path.join(projectRoot, filePath);
+  const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
   const relativePath = path.relative(projectRoot, absolutePath);
 
   if (!fs.existsSync(absolutePath)) {

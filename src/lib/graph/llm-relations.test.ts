@@ -2,14 +2,33 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
 // In-memory stores
-let mockMemories: Array<{ id: number; content: string; tags: string[]; source: string | null; type: string; created_at: string; invalidated_by?: number | null }>;
-let mockLinks: Array<{ id: number; source_id: number; target_id: number; relation: string; weight: number; llm_enriched: number; created_at: string }>;
+let mockMemories: Array<{
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  type: string;
+  created_at: string;
+  invalidated_by?: number | null;
+}>;
+let mockLinks: Array<{
+  id: number;
+  source_id: number;
+  target_id: number;
+  relation: string;
+  weight: number;
+  llm_enriched: number;
+  created_at: string;
+}>;
 
 vi.mock('../storage/index.js', () => ({
   getAllMemoryLinksForExport: async () => mockLinks,
-  getMemoryById: async (id: number) => mockMemories.find(m => m.id === id) ?? null,
-  updateMemoryLink: async (linkId: number, updates: { relation?: string; weight?: number; llmEnriched?: boolean }) => {
-    const link = mockLinks.find(l => l.id === linkId);
+  getMemoryById: async (id: number) => mockMemories.find((m) => m.id === id) ?? null,
+  updateMemoryLink: async (
+    linkId: number,
+    updates: { relation?: string; weight?: number; llmEnriched?: boolean }
+  ) => {
+    const link = mockLinks.find((l) => l.id === linkId);
     if (link) {
       if (updates.relation !== undefined) link.relation = updates.relation;
       if (updates.weight !== undefined) link.weight = updates.weight;
@@ -17,8 +36,8 @@ vi.mock('../storage/index.js', () => ({
     }
   },
   getMemoryLinks: async (memoryId: number) => {
-    const outgoing = mockLinks.filter(l => l.source_id === memoryId);
-    const incoming = mockLinks.filter(l => l.target_id === memoryId);
+    const outgoing = mockLinks.filter((l) => l.source_id === memoryId);
+    const incoming = mockLinks.filter((l) => l.target_id === memoryId);
     return { outgoing, incoming };
   },
 }));
@@ -82,7 +101,9 @@ describe('LLM Relations', () => {
     });
 
     it('handles JSON embedded in extra text', async () => {
-      mockCallLLM.mockResolvedValue('Here is the result: {"relation": "implements", "confidence": 0.85} hope that helps');
+      mockCallLLM.mockResolvedValue(
+        'Here is the result: {"relation": "implements", "confidence": 0.85} hope that helps'
+      );
 
       const result = await classifyRelation(
         { id: 1, content: 'Added JWT auth', type: 'observation', tags: [] },
@@ -162,11 +183,21 @@ describe('LLM Relations', () => {
     });
 
     it('parses batch response', async () => {
-      mockCallLLM.mockResolvedValue('[{"pair": 1, "relation": "caused_by", "confidence": 0.9}, {"pair": 2, "relation": "leads_to", "confidence": 0.7}]');
+      mockCallLLM.mockResolvedValue(
+        '[{"pair": 1, "relation": "caused_by", "confidence": 0.9}, {"pair": 2, "relation": "leads_to", "confidence": 0.7}]'
+      );
 
       const result = await classifyRelationsBatch([
-        { a: { id: 1, content: 'A', type: 'observation', tags: [] }, b: { id: 2, content: 'B', type: 'observation', tags: [] }, linkId: 10 },
-        { a: { id: 3, content: 'C', type: 'decision', tags: [] }, b: { id: 4, content: 'D', type: 'learning', tags: [] }, linkId: 20 },
+        {
+          a: { id: 1, content: 'A', type: 'observation', tags: [] },
+          b: { id: 2, content: 'B', type: 'observation', tags: [] },
+          linkId: 10,
+        },
+        {
+          a: { id: 3, content: 'C', type: 'decision', tags: [] },
+          b: { id: 4, content: 'D', type: 'learning', tags: [] },
+          linkId: 20,
+        },
       ]);
 
       expect(result).toHaveLength(2);
@@ -180,7 +211,11 @@ describe('LLM Relations', () => {
       mockCallLLM.mockRejectedValue(new Error('timeout'));
 
       const result = await classifyRelationsBatch([
-        { a: { id: 1, content: 'A', type: 'observation', tags: [] }, b: { id: 2, content: 'B', type: 'observation', tags: [] }, linkId: 10 },
+        {
+          a: { id: 1, content: 'A', type: 'observation', tags: [] },
+          b: { id: 2, content: 'B', type: 'observation', tags: [] },
+          linkId: 10,
+        },
       ]);
 
       expect(result).toHaveLength(1);
@@ -192,7 +227,11 @@ describe('LLM Relations', () => {
       mockCallLLM.mockResolvedValue('some garbage text');
 
       const result = await classifyRelationsBatch([
-        { a: { id: 1, content: 'A', type: 'observation', tags: [] }, b: { id: 2, content: 'B', type: 'observation', tags: [] }, linkId: 10 },
+        {
+          a: { id: 1, content: 'A', type: 'observation', tags: [] },
+          b: { id: 2, content: 'B', type: 'observation', tags: [] },
+          linkId: 10,
+        },
       ]);
 
       expect(result).toHaveLength(1);
@@ -228,7 +267,7 @@ describe('LLM Relations', () => {
       const result = await enrichExistingLinks();
       expect(result.enriched).toBe(1);
 
-      const link = mockLinks.find(l => l.id === 1)!;
+      const link = mockLinks.find((l) => l.id === 1)!;
       expect(link.relation).toBe('caused_by');
       expect(link.llm_enriched).toBe(1);
     });
@@ -256,7 +295,7 @@ describe('LLM Relations', () => {
       const result = await enrichExistingLinks({ force: true });
       expect(result.enriched).toBe(1);
 
-      const link = mockLinks.find(l => l.id === 1)!;
+      const link = mockLinks.find((l) => l.id === 1)!;
       expect(link.relation).toBe('leads_to');
     });
 
@@ -271,7 +310,7 @@ describe('LLM Relations', () => {
       expect(result.failed).toBe(1);
       expect(result.enriched).toBe(0);
 
-      const link = mockLinks.find(l => l.id === 1)!;
+      const link = mockLinks.find((l) => l.id === 1)!;
       expect(link.relation).toBe('similar_to');
       expect(link.llm_enriched).toBe(1);
     });

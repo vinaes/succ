@@ -380,11 +380,38 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(100);
 
-      insertCodeDoc(db, 'src/user-service.ts', 'export function getUserById(id: string) { return db.users.find(u => u.id === id); }', makeSimilarEmbedding(100, 0.02), { symbolName: 'getUserById', symbolType: 'function' });
-      insertCodeDoc(db, 'src/user-repo.ts', 'class UserRepository { getUserById(id: number) { return this.db.query("SELECT * FROM users WHERE id = ?", [id]); } }', makeSimilarEmbedding(100, 0.04), { symbolName: 'getUserById', symbolType: 'method' });
-      insertCodeDoc(db, 'src/api/users.ts', 'router.get("/users/:id", async (req, res) => { const user = await getUserById(req.params.id); res.json(user); });', makeSimilarEmbedding(100, 0.06));
-      insertCodeDoc(db, 'src/types.ts', 'export interface User { id: string; name: string; email: string; }', makeEmbedding(200));
-      insertCodeDoc(db, 'src/utils.ts', 'export function formatDate(d: Date) { return d.toISOString(); }', makeEmbedding(300));
+      insertCodeDoc(
+        db,
+        'src/user-service.ts',
+        'export function getUserById(id: string) { return db.users.find(u => u.id === id); }',
+        makeSimilarEmbedding(100, 0.02),
+        { symbolName: 'getUserById', symbolType: 'function' }
+      );
+      insertCodeDoc(
+        db,
+        'src/user-repo.ts',
+        'class UserRepository { getUserById(id: number) { return this.db.query("SELECT * FROM users WHERE id = ?", [id]); } }',
+        makeSimilarEmbedding(100, 0.04),
+        { symbolName: 'getUserById', symbolType: 'method' }
+      );
+      insertCodeDoc(
+        db,
+        'src/api/users.ts',
+        'router.get("/users/:id", async (req, res) => { const user = await getUserById(req.params.id); res.json(user); });',
+        makeSimilarEmbedding(100, 0.06)
+      );
+      insertCodeDoc(
+        db,
+        'src/types.ts',
+        'export interface User { id: string; name: string; email: string; }',
+        makeEmbedding(200)
+      );
+      insertCodeDoc(
+        db,
+        'src/utils.ts',
+        'export function formatDate(d: Date) { return d.toISOString(); }',
+        makeEmbedding(300)
+      );
 
       invalidateBM25Index();
       const results = hybridSearchCode('getUserById', queryEmb, 5, 0.0);
@@ -393,7 +420,11 @@ describe('Hybrid Search E2E', () => {
 
       // At least one result should have both BM25 and vector scores
       const withBoth = results.filter(
-        (r: any) => r.bm25Score !== undefined && r.bm25Score > 0 && r.vectorScore !== undefined && r.vectorScore > 0
+        (r: any) =>
+          r.bm25Score !== undefined &&
+          r.bm25Score > 0 &&
+          r.vectorScore !== undefined &&
+          r.vectorScore > 0
       );
       expect(withBoth.length).toBeGreaterThan(0);
     });
@@ -403,7 +434,13 @@ describe('Hybrid Search E2E', () => {
 
       // Insert 5 docs about "processData"
       for (let i = 0; i < 5; i++) {
-        insertCodeDoc(db, `src/processor-${i}.ts`, `function processData${i}(input: any) { return transform(input); }`, makeEmbedding(400 + i), { symbolName: `processData${i}`, symbolType: 'function' });
+        insertCodeDoc(
+          db,
+          `src/processor-${i}.ts`,
+          `function processData${i}(input: any) { return transform(input); }`,
+          makeEmbedding(400 + i),
+          { symbolName: `processData${i}`, symbolType: 'function' }
+        );
       }
 
       invalidateBM25Index();
@@ -437,7 +474,13 @@ describe('Hybrid Search E2E', () => {
 
       // Insert 20 code files all containing "function"
       for (let i = 0; i < 20; i++) {
-        insertCodeDoc(db, `src/mod-${i}.ts`, `export function handler${i}() { return ${i}; }`, makeEmbedding(600 + i), { symbolName: `handler${i}`, symbolType: 'function' });
+        insertCodeDoc(
+          db,
+          `src/mod-${i}.ts`,
+          `export function handler${i}() { return ${i}; }`,
+          makeEmbedding(600 + i),
+          { symbolName: `handler${i}`, symbolType: 'function' }
+        );
       }
 
       invalidateBM25Index();
@@ -464,7 +507,11 @@ describe('Hybrid Search E2E', () => {
         'src/a.ts',
         'function getUserById(id: string) { return db.find(id); }',
         makeSimilarEmbedding(700, 0.02),
-        { symbolName: 'getUserById', symbolType: 'function', signature: 'function getUserById(id: string): User' }
+        {
+          symbolName: 'getUserById',
+          symbolType: 'function',
+          signature: 'function getUserById(id: string): User',
+        }
       );
 
       // Doc B: has "getUserById" in content but NO symbol_name
@@ -563,19 +610,57 @@ describe('Hybrid Search E2E', () => {
       const queryEmb = makeEmbedding(1000);
 
       // 2 functions
-      insertCodeDoc(db, 'src/fn1.ts', 'function alpha() { return 1; }', makeSimilarEmbedding(1000, 0.02), { symbolName: 'alpha', symbolType: 'function' });
-      insertCodeDoc(db, 'src/fn2.ts', 'function beta() { return 2; }', makeSimilarEmbedding(1000, 0.03), { symbolName: 'beta', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/fn1.ts',
+        'function alpha() { return 1; }',
+        makeSimilarEmbedding(1000, 0.02),
+        { symbolName: 'alpha', symbolType: 'function' }
+      );
+      insertCodeDoc(
+        db,
+        'src/fn2.ts',
+        'function beta() { return 2; }',
+        makeSimilarEmbedding(1000, 0.03),
+        { symbolName: 'beta', symbolType: 'function' }
+      );
 
       // 2 classes
-      insertCodeDoc(db, 'src/cl1.ts', 'class AlphaService { run() {} }', makeSimilarEmbedding(1000, 0.04), { symbolName: 'AlphaService', symbolType: 'class' });
-      insertCodeDoc(db, 'src/cl2.ts', 'class BetaService { run() {} }', makeSimilarEmbedding(1000, 0.05), { symbolName: 'BetaService', symbolType: 'class' });
+      insertCodeDoc(
+        db,
+        'src/cl1.ts',
+        'class AlphaService { run() {} }',
+        makeSimilarEmbedding(1000, 0.04),
+        { symbolName: 'AlphaService', symbolType: 'class' }
+      );
+      insertCodeDoc(
+        db,
+        'src/cl2.ts',
+        'class BetaService { run() {} }',
+        makeSimilarEmbedding(1000, 0.05),
+        { symbolName: 'BetaService', symbolType: 'class' }
+      );
 
       // 2 interfaces
-      insertCodeDoc(db, 'src/if1.ts', 'interface AlphaConfig { key: string; }', makeSimilarEmbedding(1000, 0.06), { symbolName: 'AlphaConfig', symbolType: 'interface' });
-      insertCodeDoc(db, 'src/if2.ts', 'interface BetaConfig { key: string; }', makeSimilarEmbedding(1000, 0.07), { symbolName: 'BetaConfig', symbolType: 'interface' });
+      insertCodeDoc(
+        db,
+        'src/if1.ts',
+        'interface AlphaConfig { key: string; }',
+        makeSimilarEmbedding(1000, 0.06),
+        { symbolName: 'AlphaConfig', symbolType: 'interface' }
+      );
+      insertCodeDoc(
+        db,
+        'src/if2.ts',
+        'interface BetaConfig { key: string; }',
+        makeSimilarEmbedding(1000, 0.07),
+        { symbolName: 'BetaConfig', symbolType: 'interface' }
+      );
 
       invalidateBM25Index();
-      const results = hybridSearchCode('alpha beta', queryEmb, 10, 0.0, 0.5, { symbolType: 'function' });
+      const results = hybridSearchCode('alpha beta', queryEmb, 10, 0.0, 0.5, {
+        symbolType: 'function',
+      });
 
       expect(results.length).toBeGreaterThan(0);
       for (const r of results) {
@@ -588,12 +673,32 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1100);
 
-      insertCodeDoc(db, 'src/a.ts', 'async function fetchData() { return await api.get("/data"); }', makeSimilarEmbedding(1100, 0.02), { symbolName: 'fetchData', symbolType: 'function' });
-      insertCodeDoc(db, 'src/b.ts', 'function transformData(input: any) { return input.map(x => x * 2); }', makeSimilarEmbedding(1100, 0.03), { symbolName: 'transformData', symbolType: 'function' });
-      insertCodeDoc(db, 'src/c.ts', 'async function processItems() { for await (const item of stream) { handle(item); } }', makeSimilarEmbedding(1100, 0.04), { symbolName: 'processItems', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'async function fetchData() { return await api.get("/data"); }',
+        makeSimilarEmbedding(1100, 0.02),
+        { symbolName: 'fetchData', symbolType: 'function' }
+      );
+      insertCodeDoc(
+        db,
+        'src/b.ts',
+        'function transformData(input: any) { return input.map(x => x * 2); }',
+        makeSimilarEmbedding(1100, 0.03),
+        { symbolName: 'transformData', symbolType: 'function' }
+      );
+      insertCodeDoc(
+        db,
+        'src/c.ts',
+        'async function processItems() { for await (const item of stream) { handle(item); } }',
+        makeSimilarEmbedding(1100, 0.04),
+        { symbolName: 'processItems', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
-      const results = hybridSearchCode('function data', queryEmb, 10, 0.0, 0.5, { regex: 'async\\s+function' });
+      const results = hybridSearchCode('function data', queryEmb, 10, 0.0, 0.5, {
+        regex: 'async\\s+function',
+      });
 
       expect(results.length).toBeGreaterThan(0);
       for (const r of results) {
@@ -607,13 +712,31 @@ describe('Hybrid Search E2E', () => {
       const queryEmb = makeEmbedding(1200);
 
       // async function
-      insertCodeDoc(db, 'src/a.ts', 'async function loadUser() { return await db.getUser(); }', makeSimilarEmbedding(1200, 0.02), { symbolName: 'loadUser', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'async function loadUser() { return await db.getUser(); }',
+        makeSimilarEmbedding(1200, 0.02),
+        { symbolName: 'loadUser', symbolType: 'function' }
+      );
 
       // sync function
-      insertCodeDoc(db, 'src/b.ts', 'function parseUser(data: string) { return JSON.parse(data); }', makeSimilarEmbedding(1200, 0.03), { symbolName: 'parseUser', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/b.ts',
+        'function parseUser(data: string) { return JSON.parse(data); }',
+        makeSimilarEmbedding(1200, 0.03),
+        { symbolName: 'parseUser', symbolType: 'function' }
+      );
 
       // async method in class
-      insertCodeDoc(db, 'src/c.ts', 'class UserService { async loadUser() { return await this.db.get(); } }', makeSimilarEmbedding(1200, 0.04), { symbolName: 'UserService', symbolType: 'class' });
+      insertCodeDoc(
+        db,
+        'src/c.ts',
+        'class UserService { async loadUser() { return await this.db.get(); } }',
+        makeSimilarEmbedding(1200, 0.04),
+        { symbolName: 'UserService', symbolType: 'class' }
+      );
 
       invalidateBM25Index();
 
@@ -634,7 +757,13 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       const queryEmb = makeEmbedding(1300);
-      insertCodeDoc(db, 'src/a.ts', 'function hello() { return "world"; }', makeSimilarEmbedding(1300, 0.02), { symbolName: 'hello', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function hello() { return "world"; }',
+        makeSimilarEmbedding(1300, 0.02),
+        { symbolName: 'hello', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 
@@ -647,7 +776,13 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       const queryEmb = makeEmbedding(1400);
-      insertCodeDoc(db, 'src/a.ts', 'function test() { return true; }', makeSimilarEmbedding(1400, 0.02), { symbolName: 'test', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function test() { return true; }',
+        makeSimilarEmbedding(1400, 0.02),
+        { symbolName: 'test', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 
@@ -710,10 +845,7 @@ describe('Hybrid Search E2E', () => {
       );
 
       // Doc B: same content, no symbolName
-      const indexB = bm25.buildIndex(
-        [{ id: 1, content: sharedContent }],
-        'code'
-      );
+      const indexB = bm25.buildIndex([{ id: 1, content: sharedContent }], 'code');
 
       const resultsA = bm25.search('processData', indexA, 'code', 1);
       const resultsB = bm25.search('processData', indexB, 'code', 1);
@@ -741,9 +873,24 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1500);
 
-      insertDocDocument(db, '.succ/brain/01_Projects/auth-flow.md', '# Authentication Flow\n\nUsers authenticate via JWT tokens issued by the auth service.', makeSimilarEmbedding(1500, 0.02));
-      insertDocDocument(db, '.succ/brain/02_Knowledge/api-design.md', '# API Design Patterns\n\nREST endpoints follow resource-based naming conventions.', makeSimilarEmbedding(1500, 0.04));
-      insertDocDocument(db, '.succ/brain/decisions/chose-sqlite.md', '# Decision: SQLite over Postgres\n\nChose SQLite for local-first architecture.', makeSimilarEmbedding(1500, 0.06));
+      insertDocDocument(
+        db,
+        '.succ/brain/01_Projects/auth-flow.md',
+        '# Authentication Flow\n\nUsers authenticate via JWT tokens issued by the auth service.',
+        makeSimilarEmbedding(1500, 0.02)
+      );
+      insertDocDocument(
+        db,
+        '.succ/brain/02_Knowledge/api-design.md',
+        '# API Design Patterns\n\nREST endpoints follow resource-based naming conventions.',
+        makeSimilarEmbedding(1500, 0.04)
+      );
+      insertDocDocument(
+        db,
+        '.succ/brain/decisions/chose-sqlite.md',
+        '# Decision: SQLite over Postgres\n\nChose SQLite for local-first architecture.',
+        makeSimilarEmbedding(1500, 0.06)
+      );
 
       invalidateBM25Index();
 
@@ -760,7 +907,12 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1600);
 
-      insertDocDocument(db, 'docs/auth.md', 'Authentication mechanisms include OAuth2, JWT, and API keys for securing endpoints.', makeSimilarEmbedding(1600, 0.02));
+      insertDocDocument(
+        db,
+        'docs/auth.md',
+        'Authentication mechanisms include OAuth2, JWT, and API keys for securing endpoints.',
+        makeSimilarEmbedding(1600, 0.02)
+      );
 
       invalidateBM25Index();
 
@@ -774,8 +926,19 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1700);
 
-      insertCodeDoc(db, 'src/auth.ts', 'function authenticate(user: User) { return jwt.sign(user); }', makeSimilarEmbedding(1700, 0.02), { symbolName: 'authenticate', symbolType: 'function' });
-      insertDocDocument(db, 'docs/auth.md', 'Authentication is handled via JWT in the auth module.', makeSimilarEmbedding(1700, 0.03));
+      insertCodeDoc(
+        db,
+        'src/auth.ts',
+        'function authenticate(user: User) { return jwt.sign(user); }',
+        makeSimilarEmbedding(1700, 0.02),
+        { symbolName: 'authenticate', symbolType: 'function' }
+      );
+      insertDocDocument(
+        db,
+        'docs/auth.md',
+        'Authentication is handled via JWT in the auth module.',
+        makeSimilarEmbedding(1700, 0.03)
+      );
 
       invalidateBM25Index();
 
@@ -803,11 +966,36 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1800);
 
-      insertMemory(db, 'Decided to use TypeScript strict mode for all new code', makeSimilarEmbedding(1800, 0.02), { tags: '["decision","typescript"]', type: 'decision' });
-      insertMemory(db, 'React components should use functional style with hooks', makeSimilarEmbedding(1800, 0.04), { tags: '["pattern","react"]', type: 'pattern' });
-      insertMemory(db, 'ESM requires explicit .js extensions in imports', makeSimilarEmbedding(1800, 0.06), { tags: '["learning","esm"]', type: 'learning' });
-      insertMemory(db, 'Fixed CORS issue by adding proper headers in middleware', makeSimilarEmbedding(1800, 0.08), { tags: '["error","cors"]', type: 'error' });
-      insertMemory(db, 'Database migrations run automatically on startup', makeSimilarEmbedding(1800, 0.1), { tags: '["observation"]', type: 'observation' });
+      insertMemory(
+        db,
+        'Decided to use TypeScript strict mode for all new code',
+        makeSimilarEmbedding(1800, 0.02),
+        { tags: '["decision","typescript"]', type: 'decision' }
+      );
+      insertMemory(
+        db,
+        'React components should use functional style with hooks',
+        makeSimilarEmbedding(1800, 0.04),
+        { tags: '["pattern","react"]', type: 'pattern' }
+      );
+      insertMemory(
+        db,
+        'ESM requires explicit .js extensions in imports',
+        makeSimilarEmbedding(1800, 0.06),
+        { tags: '["learning","esm"]', type: 'learning' }
+      );
+      insertMemory(
+        db,
+        'Fixed CORS issue by adding proper headers in middleware',
+        makeSimilarEmbedding(1800, 0.08),
+        { tags: '["error","cors"]', type: 'error' }
+      );
+      insertMemory(
+        db,
+        'Database migrations run automatically on startup',
+        makeSimilarEmbedding(1800, 0.1),
+        { tags: '["observation"]', type: 'observation' }
+      );
 
       invalidateBM25Index();
 
@@ -827,13 +1015,18 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(1900);
 
-      insertMemory(db, 'Sprint goal: complete auth module by end of week', makeSimilarEmbedding(1900, 0.02), {
-        tags: '["sprint"]',
-        type: 'observation',
-        validFrom: '2026-02-01',
-        validUntil: '2026-02-14',
-        qualityScore: 0.85,
-      });
+      insertMemory(
+        db,
+        'Sprint goal: complete auth module by end of week',
+        makeSimilarEmbedding(1900, 0.02),
+        {
+          tags: '["sprint"]',
+          type: 'observation',
+          validFrom: '2026-02-01',
+          validUntil: '2026-02-14',
+          qualityScore: 0.85,
+        }
+      );
 
       invalidateBM25Index();
 
@@ -856,10 +1049,22 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       // Doc A: good BM25 match (exact keyword), bad vector match
-      insertCodeDoc(db, 'src/a.ts', 'function searchQuery(q: string) { return database.search(q); }', makeEmbedding(2000), { symbolName: 'searchQuery', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function searchQuery(q: string) { return database.search(q); }',
+        makeEmbedding(2000),
+        { symbolName: 'searchQuery', symbolType: 'function' }
+      );
 
       // Doc B: bad BM25 match (no keyword), good vector match
-      insertCodeDoc(db, 'src/b.ts', 'function transform(data: any) { return data.map(x => x + 1); }', makeEmbedding(2001), { symbolName: 'transform', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/b.ts',
+        'function transform(data: any) { return data.map(x => x + 1); }',
+        makeEmbedding(2001),
+        { symbolName: 'transform', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 
@@ -877,10 +1082,22 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       // Doc A: good BM25 match (has the keyword), DISTANT vector
-      insertCodeDoc(db, 'src/a.ts', 'function findItem(id: string) { return items.find(i => i.id === id); }', makeEmbedding(2100), { symbolName: 'findItem', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function findItem(id: string) { return items.find(i => i.id === id); }',
+        makeEmbedding(2100),
+        { symbolName: 'findItem', symbolType: 'function' }
+      );
 
       // Doc B: no BM25 match (different keywords), CLOSE vector to query
-      insertCodeDoc(db, 'src/b.ts', 'class DataTransformer { run(input: object) { return mutate(input); } }', makeEmbedding(2150), { symbolName: 'DataTransformer', symbolType: 'class' });
+      insertCodeDoc(
+        db,
+        'src/b.ts',
+        'class DataTransformer { run(input: object) { return mutate(input); } }',
+        makeEmbedding(2150),
+        { symbolName: 'DataTransformer', symbolType: 'class' }
+      );
 
       invalidateBM25Index();
 
@@ -908,13 +1125,31 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       // Doc A: appears in BOTH BM25 and vector results
-      insertCodeDoc(db, 'src/a.ts', 'function processPayment(amount: number) { return charge(amount); }', makeSimilarEmbedding(2200, 0.01), { symbolName: 'processPayment', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function processPayment(amount: number) { return charge(amount); }',
+        makeSimilarEmbedding(2200, 0.01),
+        { symbolName: 'processPayment', symbolType: 'function' }
+      );
 
       // Doc B: only good for BM25 (has the keyword)
-      insertCodeDoc(db, 'src/b.ts', 'function processPaymentRefund(id: string) { return refund(id); }', makeEmbedding(2299), { symbolName: 'processPaymentRefund', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/b.ts',
+        'function processPaymentRefund(id: string) { return refund(id); }',
+        makeEmbedding(2299),
+        { symbolName: 'processPaymentRefund', symbolType: 'function' }
+      );
 
       // Doc C: only good for vector (close embedding, no keyword)
-      insertCodeDoc(db, 'src/c.ts', 'class OrderManager { submit(order: Order) { return validate(order); } }', makeSimilarEmbedding(2200, 0.02), { symbolName: 'OrderManager', symbolType: 'class' });
+      insertCodeDoc(
+        db,
+        'src/c.ts',
+        'class OrderManager { submit(order: Order) { return validate(order); } }',
+        makeSimilarEmbedding(2200, 0.02),
+        { symbolName: 'OrderManager', symbolType: 'class' }
+      );
 
       invalidateBM25Index();
 
@@ -936,7 +1171,13 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       const queryEmb = makeEmbedding(2300);
-      insertCodeDoc(db, 'src/a.ts', 'export function hello() { return "world"; }', makeSimilarEmbedding(2300, 0.02), { symbolName: 'hello', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'export function hello() { return "world"; }',
+        makeSimilarEmbedding(2300, 0.02),
+        { symbolName: 'hello', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 
@@ -956,7 +1197,17 @@ describe('Hybrid Search E2E', () => {
       db = freshDb();
 
       const queryEmb = makeEmbedding(2400);
-      insertCodeDoc(db, 'src/a.ts', 'function greet(name: string) { return `Hello ${name}`; }', makeSimilarEmbedding(2400, 0.02), { symbolName: 'greet', symbolType: 'function', signature: 'function greet(name: string): string' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function greet(name: string) { return `Hello ${name}`; }',
+        makeSimilarEmbedding(2400, 0.02),
+        {
+          symbolName: 'greet',
+          symbolType: 'function',
+          signature: 'function greet(name: string): string',
+        }
+      );
 
       invalidateBM25Index();
 
@@ -971,7 +1222,13 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(2500);
 
-      insertCodeDoc(db, 'src/a.ts', 'function x() { return 1; }', makeSimilarEmbedding(2500, 0.001), { symbolName: 'x', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/a.ts',
+        'function x() { return 1; }',
+        makeSimilarEmbedding(2500, 0.001),
+        { symbolName: 'x', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 
@@ -1029,7 +1286,12 @@ describe('Hybrid Search E2E', () => {
     it('29. Single document found', () => {
       db = freshDb();
 
-      insertCodeDoc(db, 'src/only.ts', 'export const MAGIC = 42;', makeSimilarEmbedding(2900, 0.02));
+      insertCodeDoc(
+        db,
+        'src/only.ts',
+        'export const MAGIC = 42;',
+        makeSimilarEmbedding(2900, 0.02)
+      );
 
       invalidateBM25Index();
 
@@ -1044,8 +1306,20 @@ describe('Hybrid Search E2E', () => {
 
       const queryEmb = makeEmbedding(3000);
 
-      insertCodeDoc(db, 'src/i18n.ts', '// \u041f\u0440\u0438\u0432\u0435\u0442 \u043c\u0438\u0440! \u4f60\u597d\u4e16\u754c\nfunction greet() { return "Hello"; }', makeSimilarEmbedding(3000, 0.02), { symbolName: 'greet', symbolType: 'function' });
-      insertCodeDoc(db, 'src/emoji.ts', '// Celebration module\nfunction celebrate() { return "party"; }', makeSimilarEmbedding(3000, 0.04), { symbolName: 'celebrate', symbolType: 'function' });
+      insertCodeDoc(
+        db,
+        'src/i18n.ts',
+        '// \u041f\u0440\u0438\u0432\u0435\u0442 \u043c\u0438\u0440! \u4f60\u597d\u4e16\u754c\nfunction greet() { return "Hello"; }',
+        makeSimilarEmbedding(3000, 0.02),
+        { symbolName: 'greet', symbolType: 'function' }
+      );
+      insertCodeDoc(
+        db,
+        'src/emoji.ts',
+        '// Celebration module\nfunction celebrate() { return "party"; }',
+        makeSimilarEmbedding(3000, 0.04),
+        { symbolName: 'celebrate', symbolType: 'function' }
+      );
 
       invalidateBM25Index();
 

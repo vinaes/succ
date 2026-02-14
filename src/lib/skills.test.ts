@@ -15,7 +15,10 @@ import path from 'path';
 import os from 'os';
 
 // Create a temp directory for tests
-const tempDir = path.join(os.tmpdir(), `succ-skills-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const tempDir = path.join(
+  os.tmpdir(),
+  `succ-skills-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
 const projectA = path.join(tempDir, 'project-a');
 const projectB = path.join(tempDir, 'project-b');
 
@@ -130,15 +133,24 @@ describe('Skills Module with Project Scoping', () => {
       const database = db.getDb();
 
       // Insert a local skill for project A
-      database.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, updated_at)
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
-      ).run(projectId, 'test-skill-a', 'A skill for project A', 'local', '/path/to/skill', 'content');
+        )
+        .run(
+          projectId,
+          'test-skill-a',
+          'A skill for project A',
+          'local',
+          '/path/to/skill',
+          'content'
+        );
 
       // Verify it was inserted with project_id
-      const row = database.prepare(
-        'SELECT * FROM skills WHERE name = ?'
-      ).get('test-skill-a') as any;
+      const row = database
+        .prepare('SELECT * FROM skills WHERE name = ?')
+        .get('test-skill-a') as any;
 
       expect(row).toBeDefined();
       expect(row.project_id).toBe(projectId);
@@ -153,25 +165,29 @@ describe('Skills Module with Project Scoping', () => {
       const projectAId = projectA.replace(/\\/g, '/');
       const projectBId = projectB.replace(/\\/g, '/');
 
-      database.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, updated_at)
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO skills (project_id, name, description, source, updated_at)
          VALUES (?, ?, ?, ?, datetime('now'))`
-      ).run(projectAId, 'skill-only-a', 'Only in project A', 'local');
+        )
+        .run(projectAId, 'skill-only-a', 'Only in project A', 'local');
 
-      database.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, updated_at)
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO skills (project_id, name, description, source, updated_at)
          VALUES (?, ?, ?, ?, datetime('now'))`
-      ).run(projectBId, 'skill-only-b', 'Only in project B', 'local');
+        )
+        .run(projectBId, 'skill-only-b', 'Only in project B', 'local');
 
       // Query for project A skills only
-      const skillsA = database.prepare(
-        'SELECT * FROM skills WHERE project_id = ?'
-      ).all(projectAId) as any[];
+      const skillsA = database
+        .prepare('SELECT * FROM skills WHERE project_id = ?')
+        .all(projectAId) as any[];
 
       // Query for project B skills only
-      const skillsB = database.prepare(
-        'SELECT * FROM skills WHERE project_id = ?'
-      ).all(projectBId) as any[];
+      const skillsB = database
+        .prepare('SELECT * FROM skills WHERE project_id = ?')
+        .all(projectBId) as any[];
 
       // Verify project isolation
       const skillANames = skillsA.map((s: any) => s.name);
@@ -191,15 +207,17 @@ describe('Skills Module with Project Scoping', () => {
       const database = db.getDb();
 
       // Insert a Skyll cached skill (global)
-      database.prepare(
-        `INSERT OR REPLACE INTO skills (project_id, name, description, source, skyll_id, cached_at, cache_expires, updated_at)
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO skills (project_id, name, description, source, skyll_id, cached_at, cache_expires, updated_at)
          VALUES (NULL, ?, ?, 'skyll', ?, datetime('now'), datetime('now', '+7 days'), datetime('now'))`
-      ).run('global-skyll-skill', 'A global Skyll skill', 'skyll-123');
+        )
+        .run('global-skyll-skill', 'A global Skyll skill', 'skyll-123');
 
       // Verify it was inserted with NULL project_id
-      const row = database.prepare(
-        'SELECT * FROM skills WHERE name = ?'
-      ).get('global-skyll-skill') as any;
+      const row = database
+        .prepare('SELECT * FROM skills WHERE name = ?')
+        .get('global-skyll-skill') as any;
 
       expect(row).toBeDefined();
       expect(row.project_id).toBeNull();
@@ -215,13 +233,13 @@ describe('Skills Module with Project Scoping', () => {
       const projectBId = projectB.replace(/\\/g, '/');
 
       // Query that includes both project-specific and global skills
-      const skillsForA = database.prepare(
-        'SELECT * FROM skills WHERE project_id = ? OR project_id IS NULL'
-      ).all(projectAId) as any[];
+      const skillsForA = database
+        .prepare('SELECT * FROM skills WHERE project_id = ? OR project_id IS NULL')
+        .all(projectAId) as any[];
 
-      const skillsForB = database.prepare(
-        'SELECT * FROM skills WHERE project_id = ? OR project_id IS NULL'
-      ).all(projectBId) as any[];
+      const skillsForB = database
+        .prepare('SELECT * FROM skills WHERE project_id = ? OR project_id IS NULL')
+        .all(projectBId) as any[];
 
       // Global Skyll skill should appear in both
       const skillANames = skillsForA.map((s: any) => s.name);
@@ -247,11 +265,13 @@ describe('Skills Module with Project Scoping', () => {
       const projectAId = projectA.replace(/\\/g, '/');
 
       // Search for skills matching a query with project filter
-      const results = database.prepare(
-        `SELECT * FROM skills
+      const results = database
+        .prepare(
+          `SELECT * FROM skills
          WHERE (project_id = ? OR project_id IS NULL)
            AND (name LIKE ? OR description LIKE ?)`
-      ).all(projectAId, '%skill%', '%skill%') as any[];
+        )
+        .all(projectAId, '%skill%', '%skill%') as any[];
 
       // Should find project A local skills and global Skyll skills
       const names = results.map((r: any) => r.name);
@@ -276,15 +296,17 @@ describe('Skills Module with Project Scoping', () => {
       const projectAId = projectA.replace(/\\/g, '/');
 
       // Track usage
-      database.prepare(
-        `UPDATE skills SET usage_count = usage_count + 1, last_used = datetime('now')
+      database
+        .prepare(
+          `UPDATE skills SET usage_count = usage_count + 1, last_used = datetime('now')
          WHERE name = ? AND (project_id = ? OR project_id IS NULL)`
-      ).run('test-skill-a', projectAId);
+        )
+        .run('test-skill-a', projectAId);
 
       // Verify usage was incremented
-      const row = database.prepare(
-        'SELECT usage_count FROM skills WHERE name = ?'
-      ).get('test-skill-a') as any;
+      const row = database
+        .prepare('SELECT usage_count FROM skills WHERE name = ?')
+        .get('test-skill-a') as any;
 
       expect(row.usage_count).toBe(1);
     });

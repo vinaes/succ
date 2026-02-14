@@ -43,8 +43,8 @@ export interface SymbolInfo {
 /** Extended chunk with tree-sitter metadata */
 export interface TreeSitterChunk {
   content: string;
-  startLine: number;  // 1-based (matches existing Chunk interface)
-  endLine: number;    // 1-based
+  startLine: number; // 1-based (matches existing Chunk interface)
+  endLine: number; // 1-based
   symbolName?: string;
   symbolType?: SymbolType;
   signature?: string;

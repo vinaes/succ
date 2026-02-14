@@ -22,17 +22,17 @@ export type GateType = 'typecheck' | 'test' | 'lint' | 'build' | 'custom';
 // ============================================================================
 
 export interface Prd {
-  id: string;                     // "prd_" + crypto hex (8 chars)
+  id: string; // "prd_" + crypto hex (8 chars)
   version: number;
   title: string;
   description: string;
   status: PrdStatus;
   execution_mode: ExecutionMode;
-  source_file: string;            // relative path to prd.md within prd dir
+  source_file: string; // relative path to prd.md within prd dir
   goals: string[];
   out_of_scope: string[];
   quality_gates: QualityGate[];
-  created_at: string;             // ISO 8601
+  created_at: string; // ISO 8601
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -53,20 +53,20 @@ export interface PrdStats {
 // ============================================================================
 
 export interface Task {
-  id: string;                     // "task_001", "task_002", ...
+  id: string; // "task_001", "task_002", ...
   prd_id: string;
   sequence: number;
   title: string;
   description: string;
   status: TaskStatus;
   priority: 'critical' | 'high' | 'medium' | 'low';
-  depends_on: string[];           // Task IDs
+  depends_on: string[]; // Task IDs
   acceptance_criteria: string[];
-  files_to_modify: string[];      // Predicted files task WILL change (for conflict detection)
-  relevant_files: string[];       // Context files (read-only)
-  context_queries: string[];      // Queries for succ_recall before execution
+  files_to_modify: string[]; // Predicted files task WILL change (for conflict detection)
+  relevant_files: string[]; // Context files (read-only)
+  context_queries: string[]; // Queries for succ_recall before execution
   attempts: TaskAttempt[];
-  max_attempts: number;           // default: 3
+  max_attempts: number; // default: 3
   created_at: string;
   updated_at: string;
 }
@@ -77,12 +77,12 @@ export interface TaskAttempt {
   completed_at: string | null;
   status: 'running' | 'passed' | 'failed';
   gate_results: GateResult[];
-  files_actually_modified: string[];  // git diff --name-only after execution
+  files_actually_modified: string[]; // git diff --name-only after execution
   memories_recalled: number;
   memories_created: number;
   dead_ends_recorded: number;
   error: string | null;
-  output_log: string;             // path to log file
+  output_log: string; // path to log file
 }
 
 // ============================================================================
@@ -100,7 +100,7 @@ export interface QualityGate {
   type: GateType;
   command: string;
   required: boolean;
-  timeout_ms: number;             // default: 120000
+  timeout_ms: number; // default: 120000
 }
 
 // ============================================================================
@@ -110,15 +110,15 @@ export interface QualityGate {
 export interface PrdExecution {
   prd_id: string;
   mode: ExecutionMode;
-  branch: string;                 // "prd/prd_xxx" — execution branch
-  original_branch: string;        // branch to return to after execution
+  branch: string; // "prd/prd_xxx" — execution branch
+  original_branch: string; // branch to return to after execution
   started_at: string;
   current_task_id: string | null;
-  iteration: number;              // number of full passes
-  max_iterations: number;         // default: 3 (Ralph-style retry whole PRD)
+  iteration: number; // number of full passes
+  max_iterations: number; // default: 3 (Ralph-style retry whole PRD)
   pid: number | null;
-  team_name: string | null;       // for team mode
-  concurrency: number | null;     // max parallel workers (team mode)
+  team_name: string | null; // for team mode
+  concurrency: number | null; // max parallel workers (team mode)
   log_file: string;
 }
 
@@ -140,10 +140,10 @@ export interface PrdIndexEntry {
 // ============================================================================
 
 export interface CodebaseContext {
-  file_tree: string;              // formatted file tree string
-  code_search_results: string;    // relevant code snippets
-  memories: string;               // recalled memories/decisions
-  brain_docs: string;             // brain vault documentation
+  file_tree: string; // formatted file tree string
+  code_search_results: string; // relevant code snippets
+  memories: string; // recalled memories/decisions
+  brain_docs: string; // brain vault documentation
 }
 
 // ============================================================================
@@ -305,15 +305,18 @@ export function prdToIndexEntry(prd: Prd): PrdIndexEntry {
 export function computeStats(tasks: Task[]): PrdStats {
   return {
     total_tasks: tasks.length,
-    completed_tasks: tasks.filter(t => t.status === 'completed').length,
-    failed_tasks: tasks.filter(t => t.status === 'failed').length,
-    skipped_tasks: tasks.filter(t => t.status === 'skipped').length,
+    completed_tasks: tasks.filter((t) => t.status === 'completed').length,
+    failed_tasks: tasks.filter((t) => t.status === 'failed').length,
+    skipped_tasks: tasks.filter((t) => t.status === 'skipped').length,
     total_attempts: tasks.reduce((sum, t) => sum + t.attempts.length, 0),
     total_duration_ms: tasks.reduce((sum, t) => {
-      return sum + t.attempts.reduce((aSum, a) => {
-        if (!a.completed_at) return aSum;
-        return aSum + (new Date(a.completed_at).getTime() - new Date(a.started_at).getTime());
-      }, 0);
+      return (
+        sum +
+        t.attempts.reduce((aSum, a) => {
+          if (!a.completed_at) return aSum;
+          return aSum + (new Date(a.completed_at).getTime() - new Date(a.started_at).getTime());
+        }, 0)
+      );
     }, 0),
   };
 }

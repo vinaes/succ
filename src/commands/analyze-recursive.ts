@@ -58,7 +58,8 @@ async function callAnalyzeLLM(prompt: string, mode: 'claude' | 'api'): Promise<s
         messages: [
           {
             role: 'system',
-            content: 'You are an expert software documentation writer. Generate clear, concise documentation.',
+            content:
+              'You are an expert software documentation writer. Generate clear, concise documentation.',
           },
           { role: 'user', content: prompt },
         ],
@@ -79,7 +80,7 @@ async function callAnalyzeLLM(prompt: string, mode: 'claude' | 'api'): Promise<s
     return data.choices?.[0]?.message?.content || null;
   } else {
     const { spawnClaudeCLI } = await import('../lib/llm.js');
-    return await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 120000 }) || null;
+    return (await spawnClaudeCLI(prompt, { tools: '', model: 'haiku', timeout: 120000 })) || null;
   }
 }
 
@@ -95,7 +96,7 @@ export async function analyzeFileRecursive(
   projectName: string,
   projectContext: string,
   wikilinksSection: string,
-  mode: 'claude' | 'api',
+  mode: 'claude' | 'api'
 ): Promise<string> {
   // Step 0: Extract symbol map via tree-sitter (fast, no LLM)
   let symbolMap = '(tree-sitter unavailable)';
@@ -126,7 +127,7 @@ export async function analyzeFileRecursive(
 
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
-    const batchContent = batch.map(c => c.content).join('\n\n');
+    const batchContent = batch.map((c) => c.content).join('\n\n');
     const startLine = batch[0].startLine;
     const endLine = batch[batch.length - 1].endLine;
 
@@ -159,10 +160,10 @@ Respond with a concise analysis. No frontmatter, no markdown headers, just facts
     const idx = i;
     activeCount++;
     const p = callAnalyzeLLM(chunkPrompt, mode)
-      .then(result => {
+      .then((result) => {
         chunkAnalyses[idx] = result || '(no analysis returned)';
       })
-      .catch(err => {
+      .catch((err) => {
         chunkAnalyses[idx] = `(analysis failed: ${err.message})`;
       })
       .finally(() => {
@@ -251,9 +252,7 @@ export async function analyzeFile(
   const mode: 'claude' | 'api' = options.mode || (analyzeCfg.mode as 'claude' | 'api');
 
   // Check file exists
-  const absolutePath = path.isAbsolute(filePath)
-    ? filePath
-    : path.join(projectRoot, filePath);
+  const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
 
   if (!fs.existsSync(absolutePath)) {
     return { success: false, error: `File not found: ${absolutePath}` };
@@ -301,9 +300,10 @@ _Files are automatically added here when analyzed._
 
   // Get existing brain docs for wikilink suggestions
   const existingDocs = getExistingBrainDocs(brainDir);
-  const wikilinksSection = existingDocs.length > 0
-    ? `\n## Existing Documentation (use these for [[wikilinks]]):\n${existingDocs.slice(0, 50).join(', ')}\n`
-    : '';
+  const wikilinksSection =
+    existingDocs.length > 0
+      ? `\n## Existing Documentation (use these for [[wikilinks]]):\n${existingDocs.slice(0, 50).join(', ')}\n`
+      : '';
 
   try {
     let content: string | null = null;
@@ -311,8 +311,15 @@ _Files are automatically added here when analyzed._
     if (fileContent.length > RECURSIVE_ANALYSIS_THRESHOLD) {
       // Large file: recursive chunk-analyze-synthesize
       content = await analyzeFileRecursive(
-        fileContent, absolutePath, relativePath, fileName, ext,
-        projectName, projectContext, wikilinksSection, mode,
+        fileContent,
+        absolutePath,
+        relativePath,
+        fileName,
+        ext,
+        projectName,
+        projectContext,
+        wikilinksSection,
+        mode
       );
     } else {
       // Small file: single-pass analysis (original behavior)

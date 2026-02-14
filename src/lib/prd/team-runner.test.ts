@@ -6,7 +6,7 @@ import type { RunningTask } from './team-runner.js';
 vi.mock('./scheduler.js', () => ({
   allDependenciesMet: (task: Task, tasks: Task[]) => {
     for (const depId of task.depends_on) {
-      const dep = tasks.find(t => t.id === depId);
+      const dep = tasks.find((t) => t.id === depId);
       if (dep && dep.status !== 'completed' && dep.status !== 'skipped') {
         return false;
       }
@@ -66,7 +66,7 @@ describe('getReadyTasks', () => {
     const ready = getReadyTasks(tasks, []);
 
     expect(ready).toHaveLength(2);
-    expect(ready.map(t => t.id)).toEqual(['task_001', 'task_002']);
+    expect(ready.map((t) => t.id)).toEqual(['task_001', 'task_002']);
   });
 
   it('should exclude non-pending tasks', () => {
@@ -144,8 +144,32 @@ describe('getReadyTasks', () => {
         status: 'pending',
         max_attempts: 2,
         attempts: [
-          { attempt_number: 1, started_at: '', completed_at: '', status: 'failed', gate_results: [], files_actually_modified: [], memories_recalled: 0, memories_created: 0, dead_ends_recorded: 0, error: null, output_log: '' },
-          { attempt_number: 2, started_at: '', completed_at: '', status: 'failed', gate_results: [], files_actually_modified: [], memories_recalled: 0, memories_created: 0, dead_ends_recorded: 0, error: null, output_log: '' },
+          {
+            attempt_number: 1,
+            started_at: '',
+            completed_at: '',
+            status: 'failed',
+            gate_results: [],
+            files_actually_modified: [],
+            memories_recalled: 0,
+            memories_created: 0,
+            dead_ends_recorded: 0,
+            error: null,
+            output_log: '',
+          },
+          {
+            attempt_number: 2,
+            started_at: '',
+            completed_at: '',
+            status: 'failed',
+            gate_results: [],
+            files_actually_modified: [],
+            memories_recalled: 0,
+            memories_created: 0,
+            dead_ends_recorded: 0,
+            error: null,
+            output_log: '',
+          },
         ],
       }),
     ];

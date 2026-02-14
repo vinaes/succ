@@ -58,18 +58,16 @@ npm test -- --coverage
 
 ### Test Coverage
 
-| Module | Tests | Coverage |
-|--------|-------|----------|
-| `lib/lock.ts` | 14 | Lock acquisition, release, concurrency, stale detection |
-| `lib/chunker.ts` | 27 | Text/code chunking for TS, JS, Python, Go, Rust |
-| `lib/config.ts` | 15 | Configuration loading, paths, overrides |
-| `lib/db.ts` | 23 | Documents, memories, knowledge graph, global DB |
-| `lib/graph-export.ts` | 11 | JSON/Obsidian export, wiki-links |
-| `commands/analyze.ts` | 13 | Multi-file output, daemon state, brain structure |
-| `commands/watch.ts` | 9 | PID files, debouncing, race conditions |
-| Integration | 9 | CLI commands, MCP server, daemon |
+**Total: 1300+ tests** across 70+ test files.
 
-**Total: 630+ tests**
+Key test areas:
+- Core libraries: config, chunker, lock, embeddings, quality scoring, temporal
+- Storage: SQLite, PostgreSQL, dispatcher, hybrid search, retention
+- Tree-sitter: AST parsing, symbol extraction, code chunking (13 languages)
+- Working memory: pipeline, priority scoring, validity filtering, diversity
+- MCP tools: search, memory, graph, indexing, debug, web-fetch, PRD
+- Commands: init, index, analyze, watch, graph, PRD pipeline
+- Integration: CLI commands, MCP server, daemon
 
 Tests are designed to:
 - Use isolated temp directories to avoid affecting real data
@@ -82,33 +80,60 @@ Tests are designed to:
 ```
 succ/
 ├── src/
-│   ├── cli.ts              # CLI entry point
-│   ├── mcp-server.ts       # MCP server entry point (tools + resources)
-│   ├── commands/           # CLI commands
-│   │   ├── init.ts         # succ init
-│   │   ├── index.ts        # succ index
-│   │   ├── index-code.ts   # succ index-code
-│   │   ├── search.ts       # succ search
-│   │   ├── memories.ts     # succ remember/memories/forget
-│   │   ├── analyze.ts      # succ analyze (+ daemon mode)
-│   │   ├── watch.ts        # succ watch
-│   │   ├── graph.ts        # succ graph (export, stats, auto-link)
-│   │   ├── benchmark.ts    # succ benchmark
-│   │   ├── clear.ts        # succ clear
+│   ├── cli.ts                  # CLI entry point
+│   ├── mcp/
+│   │   ├── server.ts           # MCP server entry point
+│   │   ├── helpers.ts          # MCP utilities (project path, responses)
+│   │   ├── resources.ts        # MCP resources (brain://, soul://)
+│   │   └── tools/              # 11 MCP tool modules
+│   │       ├── search.ts       # succ_search, succ_search_code, succ_symbols
+│   │       ├── memory.ts       # succ_remember, succ_recall, succ_forget
+│   │       ├── graph.ts        # succ_link, succ_explore
+│   │       ├── indexing.ts     # succ_index_file, succ_index_code_file, succ_reindex, succ_analyze_file
+│   │       ├── status.ts       # succ_status, succ_stats, succ_score
+│   │       ├── config.ts       # succ_config, succ_config_set, succ_checkpoint
+│   │       ├── dead-end.ts     # succ_dead_end
+│   │       ├── prd.ts          # succ_prd_generate/list/status/run/export
+│   │       ├── web-search.ts   # succ_quick_search, succ_web_search, succ_deep_research
+│   │       ├── web-fetch.ts    # succ_fetch (md.succ.ai integration)
+│   │       └── debug.ts        # succ_debug
+│   ├── commands/               # CLI commands (init, index, analyze, watch, prd, etc.)
+│   ├── daemon/                 # Background daemon service
+│   │   ├── service.ts          # Express server with REST API
 │   │   └── ...
+│   ├── prompts/                # LLM prompt templates
 │   └── lib/
-│       ├── db.ts           # SQLite database (documents, memories, links)
-│       ├── embeddings.ts   # Embeddings with cache, retry, timeout
-│       ├── chunker.ts      # Text/code chunking
-│       ├── config.ts       # Configuration management
-│       ├── indexer.ts      # Shared indexing logic with progress bar
-│       ├── lock.ts         # File-based locking for daemon mode
-│       └── graph-export.ts # Export memories to Obsidian/JSON
-├── docs/                   # Documentation
-├── dist/                   # Compiled JavaScript (generated)
+│       ├── db/                 # Database layer
+│       │   ├── schema.ts       # Schema definitions and migrations
+│       │   ├── memories.ts     # Memory CRUD operations
+│       │   └── retention.ts    # Retention and cleanup
+│       ├── storage/            # Multi-backend storage abstraction
+│       │   ├── dispatcher.ts   # Routes calls to active backend (124 methods)
+│       │   ├── backends/       # SQLite, PostgreSQL implementations
+│       │   └── vector/         # Qdrant vector backend
+│       ├── tree-sitter/        # AST parsing (13 languages)
+│       │   ├── parser.ts       # Language-aware parser
+│       │   ├── extractor.ts    # Symbol extraction
+│       │   ├── chunker.ts      # AST-aware code chunking
+│       │   └── queries/        # Tree-sitter .scm queries per language
+│       ├── debug/              # Structured debugging sessions
+│       ├── embeddings.ts       # ONNX embeddings with GPU auto-detection
+│       ├── config.ts           # Configuration management
+│       ├── quality.ts          # Memory quality scoring (local ONNX + LLM)
+│       ├── temporal.ts         # Time-weighted scoring, validity periods
+│       ├── working-memory-pipeline.ts  # Priority scoring, diversity filter
+│       ├── md-fetch.ts         # md.succ.ai client (URL→Markdown)
+│       ├── llm.ts              # LLM abstraction (local, OpenRouter, Claude)
+│       ├── chunker.ts          # Text/code chunking
+│       ├── indexer.ts          # Shared indexing logic
+│       ├── lock.ts             # File-based locking
+│       └── graph-export.ts     # Obsidian/JSON graph export
+├── hooks/                      # Claude Code hook scripts
+├── docs/                       # Documentation
+├── dist/                       # Compiled JavaScript (generated)
 ├── package.json
-├── vitest.config.ts        # Vitest configuration
-├── eslint.config.js        # ESLint flat config
-├── .prettierrc             # Prettier config
+├── vitest.config.ts
+├── eslint.config.js
+├── .prettierrc
 └── tsconfig.json
 ```

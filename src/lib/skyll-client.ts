@@ -173,7 +173,10 @@ export async function searchSkyll(
   const { limit = 10, skipCache = false } = options;
   const config = getSkyllConfig();
 
-  logInfo('skyll', `searchSkyll called with keywords: ${JSON.stringify(keywords)}, enabled=${config.enabled}`);
+  logInfo(
+    'skyll',
+    `searchSkyll called with keywords: ${JSON.stringify(keywords)}, enabled=${config.enabled}`
+  );
 
   if (!config.enabled) {
     logInfo('skyll', 'Skyll disabled, returning empty');

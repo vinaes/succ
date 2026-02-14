@@ -37,8 +37,8 @@ interface PoolWorker {
 }
 
 export interface EmbeddingPoolConfig {
-  poolSize?: number;  // Default: auto based on CPU cores and memory
-  maxWorkers?: number;  // Max workers cap (default: 8)
+  poolSize?: number; // Default: auto based on CPU cores and memory
+  maxWorkers?: number; // Max workers cap (default: 8)
   model: string;
 }
 
@@ -54,7 +54,10 @@ export class EmbeddingPool {
     // Auto-tune: ~80MB per native ORT worker (model + inference buffers)
     const maxWorkers = config.maxWorkers ?? 8;
     const maxByCpu = Math.min(os.cpus().length - 1, maxWorkers);
-    const maxByMem = Math.min(maxWorkers, Math.max(1, Math.floor(os.freemem() / (80 * 1024 * 1024))));
+    const maxByMem = Math.min(
+      maxWorkers,
+      Math.max(1, Math.floor(os.freemem() / (80 * 1024 * 1024)))
+    );
     this.poolSize = config.poolSize ?? Math.min(maxByCpu, maxByMem);
     if (this.poolSize < 1) this.poolSize = 1;
 
@@ -176,16 +179,21 @@ export class EmbeddingPool {
   }
 
   async shutdown(): Promise<void> {
-    const shutdownPromises = this.workers.map(pw =>
-      new Promise<void>((resolve) => {
-        pw.worker.once('exit', () => resolve());
-        pw.worker.postMessage({ type: 'shutdown' } as WorkerRequest);
-        // Force terminate after 5s
-        setTimeout(() => {
-          try { pw.worker.terminate(); } catch { /* ignore */ }
-          resolve();
-        }, 5000);
-      })
+    const shutdownPromises = this.workers.map(
+      (pw) =>
+        new Promise<void>((resolve) => {
+          pw.worker.once('exit', () => resolve());
+          pw.worker.postMessage({ type: 'shutdown' } as WorkerRequest);
+          // Force terminate after 5s
+          setTimeout(() => {
+            try {
+              pw.worker.terminate();
+            } catch {
+              /* ignore */
+            }
+            resolve();
+          }, 5000);
+        })
     );
 
     await Promise.all(shutdownPromises);

@@ -39,12 +39,12 @@ const DEFAULT_TAX = 0.08;
     expect(chunks!.length).toBeGreaterThanOrEqual(2);
 
     // Check that function chunk has metadata
-    const fnChunk = chunks!.find(c => c.symbolName === 'calculateTotal');
+    const fnChunk = chunks!.find((c) => c.symbolName === 'calculateTotal');
     expect(fnChunk).toBeDefined();
     expect(fnChunk!.symbolType).toBe('function');
 
     // Check that class chunk has metadata
-    const classChunk = chunks!.find(c => c.symbolName === 'ShoppingCart');
+    const classChunk = chunks!.find((c) => c.symbolName === 'ShoppingCart');
     expect(classChunk).toBeDefined();
     expect(classChunk!.symbolType).toBe('class');
 
@@ -76,11 +76,11 @@ class Config:
     expect(chunks).not.toBeNull();
     expect(chunks!.length).toBeGreaterThanOrEqual(2);
 
-    const fnChunk = chunks!.find(c => c.symbolName === 'read_config');
+    const fnChunk = chunks!.find((c) => c.symbolName === 'read_config');
     expect(fnChunk).toBeDefined();
     expect(fnChunk!.symbolType).toBe('function');
 
-    const classChunk = chunks!.find(c => c.symbolName === 'Config');
+    const classChunk = chunks!.find((c) => c.symbolName === 'Config');
     expect(classChunk).toBeDefined();
     expect(classChunk!.symbolType).toBe('class');
   }, 30_000);
@@ -111,7 +111,7 @@ func (s *Server) Start() error {
     expect(chunks).not.toBeNull();
     expect(chunks!.length).toBeGreaterThanOrEqual(2);
 
-    const fnChunk = chunks!.find(c => c.symbolName === 'NewServer');
+    const fnChunk = chunks!.find((c) => c.symbolName === 'NewServer');
     expect(fnChunk).toBeDefined();
     expect(fnChunk!.symbolType).toBe('function');
   }, 30_000);
@@ -129,8 +129,9 @@ func (s *Server) Start() error {
 
   it('splits large chunks', async () => {
     // Create a file with a very large function
-    const largeBody = Array.from({ length: 200 }, (_, i) =>
-      `  const line${i} = "${`x`.repeat(20)}";`
+    const largeBody = Array.from(
+      { length: 200 },
+      (_, i) => `  const line${i} = "${`x`.repeat(20)}";`
     ).join('\n');
     const code = `function bigFunction() {\n${largeBody}\n}`;
 

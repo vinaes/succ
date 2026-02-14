@@ -13,7 +13,13 @@ export type { Document, SearchResult, GraphStats } from './types.js';
 export { getDb, getGlobalDb, closeDb, closeGlobalDb } from './connection.js';
 
 // Re-export file hash functions
-export { getFileHash, setFileHash, deleteFileHash, getAllFileHashes, getAllFileHashesWithTimestamps } from './file-hash.js';
+export {
+  getFileHash,
+  setFileHash,
+  deleteFileHash,
+  getAllFileHashes,
+  getAllFileHashesWithTimestamps,
+} from './file-hash.js';
 
 // Re-export token frequency functions
 export {
@@ -23,20 +29,16 @@ export {
   getTotalTokenCount,
   getTopTokens,
   clearTokenFrequencies,
-  getTokenFrequencyStats
+  getTokenFrequencyStats,
 } from './token-frequency.js';
 
 // Re-export token stats functions and types
-export type {
-  TokenEventType,
-  TokenStatRecord,
-  TokenStatsAggregated
-} from './token-stats.js';
+export type { TokenEventType, TokenStatRecord, TokenStatsAggregated } from './token-stats.js';
 export {
   recordTokenStat,
   getTokenStatsAggregated,
   getTokenStatsSummary,
-  clearTokenStats
+  clearTokenStats,
 } from './token-stats.js';
 
 // Re-export web search history functions
@@ -45,7 +47,7 @@ export {
   getWebSearchHistory,
   getWebSearchSummary,
   getTodayWebSearchSpend,
-  clearWebSearchHistory
+  clearWebSearchHistory,
 } from './web-search-history.js';
 
 // Re-export retention functions and types
@@ -53,14 +55,15 @@ export type { MemoryForRetention } from './retention.js';
 export {
   incrementMemoryAccess,
   incrementMemoryAccessBatch,
-  getAllMemoriesForRetention
+  getAllMemoriesForRetention,
+  incrementCorrectionCount,
+  setMemoryInvariant,
+  getPinnedMemories,
+  updatePriorityScore,
 } from './retention.js';
 
 // Re-export document functions and types
-export type {
-  DocumentBatch,
-  DocumentBatchWithHash
-} from './documents.js';
+export type { DocumentBatch, DocumentBatchWithHash } from './documents.js';
 export {
   upsertDocument,
   upsertDocumentsBatch,
@@ -71,7 +74,7 @@ export {
   getStats,
   clearDocuments,
   clearCodeDocuments,
-  getStoredEmbeddingDimension
+  getStoredEmbeddingDimension,
 } from './documents.js';
 
 // Re-export memory functions and types (local memories)
@@ -81,7 +84,7 @@ export type {
   SaveMemoryResult,
   QualityScoreData,
   MemoryBatchInput,
-  MemoryBatchResult
+  MemoryBatchResult,
 } from './memories.js';
 export {
   findSimilarMemory,
@@ -98,21 +101,18 @@ export {
   deleteMemoriesByTag,
   getMemoryById,
   deleteMemoriesByIds,
-  searchMemoriesAsOf
+  searchMemoriesAsOf,
 } from './memories.js';
 
 // Re-export global memory functions and types
-export type {
-  GlobalMemory,
-  GlobalMemorySearchResult
-} from './global-memories.js';
+export type { GlobalMemory, GlobalMemorySearchResult } from './global-memories.js';
 export {
   findSimilarGlobalMemory,
   saveGlobalMemory,
   searchGlobalMemories,
   getRecentGlobalMemories,
   deleteGlobalMemory,
-  getGlobalMemoryStats
+  getGlobalMemoryStats,
 } from './global-memories.js';
 
 // Re-export BM25 index functions
@@ -131,21 +131,17 @@ export {
 export type {
   HybridSearchResult,
   HybridMemoryResult,
-  HybridGlobalMemoryResult
+  HybridGlobalMemoryResult,
 } from './hybrid-search.js';
 export {
   hybridSearchCode,
   hybridSearchDocs,
   hybridSearchMemories,
-  hybridSearchGlobalMemories
+  hybridSearchGlobalMemories,
 } from './hybrid-search.js';
 
 // Re-export knowledge graph functions and types
-export type {
-  LinkRelation,
-  MemoryLink,
-  MemoryWithLinks
-} from './graph.js';
+export type { LinkRelation, MemoryLink, MemoryWithLinks } from './graph.js';
 export {
   LINK_RELATIONS,
   createMemoryLink,
@@ -168,5 +164,5 @@ export {
   updateMemoryTags,
   updateMemoryLink,
   upsertCentralityScore,
-  getCentralityScores
+  getCentralityScores,
 } from './graph.js';

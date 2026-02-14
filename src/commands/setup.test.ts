@@ -5,7 +5,9 @@ import os from 'os';
 
 // Mock child_process before import
 vi.mock('child_process', () => ({
-  execFileSync: vi.fn(() => { throw new Error('not found'); }),
+  execFileSync: vi.fn(() => {
+    throw new Error('not found');
+  }),
 }));
 
 import { setup } from './setup.js';
@@ -40,9 +42,7 @@ describe('setup command', () => {
 
   it('should show available editors for unknown editor', async () => {
     await setup({ editor: 'vim' });
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Available editors:')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Available editors:'));
   });
 
   it('should configure known editor (cursor)', async () => {

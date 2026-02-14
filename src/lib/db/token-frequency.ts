@@ -60,9 +60,9 @@ export function getTokenFrequencies(tokens: string[]): Map<string, number> {
  */
 export function getTotalTokenCount(): number {
   const database = getDb();
-  const row = database
-    .prepare('SELECT SUM(frequency) as total FROM token_frequencies')
-    .get() as { total: number | null };
+  const row = database.prepare('SELECT SUM(frequency) as total FROM token_frequencies').get() as {
+    total: number | null;
+  };
   return row?.total ?? 0;
 }
 
@@ -94,12 +94,14 @@ export function getTokenFrequencyStats(): {
 } {
   const database = getDb();
   const row = database
-    .prepare(`
+    .prepare(
+      `
       SELECT
         COUNT(*) as unique_tokens,
         COALESCE(SUM(frequency), 0) as total_occurrences
       FROM token_frequencies
-    `)
+    `
+    )
     .get() as { unique_tokens: number; total_occurrences: number };
 
   return {

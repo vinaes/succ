@@ -41,7 +41,9 @@ export async function consolidate(options: ConsolidateOptions = {}): Promise<voi
     const result = await undoConsolidation(mergedId);
 
     if (result.restored.length > 0) {
-      console.log(`  Restored ${result.restored.length} original memories: ${result.restored.join(', ')}`);
+      console.log(
+        `  Restored ${result.restored.length} original memories: ${result.restored.join(', ')}`
+      );
     }
     if (result.deletedMerge) {
       console.log(`  Deleted synthetic merged memory #${mergedId}`);

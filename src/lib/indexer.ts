@@ -203,24 +203,28 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     try {
       // 3. Single batch embedding for all chunks in batch
       // For code files, prepend symbol metadata to improve semantic embedding quality
-      const embeddingTexts = pathPrefix === 'code:'
-        ? allChunksWithMeta.map(c => enrichForEmbedding(c as Chunk))
-        : allChunksWithMeta.map(c => c.content);
+      const embeddingTexts =
+        pathPrefix === 'code:'
+          ? allChunksWithMeta.map((c) => enrichForEmbedding(c as Chunk))
+          : allChunksWithMeta.map((c) => c.content);
       const allEmbeddings = await getEmbeddings(embeddingTexts);
 
       // 4. Group by file and save
-      const documentsByFile = new Map<number, Array<{
-        filePath: string;
-        chunkIndex: number;
-        content: string;
-        startLine: number;
-        endLine: number;
-        embedding: number[];
-        hash: string;
-        symbolName?: string;
-        symbolType?: string;
-        signature?: string;
-      }>>();
+      const documentsByFile = new Map<
+        number,
+        Array<{
+          filePath: string;
+          chunkIndex: number;
+          content: string;
+          startLine: number;
+          endLine: number;
+          embedding: number[];
+          hash: string;
+          symbolName?: string;
+          symbolType?: string;
+          signature?: string;
+        }>
+      >();
 
       for (let i = 0; i < allChunksWithMeta.length; i++) {
         const chunkMeta = allChunksWithMeta[i];
@@ -268,7 +272,11 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
             if (doc.symbolName || doc.signature) {
               // Use signature tokens as pseudo-AST identifiers for BM25 boost
               const sigTokens = doc.signature ? tokenizeCode(doc.signature) : [];
-              const tokens = tokenizeCodeWithAST(doc.content, sigTokens, doc.symbolName ?? undefined);
+              const tokens = tokenizeCodeWithAST(
+                doc.content,
+                sigTokens,
+                doc.symbolName ?? undefined
+              );
               allTokens.push(...tokens);
             } else {
               const tokens = tokenizeCode(doc.content);
@@ -281,7 +289,11 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         totalChunks += documents.length;
       }
     } catch (error) {
-      logError('indexer', `Error processing batch ${batchNum}`, error instanceof Error ? error : new Error(String(error)));
+      logError(
+        'indexer',
+        `Error processing batch ${batchNum}`,
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 

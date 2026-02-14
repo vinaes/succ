@@ -44,21 +44,23 @@ export function upsertSkill(skill: {
   const db = getDb();
   const projectId = skill.source === 'local' ? getProjectRoot().replace(/\\/g, '/') : null;
 
-  const result = db.prepare(
-    `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, skyll_id, cached_at, cache_expires, created_at, updated_at)
+  const result = db
+    .prepare(
+      `INSERT OR REPLACE INTO skills (project_id, name, description, source, path, content, skyll_id, cached_at, cache_expires, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, COALESCE((SELECT created_at FROM skills WHERE project_id IS ? AND name = ?), datetime('now')), datetime('now'))`
-  ).run(
-    projectId,
-    skill.name,
-    skill.description,
-    skill.source,
-    skill.path ?? null,
-    skill.content ?? null,
-    skill.skyllId ?? null,
-    skill.cacheExpires ?? null,
-    projectId,
-    skill.name,
-  );
+    )
+    .run(
+      projectId,
+      skill.name,
+      skill.description,
+      skill.source,
+      skill.path ?? null,
+      skill.content ?? null,
+      skill.skyllId ?? null,
+      skill.cacheExpires ?? null,
+      projectId,
+      skill.name
+    );
 
   return Number(result.lastInsertRowid);
 }
@@ -69,12 +71,14 @@ export function upsertSkill(skill: {
 export function getAllSkills(): SkillRow[] {
   const db = getDb();
   const projectId = getProjectRoot().replace(/\\/g, '/');
-  return db.prepare(
-    `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
+  return db
+    .prepare(
+      `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
      FROM skills
      WHERE project_id = ? OR project_id IS NULL
      ORDER BY usage_count DESC, updated_at DESC`
-  ).all(projectId) as SkillRow[];
+    )
+    .all(projectId) as SkillRow[];
 }
 
 /**
@@ -83,14 +87,16 @@ export function getAllSkills(): SkillRow[] {
 export function searchSkills(query: string, limit: number = 10): SkillRow[] {
   const db = getDb();
   const projectId = getProjectRoot().replace(/\\/g, '/');
-  return db.prepare(
-    `SELECT id, name, description, source, path, usage_count, last_used
+  return db
+    .prepare(
+      `SELECT id, name, description, source, path, usage_count, last_used
      FROM skills
      WHERE (project_id = ? OR project_id IS NULL)
        AND (name LIKE ? OR description LIKE ?)
      ORDER BY usage_count DESC, updated_at DESC
      LIMIT ?`
-  ).all(projectId, `%${query}%`, `%${query}%`, limit) as SkillRow[];
+    )
+    .all(projectId, `%${query}%`, `%${query}%`, limit) as SkillRow[];
 }
 
 /**
@@ -99,12 +105,14 @@ export function searchSkills(query: string, limit: number = 10): SkillRow[] {
 export function getSkillByName(name: string): SkillRow | null {
   const db = getDb();
   const projectId = getProjectRoot().replace(/\\/g, '/');
-  const row = db.prepare(
-    `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
+  const row = db
+    .prepare(
+      `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
      FROM skills
      WHERE name = ? AND (project_id = ? OR project_id IS NULL)
      LIMIT 1`
-  ).get(name, projectId) as SkillRow | undefined;
+    )
+    .get(name, projectId) as SkillRow | undefined;
   return row ?? null;
 }
 
@@ -126,9 +134,9 @@ export function trackSkillUsage(name: string): void {
 export function deleteSkill(name: string): boolean {
   const db = getDb();
   const projectId = getProjectRoot().replace(/\\/g, '/');
-  const result = db.prepare(
-    'DELETE FROM skills WHERE name = ? AND project_id = ?'
-  ).run(name, projectId);
+  const result = db
+    .prepare('DELETE FROM skills WHERE name = ? AND project_id = ?')
+    .run(name, projectId);
   return result.changes > 0;
 }
 
@@ -137,9 +145,11 @@ export function deleteSkill(name: string): boolean {
  */
 export function clearExpiredSkyllCache(): number {
   const db = getDb();
-  const result = db.prepare(
-    `DELETE FROM skills WHERE source = 'skyll' AND project_id IS NULL AND cache_expires < datetime('now')`
-  ).run();
+  const result = db
+    .prepare(
+      `DELETE FROM skills WHERE source = 'skyll' AND project_id IS NULL AND cache_expires < datetime('now')`
+    )
+    .run();
   return result.changes;
 }
 
@@ -148,11 +158,13 @@ export function clearExpiredSkyllCache(): number {
  */
 export function getCachedSkyllSkill(skyllId: string): SkillRow | null {
   const db = getDb();
-  const row = db.prepare(
-    `SELECT id, name, description, content, skyll_id, usage_count, last_used
+  const row = db
+    .prepare(
+      `SELECT id, name, description, content, skyll_id, usage_count, last_used
      FROM skills
      WHERE skyll_id = ? AND project_id IS NULL AND cache_expires > datetime('now')`
-  ).get(skyllId) as SkillRow | undefined;
+    )
+    .get(skyllId) as SkillRow | undefined;
   return row ?? null;
 }
 
@@ -161,8 +173,8 @@ export function getCachedSkyllSkill(skyllId: string): SkillRow | null {
  */
 export function getSkyllCacheStats(): { cachedSkills: number } {
   const db = getDb();
-  const row = db.prepare(
-    `SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`
-  ).get() as { count: number };
+  const row = db
+    .prepare(`SELECT COUNT(*) as count FROM skills WHERE source = 'skyll' AND project_id IS NULL`)
+    .get() as { count: number };
   return { cachedSkills: row.count };
 }

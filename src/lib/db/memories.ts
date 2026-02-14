@@ -13,7 +13,11 @@ import { createMemoryLink } from './graph.js';
 /** Parse JSON tags column, returning empty array on null/invalid. */
 function parseTags(raw: string | null): string[] {
   if (!raw) return [];
-  try { return JSON.parse(raw); } catch { return []; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -25,7 +29,8 @@ function logDeletion(caller: string, count: number, ids: number[], reason?: stri
     const succDir = getSuccDir();
     const logFile = path.join(succDir, 'memory-audit.log');
     const timestamp = new Date().toISOString();
-    const idStr = ids.length <= 20 ? ids.join(',') : `${ids.slice(0, 20).join(',')}... (${ids.length} total)`;
+    const idStr =
+      ids.length <= 20 ? ids.join(',') : `${ids.slice(0, 20).join(',')}... (${ids.length} total)`;
     const reasonStr = reason ? ` | ${reason}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count} | ids=[${idStr}]${reasonStr}\n`;
     fs.promises.appendFile(logFile, line).catch(() => {});
@@ -39,13 +44,18 @@ export interface Memory {
   content: string;
   tags: string[];
   source: string | null;
+  type?: string | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
   access_count: number;
   last_accessed: string | null;
   // Temporal validity
-  valid_from: string | null;  // When fact became valid (null = always valid)
+  valid_from: string | null; // When fact became valid (null = always valid)
   valid_until: string | null; // When fact expires (null = never expires)
+  // Working memory pins
+  correction_count: number; // How many times user corrected AI on this topic
+  is_invariant: boolean; // Auto-detected invariant rule (always/never/must)
+  priority_score: number | null; // Precomputed priority for working memory ranking
   created_at: string;
 }
 
@@ -89,21 +99,25 @@ export function findSimilarMemory(
   if (sqliteVecAvailable) {
     try {
       const queryBuffer = floatArrayToBuffer(embedding);
-      const vecResults = database.prepare(`
+      const vecResults = database
+        .prepare(
+          `
         SELECT m.memory_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
           AND k = 5
         ORDER BY v.distance
-      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+      `
+        )
+        .all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
 
       for (const result of vecResults) {
         const similarity = 1 - result.distance;
         if (similarity >= threshold) {
-          const memory = cachedPrepare(
-            'SELECT id, content FROM memories WHERE id = ?'
-          ).get(result.memory_id) as { id: number; content: string } | undefined;
+          const memory = cachedPrepare('SELECT id, content FROM memories WHERE id = ?').get(
+            result.memory_id
+          ) as { id: number; content: string } | undefined;
           if (memory) {
             return { id: memory.id, content: memory.content, similarity };
           }
@@ -111,7 +125,9 @@ export function findSimilarMemory(
       }
       return null;
     } catch (err) {
-      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -153,7 +169,15 @@ export function saveMemory(
     validUntil?: string | Date;
   } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
-  const { deduplicate = true, type = 'observation', autoLink = true, linkThreshold = 0.7, qualityScore, validFrom, validUntil } = options;
+  const {
+    deduplicate = true,
+    type = 'observation',
+    autoLink = true,
+    linkThreshold = 0.7,
+    qualityScore,
+    validFrom,
+    validUntil,
+  } = options;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -168,34 +192,48 @@ export function saveMemory(
   const qualityFactorsJson = qualityScore?.factors ? JSON.stringify(qualityScore.factors) : null;
 
   // Convert Date objects to ISO strings
-  const validFromStr = validFrom ? (validFrom instanceof Date ? validFrom.toISOString() : validFrom) : null;
-  const validUntilStr = validUntil ? (validUntil instanceof Date ? validUntil.toISOString() : validUntil) : null;
+  const validFromStr = validFrom
+    ? validFrom instanceof Date
+      ? validFrom.toISOString()
+      : validFrom
+    : null;
+  const validUntilStr = validUntil
+    ? validUntil instanceof Date
+      ? validUntil.toISOString()
+      : validUntil
+    : null;
 
   const result = cachedPrepare(`
       INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, embedding)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    .run(
-      content,
-      tagsJson,
-      source ?? null,
-      type,
-      qualityScore?.score ?? null,
-      qualityFactorsJson,
-      validFromStr,
-      validUntilStr,
-      embeddingBlob
-    );
+    `).run(
+    content,
+    tagsJson,
+    source ?? null,
+    type,
+    qualityScore?.score ?? null,
+    qualityFactorsJson,
+    validFromStr,
+    validUntilStr,
+    embeddingBlob
+  );
 
   const newId = result.lastInsertRowid as number;
 
   // Also insert into vec_memories for fast KNN search
   if (sqliteVecAvailable) {
     try {
-      const vecResult = cachedPrepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(embeddingBlob);
-      cachedPrepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(vecResult.lastInsertRowid, newId);
+      const vecResult = cachedPrepare('INSERT INTO vec_memories(embedding) VALUES (?)').run(
+        embeddingBlob
+      );
+      cachedPrepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)').run(
+        vecResult.lastInsertRowid,
+        newId
+      );
     } catch (err) {
-      logWarn('memories', 'Vector insert failed for memory, semantic recall may not find it', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'Vector insert failed for memory, semantic recall may not find it', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   let linksCreated = 0;
@@ -210,9 +248,13 @@ export function saveMemory(
     try {
       const conf = getConfig();
       if (conf.graph_llm_relations?.enabled && conf.graph_llm_relations?.auto_on_save) {
-        import('../graph/llm-relations.js').then(m => m.enrichMemoryLinks(newId)).catch(err => {
-          logWarn('memories', `LLM enrichment failed for memory ${newId}`, { error: String(err) });
-        });
+        import('../graph/llm-relations.js')
+          .then((m) => m.enrichMemoryLinks(newId))
+          .catch((err) => {
+            logWarn('memories', `LLM enrichment failed for memory ${newId}`, {
+              error: String(err),
+            });
+          });
       }
     } catch {
       // LLM enrichment module not available — skip
@@ -221,15 +263,17 @@ export function saveMemory(
 
   // Schedule auto-export if enabled (async, non-blocking)
   if (linksCreated > 0) {
-    triggerAutoExport().catch(err => {
+    triggerAutoExport().catch((err) => {
       logWarn('memories', err instanceof Error ? err.message : 'Auto-export failed');
     });
   }
 
   // Async supersession check: detect if new memory replaces an existing one (fire-and-forget)
-  import('../supersession.js').then(m => m.checkSupersession(newId, content, embedding)).catch(() => {
-    // Supersession module not available or failed — non-critical
-  });
+  import('../supersession.js')
+    .then((m) => m.checkSupersession(newId, content, embedding))
+    .catch(() => {
+      // Supersession module not available or failed — non-critical
+    });
 
   invalidateMemoriesBm25Index();
 
@@ -246,14 +290,18 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
   if (sqliteVecAvailable) {
     try {
       const queryBuffer = floatArrayToBuffer(embedding);
-      const vecResults = database.prepare(`
+      const vecResults = database
+        .prepare(
+          `
         SELECT m.memory_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
           AND k = 10
         ORDER BY v.distance
-      `).all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
+      `
+        )
+        .all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
 
       const similarities: Array<{ id: number; similarity: number }> = [];
       for (const result of vecResults) {
@@ -271,7 +319,9 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
           const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
           if (result.created) created++;
         } catch (err) {
-          logWarn('memories', 'Auto-link creation failed', { error: err instanceof Error ? err.message : String(err) });
+          logWarn('memories', 'Auto-link creation failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
       return created;
@@ -281,8 +331,9 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
   }
 
   // Brute-force fallback
-  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?')
-    .all(memoryId) as Array<{ id: number; embedding: Buffer }>;
+  const memories = cachedPrepare('SELECT id, embedding FROM memories WHERE id != ?').all(
+    memoryId
+  ) as Array<{ id: number; embedding: Buffer }>;
 
   const similarities: Array<{ id: number; similarity: number }> = [];
   for (const mem of memories) {
@@ -302,7 +353,9 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
       const result = createMemoryLink(memoryId, targetId, 'similar_to', similarity);
       if (result.created) created++;
     } catch (err) {
-      logWarn('memories', 'Auto-link creation failed', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'Auto-link creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -320,8 +373,8 @@ export function searchMemories(
   tags?: string[],
   since?: Date,
   options?: {
-    includeExpired?: boolean;  // Include expired memories (default: false)
-    asOfDate?: Date;  // Point-in-time query (default: now)
+    includeExpired?: boolean; // Include expired memories (default: false)
+    asOfDate?: Date; // Point-in-time query (default: now)
   }
 ): MemorySearchResult[] {
   const database = getDb();
@@ -335,19 +388,23 @@ export function searchMemories(
       const candidateLimit = Math.max(limit * 5, 50); // Get extra for filtering
       const queryBuffer = floatArrayToBuffer(queryEmbedding);
 
-      const vecResults = database.prepare(`
+      const vecResults = database
+        .prepare(
+          `
         SELECT m.memory_id, v.distance
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
           AND k = ?
         ORDER BY v.distance
-      `).all(queryBuffer, candidateLimit) as Array<{ memory_id: number; distance: number }>;
+      `
+        )
+        .all(queryBuffer, candidateLimit) as Array<{ memory_id: number; distance: number }>;
 
       if (vecResults.length > 0) {
         // Get memory IDs
-        const memoryIds = vecResults.map(r => r.memory_id);
-        const distanceMap = new Map(vecResults.map(r => [r.memory_id, r.distance]));
+        const memoryIds = vecResults.map((r) => r.memory_id);
+        const distanceMap = new Map(vecResults.map((r) => [r.memory_id, r.distance]));
 
         // Fetch full memory data for candidates
         const placeholders = memoryIds.map(() => '?').join(',');
@@ -425,7 +482,9 @@ export function searchMemories(
         return results.slice(0, limit);
       }
     } catch (err) {
-      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'sqlite-vec KNN failed, using brute-force fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -506,37 +565,28 @@ export function searchMemories(
  */
 export function getRecentMemories(limit: number = 10): Memory[] {
   const rows = cachedPrepare(`
-      SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at
+      SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, created_at
       FROM memories
       WHERE invalidated_by IS NULL
       ORDER BY created_at DESC
       LIMIT ?
-    `)
-    .all(limit) as Array<{
-      id: number;
-      content: string;
-      tags: string | null;
-      source: string | null;
-      quality_score: number | null;
-      quality_factors: string | null;
-      access_count: number | null;
-      last_accessed: string | null;
-      valid_from: string | null;
-      valid_until: string | null;
-      created_at: string;
-    }>;
+    `).all(limit) as Array<Record<string, any>>;
 
   return rows.map((row) => ({
     id: row.id,
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
+    type: row.type ?? null,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
     valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!row.is_invariant,
+    priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   }));
 }
@@ -548,13 +598,17 @@ export function deleteMemory(id: number): boolean {
   // Also delete from vec_memories using mapping table
   if (sqliteVecAvailable) {
     try {
-      const mapping = cachedPrepare('SELECT vec_rowid FROM vec_memories_map WHERE memory_id = ?').get(id) as { vec_rowid: number } | undefined;
+      const mapping = cachedPrepare(
+        'SELECT vec_rowid FROM vec_memories_map WHERE memory_id = ?'
+      ).get(id) as { vec_rowid: number } | undefined;
       if (mapping) {
         cachedPrepare('DELETE FROM vec_memories WHERE rowid = ?').run(mapping.vec_rowid);
         cachedPrepare('DELETE FROM vec_memories_map WHERE memory_id = ?').run(id);
       }
     } catch (err) {
-      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'Vector cleanup failed during memory deletion', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -616,7 +670,7 @@ export function getConsolidationHistory(limit: number = 20): Array<{
     LIMIT ?
   `).all(limit) as Array<{ merged_id: number; merged_at: string }>;
 
-  return rows.map(row => {
+  return rows.map((row) => {
     const mergedMemory = getMemoryById(row.merged_id);
     const originals = cachedPrepare(`
       SELECT target_id FROM memory_links
@@ -626,7 +680,7 @@ export function getConsolidationHistory(limit: number = 20): Array<{
     return {
       mergedMemoryId: row.merged_id,
       mergedContent: mergedMemory?.content ?? '(deleted)',
-      originalIds: originals.map(o => o.target_id),
+      originalIds: originals.map((o) => o.target_id),
       mergedAt: row.merged_at,
     };
   });
@@ -647,17 +701,22 @@ export function getMemoryStats(): {
   const total = cachedPrepare('SELECT COUNT(*) as count FROM memories').get() as {
     count: number;
   };
-  const active = cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE invalidated_by IS NULL').get() as {
+  const active = cachedPrepare(
+    'SELECT COUNT(*) as count FROM memories WHERE invalidated_by IS NULL'
+  ).get() as {
     count: number;
   };
-  const oldest = cachedPrepare('SELECT MIN(created_at) as oldest FROM memories WHERE invalidated_by IS NULL')
-    .get() as { oldest: string | null };
-  const newest = cachedPrepare('SELECT MAX(created_at) as newest FROM memories WHERE invalidated_by IS NULL')
-    .get() as { newest: string | null };
+  const oldest = cachedPrepare(
+    'SELECT MIN(created_at) as oldest FROM memories WHERE invalidated_by IS NULL'
+  ).get() as { oldest: string | null };
+  const newest = cachedPrepare(
+    'SELECT MAX(created_at) as newest FROM memories WHERE invalidated_by IS NULL'
+  ).get() as { newest: string | null };
 
   // Count by type (active only)
-  const typeCounts = cachedPrepare('SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories WHERE invalidated_by IS NULL GROUP BY type')
-    .all('observation') as Array<{ type: string; count: number }>;
+  const typeCounts = cachedPrepare(
+    'SELECT COALESCE(type, ?) as type, COUNT(*) as count FROM memories WHERE invalidated_by IS NULL GROUP BY type'
+  ).all('observation') as Array<{ type: string; count: number }>;
   const by_type: Record<string, number> = {};
   for (const row of typeCounts) {
     by_type[row.type] = row.count;
@@ -665,8 +724,9 @@ export function getMemoryStats(): {
 
   // Count stale memories (older than 30 days, active only)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const stale = cachedPrepare('SELECT COUNT(*) as count FROM memories WHERE created_at < ? AND invalidated_by IS NULL')
-    .get(thirtyDaysAgo) as { count: number };
+  const stale = cachedPrepare(
+    'SELECT COUNT(*) as count FROM memories WHERE created_at < ? AND invalidated_by IS NULL'
+  ).get(thirtyDaysAgo) as { count: number };
 
   return {
     total_memories: total.count,
@@ -688,12 +748,13 @@ export function deleteMemoriesOlderThan(date: Date): number {
   // Clean up vec_memories and vec_memories_map for affected memories
   if (sqliteVecAvailable) {
     try {
-      const affectedIds = cachedPrepare('SELECT id FROM memories WHERE created_at < ?')
-        .all(date.toISOString()) as Array<{ id: number }>;
+      const affectedIds = cachedPrepare('SELECT id FROM memories WHERE created_at < ?').all(
+        date.toISOString()
+      ) as Array<{ id: number }>;
 
       if (affectedIds.length > 0) {
         const placeholders = affectedIds.map(() => '?').join(',');
-        const ids = affectedIds.map(r => r.id);
+        const ids = affectedIds.map((r) => r.id);
 
         // Get vec rowids to delete
         const vecMappings = database
@@ -702,19 +763,24 @@ export function deleteMemoriesOlderThan(date: Date): number {
 
         if (vecMappings.length > 0) {
           const vecPlaceholders = vecMappings.map(() => '?').join(',');
-          const vecRowids = vecMappings.map(r => r.vec_rowid);
-          database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+          const vecRowids = vecMappings.map((r) => r.vec_rowid);
+          database
+            .prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`)
+            .run(...vecRowids);
         }
 
-        database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...ids);
+        database
+          .prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+          .run(...ids);
       }
     } catch (err) {
-      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'Vector cleanup failed during memory deletion', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  const result = cachedPrepare('DELETE FROM memories WHERE created_at < ?')
-    .run(date.toISOString());
+  const result = cachedPrepare('DELETE FROM memories WHERE created_at < ?').run(date.toISOString());
   if (result.changes > 0) {
     logDeletion('deleteMemoriesOlderThan', result.changes, [], `older_than=${date.toISOString()}`);
     invalidateMemoriesBm25Index();
@@ -729,8 +795,9 @@ export function deleteMemoriesByTag(tag: string): number {
   const database = getDb();
 
   // Get all memories with tags
-  const memories = cachedPrepare('SELECT id, tags FROM memories WHERE tags IS NOT NULL')
-    .all() as Array<{ id: number; tags: string }>;
+  const memories = cachedPrepare(
+    'SELECT id, tags FROM memories WHERE tags IS NOT NULL'
+  ).all() as Array<{ id: number; tags: string }>;
 
   const toDelete: number[] = [];
 
@@ -754,17 +821,25 @@ export function deleteMemoriesByTag(tag: string): number {
 
       if (vecMappings.length > 0) {
         const vecPlaceholders = vecMappings.map(() => '?').join(',');
-        const vecRowids = vecMappings.map(r => r.vec_rowid);
-        database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+        const vecRowids = vecMappings.map((r) => r.vec_rowid);
+        database
+          .prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`)
+          .run(...vecRowids);
       }
 
-      database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...toDelete);
+      database
+        .prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+        .run(...toDelete);
     } catch (err) {
-      logWarn('memories', 'Vector cleanup failed during memory deletion', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('memories', 'Vector cleanup failed during memory deletion', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  const result = database.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...toDelete);
+  const result = database
+    .prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+    .run(...toDelete);
   if (result.changes > 0) {
     logDeletion('deleteMemoriesByTag', result.changes, toDelete, `tag="${tag}"`);
     invalidateMemoriesBm25Index();
@@ -777,20 +852,9 @@ export function deleteMemoriesByTag(tag: string): number {
  * Get memory by ID
  */
 export function getMemoryById(id: number): Memory | null {
-  const row = cachedPrepare('SELECT id, content, tags, source, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, created_at FROM memories WHERE id = ?')
-    .get(id) as {
-      id: number;
-      content: string;
-      tags: string | null;
-      source: string | null;
-      quality_score: number | null;
-      quality_factors: string | null;
-      access_count: number | null;
-      last_accessed: string | null;
-      valid_from: string | null;
-      valid_until: string | null;
-      created_at: string;
-    } | undefined;
+  const row = cachedPrepare(
+    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, created_at FROM memories WHERE id = ?'
+  ).get(id) as Record<string, any> | undefined;
 
   if (!row) return null;
 
@@ -799,12 +863,16 @@ export function getMemoryById(id: number): Memory | null {
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
+    type: row.type ?? null,
     quality_score: row.quality_score,
     quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
     valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!row.is_invariant,
+    priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   };
 }
@@ -827,19 +895,21 @@ export function deleteMemoriesByIds(ids: number[]): number {
 
       if (vecMappings.length > 0) {
         const vecPlaceholders = vecMappings.map(() => '?').join(',');
-        const vecRowids = vecMappings.map(r => r.vec_rowid);
-        database.prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`).run(...vecRowids);
+        const vecRowids = vecMappings.map((r) => r.vec_rowid);
+        database
+          .prepare(`DELETE FROM vec_memories WHERE rowid IN (${vecPlaceholders})`)
+          .run(...vecRowids);
       }
 
-      database.prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`).run(...ids);
+      database
+        .prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
+        .run(...ids);
     } catch {
       // Ignore vec table errors
     }
   }
 
-  const result = database
-    .prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
-    .run(...ids);
+  const result = database.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
 
   if (result.changes > 0) {
     logDeletion('deleteMemoriesByIds', result.changes, ids, 'batch/retention');
@@ -980,7 +1050,7 @@ export function saveMemoriesBatch(
     embedding: Buffer;
   }>;
 
-  const existingEmbeddings = existingRows.map(row => ({
+  const existingEmbeddings = existingRows.map((row) => ({
     id: row.id,
     content: row.content,
     embedding: bufferToFloatArray(row.embedding),
@@ -1043,7 +1113,9 @@ export function saveMemoriesBatch(
     let insertMap: any;
     if (sqliteVecAvailable) {
       insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
-      insertMap = database.prepare('INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)');
+      insertMap = database.prepare(
+        'INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)'
+      );
     }
 
     // Transaction for atomic batch insert
@@ -1051,14 +1123,20 @@ export function saveMemoriesBatch(
       for (const { input, index } of toInsert) {
         const tagsStr = JSON.stringify(input.tags);
         const qualityScore = input.qualityScore?.score ?? null;
-        const qualityFactors = input.qualityScore ? JSON.stringify(input.qualityScore.factors) : null;
+        const qualityFactors = input.qualityScore
+          ? JSON.stringify(input.qualityScore.factors)
+          : null;
         const embeddingBlob = floatArrayToBuffer(input.embedding);
 
         const validFromStr = input.validFrom
-          ? (input.validFrom instanceof Date ? input.validFrom.toISOString() : input.validFrom)
+          ? input.validFrom instanceof Date
+            ? input.validFrom.toISOString()
+            : input.validFrom
           : null;
         const validUntilStr = input.validUntil
-          ? (input.validUntil instanceof Date ? input.validUntil.toISOString() : input.validUntil)
+          ? input.validUntil instanceof Date
+            ? input.validUntil.toISOString()
+            : input.validUntil
           : null;
 
         const result = insertStmt.run(
@@ -1081,7 +1159,9 @@ export function saveMemoriesBatch(
             const vecResult = insertVec.run(embeddingBlob);
             insertMap.run(vecResult.lastInsertRowid, memoryId);
           } catch (err) {
-            logWarn('memories', 'Batch vector insert failed for memory', { error: err instanceof Error ? err.message : String(err) });
+            logWarn('memories', 'Batch vector insert failed for memory', {
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
 
@@ -1102,7 +1182,7 @@ export function saveMemoriesBatch(
     if (options?.autoLink !== false) {
       const linkThreshold = options?.linkThreshold ?? 0.7;
       for (const { input, index } of toInsert) {
-        const savedResult = results.find(r => r.index === index && !r.isDuplicate);
+        const savedResult = results.find((r) => r.index === index && !r.isDuplicate);
         if (savedResult?.id) {
           autoLinkNewMemory(savedResult.id, input.embedding, linkThreshold);
         }

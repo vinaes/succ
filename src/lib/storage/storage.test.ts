@@ -9,11 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  getStorageConfig,
-  validateStorageConfig,
-  getStorageInfo,
-} from './index.js';
+import { getStorageConfig, validateStorageConfig, getStorageInfo } from './index.js';
 
 describe('Storage Abstraction', () => {
   describe('getStorageConfig', () => {

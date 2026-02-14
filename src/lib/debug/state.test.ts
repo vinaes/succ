@@ -105,7 +105,14 @@ describe('saveSession / loadSession', () => {
   it('preserves hypotheses', () => {
     const session = makeSession();
     session.hypotheses = [
-      { id: 1, description: 'Race condition', confidence: 'high', evidence: 'intermittent', test: 'add logs', result: 'pending' },
+      {
+        id: 1,
+        description: 'Race condition',
+        confidence: 'high',
+        evidence: 'intermittent',
+        test: 'add logs',
+        result: 'pending',
+      },
     ];
     saveSession(session);
 
@@ -116,9 +123,7 @@ describe('saveSession / loadSession', () => {
 
   it('preserves instrumented_files', () => {
     const session = makeSession();
-    session.instrumented_files = [
-      { path: 'src/auth.ts', lines: [10, 20, 30] },
-    ];
+    session.instrumented_files = [{ path: 'src/auth.ts', lines: [10, 20, 30] }];
     saveSession(session);
 
     const loaded = loadSession(session.id);
@@ -159,8 +164,8 @@ describe('listSessions', () => {
 
     const active = listSessions(false);
     expect(active).toHaveLength(2);
-    expect(active.map(s => s.id)).toContain('dbg_a1');
-    expect(active.map(s => s.id)).toContain('dbg_a2');
+    expect(active.map((s) => s.id)).toContain('dbg_a1');
+    expect(active.map((s) => s.id)).toContain('dbg_a2');
   });
 
   it('returns all sessions when includeResolved=true', () => {
@@ -180,17 +185,23 @@ describe('listSessions', () => {
 
 describe('findActiveSession', () => {
   it('returns most recently updated active session', () => {
+    // saveSession() overwrites updated_at with new Date().toISOString(),
+    // so we use fake timers to guarantee distinct timestamps.
+    vi.useFakeTimers();
+
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
     const s1 = makeSession({ id: 'dbg_old' });
-    s1.updated_at = '2025-01-01T00:00:00Z';
     saveSession(s1);
 
+    vi.setSystemTime(new Date('2025-06-01T00:00:00Z'));
     const s2 = makeSession({ id: 'dbg_new' });
-    s2.updated_at = '2025-06-01T00:00:00Z';
     saveSession(s2);
 
     const active = findActiveSession();
     expect(active).not.toBeNull();
     expect(active!.id).toBe('dbg_new');
+
+    vi.useRealTimers();
   });
 
   it('returns null when no active sessions', () => {

@@ -9,13 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
 import { logError } from '../fault-logger.js';
-import {
-  loadPrd,
-  loadTasks,
-  loadExecution,
-  findLatestPrd,
-  listPrds,
-} from './state.js';
+import { loadPrd, loadTasks, loadExecution, findLatestPrd, listPrds } from './state.js';
 import type { Prd, Task, PrdExecution } from './types.js';
 import { NotFoundError } from '../errors.js';
 
@@ -33,10 +27,7 @@ export interface ExportResult {
  * Export a single PRD to Obsidian-compatible markdown with Mermaid diagrams.
  * If prdId is not given, uses the latest PRD.
  */
-export function exportPrdToObsidian(
-  prdId?: string,
-  outputDir?: string
-): ExportResult {
+export function exportPrdToObsidian(prdId?: string, outputDir?: string): ExportResult {
   const resolvedId = resolvePrdId(prdId);
   const prd = loadPrd(resolvedId);
   if (!prd) {
@@ -60,21 +51,15 @@ export function exportPrdToObsidian(
   filesCreated++;
 
   // Timeline.md (only if tasks have attempts with timestamps)
-  const hasTimestamps = tasks.some(t => t.attempts.length > 0 && t.attempts[0].started_at);
+  const hasTimestamps = tasks.some((t) => t.attempts.length > 0 && t.attempts[0].started_at);
   if (hasTimestamps) {
-    fs.writeFileSync(
-      path.join(prdDir, 'Timeline.md'),
-      generateTimeline(prd, tasks, execution)
-    );
+    fs.writeFileSync(path.join(prdDir, 'Timeline.md'), generateTimeline(prd, tasks, execution));
     filesCreated++;
   }
 
   // Per-task pages
   for (const task of tasks) {
-    fs.writeFileSync(
-      path.join(prdDir, 'Tasks', `${task.id}.md`),
-      generateTaskPage(prd, task)
-    );
+    fs.writeFileSync(path.join(prdDir, 'Tasks', `${task.id}.md`), generateTaskPage(prd, task));
     filesCreated++;
   }
 
@@ -84,17 +69,18 @@ export function exportPrdToObsidian(
 /**
  * Export all PRDs to Obsidian.
  */
-export function exportAllPrds(
-  outputDir?: string,
-  includeArchived = true
-): ExportResult[] {
+export function exportAllPrds(outputDir?: string, includeArchived = true): ExportResult[] {
   const entries = listPrds(includeArchived);
   const results: ExportResult[] = [];
   for (const entry of entries) {
     try {
       results.push(exportPrdToObsidian(entry.id, outputDir));
     } catch (err) {
-      logError('prd', `Skipped ${entry.id}: ${err instanceof Error ? err.message : String(err)}`, err instanceof Error ? err : undefined);
+      logError(
+        'prd',
+        `Skipped ${entry.id}: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err : undefined
+      );
     }
   }
   return results;
@@ -187,9 +173,7 @@ function buildGanttEntries(tasks: Task[]): GanttEntry[] {
       const tag = statusToGanttTag(task.status);
       const alias = task.id.replace('task_', 't');
       const start = attempt.started_at.slice(0, 19);
-      const end = attempt.completed_at
-        ? attempt.completed_at.slice(0, 19)
-        : start; // still running
+      const end = attempt.completed_at ? attempt.completed_at.slice(0, 19) : start; // still running
       entries.push({
         taskId: task.id,
         line: `${label} ${tag} ${alias}, ${start}, ${end}`,
@@ -230,14 +214,17 @@ function assignToWorkers(entries: GanttEntry[], concurrency: number): GanttEntry
     }
   }
 
-  return workers.filter(w => w.entries.length > 0).map(w => w.entries);
+  return workers.filter((w) => w.entries.length > 0).map((w) => w.entries);
 }
 
 function statusToGanttTag(status: string): string {
   switch (status) {
-    case 'completed': return ':done,';
-    case 'failed': return ':crit,';
-    default: return ':active,';
+    case 'completed':
+      return ':done,';
+    case 'failed':
+      return ':crit,';
+    default:
+      return ':active,';
   }
 }
 
@@ -295,20 +282,29 @@ export function generateDependencyGraph(tasks: Task[]): string {
 
 function statusEmoji(status: string): string {
   switch (status) {
-    case 'completed': return '✅';
-    case 'failed': return '❌';
-    case 'skipped': return '⏭️';
-    case 'in_progress': return '🔄';
-    default: return '⏳';
+    case 'completed':
+      return '✅';
+    case 'failed':
+      return '❌';
+    case 'skipped':
+      return '⏭️';
+    case 'in_progress':
+      return '🔄';
+    default:
+      return '⏳';
   }
 }
 
 function statusToClass(status: string): string {
   switch (status) {
-    case 'completed': return 'done';
-    case 'failed': return 'failed';
-    case 'skipped': return 'skipped';
-    default: return 'pending';
+    case 'completed':
+      return 'done';
+    case 'failed':
+      return 'failed';
+    case 'skipped':
+      return 'skipped';
+    default:
+      return 'pending';
   }
 }
 
@@ -408,7 +404,7 @@ ${generateDependencyGraph(tasks)}
 
 | Task | Status | Priority | Depends On |
 |------|--------|----------|------------|
-${tasks.map(t => `| [[Tasks/${t.id}\\|${t.id}]] | ${statusEmoji(t.status)} ${t.status} | ${t.priority} | ${t.depends_on.length > 0 ? t.depends_on.map(d => `[[Tasks/${d}\\|${d}]]`).join(', ') : '—'} |`).join('\n')}
+${tasks.map((t) => `| [[Tasks/${t.id}\\|${t.id}]] | ${statusEmoji(t.status)} ${t.status} | ${t.priority} | ${t.depends_on.length > 0 ? t.depends_on.map((d) => `[[Tasks/${d}\\|${d}]]`).join(', ') : '—'} |`).join('\n')}
 
 ← [[Overview]]
 `;
@@ -432,12 +428,15 @@ ${gantt}
 
 | Task | Started | Completed | Duration | Attempts | Status |
 |------|---------|-----------|----------|----------|--------|
-${tasks.filter(t => t.attempts.length > 0).map(t => {
-  const firstAttempt = t.attempts[0];
-  const lastAttempt = t.attempts[t.attempts.length - 1];
-  const dur = getTaskDuration(t);
-  return `| [[Tasks/${t.id}\\|${t.id}]] | ${firstAttempt.started_at.slice(11, 19)} | ${lastAttempt.completed_at?.slice(11, 19) ?? '—'} | ${dur ? formatDuration(dur) : '—'} | ${t.attempts.length} | ${statusEmoji(t.status)} |`;
-}).join('\n')}
+${tasks
+  .filter((t) => t.attempts.length > 0)
+  .map((t) => {
+    const firstAttempt = t.attempts[0];
+    const lastAttempt = t.attempts[t.attempts.length - 1];
+    const dur = getTaskDuration(t);
+    return `| [[Tasks/${t.id}\\|${t.id}]] | ${firstAttempt.started_at.slice(11, 19)} | ${lastAttempt.completed_at?.slice(11, 19) ?? '—'} | ${dur ? formatDuration(dur) : '—'} | ${t.attempts.length} | ${statusEmoji(t.status)} |`;
+  })
+  .join('\n')}
 
 ← [[Overview]]
 `;
@@ -462,7 +461,7 @@ ${task.description}
 
 ## Acceptance Criteria
 
-${task.acceptance_criteria.map(c => `- [ ] ${c}`).join('\n') || '— none specified —'}
+${task.acceptance_criteria.map((c) => `- [ ] ${c}`).join('\n') || '— none specified —'}
 
 `;
 
@@ -475,7 +474,10 @@ ${task.acceptance_criteria.map(c => `- [ ] ${c}`).join('\n') || '— none specif
   }
 
   // Files
-  if (task.files_to_modify.length > 0 || task.attempts.some(a => a.files_actually_modified.length > 0)) {
+  if (
+    task.files_to_modify.length > 0 ||
+    task.attempts.some((a) => a.files_actually_modified.length > 0)
+  ) {
     md += `## Files\n\n`;
     md += `**Predicted:** ${task.files_to_modify.join(', ') || '—'}\n\n`;
     const lastAttempt = task.attempts[task.attempts.length - 1];
@@ -490,9 +492,10 @@ ${task.acceptance_criteria.map(c => `- [ ] ${c}`).join('\n') || '— none specif
     md += `| # | Started | Completed | Status | Gates |\n`;
     md += `|---|---------|-----------|--------|-------|\n`;
     for (const attempt of task.attempts) {
-      const gatesSummary = attempt.gate_results.length > 0
-        ? attempt.gate_results.map(g => `${g.passed ? '✅' : '❌'}${g.gate.type}`).join(' ')
-        : '—';
+      const gatesSummary =
+        attempt.gate_results.length > 0
+          ? attempt.gate_results.map((g) => `${g.passed ? '✅' : '❌'}${g.gate.type}`).join(' ')
+          : '—';
       md += `| ${attempt.attempt_number} | ${attempt.started_at.slice(11, 19)} | ${attempt.completed_at?.slice(11, 19) ?? '—'} | ${attempt.status} | ${gatesSummary} |\n`;
     }
     md += '\n';
@@ -511,7 +514,7 @@ ${task.acceptance_criteria.map(c => `- [ ] ${c}`).join('\n') || '— none specif
 
     // Error info
     if (task.status === 'failed') {
-      const failedAttempt = task.attempts.find(a => a.status === 'failed' && a.error);
+      const failedAttempt = task.attempts.find((a) => a.status === 'failed' && a.error);
       if (failedAttempt?.error) {
         md += `## Error\n\n\`\`\`\n${failedAttempt.error}\n\`\`\`\n\n`;
       }

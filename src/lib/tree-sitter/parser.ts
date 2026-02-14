@@ -104,14 +104,27 @@ function getTreeSitterWasmPath(): string {
   // ESM-compatible: use import.meta.url to resolve relative to this file
   try {
     const thisDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'));
-    const fromThisFile = path.join(thisDir, '..', '..', '..', 'node_modules', 'web-tree-sitter', 'web-tree-sitter.wasm');
+    const fromThisFile = path.join(
+      thisDir,
+      '..',
+      '..',
+      '..',
+      'node_modules',
+      'web-tree-sitter',
+      'web-tree-sitter.wasm'
+    );
     if (fs.existsSync(fromThisFile)) return fromThisFile;
   } catch {
     // import.meta.url may not resolve correctly in all environments
   }
 
   // Fallback: look relative to cwd node_modules
-  const fromCwd = path.join(process.cwd(), 'node_modules', 'web-tree-sitter', 'web-tree-sitter.wasm');
+  const fromCwd = path.join(
+    process.cwd(),
+    'node_modules',
+    'web-tree-sitter',
+    'web-tree-sitter.wasm'
+  );
   if (fs.existsSync(fromCwd)) return fromCwd;
 
   // Last resort — let emscripten try to find it
@@ -124,7 +137,9 @@ function getTreeSitterWasmPath(): string {
  *
  * @returns Parser instance with language set, or null if unavailable
  */
-export async function getParserForLanguage(language: string): Promise<import('web-tree-sitter').Parser | null> {
+export async function getParserForLanguage(
+  language: string
+): Promise<import('web-tree-sitter').Parser | null> {
   if (!initialized) {
     const ok = await initTreeSitter();
     if (!ok) return null;
@@ -151,7 +166,7 @@ export async function getParserForLanguage(language: string): Promise<import('we
  * @returns [parser, languageName] tuple, or [null, undefined] if unavailable
  */
 export async function getParserForFile(
-  filePath: string,
+  filePath: string
 ): Promise<[import('web-tree-sitter').Parser | null, string | undefined]> {
   const ext = filePath.split('.').pop() || '';
   const language = getLanguageForExtension(ext);
@@ -165,7 +180,9 @@ export async function getParserForFile(
  * Load a tree-sitter Language object, downloading its grammar if needed.
  * Results are cached in memory.
  */
-export async function loadLanguage(language: string): Promise<import('web-tree-sitter').Language | null> {
+export async function loadLanguage(
+  language: string
+): Promise<import('web-tree-sitter').Language | null> {
   // Check memory cache
   const cached = languageCache.get(language);
   if (cached) return cached;
@@ -192,7 +209,9 @@ export async function loadLanguage(language: string): Promise<import('web-tree-s
       return lang;
     } catch {
       // Corrupted file — delete and re-download
-      try { fs.unlinkSync(localPath); } catch {
+      try {
+        fs.unlinkSync(localPath);
+      } catch {
         // intentional
       }
     }
@@ -247,10 +266,7 @@ function findLocalGrammar(wasmFileName: string): string | null {
  * Also checks for locally installed tree-sitter-wasms package first.
  * Saves to ~/.succ/grammars/{filename}.
  */
-async function downloadGrammar(
-  wasmFileName: string,
-  destPath: string,
-): Promise<boolean> {
+async function downloadGrammar(wasmFileName: string, destPath: string): Promise<boolean> {
   // Ensure grammars directory exists
   const dir = path.dirname(destPath);
   fs.mkdirSync(dir, { recursive: true });
@@ -281,7 +297,13 @@ async function downloadGrammar(
       const buffer = Buffer.from(await response.arrayBuffer());
 
       // Validate WASM magic bytes (\0asm)
-      if (buffer.length < 4 || buffer[0] !== 0x00 || buffer[1] !== 0x61 || buffer[2] !== 0x73 || buffer[3] !== 0x6d) {
+      if (
+        buffer.length < 4 ||
+        buffer[0] !== 0x00 ||
+        buffer[1] !== 0x61 ||
+        buffer[2] !== 0x73 ||
+        buffer[3] !== 0x6d
+      ) {
         continue; // Not a valid WASM file
       }
 
@@ -319,7 +341,10 @@ export async function parseCode(code: string, language: string): Promise<Tree | 
  *
  * @returns [tree, languageName] tuple, or [null, undefined] if unavailable
  */
-export async function parseFile(filePath: string, content: string): Promise<[Tree | null, string | undefined]> {
+export async function parseFile(
+  filePath: string,
+  content: string
+): Promise<[Tree | null, string | undefined]> {
   const [parser, language] = await getParserForFile(filePath);
   if (!parser || !language) return [null, undefined];
 
@@ -347,9 +372,10 @@ export function listCachedGrammars(): string[] {
   const dir = getGrammarsDir();
   if (!fs.existsSync(dir)) return [];
 
-  return fs.readdirSync(dir)
-    .filter(f => f.endsWith('.wasm'))
-    .map(f => f.replace('tree-sitter-', '').replace('.wasm', ''));
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.wasm'))
+    .map((f) => f.replace('tree-sitter-', '').replace('.wasm', ''));
 }
 
 /**
@@ -371,7 +397,9 @@ export function clearGrammarCache(): void {
  */
 export function resetParserState(): void {
   for (const parser of parserPool.values()) {
-    try { parser.delete(); } catch {
+    try {
+      parser.delete();
+    } catch {
       // intentional
     }
   }

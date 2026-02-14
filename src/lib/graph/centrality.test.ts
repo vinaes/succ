@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
 // In-memory stores for mocking storage
-let mockLinks: Array<{ id: number; source_id: number; target_id: number; relation: string; weight: number; created_at: string }>;
+let mockLinks: Array<{
+  id: number;
+  source_id: number;
+  target_id: number;
+  relation: string;
+  weight: number;
+  created_at: string;
+}>;
 let mockCentrality: Map<number, { degree: number; normalized_degree: number }>;
 
 vi.mock('../storage/index.js', () => ({
@@ -80,7 +87,11 @@ describe('Centrality', () => {
     });
 
     it('normalizes to 0-1 range', () => {
-      const raw = new Map([[1, 6], [2, 3], [3, 1]]);
+      const raw = new Map([
+        [1, 6],
+        [2, 3],
+        [3, 1],
+      ]);
       const result = normalizeCentrality(raw);
       expect(result.get(1)).toBe(1.0);
       expect(result.get(2)).toBe(0.5);
@@ -88,7 +99,10 @@ describe('Centrality', () => {
     });
 
     it('handles all zero degrees', () => {
-      const raw = new Map([[1, 0], [2, 0]]);
+      const raw = new Map([
+        [1, 0],
+        [2, 0],
+      ]);
       const result = normalizeCentrality(raw);
       expect(result.size).toBe(0);
     });

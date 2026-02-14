@@ -59,7 +59,7 @@ export async function acquireLock(operation: string): Promise<() => void> {
   const lockInfo: LockInfo = {
     pid: process.pid,
     timestamp: Date.now(),
-    operation
+    operation,
   };
 
   let retries = 0;
@@ -76,7 +76,7 @@ export async function acquireLock(operation: string): Promise<() => void> {
         } else {
           // Lock is held by another process, wait and retry
           retries++;
-          await new Promise(resolve => setTimeout(resolve, LOCK_RETRY_MS));
+          await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
           continue;
         }
       }
@@ -104,14 +104,16 @@ export async function acquireLock(operation: string): Promise<() => void> {
       // EEXIST means another process created the lock between our check and write
       if (error.code === 'EEXIST') {
         retries++;
-        await new Promise(resolve => setTimeout(resolve, LOCK_RETRY_MS));
+        await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
         continue;
       }
       throw err;
     }
   }
 
-  throw new StorageError(`Could not acquire lock for ${operation} after ${LOCK_MAX_RETRIES * LOCK_RETRY_MS / 1000}s`);
+  throw new StorageError(
+    `Could not acquire lock for ${operation} after ${(LOCK_MAX_RETRIES * LOCK_RETRY_MS) / 1000}s`
+  );
 }
 
 /**

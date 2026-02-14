@@ -10,13 +10,13 @@ import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 
 export interface AgentState {
-  lastRun: string;      // ISO timestamp
-  outputHash: string;   // MD5 of output content
+  lastRun: string; // ISO timestamp
+  outputHash: string; // MD5 of output content
 }
 
 export interface AnalyzeState {
-  lastRun: string;        // ISO timestamp
-  gitCommit: string;      // HEAD at last run
+  lastRun: string; // ISO timestamp
+  gitCommit: string; // HEAD at last run
   fileCount: number;
   agents: Record<string, AgentState>;
 }
@@ -99,26 +99,26 @@ export function shouldRerunAgent(
   switch (agentName) {
     case 'dependencies':
       // Only re-run if package.json, go.mod, etc. changed
-      return changedFiles.some(f =>
-        /^(package\.json|go\.mod|pyproject\.toml|Cargo\.toml|requirements\.txt)$/.test(path.basename(f))
+      return changedFiles.some((f) =>
+        /^(package\.json|go\.mod|pyproject\.toml|Cargo\.toml|requirements\.txt)$/.test(
+          path.basename(f)
+        )
       );
 
     case 'architecture':
       // Re-run if new directories appeared or >20% of files changed
-      return changedFiles.length > 10 ||
-        changedFiles.some(f => f.split('/').length <= 2 && !f.includes('.'));
+      return (
+        changedFiles.length > 10 ||
+        changedFiles.some((f) => f.split('/').length <= 2 && !f.includes('.'))
+      );
 
     case 'conventions':
       // Re-run if >15% of source files changed
-      return changedFiles.filter(f =>
-        /\.(ts|js|go|py|rs|java)$/.test(f)
-      ).length > 10;
+      return changedFiles.filter((f) => /\.(ts|js|go|py|rs|java)$/.test(f)).length > 10;
 
     case 'api':
       // Re-run if route/handler/controller files changed
-      return changedFiles.some(f =>
-        /(route|handler|controller|api|endpoint|server)/i.test(f)
-      );
+      return changedFiles.some((f) => /(route|handler|controller|api|endpoint|server)/i.test(f));
 
     case 'systems-overview':
     case 'features':
@@ -127,9 +127,7 @@ export function shouldRerunAgent(
 
     case 'strategy':
       // Only re-run if README or docs changed significantly
-      return changedFiles.some(f =>
-        /^(README|CHANGELOG|docs\/)/i.test(f) || /\.md$/i.test(f)
-      );
+      return changedFiles.some((f) => /^(README|CHANGELOG|docs\/)/i.test(f) || /\.md$/i.test(f));
 
     default:
       return true;

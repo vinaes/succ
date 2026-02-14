@@ -100,7 +100,14 @@ export interface DocumentBatchWithHash extends DocumentBatch {
   hash: string;
 }
 
-export const MEMORY_TYPES = ['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'] as const;
+export const MEMORY_TYPES = [
+  'observation',
+  'decision',
+  'learning',
+  'error',
+  'pattern',
+  'dead_end',
+] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 export interface Memory {
@@ -115,6 +122,9 @@ export interface Memory {
   last_accessed: string | null;
   valid_from: string | null;
   valid_until: string | null;
+  correction_count: number;
+  is_invariant: boolean;
+  priority_score: number | null;
   created_at: string;
 }
 

@@ -89,7 +89,9 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
     console.log(
       `  Compression: ${compressionPercent(sessionStats.total_full_source_tokens, sessionStats.total_returned_tokens)}`
     );
-    console.log(`  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens (~${formatCost(sessionSavings)})`);
+    console.log(
+      `  Saved: ${formatTokens(sessionStats.total_savings_tokens)} tokens (~${formatCost(sessionSavings)})`
+    );
   } else {
     console.log('  No session summaries recorded yet.');
   }
@@ -156,8 +158,12 @@ async function showTokenStats(overrideModel?: string): Promise<void> {
     if (sessionSaved > 0 && ragTotal.saved > 0) {
       const sessionCost = estimateSavings(sessionSaved, pricingModel);
       const ragCost = ragTotal.cost;
-      console.log(`  Session compression: ${formatTokens(sessionSaved)} tokens (~${formatCost(sessionCost)})`);
-      console.log(`  RAG optimization:    ${formatTokens(ragTotal.saved)} tokens (~${formatCost(ragCost)})`);
+      console.log(
+        `  Session compression: ${formatTokens(sessionSaved)} tokens (~${formatCost(sessionCost)})`
+      );
+      console.log(
+        `  RAG optimization:    ${formatTokens(ragTotal.saved)} tokens (~${formatCost(ragCost)})`
+      );
       console.log('  ─────────────────────────────────────');
     }
 

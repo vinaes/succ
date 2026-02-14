@@ -46,20 +46,14 @@ describe('analyze-state', () => {
 
     it('should load saved state', () => {
       const state = makeState();
-      fs.writeFileSync(
-        path.join(tmpDir, 'analyze-state.json'),
-        JSON.stringify(state)
-      );
+      fs.writeFileSync(path.join(tmpDir, 'analyze-state.json'), JSON.stringify(state));
 
       const loaded = loadAnalyzeState(tmpDir);
       expect(loaded).toEqual(state);
     });
 
     it('should return null for corrupted JSON', () => {
-      fs.writeFileSync(
-        path.join(tmpDir, 'analyze-state.json'),
-        'not valid json{'
-      );
+      fs.writeFileSync(path.join(tmpDir, 'analyze-state.json'), 'not valid json{');
 
       expect(loadAnalyzeState(tmpDir)).toBeNull();
     });
@@ -70,10 +64,7 @@ describe('analyze-state', () => {
       const state = makeState();
       saveAnalyzeState(tmpDir, state);
 
-      const raw = fs.readFileSync(
-        path.join(tmpDir, 'analyze-state.json'),
-        'utf-8'
-      );
+      const raw = fs.readFileSync(path.join(tmpDir, 'analyze-state.json'), 'utf-8');
       expect(JSON.parse(raw)).toEqual(state);
     });
 
@@ -81,10 +72,7 @@ describe('analyze-state', () => {
       const state = makeState({ agents: {} });
       saveAnalyzeState(tmpDir, state);
 
-      const raw = fs.readFileSync(
-        path.join(tmpDir, 'analyze-state.json'),
-        'utf-8'
-      );
+      const raw = fs.readFileSync(path.join(tmpDir, 'analyze-state.json'), 'utf-8');
       expect(raw).toBe(JSON.stringify(state, null, 2));
     });
 

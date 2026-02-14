@@ -2,17 +2,31 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
 
 // In-memory stores
-let mockLinks: Array<{ id: number; source_id: number; target_id: number; relation: string; weight: number; created_at: string }>;
-let mockMemories: Array<{ id: number; content: string; tags: string[]; source: string | null; type: string; created_at: string }>;
+let mockLinks: Array<{
+  id: number;
+  source_id: number;
+  target_id: number;
+  relation: string;
+  weight: number;
+  created_at: string;
+}>;
+let mockMemories: Array<{
+  id: number;
+  content: string;
+  tags: string[];
+  source: string | null;
+  type: string;
+  created_at: string;
+}>;
 
 vi.mock('../storage/index.js', () => ({
   getAllMemoryLinksForExport: async () => mockLinks,
   getAllMemoriesForExport: async () => mockMemories,
   updateMemoryTags: async (memoryId: number, tags: string[]) => {
-    const mem = mockMemories.find(m => m.id === memoryId);
+    const mem = mockMemories.find((m) => m.id === memoryId);
     if (mem) mem.tags = tags;
   },
-  getMemoryById: async (id: number) => mockMemories.find(m => m.id === id) ?? null,
+  getMemoryById: async (id: number) => mockMemories.find((m) => m.id === id) ?? null,
 }));
 
 import {
@@ -81,9 +95,18 @@ describe('Community Detection', () => {
 
     it('groups connected nodes into same community', () => {
       const adj = new Map<number, Array<{ neighbor: number; weight: number }>>();
-      adj.set(1, [{ neighbor: 2, weight: 1 }, { neighbor: 3, weight: 1 }]);
-      adj.set(2, [{ neighbor: 1, weight: 1 }, { neighbor: 3, weight: 1 }]);
-      adj.set(3, [{ neighbor: 1, weight: 1 }, { neighbor: 2, weight: 1 }]);
+      adj.set(1, [
+        { neighbor: 2, weight: 1 },
+        { neighbor: 3, weight: 1 },
+      ]);
+      adj.set(2, [
+        { neighbor: 1, weight: 1 },
+        { neighbor: 3, weight: 1 },
+      ]);
+      adj.set(3, [
+        { neighbor: 1, weight: 1 },
+        { neighbor: 2, weight: 1 },
+      ]);
 
       const labels = labelPropagation(adj);
       expect(labels.get(1)).toBe(labels.get(2));
@@ -92,12 +115,30 @@ describe('Community Detection', () => {
 
     it('detects two separate communities', () => {
       const adj = new Map<number, Array<{ neighbor: number; weight: number }>>();
-      adj.set(1, [{ neighbor: 2, weight: 1 }, { neighbor: 3, weight: 1 }]);
-      adj.set(2, [{ neighbor: 1, weight: 1 }, { neighbor: 3, weight: 1 }]);
-      adj.set(3, [{ neighbor: 1, weight: 1 }, { neighbor: 2, weight: 1 }]);
-      adj.set(4, [{ neighbor: 5, weight: 1 }, { neighbor: 6, weight: 1 }]);
-      adj.set(5, [{ neighbor: 4, weight: 1 }, { neighbor: 6, weight: 1 }]);
-      adj.set(6, [{ neighbor: 4, weight: 1 }, { neighbor: 5, weight: 1 }]);
+      adj.set(1, [
+        { neighbor: 2, weight: 1 },
+        { neighbor: 3, weight: 1 },
+      ]);
+      adj.set(2, [
+        { neighbor: 1, weight: 1 },
+        { neighbor: 3, weight: 1 },
+      ]);
+      adj.set(3, [
+        { neighbor: 1, weight: 1 },
+        { neighbor: 2, weight: 1 },
+      ]);
+      adj.set(4, [
+        { neighbor: 5, weight: 1 },
+        { neighbor: 6, weight: 1 },
+      ]);
+      adj.set(5, [
+        { neighbor: 4, weight: 1 },
+        { neighbor: 6, weight: 1 },
+      ]);
+      adj.set(6, [
+        { neighbor: 4, weight: 1 },
+        { neighbor: 5, weight: 1 },
+      ]);
 
       const labels = labelPropagation(adj);
 
@@ -111,7 +152,11 @@ describe('Community Detection', () => {
 
   describe('renumberCommunities', () => {
     it('renumbers from 0', () => {
-      const labels = new Map([[10, 42], [20, 42], [30, 99]]);
+      const labels = new Map([
+        [10, 42],
+        [20, 42],
+        [30, 99],
+      ]);
       const renumbered = renumberCommunities(labels);
       expect(renumbered.get(10)).toBe(0);
       expect(renumbered.get(20)).toBe(0);
@@ -138,8 +183,8 @@ describe('Community Detection', () => {
       const result = await detectCommunities({ minCommunitySize: 2 });
       expect(result.communities.length).toBeGreaterThanOrEqual(1);
 
-      const mem1 = mockMemories.find(m => m.id === 1)!;
-      expect(mem1.tags.some(t => t.startsWith('community:'))).toBe(true);
+      const mem1 = mockMemories.find((m) => m.id === 1)!;
+      expect(mem1.tags.some((t) => t.startsWith('community:'))).toBe(true);
     });
 
     it('preserves existing tags', async () => {
@@ -149,10 +194,10 @@ describe('Community Detection', () => {
 
       await detectCommunities({ minCommunitySize: 2 });
 
-      const mem1 = mockMemories.find(m => m.id === 1)!;
+      const mem1 = mockMemories.find((m) => m.id === 1)!;
       expect(mem1.tags).toContain('important');
       expect(mem1.tags).toContain('decision');
-      expect(mem1.tags.some(t => t.startsWith('community:'))).toBe(true);
+      expect(mem1.tags.some((t) => t.startsWith('community:'))).toBe(true);
     });
 
     it('removes old community tags on re-run', async () => {
@@ -162,7 +207,7 @@ describe('Community Detection', () => {
 
       await detectCommunities({ minCommunitySize: 2 });
 
-      const mem1 = mockMemories.find(m => m.id === 1)!;
+      const mem1 = mockMemories.find((m) => m.id === 1)!;
       expect(mem1.tags).not.toContain('community:99');
     });
   });

@@ -96,7 +96,11 @@ export interface VectorStore {
   /**
    * Search for similar global memories.
    */
-  searchGlobalMemories(query: number[], limit: number, threshold: number): Promise<VectorSearchResult[]>;
+  searchGlobalMemories(
+    query: number[],
+    limit: number,
+    threshold: number
+  ): Promise<VectorSearchResult[]>;
 
   // ============================================================================
   // Maintenance

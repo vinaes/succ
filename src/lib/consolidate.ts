@@ -63,7 +63,9 @@ export interface ConsolidationResult {
 /**
  * Get all memories with embeddings (via dispatcher)
  */
-export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { embedding: number[] }>> {
+export async function getAllMemoriesWithEmbeddings(): Promise<
+  Array<Memory & { embedding: number[] }>
+> {
   const rows = await getAllMemoriesWithEmbeddingsDb({ excludeInvalidated: true });
 
   interface RowWithExtendedFields {
@@ -79,12 +81,15 @@ export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { e
     quality_factors?: Record<string, number> | null;
     access_count?: number;
     last_accessed?: string | null;
+    correction_count?: number;
+    is_invariant?: boolean | number;
+    priority_score?: number | null;
     valid_from?: string | null;
     valid_until?: string | null;
   }
 
   return rows
-    .filter(row => row.embedding !== null)
+    .filter((row) => row.embedding !== null)
     .map((row: RowWithExtendedFields): Memory & { embedding: number[] } => ({
       id: row.id,
       content: row.content,
@@ -95,6 +100,9 @@ export async function getAllMemoriesWithEmbeddings(): Promise<Array<Memory & { e
       quality_factors: row.quality_factors ?? null,
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed ?? null,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!row.is_invariant,
+      priority_score: row.priority_score ?? null,
       valid_from: row.valid_from ?? null,
       valid_until: row.valid_until ?? null,
       created_at: row.created_at,
@@ -163,7 +171,11 @@ export async function findConsolidationCandidates(
   const allMemories = await getAllMemoriesWithEmbeddings();
 
   // Fix 4: Minimum corpus size guard
-  if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
+  if (
+    !options?.skipGuards &&
+    guards?.min_corpus_size &&
+    allMemories.length < guards.min_corpus_size
+  ) {
     return []; // Not enough memories to safely consolidate
   }
 
@@ -175,7 +187,7 @@ export async function findConsolidationCandidates(
 
   const memories = options?.skipGuards
     ? allMemories
-    : allMemories.filter(m => new Date(m.created_at).getTime() < cutoffMs);
+    : allMemories.filter((m) => new Date(m.created_at).getTime() < cutoffMs);
 
   if (memories.length < 2) {
     return []; // Need at least 2 eligible memories
@@ -245,7 +257,11 @@ export async function findConsolidationCandidatesSync(
   const allMemories = await getAllMemoriesWithEmbeddings();
 
   // Same guards as async version
-  if (!options?.skipGuards && guards?.min_corpus_size && allMemories.length < guards.min_corpus_size) {
+  if (
+    !options?.skipGuards &&
+    guards?.min_corpus_size &&
+    allMemories.length < guards.min_corpus_size
+  ) {
     return [];
   }
 
@@ -256,7 +272,7 @@ export async function findConsolidationCandidatesSync(
 
   const memories = options?.skipGuards
     ? allMemories
-    : allMemories.filter(m => new Date(m.created_at).getTime() < cutoffMs);
+    : allMemories.filter((m) => new Date(m.created_at).getTime() < cutoffMs);
 
   if (memories.length < 2) return [];
 
@@ -302,7 +318,10 @@ function determineAction(
     if (Math.abs(q1 - q2) > 0.1) {
       return {
         action: 'delete_duplicate',
-        reason: q1 > q2 ? `Keep #${m1.id} (quality ${q1.toFixed(2)} > ${q2.toFixed(2)})` : `Keep #${m2.id} (quality ${q2.toFixed(2)} > ${q1.toFixed(2)})`,
+        reason:
+          q1 > q2
+            ? `Keep #${m1.id} (quality ${q1.toFixed(2)} > ${q2.toFixed(2)})`
+            : `Keep #${m2.id} (quality ${q2.toFixed(2)} > ${q1.toFixed(2)})`,
       };
     }
 
@@ -325,9 +344,10 @@ function determineAction(
       // One contains the other - keep the longer one
       return {
         action: 'delete_duplicate',
-        reason: m1.content.length > m2.content.length
-          ? `Keep #${m1.id} (more detailed)`
-          : `Keep #${m2.id} (more detailed)`,
+        reason:
+          m1.content.length > m2.content.length
+            ? `Keep #${m1.id} (more detailed)`
+            : `Keep #${m2.id} (more detailed)`,
       };
     }
 
@@ -380,9 +400,8 @@ export async function executeConsolidation(
           const keepId = candidate.reason?.includes(`#${candidate.memory1.id}`)
             ? candidate.memory1.id
             : candidate.memory2.id;
-          const invalidateId = keepId === candidate.memory1.id
-            ? candidate.memory2.id
-            : candidate.memory1.id;
+          const invalidateId =
+            keepId === candidate.memory1.id ? candidate.memory2.id : candidate.memory1.id;
 
           // Transfer links before invalidation
           await transferLinks(invalidateId, keepId);
@@ -391,7 +410,9 @@ export async function executeConsolidation(
           try {
             createMemoryLink(keepId, invalidateId, 'supersedes', 1.0);
           } catch (err) {
-            logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+            logWarn('consolidate', 'Link creation failed during consolidation', {
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
 
           // Soft-invalidate instead of hard delete
@@ -400,7 +421,12 @@ export async function executeConsolidation(
         result.deleted++;
       } else if (candidate.action === 'merge') {
         if (!dryRun) {
-          const mergeResult = await mergeMemories(candidate.memory1, candidate.memory2, mergeWithLLM, llmOptions);
+          const mergeResult = await mergeMemories(
+            candidate.memory1,
+            candidate.memory2,
+            mergeWithLLM,
+            llmOptions
+          );
           if (mergeResult === null) {
             // Merge was skipped (no LLM or LLM failed) — kept both with link
             result.kept++;
@@ -442,7 +468,9 @@ async function transferLinks(fromId: number, toId: number): Promise<void> {
       try {
         createMemoryLink(toId, link.target_id, link.relation as LinkRelation, link.weight);
       } catch (err) {
-        logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('consolidate', 'Link creation failed during consolidation', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -453,7 +481,9 @@ async function transferLinks(fromId: number, toId: number): Promise<void> {
       try {
         createMemoryLink(link.source_id, toId, link.relation as LinkRelation, link.weight);
       } catch (err) {
-        logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('consolidate', 'Link creation failed during consolidation', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -480,7 +510,11 @@ export async function undoConsolidation(mergedMemoryId: number): Promise<{
   const supersededLinks = links.outgoing.filter((l: MemoryLink) => l.relation === 'supersedes');
 
   if (supersededLinks.length === 0) {
-    return { restored: [], deletedMerge: false, errors: ['No supersedes links found — not a consolidation result'] };
+    return {
+      restored: [],
+      deletedMerge: false,
+      errors: ['No supersedes links found — not a consolidation result'],
+    };
   }
 
   let deletedMerge = false;
@@ -612,7 +646,9 @@ async function mergeMemories(
     try {
       createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
     } catch (err) {
-      logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('consolidate', 'Link creation failed during consolidation', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     return null; // Signal: no merge happened, kept both
   }
@@ -626,7 +662,9 @@ async function mergeMemories(
     try {
       createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
     } catch (err) {
-      logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+      logWarn('consolidate', 'Link creation failed during consolidation', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     return null; // Signal: no merge happened
   }
@@ -646,7 +684,9 @@ async function mergeMemories(
         try {
           createMemoryLink(m1.id, m2.id, 'similar_to', 1.0);
         } catch (err) {
-          logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) });
+          logWarn('consolidate', 'Link creation failed during consolidation', {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
         return null;
       }
@@ -675,8 +715,20 @@ async function mergeMemories(
   await transferLinks(m2.id, saved.id);
 
   // Create supersedes links for revision tracking
-  try { await createMemoryLink(saved.id, m1.id, 'supersedes', 1.0); } catch (err) { logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) }); }
-  try { await createMemoryLink(saved.id, m2.id, 'supersedes', 1.0); } catch (err) { logWarn('consolidate', 'Link creation failed during consolidation', { error: err instanceof Error ? err.message : String(err) }); }
+  try {
+    await createMemoryLink(saved.id, m1.id, 'supersedes', 1.0);
+  } catch (err) {
+    logWarn('consolidate', 'Link creation failed during consolidation', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  try {
+    await createMemoryLink(saved.id, m2.id, 'supersedes', 1.0);
+  } catch (err) {
+    logWarn('consolidate', 'Link creation failed during consolidation', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Soft-invalidate originals instead of hard delete
   await invalidateMemory(m1.id, saved.id);
@@ -697,14 +749,24 @@ export async function consolidateMemories(options: {
   llmOptions?: LLMMergeOptions;
   skipGuards?: boolean;
 }): Promise<ConsolidationResult> {
-  const { dryRun = false, threshold, maxCandidates, verbose = false, useLLM = false, llmOptions, skipGuards = false } = options;
+  const {
+    dryRun = false,
+    threshold,
+    maxCandidates,
+    verbose = false,
+    useLLM = false,
+    llmOptions,
+    skipGuards = false,
+  } = options;
 
   if (verbose) {
     console.log('Finding consolidation candidates...');
     if (!skipGuards) {
       const config = getIdleReflectionConfig();
       const guards = config.consolidation_guards;
-      console.log(`Safety guards: min age ${guards?.min_memory_age_days ?? 7}d, min corpus ${guards?.min_corpus_size ?? 20}, require LLM: ${guards?.require_llm_merge ?? true}`);
+      console.log(
+        `Safety guards: min age ${guards?.min_memory_age_days ?? 7}d, min corpus ${guards?.min_corpus_size ?? 20}, require LLM: ${guards?.require_llm_merge ?? true}`
+      );
     }
   }
 

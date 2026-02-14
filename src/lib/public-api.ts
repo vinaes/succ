@@ -11,7 +11,12 @@
 export { initStorageDispatcher, closeStorageDispatcher } from './storage/dispatcher.js';
 
 // --- Search ---
-export { hybridSearchDocs, hybridSearchCode, hybridSearchMemories, hybridSearchGlobalMemories } from './storage/index.js';
+export {
+  hybridSearchDocs,
+  hybridSearchCode,
+  hybridSearchMemories,
+  hybridSearchGlobalMemories,
+} from './storage/index.js';
 export { searchDocuments } from './storage/index.js';
 
 // --- Memories ---
@@ -74,7 +79,13 @@ export {
 export type { IndexFreshnessResult } from './storage/index.js';
 
 // --- Embeddings ---
-export { getEmbedding, getEmbeddings, cosineSimilarity, cleanupEmbeddings, getEmbeddingInfo } from './embeddings.js';
+export {
+  getEmbedding,
+  getEmbeddings,
+  cosineSimilarity,
+  cleanupEmbeddings,
+  getEmbeddingInfo,
+} from './embeddings.js';
 export type { EmbeddingResponse } from './embeddings.js';
 
 // --- Config ---
@@ -100,10 +111,7 @@ export {
 } from './storage/index.js';
 
 // --- Token stats ---
-export {
-  getTokenStatsAggregated,
-  getTokenStatsSummary,
-} from './storage/index.js';
+export { getTokenStatsAggregated, getTokenStatsSummary } from './storage/index.js';
 
 // --- Web search ---
 export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './storage/index.js';
@@ -150,10 +158,7 @@ export {
   appendSessionLog,
   loadSessionLog,
 } from './debug/state.js';
-export {
-  detectLanguage,
-  generateLogStatement,
-} from './debug/types.js';
+export { detectLanguage, generateLogStatement } from './debug/types.js';
 export type {
   DebugSession,
   DebugSessionStatus,
@@ -190,4 +195,11 @@ export {
 
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
-export type { LinkRelation, MemoryType, StorageConfig, SqliteConfig, PostgresConfig, QdrantConfig } from './storage/types.js';
+export type {
+  LinkRelation,
+  MemoryType,
+  StorageConfig,
+  SqliteConfig,
+  PostgresConfig,
+  QdrantConfig,
+} from './storage/types.js';

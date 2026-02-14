@@ -3,7 +3,11 @@ import { assessReadiness, formatReadinessHeader } from './readiness.js';
 import type { ReadinessInput } from './readiness.js';
 
 // Helper to create result sets
-function makeResults(count: number, similarity: number, extra: Partial<ReadinessInput> = {}): ReadinessInput[] {
+function makeResults(
+  count: number,
+  similarity: number,
+  extra: Partial<ReadinessInput> = {}
+): ReadinessInput[] {
   return Array.from({ length: count }, () => ({ similarity, ...extra }));
 }
 
@@ -26,7 +30,10 @@ describe('assessReadiness', () => {
     });
 
     it('should return proceed for 5 high-similarity memory results with quality', () => {
-      const results = makeResults(5, 0.85, { quality_score: 0.8, last_accessed: new Date().toISOString() });
+      const results = makeResults(5, 0.85, {
+        quality_score: 0.8,
+        last_accessed: new Date().toISOString(),
+      });
       const assessment = assessReadiness(results, 'memories');
       expect(assessment.recommendation).toBe('proceed');
       expect(assessment.confidence).toBeGreaterThanOrEqual(0.7);
@@ -185,7 +192,13 @@ describe('formatReadinessHeader', () => {
     const assessment: ReturnType<typeof assessReadiness> = {
       confidence: 0.55,
       recommendation: 'warn',
-      factors: { coverage: 0.4, top_similarity: 0.7, coherence: 0.6, quality_avg: 0.5, freshness: 0.5 },
+      factors: {
+        coverage: 0.4,
+        top_similarity: 0.7,
+        coherence: 0.6,
+        quality_avg: 0.5,
+        freshness: 0.5,
+      },
       weak_factors: ['coverage'],
     };
     const header = formatReadinessHeader(assessment);
@@ -197,7 +210,13 @@ describe('formatReadinessHeader', () => {
     const assessment: ReturnType<typeof assessReadiness> = {
       confidence: 0.2,
       recommendation: 'insufficient',
-      factors: { coverage: 0.1, top_similarity: 0.25, coherence: 0.3, quality_avg: 0.5, freshness: 0.5 },
+      factors: {
+        coverage: 0.1,
+        top_similarity: 0.25,
+        coherence: 0.3,
+        quality_avg: 0.5,
+        freshness: 0.5,
+      },
       weak_factors: ['coverage', 'top_similarity', 'coherence'],
     };
     const header = formatReadinessHeader(assessment);
@@ -209,7 +228,13 @@ describe('formatReadinessHeader', () => {
     const assessment: ReturnType<typeof assessReadiness> = {
       confidence: 0.5,
       recommendation: 'warn',
-      factors: { coverage: 0.6, top_similarity: 0.6, coherence: 0.6, quality_avg: 0.5, freshness: 0.5 },
+      factors: {
+        coverage: 0.6,
+        top_similarity: 0.6,
+        coherence: 0.6,
+        quality_avg: 0.5,
+        freshness: 0.5,
+      },
       weak_factors: [],
     };
     const header = formatReadinessHeader(assessment);

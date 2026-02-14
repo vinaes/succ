@@ -149,9 +149,7 @@ describe('Export/Import Migration', () => {
             updated_at: '2024-01-01',
           },
         ],
-        fileHashes: [
-          { file_path: '/test.ts', content_hash: 'abc123', indexed_at: '2024-01-01' },
-        ],
+        fileHashes: [{ file_path: '/test.ts', content_hash: 'abc123', indexed_at: '2024-01-01' }],
         memories: [
           {
             id: 1,
@@ -186,9 +184,7 @@ describe('Export/Import Migration', () => {
         ],
         memoryLinks: [],
         globalMemories: [],
-        tokenFrequencies: [
-          { token: 'test', frequency: 5 },
-        ],
+        tokenFrequencies: [{ token: 'test', frequency: 5 }],
         tokenStats: [],
       };
 

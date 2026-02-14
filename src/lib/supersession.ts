@@ -79,9 +79,10 @@ export async function checkSupersession(
     for (const candidate of topCandidates) {
       result.checked++;
       try {
-        const prompt = SUPERSESSION_PROMPT
-          .replace('{old_content}', candidate.content)
-          .replace('{new_content}', newContent);
+        const prompt = SUPERSESSION_PROMPT.replace('{old_content}', candidate.content).replace(
+          '{new_content}',
+          newContent
+        );
 
         const llmResponse = await callLLM(prompt, {
           timeout: 15000,
@@ -103,10 +104,15 @@ export async function checkSupersession(
           reason: string;
         };
 
-        if (classification.relation === 'supersedes' && classification.confidence >= CONFIDENCE_THRESHOLD) {
+        if (
+          classification.relation === 'supersedes' &&
+          classification.confidence >= CONFIDENCE_THRESHOLD
+        ) {
           await invalidateMemory(candidate.id, newMemoryId);
           result.superseded++;
-          log(`[supersession] Memory #${candidate.id} superseded by #${newMemoryId}: ${classification.reason}`);
+          log(
+            `[supersession] Memory #${candidate.id} superseded by #${newMemoryId}: ${classification.reason}`
+          );
         } else if (classification.relation === 'refines') {
           result.refined++;
           // Link already created by autoLink — no extra action needed

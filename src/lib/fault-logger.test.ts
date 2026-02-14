@@ -166,7 +166,7 @@ describe('fault-logger', () => {
     it('sends custom headers', () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
       mockConfig.webhook_url = 'https://example.com/errors';
-      mockConfig.webhook_headers = { 'Authorization': 'Bearer token123' };
+      mockConfig.webhook_headers = { Authorization: 'Bearer token123' };
 
       logFault('error', 'test', 'with auth');
 

@@ -119,7 +119,11 @@ export function registerResources(server: McpServer) {
         return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
       }
 
-      return { contents: [{ uri: 'brain://index', text: 'No project MOC, CLAUDE.md, or Memories.md found.' }] };
+      return {
+        contents: [
+          { uri: 'brain://index', text: 'No project MOC, CLAUDE.md, or Memories.md found.' },
+        ],
+      };
     }
   );
 

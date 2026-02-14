@@ -65,7 +65,9 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
     const idsToDelete = analysis.delete.map((m) => m.memoryId);
     const deleted = await deleteMemoriesByIds(idsToDelete);
 
-    console.log(`Deleted ${deleted} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`);
+    console.log(
+      `Deleted ${deleted} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`
+    );
     console.log('');
 
     // Show what was deleted
@@ -110,11 +112,15 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
         await invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
         invalidated++;
       } catch (err) {
-        logWarn('retention', 'Failed to invalidate memory during cleanup', { error: err instanceof Error ? err.message : String(err) });
+        logWarn('retention', 'Failed to invalidate memory during cleanup', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
-    console.log(`Soft-invalidated ${invalidated} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`);
+    console.log(
+      `Soft-invalidated ${invalidated} memories below threshold (effective_score < ${retentionConfig.delete_threshold ?? 0.15})`
+    );
     console.log('Originals preserved — can be restored with consolidation --undo.\n');
 
     if (options.verbose) {
@@ -148,10 +154,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
   showStats(analysis, retentionConfig);
 }
 
-function showStats(
-  analysis: ReturnType<typeof analyzeRetention>,
-  config: RetentionConfig
-): void {
+function showStats(analysis: ReturnType<typeof analyzeRetention>, config: RetentionConfig): void {
   const { stats } = analysis;
 
   console.log('## Memory Retention Stats\n');
@@ -166,9 +169,15 @@ function showStats(
 
   console.log('### Summary');
   console.log(`  Total memories:     ${stats.totalMemories}`);
-  console.log(`  Keep:               ${stats.keepCount} (${percent(stats.keepCount, stats.totalMemories)})`);
-  console.log(`  Warning:            ${stats.warnCount} (${percent(stats.warnCount, stats.totalMemories)})`);
-  console.log(`  Delete candidates:  ${stats.deleteCount} (${percent(stats.deleteCount, stats.totalMemories)})`);
+  console.log(
+    `  Keep:               ${stats.keepCount} (${percent(stats.keepCount, stats.totalMemories)})`
+  );
+  console.log(
+    `  Warning:            ${stats.warnCount} (${percent(stats.warnCount, stats.totalMemories)})`
+  );
+  console.log(
+    `  Delete candidates:  ${stats.deleteCount} (${percent(stats.deleteCount, stats.totalMemories)})`
+  );
   console.log('');
 
   console.log('### Averages');

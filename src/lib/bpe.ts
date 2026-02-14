@@ -216,7 +216,7 @@ export function saveBPEVocab(vocab: BPEVocab): void {
     JSON.stringify(vocabArray),
     vocab.vocabSize,
     vocab.corpusSize,
-    vocab.trainedAt,
+    vocab.trainedAt
   );
 }
 
@@ -248,10 +248,7 @@ export function getLastBPETrainTime(): string | null {
 /**
  * Check if BPE needs retraining
  */
-export function needsBPERetrain(
-  interval: 'hourly' | 'daily',
-  lastIndexTime?: string
-): boolean {
+export function needsBPERetrain(interval: 'hourly' | 'daily', lastIndexTime?: string): boolean {
   const lastTrained = getLastBPETrainTime();
   if (!lastTrained) return true;
 

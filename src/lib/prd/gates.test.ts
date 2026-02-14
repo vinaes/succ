@@ -35,10 +35,7 @@ describe('Quality Gates', () => {
 
   describe('runAllGates', () => {
     it('should run all gates', () => {
-      const gates = [
-        createGate('custom', 'echo "gate1"'),
-        createGate('custom', 'echo "gate2"'),
-      ];
+      const gates = [createGate('custom', 'echo "gate1"'), createGate('custom', 'echo "gate2"')];
       const results = runAllGates(gates, process.cwd());
       expect(results).toHaveLength(2);
       expect(results[0].passed).toBe(true);
@@ -46,10 +43,7 @@ describe('Quality Gates', () => {
     });
 
     it('should continue running even if one fails', () => {
-      const gates = [
-        createGate('custom', 'exit 1'),
-        createGate('custom', 'echo "still runs"'),
-      ];
+      const gates = [createGate('custom', 'exit 1'), createGate('custom', 'echo "still runs"')];
       const results = runAllGates(gates, process.cwd());
       expect(results).toHaveLength(2);
       expect(results[0].passed).toBe(false);
@@ -61,7 +55,12 @@ describe('Quality Gates', () => {
     it('should return true when all required pass', () => {
       const results = [
         { gate: createGate('test', 'npm test'), passed: true, output: '', duration_ms: 100 },
-        { gate: createGate('lint', 'eslint', false), passed: false, output: 'warning', duration_ms: 50 },
+        {
+          gate: createGate('lint', 'eslint', false),
+          passed: false,
+          output: 'warning',
+          duration_ms: 50,
+        },
       ];
       expect(allRequiredPassed(results)).toBe(true);
     });
@@ -90,7 +89,12 @@ describe('Quality Gates', () => {
 
     it('should format failed gates with [x] and output', () => {
       const results = [
-        { gate: createGate('test', 'npm test'), passed: false, output: 'Error: test failed', duration_ms: 100 },
+        {
+          gate: createGate('test', 'npm test'),
+          passed: false,
+          output: 'Error: test failed',
+          duration_ms: 100,
+        },
       ];
       const formatted = formatGateResults(results);
       expect(formatted).toContain('[x]');

@@ -36,7 +36,9 @@ function recordResult(name: string, operation: string, count: number, totalMs: n
   const avgMs = totalMs / count;
   const opsPerSec = (count / totalMs) * 1000;
   results.push({ name, operation, count, totalMs, avgMs, opsPerSec });
-  console.log(`  ${operation}: ${totalMs.toFixed(2)}ms total, ${avgMs.toFixed(2)}ms avg, ${opsPerSec.toFixed(1)} ops/sec`);
+  console.log(
+    `  ${operation}: ${totalMs.toFixed(2)}ms total, ${avgMs.toFixed(2)}ms avg, ${opsPerSec.toFixed(1)} ops/sec`
+  );
 }
 
 function generateEmbedding(): number[] {
@@ -85,13 +87,15 @@ async function benchmarkSqliteVec() {
       const queryEmbedding = generateEmbedding();
       const queryBlob = Buffer.from(new Float32Array(queryEmbedding).buffer);
 
-      db.prepare(`
+      db.prepare(
+        `
         SELECT id, file_path, content,
                vec_distance_cosine(embedding, ?) as distance
         FROM documents
         ORDER BY distance ASC
         LIMIT 10
-      `).all(queryBlob);
+      `
+      ).all(queryBlob);
     }
 
     const searchMs = performance.now() - searchStart;
@@ -244,16 +248,18 @@ function printSummary() {
   console.log('========================================\n');
 
   // Group by operation
-  const operations = [...new Set(results.map(r => r.operation))];
+  const operations = [...new Set(results.map((r) => r.operation))];
 
   for (const op of operations) {
     console.log(`${op}:`);
-    const opResults = results.filter(r => r.operation === op);
+    const opResults = results.filter((r) => r.operation === op);
     opResults.sort((a, b) => a.avgMs - b.avgMs);
 
     for (const r of opResults) {
       const bar = '█'.repeat(Math.min(50, Math.round(r.opsPerSec / 10)));
-      console.log(`  ${r.name.padEnd(15)} ${r.avgMs.toFixed(2).padStart(8)}ms  ${r.opsPerSec.toFixed(1).padStart(8)} ops/sec  ${bar}`);
+      console.log(
+        `  ${r.name.padEnd(15)} ${r.avgMs.toFixed(2).padStart(8)}ms  ${r.opsPerSec.toFixed(1).padStart(8)} ops/sec  ${bar}`
+      );
     }
     console.log();
   }
@@ -265,7 +271,9 @@ function printSummary() {
 
 async function main() {
   console.log('Storage Backend Benchmarks');
-  console.log(`Documents: ${DOCUMENT_COUNT}, Searches: ${SEARCH_ITERATIONS}, Dimensions: ${DIMENSIONS}`);
+  console.log(
+    `Documents: ${DOCUMENT_COUNT}, Searches: ${SEARCH_ITERATIONS}, Dimensions: ${DIMENSIONS}`
+  );
 
   await benchmarkSqliteVec();
   await benchmarkPostgres();

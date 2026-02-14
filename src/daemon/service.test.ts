@@ -23,7 +23,10 @@ vi.mock('../lib/storage/index.js', () => ({
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
   getStats: vi.fn(async () => ({ documents: 10, code_files: 5, total_chunks: 100 })),
-  getMemoryStats: vi.fn(async () => ({ total: 20, byType: { observation: 10, decision: 5, learning: 5 } })),
+  getMemoryStats: vi.fn(async () => ({
+    total: 20,
+    byType: { observation: 10, decision: 5, learning: 5 },
+  })),
   incrementMemoryAccessBatch: vi.fn(async () => {}),
   autoLinkSimilarMemories: vi.fn(async () => {}),
   getRecentMemories: vi.fn(async () => [
@@ -87,7 +90,7 @@ vi.mock('../prompts/index.js', () => ({
 }));
 
 vi.mock('./sessions.js', async (importOriginal) => {
-  const actual = await importOriginal() as any;
+  const actual = (await importOriginal()) as any;
   return actual;
 });
 
@@ -121,7 +124,15 @@ import {
   _resetTestState,
 } from './service.js';
 
-import { hybridSearchDocs, hybridSearchCode, hybridSearchMemories, saveMemory, saveGlobalMemory, getRecentMemories, incrementMemoryAccessBatch } from '../lib/storage/index.js';
+import {
+  hybridSearchDocs,
+  hybridSearchCode,
+  hybridSearchMemories,
+  saveMemory,
+  saveGlobalMemory,
+  getRecentMemories,
+  incrementMemoryAccessBatch,
+} from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
@@ -308,7 +319,12 @@ describe('Daemon Service', () => {
       expect(result.success).toBe(true);
 
       // Session should now be queryable (includeService=true since auto-registered sessions have no hadUserPrompt)
-      const sessions = await routeRequest('GET', '/api/sessions', new URLSearchParams('includeService=true'), null);
+      const sessions = await routeRequest(
+        'GET',
+        '/api/sessions',
+        new URLSearchParams('includeService=true'),
+        null
+      );
       expect(sessions.count).toBe(1);
     });
 
@@ -320,14 +336,21 @@ describe('Daemon Service', () => {
 
     it('GET /api/sessions should return all sessions', async () => {
       await routeRequest('POST', '/api/session/register', new URLSearchParams(), {
-        session_id: 'sess-a', transcript_path: '/a.jsonl',
+        session_id: 'sess-a',
+        transcript_path: '/a.jsonl',
       });
       await routeRequest('POST', '/api/session/register', new URLSearchParams(), {
-        session_id: 'sess-b', transcript_path: '/b.jsonl',
+        session_id: 'sess-b',
+        transcript_path: '/b.jsonl',
       });
 
       // Use includeService=true since newly registered sessions have no hadUserPrompt
-      const result = await routeRequest('GET', '/api/sessions', new URLSearchParams('includeService=true'), null);
+      const result = await routeRequest(
+        'GET',
+        '/api/sessions',
+        new URLSearchParams('includeService=true'),
+        null
+      );
       expect(result.count).toBe(2);
       expect(result.sessions['sess-a']).toBeDefined();
       expect(result.sessions['sess-b']).toBeDefined();
@@ -351,9 +374,9 @@ describe('Daemon Service', () => {
     });
 
     it('POST /api/search without query should throw', async () => {
-      await expect(
-        routeRequest('POST', '/api/search', new URLSearchParams(), {})
-      ).rejects.toThrow('query required');
+      await expect(routeRequest('POST', '/api/search', new URLSearchParams(), {})).rejects.toThrow(
+        'query required'
+      );
     });
 
     it('POST /api/search-code should call hybridSearchCode', async () => {
@@ -362,7 +385,12 @@ describe('Daemon Service', () => {
         limit: 3,
       });
 
-      expect(hybridSearchCode).toHaveBeenCalledWith('function test', expect.any(Float32Array), 3, 0.3);
+      expect(hybridSearchCode).toHaveBeenCalledWith(
+        'function test',
+        expect.any(Float32Array),
+        3,
+        0.3
+      );
       expect(result.results).toHaveLength(1);
     });
 
