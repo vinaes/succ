@@ -585,7 +585,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     valid_from: row.valid_from,
     valid_until: row.valid_until,
     correction_count: row.correction_count ?? 0,
-    is_invariant: !!(row.is_invariant),
+    is_invariant: !!row.is_invariant,
     priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   }));
@@ -871,7 +871,7 @@ export function getMemoryById(id: number): Memory | null {
     valid_from: row.valid_from,
     valid_until: row.valid_until,
     correction_count: row.correction_count ?? 0,
-    is_invariant: !!(row.is_invariant),
+    is_invariant: !!row.is_invariant,
     priority_score: row.priority_score ?? null,
     created_at: row.created_at,
   };

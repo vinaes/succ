@@ -82,6 +82,7 @@ export class PinnedMemoryError extends Error {
 /**
  * Detect if memory content contains invariant language (rules, constraints).
  * Used to auto-set is_invariant on new memories.
+ * This is the fast sync path — regex only, covers 8 languages.
  */
 export function detectInvariant(content: string): boolean {
   const text = content.toLowerCase().replace(/\s+/g, ' ');
@@ -116,6 +117,64 @@ export function detectInvariant(content: string): boolean {
     /(?:반드시|절대로|금지|항상|해서는 안)/,
   ];
   return patterns.some((p) => p.test(text));
+}
+
+// ============================================================================
+// Embedding-based invariant detection (language-agnostic fallback)
+// ============================================================================
+
+/**
+ * Canonical invariant phrases for reference embedding similarity.
+ * English only — the multilingual embedding model maps semantically similar
+ * content in ANY language to nearby vectors.
+ */
+export const INVARIANT_REFERENCE_PHRASES = [
+  'You must always do this without exception',
+  'This is strictly forbidden and must never be done',
+  'This is a mandatory requirement that cannot be skipped',
+  'Critical rule: never violate this under any circumstances',
+  'This is permanently required and shall not be changed',
+  'Under no circumstances should this be modified or removed',
+  'This policy is non-negotiable and applies at all times',
+];
+
+const INVARIANT_REF_SET = 'invariant-detection';
+const INVARIANT_SIMILARITY_THRESHOLD = 0.55;
+let _invariantRefsRegistered = false;
+
+/**
+ * Detect invariant content using embedding similarity (language-agnostic).
+ * Fallback for when regex detectInvariant() misses non-covered languages.
+ * Uses the content embedding that's already computed at save time — zero extra API cost.
+ */
+export async function detectInvariantWithEmbedding(
+  content: string,
+  embedding: number[]
+): Promise<boolean> {
+  if (embedding.length === 0) return false;
+
+  try {
+    const { registerReferenceSet, maxSimilarityToReference } =
+      await import('./reference-embeddings.js');
+
+    if (!_invariantRefsRegistered) {
+      registerReferenceSet(INVARIANT_REF_SET, INVARIANT_REFERENCE_PHRASES);
+      _invariantRefsRegistered = true;
+    }
+
+    const maxSim = await maxSimilarityToReference(embedding, INVARIANT_REF_SET);
+    return maxSim >= INVARIANT_SIMILARITY_THRESHOLD;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear cached invariant reference embeddings (for tests).
+ */
+export function clearInvariantEmbeddingCache(): void {
+  _invariantRefsRegistered = false;
+  // The actual embeddings are cleared via clearReferenceCache() from reference-embeddings.ts
 }
 
 /**
@@ -300,9 +359,7 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
 
   // Step 3: Score and rank remaining candidates
   // Use priority_score if available, otherwise fall back to effectiveScore
-  const hasAnyScore = candidates.some(
-    (m) => m.priority_score != null || m.quality_score !== null
-  );
+  const hasAnyScore = candidates.some((m) => m.priority_score != null || m.quality_score !== null);
 
   if (!hasAnyScore) {
     logWarn(COMPONENT, 'All candidates lack quality_score — falling back to recency order', {

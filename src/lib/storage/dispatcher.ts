@@ -594,9 +594,7 @@ export class StorageDispatcher {
         type,
         deduplicate: false, // dedup already handled above
         qualityScore:
-          qualityScore != null
-            ? { score: qualityScore, factors: qualityFactors ?? {} }
-            : undefined,
+          qualityScore != null ? { score: qualityScore, factors: qualityFactors ?? {} } : undefined,
         validFrom,
         validUntil,
       });
@@ -629,9 +627,13 @@ export class StorageDispatcher {
         (this._sessionCounters.typesCreated[type] ?? 0) + 1;
 
       // Auto-detect invariant content and set is_invariant + compute priority_score
+      // Hybrid: regex fast path (8 languages) + embedding similarity fallback (any language)
       try {
-        const { detectInvariant } = await import('../working-memory-pipeline.js');
-        if (detectInvariant(content)) {
+        const { detectInvariant, detectInvariantWithEmbedding } =
+          await import('../working-memory-pipeline.js');
+        const isInvariant =
+          detectInvariant(content) || (await detectInvariantWithEmbedding(content, embedding));
+        if (isInvariant) {
           await this.setMemoryInvariant(savedId, true);
         }
         await this.recomputePriorityScore(savedId);
@@ -728,9 +730,8 @@ export class StorageDispatcher {
       pinned = sqlite.getPinnedMemories();
     }
     // Apply working memory pipeline: pinned first → validity filter → score → rank
-    const { applyWorkingMemoryPipeline, applyDiversityFilter } = await import(
-      '../working-memory-pipeline.js'
-    );
+    const { applyWorkingMemoryPipeline, applyDiversityFilter } =
+      await import('../working-memory-pipeline.js');
     // Over-request to account for diversity filtering
     const pipelineLimit = Math.min(limit * 2, raw.length + pinned.length);
     const pipeline = applyWorkingMemoryPipeline(raw, pipelineLimit, new Date(), pinned);
@@ -1425,8 +1426,16 @@ export class StorageDispatcher {
     const safe: number[] = [];
     for (const id of ids) {
       const memory = await this.getMemoryById(id);
-      if (!memory) { safe.push(id); continue; }
-      if (!isPinned({ is_invariant: !!(memory as any).is_invariant, correction_count: (memory as any).correction_count ?? 0 })) {
+      if (!memory) {
+        safe.push(id);
+        continue;
+      }
+      if (
+        !isPinned({
+          is_invariant: !!(memory as any).is_invariant,
+          correction_count: (memory as any).correction_count ?? 0,
+        })
+      ) {
         safe.push(id);
       }
     }

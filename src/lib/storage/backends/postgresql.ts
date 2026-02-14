@@ -927,7 +927,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
@@ -1182,7 +1182,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
@@ -1228,7 +1228,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
@@ -1321,7 +1321,7 @@ export class PostgresBackend {
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       created_at: row.created_at,
     }));
@@ -1339,10 +1339,10 @@ export class PostgresBackend {
 
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
     const pool = await this.getPool();
-    await pool.query(
-      `UPDATE memories SET is_invariant = $1 WHERE id = $2`,
-      [isInvariant ? 1 : 0, memoryId]
-    );
+    await pool.query(`UPDATE memories SET is_invariant = $1 WHERE id = $2`, [
+      isInvariant ? 1 : 0,
+      memoryId,
+    ]);
   }
 
   async updatePriorityScore(memoryId: number, score: number): Promise<void> {
@@ -1394,7 +1394,7 @@ export class PostgresBackend {
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       created_at: row.created_at,
     }));
@@ -1733,7 +1733,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
@@ -1783,7 +1783,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,
@@ -2955,7 +2955,7 @@ export class PostgresBackend {
       access_count: row.access_count ?? 0,
       last_accessed: row.last_accessed,
       correction_count: row.correction_count ?? 0,
-      is_invariant: !!(row.is_invariant),
+      is_invariant: !!row.is_invariant,
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from,
       valid_until: row.valid_until,

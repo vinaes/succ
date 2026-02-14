@@ -824,7 +824,7 @@ export function registerMemoryTools(server: McpServer) {
           // Extract key entities from query for separate searches
           // e.g., "How many days between starting project X and deploying it?"
           // → subqueries: ["starting project X", "deploying project X"]
-          const subQueries = extractTemporalSubqueries(query);
+          const subQueries = await extractTemporalSubqueriesAsync(query);
 
           if (subQueries.length > 1) {
             // Multi-pass: search for each entity separately, merge results
@@ -1408,5 +1408,36 @@ function extractTemporalSubqueries(query: string): string[] {
   }
 
   // No decomposition pattern matched — return original
+  return [query];
+}
+
+/**
+ * Async version with LLM fallback for languages not covered by regex.
+ * Fast path: regex (sync, 0ms). Slow path: LLM decomposition (any language).
+ */
+async function extractTemporalSubqueriesAsync(query: string): Promise<string[]> {
+  // Fast path: regex handles EN + RU
+  const regexResult = extractTemporalSubqueries(query);
+  if (regexResult.length > 1) return regexResult;
+
+  // Slow path: LLM decomposition for other languages
+  try {
+    const { callLLM } = await import('../../lib/llm.js');
+    const result = await callLLM(
+      `Extract temporal sub-queries from this search query. If the query asks about a time range (e.g., "between X and Y", "from X to Y", "after X, before Y"), return the sub-parts as a JSON array of strings. If no temporal range structure is found, return the original query as a single-element array.\n\nQuery: "${query.replace(/"/g, '\\"')}"\n\nReturn ONLY a valid JSON array of strings, nothing else.`,
+      { maxTokens: 200 }
+    );
+    const parsed = JSON.parse(result.trim());
+    if (
+      Array.isArray(parsed) &&
+      parsed.length > 0 &&
+      parsed.every((s: unknown) => typeof s === 'string')
+    ) {
+      return parsed;
+    }
+  } catch {
+    // LLM failed — fall through to original query
+  }
+
   return [query];
 }
