@@ -58,9 +58,11 @@ succ analyze
 | **Persistent Memory** | Decisions, learnings, patterns across sessions |
 | **Cross-Project** | Global memories shared between all projects |
 | **Knowledge Graph** | Link memories, LLM-enriched relations, community detection, centrality |
-| **MCP Native** | 25+ tools — Claude uses succ tools directly |
+| **MCP Native** | 30 tools — Claude uses succ tools directly |
 | **Web Search** | Real-time web search via Perplexity Sonar (quick, quality, deep research) |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
+| **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
+| **Working Memory** | Priority scoring, validity filtering, diversity, pinned memories |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 14-language instrumentation |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |

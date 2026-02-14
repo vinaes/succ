@@ -42,17 +42,11 @@ Add to `~/.succ/config.json`:
     "local": {
       "endpoint": "http://localhost:11434/v1/chat/completions"
     }
-  },
-
-  "analyze_mode": "local",
-  "analyze_api_url": "http://localhost:11434/v1",
-  "analyze_model": "qwen2.5:7b",
-  "analyze_temperature": 0.3,
-  "analyze_max_tokens": 4096
+  }
 }
 ```
 
-The `llm` section configures the unified LLM backend for all succ operations (idle reflection, skill suggestions, memory consolidation, etc.).
+The `llm` section configures the unified LLM backend for all succ operations (analyze, idle reflection, skill suggestions, memory consolidation, etc.).
 
 ## Run Analysis
 
