@@ -111,6 +111,8 @@ export interface SuccConfig {
   graph_community_detection?: GraphCommunityDetectionConfig;
   // Graph enrichment: centrality scoring
   graph_centrality?: GraphCentralityConfig;
+  // md.succ.ai URL (HTML→Markdown API for succ_fetch tool)
+  md_api_url?: string;
   // Web search settings (Perplexity Sonar via OpenRouter)
   web_search?: WebSearchConfig;
   // Retrieval tuning (hybrid search parameters)

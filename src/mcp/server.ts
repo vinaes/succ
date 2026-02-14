@@ -43,6 +43,7 @@ import { registerDeadEndTools } from './tools/dead-end.js';
 import { registerPrdTools } from './tools/prd.js';
 import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
+import { registerWebFetchTools } from './tools/web-fetch.js';
 
 // Parse --project arg: succ-mcp --project /path/to/project
 const projectArgIdx = process.argv.indexOf('--project');
@@ -68,6 +69,7 @@ registerDeadEndTools(server);
 registerPrdTools(server);
 registerWebSearchTools(server);
 registerDebugTools(server);
+registerWebFetchTools(server);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
