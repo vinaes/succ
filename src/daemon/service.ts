@@ -411,10 +411,11 @@ ${reflectionText.trim()}
 
   fs.writeFileSync(reflectionFile, content);
 
-  // Also save to memory
+  // Also save to memory (with dedup to prevent duplicate reflections)
   const embedding = await getEmbedding(reflectionText.trim());
   await saveMemory(reflectionText.trim(), embedding, ['reflection'], 'observation', {
     qualityScore: { score: 0.6, factors: { hasContext: 1 } },
+    deduplicate: true,
   });
 }
 
@@ -637,9 +638,15 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
               const { synthesizeFromCommunities } =
                 await import('../lib/reflection-synthesizer.js');
               const synthResult = await synthesizeFromCommunities(r, { log });
-              if (synthResult.patternsCreated > 0) {
+              if (synthResult.patternsCreated > 0 || synthResult.duplicatesSkipped > 0) {
                 log(
-                  `[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters`
+                  `[reflection] Synthesized ${synthResult.patternsCreated} patterns from ${synthResult.clustersProcessed} clusters` +
+                    (synthResult.duplicatesSkipped > 0
+                      ? `, skipped ${synthResult.duplicatesSkipped} duplicates`
+                      : '') +
+                    (synthResult.observationsMarked > 0
+                      ? `, marked ${synthResult.observationsMarked} observations as reflected`
+                      : '')
                 );
               }
             } catch (err) {
