@@ -53,7 +53,7 @@ succ analyze
 | Feature | Description |
 |---------|-------------|
 | **Hybrid Search** | Semantic embeddings + BM25 keyword matching with AST symbol boost |
-| **AST Code Indexing** | Tree-sitter parsing for 13 languages (TS, JS, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift) |
+| **AST Code Indexing** | Tree-sitter parsing for 21 languages — 13 with full symbol extraction, 8 grammar-only (Swift, Scala, Dart, Bash, Lua, Elixir, Haskell, SQL) |
 | **Brain Vault** | Obsidian-compatible markdown knowledge base |
 | **Persistent Memory** | Decisions, learnings, patterns across sessions |
 | **Cross-Project** | Global memories shared between all projects |
@@ -64,7 +64,7 @@ succ analyze
 | **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
 | **Working Memory** | Priority scoring, validity filtering, diversity, pinned memories |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
-| **Debug Sessions** | Structured debugging with hypothesis testing, 14-language instrumentation |
+| **Debug Sessions** | Structured debugging with hypothesis testing, 13-language instrumentation |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
 | **Team Mode** | Parallel task execution with git worktrees |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
@@ -72,7 +72,7 @@ succ analyze
 <details>
 <summary>All features</summary>
 
-- **AST Code Indexing** — Tree-sitter parsing for 13 languages; symbol-aware BM25 tokenization boosts function/class names in search results
+- **AST Code Indexing** — Tree-sitter parsing for 21 languages (13 with full symbol extraction + 8 grammar-only); symbol-aware BM25 tokenization boosts function/class names in search results
 - **Web Search** — Real-time search via Perplexity Sonar through OpenRouter (quick $1/MTok, quality $3-15/MTok, deep research); search history tracking with cost auditing
 - **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent, export workflow to Obsidian (Mermaid Gantt + dependency DAG)
 - **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
