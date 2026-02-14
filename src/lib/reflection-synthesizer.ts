@@ -10,7 +10,13 @@
 
 import { callLLM } from './llm.js';
 import { getEmbedding } from './embeddings.js';
-import { saveMemory, getMemoryById, updateMemoryTags, findSimilarMemory } from './storage/index.js';
+import {
+  saveMemory,
+  getMemoryById,
+  updateMemoryTags,
+  findSimilarMemory,
+  incrementCorrectionCount,
+} from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
 
 const SYNTHESIS_PROMPT = `You are analyzing a cluster of related observations from a developer's coding sessions.
@@ -41,6 +47,7 @@ export interface SynthesisResult {
   clustersProcessed: number;
   patternsCreated: number;
   duplicatesSkipped: number;
+  reinforced: number;
   observationsMarked: number;
   errors: string[];
 }
@@ -58,6 +65,7 @@ export async function synthesizeFromCommunities(
     clustersProcessed: 0,
     patternsCreated: 0,
     duplicatesSkipped: 0,
+    reinforced: 0,
     observationsMarked: 0,
     errors: [],
   };
@@ -124,14 +132,27 @@ export async function synthesizeFromCommunities(
         if (!dryRun) {
           const embedding = await getEmbedding(pattern.content);
 
-          // Semantic dedup: check if a similar reflection already exists (0.80 threshold
+          // Semantic dedup: check if a similar memory already exists (0.80 threshold
           // catches LLM paraphrases that saveMemory's 0.92 dedup would miss)
           const existing = await findSimilarMemory(embedding, SYNTHESIS_DEDUP_THRESHOLD);
           if (existing) {
-            result.duplicatesSkipped++;
-            log(
-              `[synthesizer] Skipped semantic duplicate (sim=${existing.similarity.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
-            );
+            // Reinforce patterns/learnings — increment correction_count so they
+            // eventually pin (Tier 1) if the daemon keeps seeing the same insight.
+            // Skip observations — they're too noisy to reinforce automatically.
+            const existingMem = await getMemoryById(existing.id);
+            const existingType = existingMem?.type;
+            if (existingType === 'pattern' || existingType === 'learning') {
+              await incrementCorrectionCount(existing.id);
+              result.reinforced++;
+              log(
+                `[synthesizer] Reinforced existing ${existingType} #${existing.id} (sim=${existing.similarity.toFixed(2)}): ${existing.content.substring(0, 60)}...`
+              );
+            } else {
+              result.duplicatesSkipped++;
+              log(
+                `[synthesizer] Skipped duplicate ${existingType ?? 'unknown'} (sim=${existing.similarity.toFixed(2)}): ${pattern.content.substring(0, 60)}...`
+              );
+            }
             continue;
           }
 
