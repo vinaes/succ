@@ -38,9 +38,10 @@ export function registerGraphTools(server: McpServer) {
           'communities',
           'centrality',
           'export',
+          'cleanup',
         ])
         .describe(
-          'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export)'
+          'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality)'
         ),
       source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
       target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
@@ -277,12 +278,27 @@ ${relationStats}`;
             };
           }
 
+          case 'cleanup': {
+            const { graphCleanup } = await import('../../lib/graph/cleanup.js');
+            const result = await graphCleanup({
+              pruneThreshold: threshold,
+            });
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Graph cleanup complete:\n  Pruned: ${result.pruned}\n  Enriched: ${result.enriched}\n  Orphans connected: ${result.orphansConnected}\n  Communities: ${result.communitiesDetected}\n  Centrality updated: ${result.centralityUpdated}`,
+                },
+              ],
+            };
+          }
+
           default:
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, or export.',
+                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, or cleanup.',
                 },
               ],
             };

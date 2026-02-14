@@ -853,6 +853,16 @@ export async function getCentralityScores(memoryIds: number[]): Promise<Map<numb
   return d.getCentralityScores(memoryIds);
 }
 
+export async function deleteMemoryLinksByIds(ids: number[]): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.deleteMemoryLinksByIds(ids);
+}
+
+export async function findIsolatedMemoryIds(): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.findIsolatedMemoryIds();
+}
+
 // ===========================================================================
 // Token Frequency
 // ===========================================================================

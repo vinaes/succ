@@ -663,3 +663,38 @@ export function getCentralityScores(memoryIds: number[]): Map<number, number> {
   for (const row of rows) map.set(row.memory_id, row.normalized_degree);
   return map;
 }
+
+/**
+ * Bulk delete memory links by their IDs.
+ * Batches in groups of 999 to respect SQLite parameter limit.
+ */
+export function deleteMemoryLinksByIds(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const database = getDb();
+  const BATCH_SIZE = 999;
+  let totalDeleted = 0;
+
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const batch = ids.slice(i, i + BATCH_SIZE);
+    const placeholders = batch.map(() => '?').join(',');
+    const result = database
+      .prepare(`DELETE FROM memory_links WHERE id IN (${placeholders})`)
+      .run(...batch);
+    totalDeleted += result.changes;
+  }
+
+  return totalDeleted;
+}
+
+/**
+ * Find memory IDs that have zero links (neither source nor target).
+ */
+export function findIsolatedMemoryIds(): number[] {
+  const rows = cachedPrepare(`
+    SELECT m.id FROM memories m
+    WHERE NOT EXISTS (
+      SELECT 1 FROM memory_links WHERE source_id = m.id OR target_id = m.id
+    )
+  `).all() as Array<{ id: number }>;
+  return rows.map((r) => r.id);
+}

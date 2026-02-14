@@ -9,14 +9,19 @@ interface GraphOptions {
     | 'enrich-relations'
     | 'proximity'
     | 'communities'
-    | 'centrality';
+    | 'centrality'
+    | 'cleanup';
   format?: 'obsidian' | 'json';
   threshold?: number;
+  orphanThreshold?: number;
   output?: string;
   force?: boolean;
   limit?: number;
   dryRun?: boolean;
   minCount?: number;
+  skipEnrich?: boolean;
+  skipOrphans?: boolean;
+  skipFinalize?: boolean;
 }
 
 /**
@@ -45,6 +50,9 @@ export async function graph(options: GraphOptions): Promise<void> {
         break;
       case 'centrality':
         await centrality();
+        break;
+      case 'cleanup':
+        await cleanup(options);
         break;
     }
   } finally {
@@ -132,4 +140,30 @@ async function centrality(): Promise<void> {
   console.log('Computing centrality scores...');
   const result = await updateCentralityCache();
   console.log(`Updated centrality for ${result.updated} memories.`);
+}
+
+async function cleanup(options: GraphOptions): Promise<void> {
+  const { graphCleanup } = await import('../lib/graph/cleanup.js');
+  const mode = options.dryRun ? 'DRY RUN' : 'LIVE';
+  console.log(`\nGraph Cleanup (${mode})\n`);
+
+  const result = await graphCleanup({
+    pruneThreshold: options.threshold,
+    orphanThreshold: options.orphanThreshold,
+    skipEnrich: options.skipEnrich,
+    skipOrphans: options.skipOrphans,
+    skipFinalize: options.skipFinalize,
+    dryRun: options.dryRun,
+    onProgress: (step, detail) => {
+      console.log(`  [${step}] ${detail}`);
+    },
+  });
+
+  console.log('\nResults:');
+  console.log(`  Pruned:              ${result.pruned}`);
+  console.log(`  Enriched:            ${result.enriched}`);
+  console.log(`  Orphans connected:   ${result.orphansConnected}`);
+  console.log(`  Communities:         ${result.communitiesDetected === -1 ? 'skipped' : result.communitiesDetected}`);
+  console.log(`  Centrality updated:  ${result.centralityUpdated === -1 ? 'skipped' : result.centralityUpdated}`);
+  console.log('');
 }

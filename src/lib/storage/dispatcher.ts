@@ -1138,6 +1138,47 @@ export class StorageDispatcher {
     return sqlite.getCentralityScores(memoryIds);
   }
 
+  async deleteMemoryLinksByIds(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    if (this.backend === 'postgresql' && this.postgres) {
+      const pool = await this.postgres.getPool();
+      const BATCH_SIZE = 999;
+      let totalDeleted = 0;
+      for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        const batch = ids.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map((_, idx) => `$${idx + 1}`).join(',');
+        const result = await pool.query(
+          `DELETE FROM memory_links WHERE id IN (${placeholders})`,
+          batch
+        );
+        totalDeleted += result.rowCount ?? 0;
+      }
+      return totalDeleted;
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.deleteMemoryLinksByIds(ids);
+  }
+
+  async findIsolatedMemoryIds(): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const pool = await this.postgres.getPool();
+      const scopeCond = this.postgres.getProjectId()
+        ? 'AND (LOWER(m.project_id) = $1 OR m.project_id IS NULL)'
+        : 'AND m.project_id IS NULL';
+      const params = this.postgres.getProjectId() ? [this.postgres.getProjectId()] : [];
+      const result = await pool.query(
+        `SELECT m.id FROM memories m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM memory_links WHERE source_id = m.id OR target_id = m.id
+         ) ${scopeCond}`,
+        params
+      );
+      return result.rows.map((r: { id: number }) => r.id);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.findIsolatedMemoryIds();
+  }
+
   // ===========================================================================
   // File Hashes
   // ===========================================================================

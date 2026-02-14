@@ -165,4 +165,6 @@ export {
   updateMemoryLink,
   upsertCentralityScore,
   getCentralityScores,
+  deleteMemoryLinksByIds,
+  findIsolatedMemoryIds,
 } from './graph.js';

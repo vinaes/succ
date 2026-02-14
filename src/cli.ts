@@ -403,15 +403,19 @@ program
 program
   .command('graph <action>')
   .description(
-    'Knowledge graph: export, stats, auto-link, enrich-relations, proximity, communities, centrality'
+    'Knowledge graph: export, stats, auto-link, enrich-relations, proximity, communities, centrality, cleanup'
   )
   .option('-f, --format <format>', 'Export format: obsidian or json', 'obsidian')
-  .option('-t, --threshold <number>', 'Similarity threshold for auto-link', '0.75')
+  .option('-t, --threshold <number>', 'Similarity threshold for auto-link/cleanup prune', '0.75')
+  .option('--orphan-threshold <number>', 'Similarity threshold for orphan reconnection', '0.60')
   .option('-o, --output <path>', 'Output directory for export')
   .option('--force', 'Force re-enrichment of already enriched links')
   .option('-n, --limit <number>', 'Limit number of links to enrich')
   .option('--min-count <number>', 'Min co-occurrence count for proximity', '2')
-  .option('--dry-run', 'Preview proximity links without creating them')
+  .option('--dry-run', 'Preview without making changes')
+  .option('--skip-enrich', 'Skip LLM enrichment step (cleanup)')
+  .option('--skip-orphans', 'Skip orphan reconnection (cleanup)')
+  .option('--skip-finalize', 'Skip communities + centrality rebuild (cleanup)')
   .action(async (action, options) => {
     const { graph } = await import('./commands/graph.js');
     return graph({
@@ -422,14 +426,19 @@ program
         | 'enrich-relations'
         | 'proximity'
         | 'communities'
-        | 'centrality',
+        | 'centrality'
+        | 'cleanup',
       format: options.format,
       threshold: parseFloat(options.threshold),
+      orphanThreshold: options.orphanThreshold ? parseFloat(options.orphanThreshold) : undefined,
       output: options.output,
       force: options.force,
       limit: options.limit ? parseInt(options.limit) : undefined,
       minCount: options.minCount ? parseInt(options.minCount) : undefined,
       dryRun: options.dryRun,
+      skipEnrich: options.skipEnrich,
+      skipOrphans: options.skipOrphans,
+      skipFinalize: options.skipFinalize,
     });
   });
 
