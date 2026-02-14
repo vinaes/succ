@@ -9,6 +9,25 @@ import os from 'os';
 // Increase timeout for integration tests
 const INTEGRATION_TIMEOUT = 60000;
 
+/**
+ * Retry spawnSync — works around Windows npx shim race condition
+ * where stdout is occasionally empty on first attempt (Node 20).
+ */
+function spawnSyncRetry(
+  cmd: string,
+  args: string[],
+  opts: Record<string, unknown>,
+  maxRetries = 2
+): ReturnType<typeof spawnSync> {
+  for (let i = 0; i <= maxRetries; i++) {
+    const result = spawnSync(cmd, args, opts);
+    if (result.stdout && (result.stdout as string).trim().length > 0) return result;
+    if (i < maxRetries) continue;
+    return result; // last attempt — return as-is
+  }
+  return spawnSync(cmd, args, opts); // unreachable, satisfies TS
+}
+
 describe('Integration Tests', () => {
   describe('CLI Commands', () => {
     it('should run status command', () => {
@@ -207,7 +226,7 @@ describe('Integration Tests', () => {
     });
 
     it('should show daemon status when not running', () => {
-      const result = spawnSync(
+      const result = spawnSyncRetry(
         'npx',
         ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'status'],
         {
@@ -222,7 +241,7 @@ describe('Integration Tests', () => {
     });
 
     it('should handle stop when not running', () => {
-      const result = spawnSync(
+      const result = spawnSyncRetry(
         'npx',
         ['tsx', path.join(originalCwd, 'src/cli.ts'), 'daemon', 'stop'],
         {
