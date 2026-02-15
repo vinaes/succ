@@ -21,7 +21,7 @@ const COMPONENT = 'web-fetch';
 export function registerWebFetchTools(server: McpServer) {
   server.tool(
     'succ_fetch',
-    'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns full content without summarization or truncation. Prefer this over built-in WebFetch.',
+    'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns LLM-optimized content by default (mode=fit, 30-50% fewer tokens). Use mode=full for complete content. Prefer this over built-in WebFetch.',
     {
       url: z.string().url().describe('URL to fetch and convert to markdown'),
       format: z
@@ -31,9 +31,9 @@ export function registerWebFetchTools(server: McpServer) {
           'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)'
         ),
       mode: z
-        .enum(['fit'])
+        .enum(['fit', 'full'])
         .optional()
-        .describe('Set to "fit" to prune boilerplate sections for smaller LLM context (30-50% fewer tokens)'),
+        .describe('Content mode: "fit" (default) prunes boilerplate for 30-50% fewer tokens, "full" returns complete content'),
       links: z
         .enum(['citations'])
         .optional()
@@ -48,11 +48,12 @@ export function registerWebFetchTools(server: McpServer) {
       await applyProjectPath(project_path);
 
       try {
-        const result = await fetchAsMarkdown(url, { mode, links, maxTokens: max_tokens });
+        const effectiveMode = mode === 'full' ? undefined : (mode ?? 'fit');
+        const result = await fetchAsMarkdown(url, { mode: effectiveMode, links, maxTokens: max_tokens });
 
-        // Use fit content when available (mode=fit), otherwise full content
-        const content = result.fitContent ?? result.content;
-        const tokenCount = result.fitTokens ?? result.tokens;
+        // Use fit content unless user explicitly requested full mode
+        const content = mode === 'full' ? result.content : (result.fitContent ?? result.content);
+        const tokenCount = mode === 'full' ? result.tokens : (result.fitTokens ?? result.tokens);
 
         if (format === 'json') {
           const meta = [
