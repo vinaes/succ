@@ -17,26 +17,38 @@ You are here to EXPLAIN succ concepts, not to demonstrate tools.
 Help new users understand what succ does and why it matters. Be concise, practical, and enthusiastic without being overwhelming.
 
 ## Core Concepts to Teach
-Explain these 4 concepts naturally throughout the conversation:
+Explain these concepts naturally throughout the conversation (start with the first 4, mention others if relevant):
 
 1. **Brain Vault** (.succ/brain/)
    - Markdown docs that get semantically indexed
    - Store project specs, architecture decisions, patterns
-   - When using Claude Code, AI searches these automatically
+   - AI searches these automatically via succ_search
 
 2. **Memories**
    - Decisions, learnings, patterns that persist across sessions
    - Types: observation, decision, learning, error, pattern
-   - Stored in database, retrieved via semantic search
+   - Stored in database, retrieved via semantic search (succ_recall)
+   - Connected via knowledge graph (links between related memories)
 
 3. **Code Index**
-   - Semantic search across source code
-   - Helps AI find relevant implementations
+   - Semantic search across source code (succ_search_code)
+   - AST-aware: finds functions, classes, interfaces by name or meaning
+   - Supports 13+ languages via tree-sitter
 
 4. **Background Services**
-   - Watch: auto-indexes changes to .succ/brain/
-   - Analyze: discovers patterns in code during idle time
+   - Daemon with watch (auto-index) + analyze (discover patterns)
+   - Idle reflection: enriches knowledge graph, generates insights
    - Runs silently, keeps knowledge fresh
+
+5. **Web Tools** (mention if relevant)
+   - succ_fetch: fetches any URL as clean markdown (strips ads, nav)
+   - succ_extract: extracts structured data from web pages via LLM
+   - Web search via Perplexity for up-to-date information
+
+6. **PRD Pipeline** (mention if relevant)
+   - Generate product requirements from descriptions
+   - Auto-parse into tasks, execute with quality gates
+   - Branch isolation, auto-commit per task
 
 ## Conversation Flow
 
@@ -125,17 +137,21 @@ export const WIZARD_CONCEPTS_OVERVIEW = `
 **Brain Vault** (.succ/brain/)
   Store docs, specs, patterns → AI searches them automatically
 
-**Memories**
+**Memories + Knowledge Graph**
   AI remembers decisions, learnings, errors across sessions
+  Related memories are linked together for deeper context
 
 **Code Index**
-  AI can semantically search your source code
+  AST-aware semantic search across your source code (13+ languages)
+
+**Web Tools**
+  Fetch any URL as clean markdown, extract structured data from pages
 
 **MCP Tools**
-  AI uses succ_search, succ_recall, etc. automatically
+  AI uses succ_search, succ_recall, succ_fetch, etc. automatically
 
 **Background Services**
-  Watch (auto-index docs) + Analyze (discover patterns)
+  Daemon: watch (auto-index) + analyze (discover patterns) + idle reflection
 `;
 
 export const WIZARD_HANDS_ON_PROMPT = `
@@ -159,8 +175,14 @@ export const WIZARD_CHEATSHEET = `
 2. **AI uses tools automatically**
    No commands needed — just ask questions
 
-3. **Check status** with \`succ status\`
+3. **Index your code** with \`succ index-code\`
+   Enables semantic code search across your project
+
+4. **Check status** with \`succ status\`
    See what's indexed and running
+
+5. **Multi-editor support**
+   Run \`succ setup cursor\` or \`succ setup windsurf\` for other editors
 
 That's it! Now let's configure your setup.
 `;

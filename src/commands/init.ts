@@ -29,6 +29,9 @@ import {
   getSessionsMocTemplate,
   getKnowledgeMocTemplate,
   getArchiveMocTemplate,
+  getPrdMocTemplate,
+  getCommunicationMocTemplate,
+  getDecisionsMocRootTemplate,
 } from './init-templates.js';
 
 // Get the directory where succ is installed
@@ -102,6 +105,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
     path.join(succDir, 'brain', '02_Knowledge', 'Ideas'),
     path.join(succDir, 'brain', '03_Archive', 'Legacy'),
     path.join(succDir, 'brain', '03_Archive', 'Changelogs'),
+    path.join(succDir, 'brain', '04_PRD'),
+    path.join(succDir, 'brain', '05_Communication'),
+    // lowercase without numeric prefix — cross-project decisions (vs per-project 01_Projects/<name>/Decisions/)
+    path.join(succDir, 'brain', 'decisions'),
     // hooks directory only created for local development (not global install)
     ...(useGlobalHooks ? [] : [path.join(succDir, 'hooks')]),
   ];
@@ -189,6 +196,18 @@ export async function init(options: InitOptions = {}): Promise<void> {
     {
       path: path.join(succDir, 'brain', '03_Archive', 'Archive.md'),
       content: getArchiveMocTemplate(),
+    },
+    {
+      path: path.join(succDir, 'brain', '04_PRD', 'PRD.md'),
+      content: getPrdMocTemplate(),
+    },
+    {
+      path: path.join(succDir, 'brain', '05_Communication', 'Communication.md'),
+      content: getCommunicationMocTemplate(),
+    },
+    {
+      path: path.join(succDir, 'brain', 'decisions', 'Decisions.md'),
+      content: getDecisionsMocRootTemplate(),
     },
   ];
 
@@ -571,11 +590,13 @@ export async function init(options: InitOptions = {}): Promise<void> {
     // Non-interactive: show next steps
     console.log('\nNext steps:');
     console.log('  1. Run `succ analyze` to generate brain documentation');
-    console.log('  2. Run `succ index` to create embeddings (local, no API key needed)');
-    console.log('  3. Run `succ search <query>` to find relevant content');
+    console.log('  2. Run `succ index` to create doc embeddings (local, no API key needed)');
+    console.log('  3. Run `succ index-code` to index source code for semantic search');
+    console.log('  4. Run `succ search <query>` to find relevant content');
     if (mcpResult === 'added') {
-      console.log('  4. Restart Claude Code to enable succ tools');
+      console.log('  5. Restart Claude Code to enable succ tools');
     }
+    console.log('\n  Other editors: `succ setup cursor`, `succ setup windsurf`, `succ setup continue`');
   }
 }
 
@@ -669,8 +690,8 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
     console.log('');
     console.log('  \x1b[32m●\x1b[0m succ');
     console.log('');
-    console.log('  Semantic Understanding for Claude Code');
-    console.log('  Memory system for AI assistants');
+    console.log('  Semantic Understanding for Code Contexts');
+    console.log('  Claude Code · Cursor · Windsurf · Continue.dev');
     console.log('');
     console.log('  ─────────────────────────────────────────────────────────');
     console.log('');
@@ -918,10 +939,12 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
     console.log('│                    Setup Complete!                      │');
     console.log('└─────────────────────────────────────────────────────────┘\n');
     console.log('  Next steps:\n');
-    console.log('    1. succ analyze        Generate brain documentation');
-    console.log('    2. succ index          Create embeddings for search');
-    console.log('    3. succ search <query> Find relevant content\n');
+    console.log('    1. succ analyze          Generate brain documentation');
+    console.log('    2. succ index            Create doc embeddings for search');
+    console.log('    3. succ index-code       Index source code for semantic search');
+    console.log('    4. succ search <query>   Find relevant content\n');
     console.log('  The daemon starts automatically with Claude Code sessions.');
+    console.log('  Other editors: succ setup cursor | windsurf | continue');
     console.log('  Check status anytime: succ daemon status\n');
   } catch (error: any) {
     // Handle Ctrl+C gracefully
