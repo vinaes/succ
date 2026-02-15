@@ -14,7 +14,7 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
-import { fetchAsMarkdown } from '../../lib/md-fetch.js';
+import { fetchAsMarkdown, extractFromUrl } from '../../lib/md-fetch.js';
 
 const COMPONENT = 'web-fetch';
 
@@ -30,29 +30,46 @@ export function registerWebFetchTools(server: McpServer) {
         .describe(
           'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)'
         ),
+      mode: z
+        .enum(['fit'])
+        .optional()
+        .describe('Set to "fit" to prune boilerplate sections for smaller LLM context (30-50% fewer tokens)'),
+      links: z
+        .enum(['citations'])
+        .optional()
+        .describe('Set to "citations" to convert inline links to numbered references with footer'),
+      max_tokens: z
+        .number()
+        .optional()
+        .describe('Truncate output to N tokens (use with mode=fit)'),
       project_path: projectPathParam,
     },
-    async ({ url, format, project_path }) => {
+    async ({ url, format, mode, links, max_tokens, project_path }) => {
       await applyProjectPath(project_path);
 
       try {
-        const result = await fetchAsMarkdown(url);
+        const result = await fetchAsMarkdown(url, { mode, links, maxTokens: max_tokens });
+
+        // Use fit content when available (mode=fit), otherwise full content
+        const content = result.fitContent ?? result.content;
+        const tokenCount = result.fitTokens ?? result.tokens;
 
         if (format === 'json') {
           const meta = [
             `Title: ${result.title}`,
             `URL: ${result.url}`,
-            `Tokens: ${result.tokens}`,
+            `Tokens: ${tokenCount}`,
             `Quality: ${result.quality.grade} (${result.quality.score})`,
             `Tier: ${result.tier}`,
             `Method: ${result.method}`,
             `Time: ${result.time_ms}ms`,
+            result.fitContent ? `Mode: fit (${result.fitTokens ?? '?'} tokens, was ${result.tokens})` : '',
             result.byline ? `Author: ${result.byline}` : '',
             result.excerpt ? `Excerpt: ${result.excerpt}` : '',
             '',
             '---',
             '',
-            result.content,
+            content,
           ]
             .filter(Boolean)
             .join('\n');
@@ -66,7 +83,7 @@ export function registerWebFetchTools(server: McpServer) {
           `URL: ${result.url}`,
           result.byline ? `Author: ${result.byline}` : '',
           '',
-          result.content,
+          content,
         ]
           .filter((line) => line !== undefined)
           .join('\n');
@@ -76,6 +93,43 @@ export function registerWebFetchTools(server: McpServer) {
         const msg = error instanceof Error ? error.message : String(error);
         return createErrorResponse(
           `Failed to fetch ${url}: ${msg}`,
+          COMPONENT,
+          error instanceof Error ? error : undefined
+        );
+      }
+    }
+  );
+
+  server.tool(
+    'succ_extract',
+    'Extract structured data from a URL using a JSON schema. The page is fetched, converted to Markdown, then an LLM extracts data matching the schema. Automatically retries with headless browser for SPA/JS-heavy sites. Rate limited: 10 requests/minute.',
+    {
+      url: z.string().url().describe('URL to extract data from'),
+      schema: z
+        .string()
+        .describe(
+          'JSON Schema as a string (e.g. \'{"type":"object","properties":{"title":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}}}}}}\') — defines the structure of data to extract'
+        ),
+      project_path: projectPathParam,
+    },
+    async ({ url, schema: schemaStr, project_path }) => {
+      await applyProjectPath(project_path);
+
+      try {
+        let schema: Record<string, unknown>;
+        try {
+          schema = JSON.parse(schemaStr);
+        } catch {
+          return createErrorResponse('Invalid JSON schema string', COMPONENT);
+        }
+
+        const result = await extractFromUrl(url, schema);
+        const output = JSON.stringify(result.data, null, 2);
+        return createToolResponse(`Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return createErrorResponse(
+          `Failed to extract from ${url}: ${msg}`,
           COMPONENT,
           error instanceof Error ? error : undefined
         );
