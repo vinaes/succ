@@ -8,7 +8,7 @@
 import { getConfig } from './config.js';
 
 const DEFAULT_MD_API_URL = 'https://md.succ.ai';
-const DEFAULT_TIMEOUT = 30_000;
+const DEFAULT_TIMEOUT = 300_000;
 
 export interface MdFetchResult {
   title: string;
@@ -81,13 +81,28 @@ export async function fetchAsMarkdown(
   const qs = params.toString();
   const apiUrl = `${base}/${encodeURIComponent(url)}${qs ? '?' + qs : ''}`;
 
-  const response = await fetch(apiUrl, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-    },
-    signal: AbortSignal.timeout(timeout),
-  });
+  // Retry with exponential backoff for transient network failures
+  let response: Response | undefined;
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(timeout),
+      });
+      lastErr = undefined;
+      break;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  if (!response) throw lastErr ?? new Error('fetch failed after 3 retries');
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
