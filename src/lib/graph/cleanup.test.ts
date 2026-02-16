@@ -28,7 +28,7 @@ vi.mock('../storage/index.js', () => ({
 }));
 
 let enrichCalled = false;
-let enrichResult = { enriched: 5, failed: 0, skipped: 2 };
+const enrichResult = { enriched: 5, failed: 0, skipped: 2 };
 vi.mock('./llm-relations.js', () => ({
   enrichExistingLinks: async () => {
     enrichCalled = true;

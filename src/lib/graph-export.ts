@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getClaudeDir, getConfig, getProjectRoot } from './config.js';
+import { getClaudeDir, getConfig } from './config.js';
 import {
   getMemoryLinks,
   getGraphStats,
@@ -642,7 +642,6 @@ async function generateIndexContent(
   _brainDir: string
 ): Promise<string> {
   const stats = await getGraphStats();
-  const projectName = path.basename(getProjectRoot());
   const temporalConfig = getTemporalConfig();
   const now = new Date();
 

@@ -233,7 +233,6 @@ describe('Graph Export Module', () => {
       expect(result.memoriesExported).toBe(3);
 
       // Check that directories were created
-      const projectName = path.basename(tempDir);
       expect(fs.existsSync(path.join(tempDir, 'project', 'decisions'))).toBe(true);
       expect(fs.existsSync(path.join(tempDir, 'knowledge'))).toBe(true);
       expect(fs.existsSync(path.join(tempDir, 'inbox'))).toBe(true);

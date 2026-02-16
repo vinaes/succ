@@ -248,8 +248,6 @@ Content for B.`;
 
     it('should create correct brain directory structure', () => {
       const brainDir = path.join(tempDir, 'brain');
-      const projectName = 'test-project';
-
       const dirs = [
         brainDir,
         path.join(brainDir, '.meta'),

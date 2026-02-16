@@ -156,7 +156,6 @@ export async function resolveModelPath(modelName: string): Promise<string> {
   // Note: AutoTokenizer only downloads tokenizer files, NOT the ONNX model.
   // AutoModel.from_pretrained() downloads the full model including onnx/model.onnx.
   const transformers = await import('@huggingface/transformers');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const AutoModel = (transformers as any).AutoModel;
   let tempModel;
   try {

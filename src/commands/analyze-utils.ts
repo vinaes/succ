@@ -489,9 +489,7 @@ export function printTimingSummary(timings: AgentTiming[], totalMs: number): voi
   console.log(`  Total: ${formatDuration(totalMs)}`);
 }
 
-export async function ensureBrainStructure(brainDir: string, projectRoot: string): Promise<void> {
-  const projectName = path.basename(projectRoot);
-
+export async function ensureBrainStructure(brainDir: string, _projectRoot: string): Promise<void> {
   const dirs = [
     brainDir,
     path.join(brainDir, '.meta'),
