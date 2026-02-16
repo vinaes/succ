@@ -327,7 +327,10 @@ async function exportToObsidian(
         }
       }
     } catch (err) {
-      logWarn('graph-export', `Failed to scan ${dir} for stale files: ${err instanceof Error ? err.message : err}`);
+      logWarn(
+        'graph-export',
+        `Failed to scan ${dir} for stale files: ${err instanceof Error ? err.message : err}`
+      );
     }
   }
 

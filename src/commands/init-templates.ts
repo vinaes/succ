@@ -500,4 +500,3 @@ User communication style tracking. Updated by the succ-style-tracker agent.
 _Entries are auto-generated when communication preferences change._
 `;
 }
-
