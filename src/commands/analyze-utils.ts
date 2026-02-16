@@ -496,12 +496,12 @@ export async function ensureBrainStructure(brainDir: string, projectRoot: string
     brainDir,
     path.join(brainDir, '.meta'),
     path.join(brainDir, '.obsidian'),
-    path.join(brainDir, '00_Inbox'),
-    path.join(brainDir, '01_Projects', projectName, 'Technical'),
-    path.join(brainDir, '01_Projects', projectName, 'Decisions'),
-    path.join(brainDir, '01_Projects', projectName, 'Features'),
-    path.join(brainDir, '02_Knowledge'),
-    path.join(brainDir, '03_Archive'),
+    path.join(brainDir, 'inbox'),
+    path.join(brainDir, 'project', 'technical'),
+    path.join(brainDir, 'project', 'decisions'),
+    path.join(brainDir, 'project', 'features'),
+    path.join(brainDir, 'knowledge'),
+    path.join(brainDir, 'archive'),
   ];
 
   for (const dir of dirs) {
@@ -530,14 +530,13 @@ Knowledge vault for ${projectName}. Stores decisions, ideas, research, learnings
 CLAUDE.md (this file)
 ├── .meta/                          # Brain's self-knowledge
 │   └── learnings.md               # Patterns, improvements log
-├── 00_Inbox/                       # Quick captures
-├── 01_Projects/
-│   └── ${projectName}/ → [[${projectName}]]
-│       ├── Technical/             # Architecture, API, patterns
-│       ├── Decisions/             # ADRs
-│       └── Features/              # Feature specs
-├── 02_Knowledge/                   # Research, competitors
-└── 03_Archive/                     # Old/superseded
+├── inbox/                          # Quick captures
+├── project/                        # → [[${projectName}]]
+│   ├── technical/                 # Architecture, API, patterns
+│   ├── decisions/                 # ADRs
+│   └── features/                  # Feature specs
+├── knowledge/                      # Research, ideas
+└── archive/                        # Old/superseded
 \`\`\`
 
 ## Quick Start
@@ -578,7 +577,7 @@ relevance: high
 **Conventions:** [[Conventions]]
 `;
 
-  fs.writeFileSync(path.join(brainDir, '01_Projects', projectName, `${projectName}.md`), projectMd);
+  fs.writeFileSync(path.join(brainDir, 'project', `${projectName}.md`), projectMd);
 
   // Learnings
   const learningsMd = `# Learnings
@@ -607,11 +606,11 @@ Lessons learned during development.
     colorGroups: [
       { query: 'file:CLAUDE', color: { a: 1, rgb: 16007990 } }, // Red
       { query: `file:${projectName}`, color: { a: 1, rgb: 16750848 } }, // Orange
-      { query: 'path:Technical', color: { a: 1, rgb: 2201331 } }, // Blue
-      { query: 'path:Decisions', color: { a: 1, rgb: 10040217 } }, // Purple
-      { query: 'path:Features', color: { a: 1, rgb: 5025616 } }, // Green
-      { query: 'path:02_Knowledge', color: { a: 1, rgb: 16776960 } }, // Yellow
-      { query: 'path:03_Archive', color: { a: 1, rgb: 8421504 } }, // Gray
+      { query: 'path:technical', color: { a: 1, rgb: 2201331 } }, // Blue
+      { query: 'path:decisions', color: { a: 1, rgb: 10040217 } }, // Purple
+      { query: 'path:features', color: { a: 1, rgb: 5025616 } }, // Green
+      { query: 'path:knowledge', color: { a: 1, rgb: 16776960 } }, // Yellow
+      { query: 'path:archive', color: { a: 1, rgb: 8421504 } }, // Gray
     ],
     'collapse-display': false,
     showArrow: false,

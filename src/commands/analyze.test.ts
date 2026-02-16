@@ -254,13 +254,13 @@ Content for B.`;
         brainDir,
         path.join(brainDir, '.meta'),
         path.join(brainDir, '.obsidian'),
-        path.join(brainDir, '00_Inbox'),
-        path.join(brainDir, '01_Projects', projectName, 'Technical'),
-        path.join(brainDir, '01_Projects', projectName, 'Decisions'),
-        path.join(brainDir, '01_Projects', projectName, 'Features'),
-        path.join(brainDir, '01_Projects', projectName, 'Systems'),
-        path.join(brainDir, '02_Knowledge'),
-        path.join(brainDir, '03_Archive'),
+        path.join(brainDir, 'inbox'),
+        path.join(brainDir, 'project', 'technical'),
+        path.join(brainDir, 'project', 'decisions'),
+        path.join(brainDir, 'project', 'features'),
+        path.join(brainDir, 'project', 'systems'),
+        path.join(brainDir, 'knowledge'),
+        path.join(brainDir, 'archive'),
       ];
 
       for (const dir of dirs) {

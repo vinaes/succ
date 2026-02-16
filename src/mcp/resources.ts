@@ -100,7 +100,7 @@ export function registerResources(server: McpServer) {
 
       // Try project MOC first, then CLAUDE.md, then Memories.md
       const projectName = path.basename(getProjectRoot());
-      const projectMocPath = path.join(brainPath, '01_Projects', projectName, `${projectName}.md`);
+      const projectMocPath = path.join(brainPath, 'project', `${projectName}.md`);
       const claudePath = path.join(brainPath, 'CLAUDE.md');
       const memoriesPath = path.join(brainPath, 'Memories.md');
 

@@ -142,7 +142,7 @@ How to load relevant context at session start.
 ## Always Load
 
 - \`.succ/brain/.meta/learnings.md\` — accumulated wisdom
-- \`.succ/brain/01_Projects/${projectName}/${projectName}.md\` — project overview
+- \`.succ/brain/project/${projectName}.md\` — project overview
 
 ## Load on Topic
 
@@ -161,60 +161,6 @@ How to load relevant context at session start.
 `;
 }
 
-export function getReflectionsTemplate(): string {
-  return `---
-description: "Internal dialogue between sessions. Thoughts, questions, continuations."
-type: self
-relevance: high
----
-
-# Reflections
-
-Async conversation with myself across sessions. Not facts — thoughts.
-
-**Parent:** [[CLAUDE]]
-
----
-
-## How to Use
-
-- Read recent entries, continue the thread
-- Archive old entries when file > 150 lines
-- Keep it honest, not performative
-
----
-
-## Pinned
-
-**BEFORE researching:** Check brain first!
-
-- \`.succ/brain/.meta/learnings.md\` — documented discoveries
-- \`.succ/brain/01_Projects/*/Technical/*.md\` — existing analyses
-
-**After researching:** Add to \`learnings.md\` or create \`Technical/*.md\` doc
-
----
-
-## Template for New Entries
-
-\`\`\`markdown
-## YYYY-MM-DD HH:MM
-
-**Context:** [what prompted this thought]
-
-**Thought:**
-[reflection — be honest, not performative]
-
-**For next session:**
-[questions, continuations, things to check]
-\`\`\`
-
----
-
-*No entries yet. First reflection will appear after idle-reflection hook fires.*
-`;
-}
-
 export function getInboxMocTemplate(): string {
   return `---
 description: "MOC - Quick capture, unsorted items, session notes"
@@ -229,8 +175,8 @@ Quick capture zone. Items here should be processed and moved to appropriate loca
 ## Processing Workflow
 
 1. Review items weekly
-2. Move decisions to \`01_Projects/*/Decisions/\`
-3. Move learnings to \`02_Knowledge/\`
+2. Move decisions to \`project/decisions/\`
+3. Move learnings to \`knowledge/\`
 4. Archive or delete obsolete items
 
 ## Recent Items
@@ -555,19 +501,3 @@ _Entries are auto-generated when communication preferences change._
 `;
 }
 
-export function getDecisionsMocRootTemplate(): string {
-  return `---
-description: "MOC - Cross-project architectural decisions"
-type: moc
-relevance: high
----
-
-# Decisions
-
-Cross-project architectural decisions. Project-specific decisions go in \`01_Projects/<name>/Decisions/\`.
-
-## Recent Decisions
-
-_Decision documents are created by agents and manual notes._
-`;
-}

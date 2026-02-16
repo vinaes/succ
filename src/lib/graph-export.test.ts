@@ -148,7 +148,7 @@ describe('Graph Export Module', () => {
       expect(fs.existsSync(indexPath)).toBe(true);
 
       // Check that memory file was created in Inbox
-      const inboxDir = path.join(tempDir, '00_Inbox');
+      const inboxDir = path.join(tempDir, 'inbox');
       expect(fs.existsSync(inboxDir)).toBe(true);
     });
 
@@ -234,9 +234,9 @@ describe('Graph Export Module', () => {
 
       // Check that directories were created
       const projectName = path.basename(tempDir);
-      expect(fs.existsSync(path.join(tempDir, '01_Projects', projectName, 'Decisions'))).toBe(true);
-      expect(fs.existsSync(path.join(tempDir, '02_Knowledge'))).toBe(true);
-      expect(fs.existsSync(path.join(tempDir, '00_Inbox'))).toBe(true);
+      expect(fs.existsSync(path.join(tempDir, 'project', 'decisions'))).toBe(true);
+      expect(fs.existsSync(path.join(tempDir, 'knowledge'))).toBe(true);
+      expect(fs.existsSync(path.join(tempDir, 'inbox'))).toBe(true);
     });
 
     it('should include wiki-links in Obsidian export', async () => {
@@ -270,7 +270,7 @@ describe('Graph Export Module', () => {
       await exportGraphSilent('obsidian', tempDir);
 
       // Find and read the source memory file
-      const inboxDir = path.join(tempDir, '00_Inbox');
+      const inboxDir = path.join(tempDir, 'inbox');
       const files = fs.readdirSync(inboxDir);
       const sourceFile = files.find((f) => f.includes('(1).md'));
 
@@ -310,7 +310,7 @@ describe('Graph Export Module', () => {
       const { exportGraphSilent } = await import('./graph-export.js');
       await exportGraphSilent('obsidian', tempDir);
 
-      const inboxDir = path.join(tempDir, '00_Inbox');
+      const inboxDir = path.join(tempDir, 'inbox');
       const files = fs.readdirSync(inboxDir);
       const mdFile = files.find((f) => f.endsWith('.md'));
 
@@ -341,7 +341,7 @@ describe('Graph Export Module', () => {
       const { exportGraphSilent } = await import('./graph-export.js');
       await exportGraphSilent('obsidian', tempDir);
 
-      const inboxDir = path.join(tempDir, '00_Inbox');
+      const inboxDir = path.join(tempDir, 'inbox');
       const files = fs.readdirSync(inboxDir);
       const mdFile = files.find((f) => f.endsWith('.md'));
 
@@ -367,7 +367,7 @@ describe('Graph Export Module', () => {
       const { exportGraphSilent } = await import('./graph-export.js');
       await exportGraphSilent('obsidian', tempDir);
 
-      const inboxDir = path.join(tempDir, '00_Inbox');
+      const inboxDir = path.join(tempDir, 'inbox');
       const files = fs.readdirSync(inboxDir);
       const mdFile = files.find((f) => f.endsWith('.md'));
 

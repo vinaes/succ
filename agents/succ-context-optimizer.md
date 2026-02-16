@@ -56,7 +56,7 @@ When invoked:
 
    When working on authentication:
    - Load memories tagged "auth", "jwt", "security"
-   - Include brain/Technical/auth-flow.md
+   - Include brain/project/technical/auth-flow.md
 
    When debugging:
    - Load recent error-type memories

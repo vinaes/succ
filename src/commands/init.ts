@@ -17,7 +17,6 @@ import {
   getSoulTemplate,
   getLearningsTemplate,
   getContextRulesTemplate,
-  getReflectionsTemplate,
   getInboxMocTemplate,
   getProjectMocTemplate,
   getDecisionsMocTemplate,
@@ -31,7 +30,6 @@ import {
   getArchiveMocTemplate,
   getPrdMocTemplate,
   getCommunicationMocTemplate,
-  getDecisionsMocRootTemplate,
 } from './init-templates.js';
 
 // Get the directory where succ is installed
@@ -86,29 +84,25 @@ export async function init(options: InitOptions = {}): Promise<void> {
     return;
   }
 
-  // Create directories - full brain vault structure
+  // Create directories - flat brain vault structure (no numbered prefixes)
   const projectName = path.basename(projectRoot);
   const dirs = [
     succDir,
     path.join(succDir, 'brain'),
     path.join(succDir, 'brain', '.meta'),
-    path.join(succDir, 'brain', '.self'),
-    path.join(succDir, 'brain', '00_Inbox'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Features'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Files'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Technical'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Systems'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy'),
-    path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions'),
-    path.join(succDir, 'brain', '02_Knowledge', 'Research'),
-    path.join(succDir, 'brain', '02_Knowledge', 'Ideas'),
-    path.join(succDir, 'brain', '03_Archive', 'Legacy'),
-    path.join(succDir, 'brain', '03_Archive', 'Changelogs'),
-    path.join(succDir, 'brain', '04_PRD'),
-    path.join(succDir, 'brain', '05_Communication'),
-    // lowercase without numeric prefix — cross-project decisions (vs per-project 01_Projects/<name>/Decisions/)
-    path.join(succDir, 'brain', 'decisions'),
+    path.join(succDir, 'brain', 'inbox'),
+    path.join(succDir, 'brain', 'project', 'decisions'),
+    path.join(succDir, 'brain', 'project', 'features'),
+    path.join(succDir, 'brain', 'project', 'files'),
+    path.join(succDir, 'brain', 'project', 'technical'),
+    path.join(succDir, 'brain', 'project', 'systems'),
+    path.join(succDir, 'brain', 'project', 'strategy'),
+    path.join(succDir, 'brain', 'project', 'sessions'),
+    path.join(succDir, 'brain', 'knowledge'),
+    path.join(succDir, 'brain', 'archive'),
+    path.join(succDir, 'brain', 'prd'),
+    path.join(succDir, 'brain', 'communication'),
+    path.join(succDir, 'brain', 'reflections'),
     // hooks directory only created for local development (not global install)
     ...(useGlobalHooks ? [] : [path.join(succDir, 'hooks')]),
   ];
@@ -147,67 +141,56 @@ export async function init(options: InitOptions = {}): Promise<void> {
     log('Created brain/.meta/context-rules.md');
   }
 
-  // Create .self/reflections.md
-  const reflectionsPath = path.join(succDir, 'brain', '.self', 'reflections.md');
-  if (!fs.existsSync(reflectionsPath)) {
-    fs.writeFileSync(reflectionsPath, getReflectionsTemplate());
-    log('Created brain/.self/reflections.md');
-  }
-
   // Create MOC (Map of Content) files for each major folder
   const mocFiles = [
-    { path: path.join(succDir, 'brain', '00_Inbox', 'Inbox.md'), content: getInboxMocTemplate() },
+    { path: path.join(succDir, 'brain', 'inbox', 'Inbox.md'), content: getInboxMocTemplate() },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, `${projectName}.md`),
+      path: path.join(succDir, 'brain', 'project', `${projectName}.md`),
       content: getProjectMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Decisions', 'Decisions.md'),
+      path: path.join(succDir, 'brain', 'project', 'decisions', 'Decisions.md'),
       content: getDecisionsMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Features', 'Features.md'),
+      path: path.join(succDir, 'brain', 'project', 'features', 'Features.md'),
       content: getFeaturesMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Files', 'Files.md'),
+      path: path.join(succDir, 'brain', 'project', 'files', 'Files.md'),
       content: getFilesMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Technical', 'Technical.md'),
+      path: path.join(succDir, 'brain', 'project', 'technical', 'Technical.md'),
       content: getTechnicalMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Systems', 'Systems.md'),
+      path: path.join(succDir, 'brain', 'project', 'systems', 'Systems.md'),
       content: getSystemsMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Strategy', 'Strategy.md'),
+      path: path.join(succDir, 'brain', 'project', 'strategy', 'Strategy.md'),
       content: getStrategyMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '01_Projects', projectName, 'Sessions', 'Sessions.md'),
+      path: path.join(succDir, 'brain', 'project', 'sessions', 'Sessions.md'),
       content: getSessionsMocTemplate(projectName),
     },
     {
-      path: path.join(succDir, 'brain', '02_Knowledge', 'Knowledge.md'),
+      path: path.join(succDir, 'brain', 'knowledge', 'Knowledge.md'),
       content: getKnowledgeMocTemplate(),
     },
     {
-      path: path.join(succDir, 'brain', '03_Archive', 'Archive.md'),
+      path: path.join(succDir, 'brain', 'archive', 'Archive.md'),
       content: getArchiveMocTemplate(),
     },
     {
-      path: path.join(succDir, 'brain', '04_PRD', 'PRD.md'),
+      path: path.join(succDir, 'brain', 'prd', 'PRD.md'),
       content: getPrdMocTemplate(),
     },
     {
-      path: path.join(succDir, 'brain', '05_Communication', 'Communication.md'),
+      path: path.join(succDir, 'brain', 'communication', 'Communication.md'),
       content: getCommunicationMocTemplate(),
-    },
-    {
-      path: path.join(succDir, 'brain', 'decisions', 'Decisions.md'),
-      content: getDecisionsMocRootTemplate(),
     },
   ];
 

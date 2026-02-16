@@ -439,7 +439,7 @@ succ prd export --output ./vault    # Custom output dir
 ### Generated Files
 
 ```
-.succ/brain/04_PRD/{prd-title}/
+.succ/brain/prd/{prd-title}/
 ├── Overview.md        # Summary, stats, gates, embedded dependency graph
 ├── Timeline.md        # Mermaid Gantt chart (task execution timeline)
 ├── Dependencies.md    # Mermaid flowchart DAG (task dependencies)

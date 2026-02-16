@@ -32,13 +32,13 @@ Read `.claude/soul.md` and update the `**Communication:**` line in the `## About
 
 ## 4. Create brain vault entry (if communicationTrackHistory is enabled)
 
-Check if `.succ/brain/05_Communication/` directory exists. If it does, history tracking is enabled.
+Check if `.succ/brain/communication/` directory exists. If it does, history tracking is enabled.
 
 a. Find the most recent existing entry:
-   - Glob for `.succ/brain/05_Communication/*.md`
+   - Glob for `.succ/brain/communication/*.md`
    - Read the latest one to get its filename for the `Previous` link
 
-b. Write a new file `.succ/brain/05_Communication/YYYY-MM-DD_language-tone.md`:
+b. Write a new file `.succ/brain/communication/YYYY-MM-DD_language-tone.md`:
 
 ```markdown
 ---
@@ -61,7 +61,7 @@ Use today's date. If multiple changes happen on the same day, append a suffix: `
 
 ## File output rules
 
-- **ONLY** write to: `.succ/soul.md`, `.claude/soul.md`, and `.succ/brain/05_Communication/`
+- **ONLY** write to: `.succ/soul.md`, `.claude/soul.md`, and `.succ/brain/communication/`
 - **NEVER** create files anywhere else in the project
 - Brain vault entries MUST use Obsidian format (YAML frontmatter, wikilinks)
 

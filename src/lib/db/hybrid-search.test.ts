@@ -875,13 +875,13 @@ describe('Hybrid Search E2E', () => {
 
       insertDocDocument(
         db,
-        '.succ/brain/01_Projects/auth-flow.md',
+        '.succ/brain/project/auth-flow.md',
         '# Authentication Flow\n\nUsers authenticate via JWT tokens issued by the auth service.',
         makeSimilarEmbedding(1500, 0.02)
       );
       insertDocDocument(
         db,
-        '.succ/brain/02_Knowledge/api-design.md',
+        '.succ/brain/knowledge/api-design.md',
         '# API Design Patterns\n\nREST endpoints follow resource-based naming conventions.',
         makeSimilarEmbedding(1500, 0.04)
       );

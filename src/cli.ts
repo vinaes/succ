@@ -803,7 +803,7 @@ prdCmd
 prdCmd
   .command('export [prd-id]')
   .description('Export PRD execution to Obsidian-compatible markdown with Mermaid diagrams')
-  .option('--output <dir>', 'Output directory (default: .succ/brain/04_PRD)')
+  .option('--output <dir>', 'Output directory (default: .succ/brain/prd)')
   .option('--all', 'Export all PRDs')
   .action(async (prdId, options) => {
     const { prdExport } = await import('./commands/prd.js');

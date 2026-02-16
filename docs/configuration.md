@@ -677,11 +677,11 @@ Controls how Claude adapts its communication style based on user patterns.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `communicationAutoAdapt` | boolean | `true` | Allow Claude to auto-update communication preferences in soul.md |
-| `communicationTrackHistory` | boolean | `false` | Log style changes to brain vault (`.succ/brain/05_Communication/`) for Obsidian graph |
+| `communicationTrackHistory` | boolean | `false` | Log style changes to brain vault (`.succ/brain/communication/`) for Obsidian graph |
 
 When `communicationAutoAdapt` is enabled, Claude detects communication patterns (language, formality, tone) and delegates updates to the `succ-style-tracker` agent. The agent updates the `## User Communication Preferences` section in soul.md.
 
-When `communicationTrackHistory` is also enabled, each style change creates a dated markdown file in `.succ/brain/05_Communication/` with wiki-links to previous entries — visible in Obsidian Graph View.
+When `communicationTrackHistory` is also enabled, each style change creates a dated markdown file in `.succ/brain/communication/` with wiki-links to previous entries — visible in Obsidian Graph View.
 
 ```json
 {
@@ -998,7 +998,7 @@ succ prd export --output ./my-vault/PRD           # Custom output directory
 | `Dependencies.md` | Mermaid flowchart DAG — color-coded by status (green/red/gray) |
 | `Tasks/task_NNN.md` | Per-task detail: acceptance criteria, attempts, gate results, files modified |
 
-Output goes to `.succ/brain/04_PRD/{prd-title}/`. Open the `.succ/brain/` folder in Obsidian — Mermaid diagrams render natively, wiki-links connect all pages.
+Output goes to `.succ/brain/prd/{prd-title}/`. Open the `.succ/brain/` folder in Obsidian — Mermaid diagrams render natively, wiki-links connect all pages.
 
 For team mode PRDs, the Gantt chart reconstructs worker assignment from timestamps, showing which tasks ran in parallel.
 

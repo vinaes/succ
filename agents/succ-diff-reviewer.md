@@ -107,7 +107,7 @@ End with one line:
 - **ONLY** write files to `.succ/brain/` — never to project root or arbitrary directories
 - **NEVER** use Bash (echo/cat/tee redirect) to create files outside `.succ/brain/`
 - Use Obsidian format: YAML frontmatter (`date`, `tags`, `status`), `[[wikilinks]]`, Mermaid diagrams
-- Save diff reviews to `.succ/brain/02_Knowledge/Reviews/` (e.g. `2026-02-09_pre-commit-review.md`)
+- Save diff reviews to `.succ/brain/knowledge/Reviews/` (e.g. `2026-02-09_pre-commit-review.md`)
 - Key findings → `succ_remember` with tags `["review", "diff"]`
 - After writing vault files → `succ_index_file` to make them searchable
 - Do NOT create files in project root, `/output/`, `/review/`, or any other directory outside `.succ/brain/`

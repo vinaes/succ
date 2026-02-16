@@ -286,7 +286,7 @@ export function registerPrdTools(server: McpServer) {
     {
       prd_id: z.string().optional().describe('PRD ID. If omitted, exports latest PRD.'),
       all: z.boolean().optional().default(false).describe('Export all PRDs'),
-      output: z.string().optional().describe('Output directory (default: .succ/brain/04_PRD)'),
+      output: z.string().optional().describe('Output directory (default: .succ/brain/prd)'),
       project_path: projectPathParam,
     },
     async ({ prd_id, all, output, project_path }) => {

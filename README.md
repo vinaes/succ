@@ -211,13 +211,13 @@ Generates brain vault structure:
 ```
 .succ/brain/
 ├── CLAUDE.md              # Navigation hub
-├── 01_Projects/{project}/
-│   ├── Technical/         # Architecture, API, Conventions
-│   ├── Systems/           # Core systems/modules
-│   ├── Strategy/          # Project goals
-│   └── Features/          # Implemented features
-├── 02_Knowledge/          # Research notes
-└── 03_Archive/            # Old/superseded
+├── project/               # Project knowledge
+│   ├── technical/         # Architecture, API, Conventions
+│   ├── systems/           # Core systems/modules
+│   ├── strategy/          # Project goals
+│   └── features/          # Implemented features
+├── knowledge/             # Research notes
+└── archive/               # Old/superseded
 ```
 
 ### succ watch
@@ -257,7 +257,7 @@ succ prd export prd_abc123                    # Export specific PRD
 
 Team mode runs independent tasks in parallel using git worktrees for isolation. Each worker gets its own checkout; results merge via cherry-pick. Quality gates (typecheck, test, lint, build) run automatically after each task.
 
-Export generates Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG), per-task detail pages with gate results, and wiki-links between pages. Output goes to `.succ/brain/04_PRD/`.
+Export generates Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG), per-task detail pages with gate results, and wiki-links between pages. Output goes to `.succ/brain/prd/`.
 
 ## Configuration
 

@@ -363,7 +363,7 @@ async function writeReflection(
   _idleConfig: ReturnType<typeof getIdleReflectionConfig>
 ): Promise<void> {
   const projectRoot = getProjectRoot();
-  const reflectionsDir = path.join(projectRoot, '.succ', 'brain', 'Reflections');
+  const reflectionsDir = path.join(projectRoot, '.succ', 'brain', 'reflections');
 
   // Create reflections directory if needed
   if (!fs.existsSync(reflectionsDir)) {

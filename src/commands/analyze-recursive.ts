@@ -266,14 +266,14 @@ export async function analyzeFile(
 
   // Determine output path in brain vault
   const projectName = path.basename(projectRoot);
-  const outputDir = path.join(brainDir, '01_Projects', projectName, 'Files');
+  const outputDir = path.join(brainDir, 'project', 'files');
   const outputPath = path.join(outputDir, `${fileName}.md`);
 
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
 
   // Ensure Files.md MOC exists
-  const filesMocPath = path.join(brainDir, '01_Projects', projectName, 'Files.md');
+  const filesMocPath = path.join(brainDir, 'project', 'files', 'Files.md');
   if (!fs.existsSync(filesMocPath)) {
     const filesMocContent = `---
 description: "Source code file documentation"

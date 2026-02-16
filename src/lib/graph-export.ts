@@ -32,30 +32,28 @@ interface ExportMemoryRow {
  * Map memory type to brain vault folder
  */
 function getTargetFolder(type: MemoryType | string, tags: string[], brainDir: string): string {
-  const projectName = path.basename(getProjectRoot());
-
-  // Decision memories go to project Decisions folder
+  // Decision memories go to project decisions folder
   if (type === 'decision' || tags.includes('decision')) {
-    return path.join(brainDir, '01_Projects', projectName, 'Decisions');
+    return path.join(brainDir, 'project', 'decisions');
   }
 
-  // Learning and pattern memories go to Knowledge
+  // Learning and pattern memories go to knowledge
   if (
     type === 'learning' ||
     type === 'pattern' ||
     tags.includes('learning') ||
     tags.includes('pattern')
   ) {
-    return path.join(brainDir, '02_Knowledge');
+    return path.join(brainDir, 'knowledge');
   }
 
-  // Error memories go to Inbox for quick review
+  // Error memories go to inbox for quick review
   if (type === 'error' || tags.includes('error') || tags.includes('bug')) {
-    return path.join(brainDir, '00_Inbox');
+    return path.join(brainDir, 'inbox');
   }
 
-  // Observations and everything else go to Inbox
-  return path.join(brainDir, '00_Inbox');
+  // Observations and everything else go to inbox
+  return path.join(brainDir, 'inbox');
 }
 
 /**
@@ -67,11 +65,10 @@ function getWikiLinkPath(
   targetId: number,
   dateStr: string
 ): string {
-  const projectName = path.basename(getProjectRoot());
   const typePascal = targetType.charAt(0).toUpperCase() + targetType.slice(1);
 
   if (targetType === 'decision' || targetTags.includes('decision')) {
-    return `01_Projects/${projectName}/Decisions/${dateStr} ${typePascal} (${targetId})`;
+    return `project/decisions/${dateStr} ${typePascal} (${targetId})`;
   }
   if (
     targetType === 'learning' ||
@@ -79,9 +76,9 @@ function getWikiLinkPath(
     targetTags.includes('learning') ||
     targetTags.includes('pattern')
   ) {
-    return `02_Knowledge/${dateStr} ${typePascal} (${targetId})`;
+    return `knowledge/${dateStr} ${typePascal} (${targetId})`;
   }
-  return `00_Inbox/${dateStr} ${typePascal} (${targetId})`;
+  return `inbox/${dateStr} ${typePascal} (${targetId})`;
 }
 
 // Debounce state for auto-export
@@ -516,15 +513,15 @@ function ensureObsidianGraphConfig(brainDir: string, communityIds: number[] = []
     'collapse-color-groups': false,
     colorGroups: [
       // Folders
-      { query: 'path:Decisions', color: { a: 1, rgb: 16744448 } }, // Orange
-      { query: 'path:Strategy', color: { a: 1, rgb: 10494192 } }, // Purple
-      { query: 'path:02_Knowledge', color: { a: 1, rgb: 65382 } }, // Green
-      { query: 'path:Systems', color: { a: 1, rgb: 3447003 } }, // Cyan
-      { query: 'path:Features', color: { a: 1, rgb: 16761035 } }, // Pink
-      { query: 'path:Technical', color: { a: 1, rgb: 10066329 } }, // Silver
-      { query: 'path:Files', color: { a: 1, rgb: 6591981 } }, // Teal
-      { query: 'path:Reflections', color: { a: 1, rgb: 9109504 } }, // Dark red
-      { query: 'path:00_Inbox', color: { a: 1, rgb: 8421504 } }, // Gray
+      { query: 'path:decisions', color: { a: 1, rgb: 16744448 } }, // Orange
+      { query: 'path:strategy', color: { a: 1, rgb: 10494192 } }, // Purple
+      { query: 'path:knowledge', color: { a: 1, rgb: 65382 } }, // Green
+      { query: 'path:systems', color: { a: 1, rgb: 3447003 } }, // Cyan
+      { query: 'path:features', color: { a: 1, rgb: 16761035 } }, // Pink
+      { query: 'path:technical', color: { a: 1, rgb: 10066329 } }, // Silver
+      { query: 'path:files', color: { a: 1, rgb: 6591981 } }, // Teal
+      { query: 'path:reflections', color: { a: 1, rgb: 9109504 } }, // Dark red
+      { query: 'path:inbox', color: { a: 1, rgb: 8421504 } }, // Gray
       // Tags (higher priority - listed after folders)
       { query: 'tag:#decision', color: { a: 1, rgb: 16744448 } }, // Orange
       { query: 'tag:#learning', color: { a: 1, rgb: 65382 } }, // Green
@@ -698,9 +695,9 @@ async function generateIndexContent(
   // Decisions
   if (byLocation['Decisions'].length > 0) {
     content += `### 📋 Decisions (${byLocation['Decisions'].length})\n\n`;
-    content += `Located in: \`01_Projects/${projectName}/Decisions/\`\n\n`;
+    content += `Located in: \`project/decisions/\`\n\n`;
     for (const { id, type, date } of byLocation['Decisions'].slice(0, 10)) {
-      content += `- [[01_Projects/${projectName}/Decisions/${date} ${toPascal(type)} (${id})]]\n`;
+      content += `- [[project/decisions/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Decisions'].length > 10) {
       content += `- ... and ${byLocation['Decisions'].length - 10} more\n`;
@@ -711,9 +708,9 @@ async function generateIndexContent(
   // Knowledge
   if (byLocation['Knowledge'].length > 0) {
     content += `### 📚 Knowledge (${byLocation['Knowledge'].length})\n\n`;
-    content += `Located in: \`02_Knowledge/\`\n\n`;
+    content += `Located in: \`knowledge/\`\n\n`;
     for (const { id, type, date } of byLocation['Knowledge'].slice(0, 10)) {
-      content += `- [[02_Knowledge/${date} ${toPascal(type)} (${id})]]\n`;
+      content += `- [[knowledge/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Knowledge'].length > 10) {
       content += `- ... and ${byLocation['Knowledge'].length - 10} more\n`;
@@ -724,9 +721,9 @@ async function generateIndexContent(
   // Inbox
   if (byLocation['Inbox'].length > 0) {
     content += `### 📥 Inbox (${byLocation['Inbox'].length})\n\n`;
-    content += `Located in: \`00_Inbox/\`\n\n`;
+    content += `Located in: \`inbox/\`\n\n`;
     for (const { id, type, date } of byLocation['Inbox'].slice(0, 10)) {
-      content += `- [[00_Inbox/${date} ${toPascal(type)} (${id})]]\n`;
+      content += `- [[inbox/${date} ${toPascal(type)} (${id})]]\n`;
     }
     if (byLocation['Inbox'].length > 10) {
       content += `- ... and ${byLocation['Inbox'].length - 10} more\n`;

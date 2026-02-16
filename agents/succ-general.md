@@ -53,10 +53,10 @@ For research reports, analysis documents, integration plans — write them to `.
 **Where to write:**
 | Content | Directory |
 |---------|-----------|
-| Research / analysis | `.succ/brain/02_Knowledge/` |
-| Project plans | `.succ/brain/01_Projects/` |
-| Quick notes, drafts | `.succ/brain/00_Inbox/` |
-| Decisions log | `.succ/brain/decisions/` |
+| Research / analysis | `.succ/brain/knowledge/` |
+| Project plans | `.succ/brain/project/` |
+| Quick notes, drafts | `.succ/brain/inbox/` |
+| Decisions log | `.succ/brain/project/decisions/` |
 
 **Obsidian format rules:**
 - YAML frontmatter with `date`, `tags`, `status`
@@ -79,7 +79,7 @@ For research reports, analysis documents, integration plans — write them to `.
 succ_remember content="OpenClaw uses hybrid search (70% vector + 30% BM25)" tags=["research", "openclaw"] type="observation"
 
 # CORRECT — write full research report to brain vault:
-Write file_path=".succ/brain/02_Knowledge/OpenClaw-Memory-Analysis.md" content="---\ndate: 2026-02-09\ntags: [research, openclaw, integration]\n---\n# OpenClaw Memory Analysis\n\nSee also: [[succ-OpenClaw-Integration-Plan]]\n\n..."
+Write file_path=".succ/brain/knowledge/OpenClaw-Memory-Analysis.md" content="---\ndate: 2026-02-09\ntags: [research, openclaw, integration]\n---\n# OpenClaw Memory Analysis\n\nSee also: [[succ-OpenClaw-Integration-Plan]]\n\n..."
 
 # WRONG — writing to random project directory:
 Write file_path="research/openclaw-analysis.md" content="..."
@@ -90,7 +90,7 @@ succ_remember content="<giant 5000 word analysis>"  # Too big for one memory ent
 
 ### 4. After writing vault files — index them
 ```
-succ_index_file file=".succ/brain/02_Knowledge/OpenClaw-Memory-Analysis.md"
+succ_index_file file=".succ/brain/knowledge/OpenClaw-Memory-Analysis.md"
 ```
 This makes the document searchable via `succ_search`.
 

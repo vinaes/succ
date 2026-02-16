@@ -254,7 +254,7 @@ Co-Authored-By order (succ always LAST):
           }
           // Inject vault tracking hint if enabled (agent handles the actual work)
           if (communicationTrackHistory && communicationAutoAdapt) {
-            soulContent += `\n\n### Vault Tracking\n\ncommunicationTrackHistory is enabled. The succ-style-tracker agent will create brain vault entries in .succ/brain/05_Communication/ when updating preferences.`;
+            soulContent += `\n\n### Vault Tracking\n\ncommunicationTrackHistory is enabled. The succ-style-tracker agent will create brain vault entries in .succ/brain/communication/ when updating preferences.`;
           }
           contextParts.push('<soul>\n' + soulContent + '\n</soul>');
         }
@@ -269,7 +269,7 @@ Co-Authored-By order (succ always LAST):
         const archParts = [];
 
         // Phase 1: Find and inline Architecture Overview (compact extract)
-        const knowledgeDir = path.join(brainDir, '02_Knowledge');
+        const knowledgeDir = path.join(brainDir, 'knowledge');
         if (fs.existsSync(knowledgeDir)) {
           const archFiles = fs.readdirSync(knowledgeDir)
             .filter(f => /architect/i.test(f) && f.endsWith('.md'))
@@ -290,9 +290,8 @@ Co-Authored-By order (succ always LAST):
 
         // Phase 2: Collect remaining docs grouped by category
         const scanDirs = [
-          { dir: '02_Knowledge', label: 'Knowledge & Research' },
-          { dir: '01_Projects', label: 'Projects' },
-          { dir: 'decisions', label: 'Decisions' },
+          { dir: 'knowledge', label: 'Knowledge & Research' },
+          { dir: 'project', label: 'Project' },
         ];
         const docGroups = {};
 

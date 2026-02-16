@@ -227,7 +227,7 @@ export async function analyze(options: AnalyzeOptions = {}): Promise<void> {
     const callLLM = createLLMCaller(mode, multiPassMaxTokens);
     // Reuse the LLM-guided context already gathered (profile-aware file tree + key files)
     const broadContext = context;
-    const projectDir = path.join(brainDir, '01_Projects', projectName);
+    const projectDir = path.join(brainDir, 'project');
 
     // Systems multi-pass
     if (profile.systems.length > 0) {

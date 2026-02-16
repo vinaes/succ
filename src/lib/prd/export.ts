@@ -540,7 +540,7 @@ function resolvePrdId(prdId?: string): string {
 }
 
 function getPrdExportDir(prd: Prd, outputDir?: string): string {
-  const base = outputDir || path.join(getSuccDir(), 'brain', '04_PRD');
+  const base = outputDir || path.join(getSuccDir(), 'brain', 'prd');
   let safeName = prd.title
     .replace(/[<>:"/\\|?*]/g, '')
     .replace(/\s+/g, ' ')

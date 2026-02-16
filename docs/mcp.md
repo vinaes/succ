@@ -90,7 +90,7 @@ limit: 3
 ```
 Returns matching brain vault chunks with file path, content preview, and similarity score:
 ```
-1. .succ/brain/00_Inbox/2026-02-09 Observation (4525).md:1-6 (82.3%)
+1. .succ/brain/inbox/2026-02-09 Observation (4525).md:1-6 (82.3%)
    Local embedding mode uses Transformers.js, CPU-bound, achieves 50-100 chunks/sec...
 ```
 
@@ -108,8 +108,8 @@ output: "lean"
 ```
 Returns file paths and line ranges only — useful when you need to locate files before reading them:
 ```
-1. .succ/brain/01_Projects/succ/Technical/Architecture.md:1-42 (78%)
-2. .succ/brain/01_Projects/succ/Systems/Storage.md:10-35 (71%)
+1. .succ/brain/project/technical/Architecture.md:1-42 (78%)
+2. .succ/brain/project/systems/Storage.md:10-35 (71%)
 ```
 
 **Raise threshold for precise matches:**

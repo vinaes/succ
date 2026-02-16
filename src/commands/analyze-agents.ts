@@ -19,7 +19,7 @@ export interface Agent {
 }
 
 export function getAgents(brainDir: string, projectName: string): Agent[] {
-  const projectDir = path.join(brainDir, '01_Projects', projectName);
+  const projectDir = path.join(brainDir, 'project');
 
   // Obsidian formatting guide — injected into every agent prompt
   const obsidianGuide = [
