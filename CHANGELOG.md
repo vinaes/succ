@@ -5,7 +5,7 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.30] - 2026-02-16
+## [1.3.31] - 2026-02-16
 
 ### Added
 - **Dynamic hook rules from memory** — memories tagged `hook-rule` automatically become pre-tool rules; filter by `tool:{Name}` and `match:{regex}` tags; action derived from memory type (`error`=deny, `pattern`=ask, else=inject as additionalContext)
