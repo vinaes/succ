@@ -4,7 +4,7 @@
 
 Make sure succ is installed globally:
 ```bash
-npm install -g succ
+npm install -g @vinaes/succ
 # or link from source
 npm link
 ```

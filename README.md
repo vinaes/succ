@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/succ"><img src="https://img.shields.io/npm/v/succ?style=flat-square&color=3fb950" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/@vinaes/succ"><img src="https://img.shields.io/npm/v/@vinaes/succ?style=flat-square&color=3fb950" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1-blue?style=flat-square" alt="license"></a>
 </p>
 
@@ -35,7 +35,7 @@ See [Editor Guides](docs/editors/index.md) for detailed setup.
 ## Quick Start
 
 ```bash
-npm install -g succ
+npm install -g @vinaes/succ
 ```
 
 ```bash
