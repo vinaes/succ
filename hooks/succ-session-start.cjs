@@ -63,14 +63,15 @@ process.stdin.on('end', async () => {
       process.exit(0);
     }
 
-    // Load config settings
+    // Load config settings (project config overrides global, but both are checked)
     let includeCoAuthoredBy = true;   // default: true
     let communicationAutoAdapt = true; // default: true
     let communicationTrackHistory = false; // default: false
     let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
     const configPaths = [
-      path.join(succDir, 'config.json'),
+      // Global first, then project overrides
       path.join(require('os').homedir(), '.succ', 'config.json'),
+      path.join(succDir, 'config.json'),
     ];
     for (const configPath of configPaths) {
       if (fs.existsSync(configPath)) {
@@ -85,11 +86,14 @@ process.stdin.on('end', async () => {
           if (config.communicationTrackHistory === true) {
             communicationTrackHistory = true;
           }
-          // Check for OpenRouter API key in config (llm.api_key)
-          if (!hasOpenRouterKey && config.llm?.api_key) {
-            hasOpenRouterKey = true;
+          // Check for OpenRouter API key: llm.api_key, llm.embeddings.api_key, or web_search.api_key
+          if (!hasOpenRouterKey) {
+            const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
+            if (keys.some(k => typeof k === 'string' && k.startsWith('sk-or-'))) {
+              hasOpenRouterKey = true;
+            }
           }
-          break;
+          // No break — merge both configs (global defaults, project overrides)
         } catch {
           // Ignore parse errors
         }
@@ -160,6 +164,28 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_dead_end** approach="..." why_failed="..." [context="..."] [tags=["debug"]]
 → Record failed approach (boosted in recall to prevent retrying)
 </memory>
+
+<hook-rules hint="Dynamic pre-tool rules from memory. Saved rules auto-fire before matching tool calls.">
+When user asks to remember a rule about tool behavior (e.g., "before deploy run tests",
+"always review before commit", "block rm -rf"), save with hook-rule convention:
+
+**succ_remember** content="..." tags=["hook-rule", "tool:{ToolName}", "match:{regex}"] type="decision|error|pattern"
+
+Tags:
+- **hook-rule** — required, marks memory as a pre-tool rule
+- **tool:{Name}** — optional, filter by tool (Bash, Edit, Write, Read, Skill, Task). Omit = all tools
+- **match:{regex}** — optional, regex tested against tool input (command, skill name, file basename, prompt)
+
+Action via type:
+- **decision/observation/learning** → inject as additionalContext (guide the agent)
+- **error** → deny the tool call (block it)
+- **pattern** → ask user for confirmation before proceeding
+
+Examples:
+\`succ_remember content="Run diff-reviewer before deploying" tags=["hook-rule","tool:Skill","match:deploy"] type="decision"\`
+\`succ_remember content="Never force-push to main" tags=["hook-rule","tool:Bash","match:push.*--force.*main"] type="error"\`
+\`succ_remember content="Editing test files — run tests after" tags=["hook-rule","tool:Edit","match:\\\\.test\\\\."] type="decision"\`
+</hook-rules>
 
 <ops>
 **succ_index_file** file="doc.md" [force=true] — index doc for succ_search

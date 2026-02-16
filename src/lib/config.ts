@@ -287,6 +287,25 @@ export function getApiKey(): string | undefined {
 }
 
 /**
+ * Get OpenRouter API key specifically (for web search tools).
+ * Resolution: OPENROUTER_API_KEY env → web_search.api_key → llm.embeddings.api_key (if sk-or-) → llm.api_key (if sk-or-)
+ * Only returns keys with sk-or- prefix (OpenRouter format), except env var which is trusted.
+ */
+export function getOpenRouterApiKey(): string | undefined {
+  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  const config = getConfig();
+  const candidates = [
+    config.web_search?.api_key,
+    config.llm?.embeddings?.api_key,
+    config.llm?.api_key,
+  ];
+  for (const key of candidates) {
+    if (typeof key === 'string' && key.startsWith('sk-or-')) return key;
+  }
+  return undefined;
+}
+
+/**
  * Get the global API URL.
  * Resolution: llm.api_url → "http://localhost:11434/v1"
  */
@@ -463,6 +482,7 @@ export function getWebSearchConfig(): Required<WebSearchConfig> {
   const config = getConfig();
   const userConfig = config.web_search || {};
   return {
+    api_key: userConfig.api_key ?? '',
     enabled: userConfig.enabled ?? true,
     quick_search_model: userConfig.quick_search_model ?? 'perplexity/sonar',
     quick_search_max_tokens: userConfig.quick_search_max_tokens ?? 2000,

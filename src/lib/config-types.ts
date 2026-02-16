@@ -366,6 +366,7 @@ export interface GraphCentralityConfig {
 }
 
 export interface WebSearchConfig {
+  api_key?: string; // OpenRouter API key for web search (overrides llm.api_key). Use: succ_config_set key="web_search.api_key" value="sk-or-..."
   enabled?: boolean; // Enable web search tools (default: true)
   quick_search_model?: string; // Model for succ_quick_search (default: 'perplexity/sonar'). Alternatives: 'x-ai/grok-3-mini:online', 'openai/gpt-4o-mini:online', 'google/gemini-2.0-flash-001:online'
   quick_search_max_tokens?: number; // Max tokens for quick search (default: 2000)

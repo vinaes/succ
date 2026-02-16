@@ -15,7 +15,13 @@ import { logError, logWarn } from './fault-logger.js';
 // cross-spawn's sync method is available at runtime but not in types
 // Keep as any since cross-spawn types are incomplete
 const crossSpawnSync = (spawn as any).sync as (...args: any[]) => any;
-import { getConfig, getLLMTaskConfig, getApiKey, getApiUrl } from './config.js';
+import {
+  getConfig,
+  getLLMTaskConfig,
+  getApiKey,
+  getApiUrl,
+  getOpenRouterApiKey,
+} from './config.js';
 import { ClaudeWSTransport } from './claude-ws-transport.js';
 import { NetworkError, ConfigError } from './errors.js';
 import { processRegistry } from './process-registry.js';
@@ -533,10 +539,10 @@ export async function callOpenRouterSearch(
   maxTokens: number,
   temperature: number
 ): Promise<OpenRouterSearchResponse> {
-  const apiKey = getApiKey();
+  const apiKey = getOpenRouterApiKey();
   if (!apiKey) {
     throw new ConfigError(
-      'API key not set. Configure via llm.api_key or OPENROUTER_API_KEY env var.'
+      'OpenRouter API key not set. Configure via OPENROUTER_API_KEY env, web_search.api_key, or llm.api_key (sk-or-... format).'
     );
   }
 
@@ -606,7 +612,7 @@ export async function isLocalLLMAvailable(): Promise<boolean> {
  * Check if an API key is configured (for web search, etc.)
  */
 export function isApiConfigured(): boolean {
-  return !!getApiKey();
+  return !!getOpenRouterApiKey();
 }
 
 /**
