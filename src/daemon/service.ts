@@ -74,6 +74,8 @@ import {
   cleanupStaleObservations,
 } from '../lib/session-observations.js';
 import { REFLECTION_PROMPT } from '../prompts/index.js';
+import { matchRules } from '../lib/hook-rules.js';
+import type { Memory } from '../lib/storage/types.js';
 
 // ============================================================================
 // Types
@@ -121,6 +123,10 @@ const briefingGenerationInProgress = new Set<string>();
 // arrive within a short window (e.g. hook fires twice for same tool_use)
 const rememberInFlight = new Map<string, Promise<any>>();
 const REMEMBER_DEDUP_TTL_MS = 5000;
+
+// Hook rules cache — stores all hook-rule memories, invalidated on remember with hook-rule tag
+let hookRulesCache: { memories: Memory[]; timestamp: number } | null = null;
+const HOOK_RULES_CACHE_TTL = 60_000; // 60s
 
 // ============================================================================
 // File Paths
@@ -939,6 +945,27 @@ export async function routeRequest(
     return { results };
   }
 
+  if (pathname === '/api/hook-rules' && method === 'POST') {
+    const { tool_name, tool_input: rawInput } = body;
+    if (!tool_name) {
+      throw new ValidationError('tool_name required');
+    }
+    const tool_input =
+      rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)
+        : {};
+
+    // Check cache
+    const now = Date.now();
+    if (!hookRulesCache || now - hookRulesCache.timestamp > HOOK_RULES_CACHE_TTL) {
+      const memories = await getMemoriesByTag('hook-rule', 50);
+      hookRulesCache = { memories, timestamp: now };
+    }
+
+    const rules = matchRules(hookRulesCache.memories, tool_name, tool_input);
+    return { rules };
+  }
+
   if (pathname === '/api/remember' && method === 'POST') {
     const {
       content,
@@ -996,6 +1023,11 @@ export async function routeRequest(
           validFrom: valid_from,
           validUntil: valid_until,
         });
+      }
+
+      // Invalidate hook-rules cache if this memory is a hook rule
+      if (Array.isArray(tags) && tags.includes('hook-rule')) {
+        hookRulesCache = null;
       }
 
       return { success: !result.isDuplicate, id: result.id, isDuplicate: result.isDuplicate };

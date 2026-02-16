@@ -430,7 +430,13 @@ export function registerMemoryTools(server: McpServer) {
         .array(z.string())
         .optional()
         .default([])
-        .describe('Tags for categorization (e.g., ["decision", "architecture"])'),
+        .describe(
+          'Tags for categorization (e.g., ["decision", "architecture"]). ' +
+            'Special: "hook-rule" makes this a dynamic pre-tool rule. ' +
+            'Add "tool:{Name}" to filter by tool (Bash/Edit/Skill/etc), ' +
+            '"match:{regex}" to filter by input. ' +
+            'Set the type parameter to "error" to deny, "pattern" to ask confirmation.'
+        ),
       source: z
         .string()
         .optional()

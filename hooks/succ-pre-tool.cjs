@@ -349,13 +349,18 @@ MEDIUM and below — commit is OK, mention findings in summary.
   return parts.join('\n');
 }
 
-// ─── File-linked memories helpers ────────────────────────────────────
+// ─── Daemon helpers ──────────────────────────────────────────────────
+
+function getDaemonPort(projectDir) {
+  const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
+  if (!fs.existsSync(portFile)) return null;
+  const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+  return port && !isNaN(port) ? port : null;
+}
 
 async function recallFileMemories(projectDir, fileName) {
-  const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
-  if (!fs.existsSync(portFile)) return [];
-  const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-  if (!port || isNaN(port)) return [];
+  const port = getDaemonPort(projectDir);
+  if (!port) return [];
 
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/recall-by-tag`, {
@@ -367,6 +372,25 @@ async function recallFileMemories(projectDir, fileName) {
     if (!res.ok) return [];
     const data = await res.json();
     return data.results || [];
+  } catch {
+    return []; // fail-open
+  }
+}
+
+async function fetchHookRules(projectDir, toolName, toolInput) {
+  const port = getDaemonPort(projectDir);
+  if (!port) return [];
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/hook-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool_name: toolName, tool_input: toolInput || {} }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.rules || [];
   } catch {
     return []; // fail-open
   }
@@ -409,62 +433,105 @@ process.stdin.on('end', async () => {
     }
 
     const toolName = hookInput.tool_name || '';
-    const filePath = hookInput.tool_input?.file_path || '';
+    const toolInput = hookInput.tool_input || {};
+    const filePath = toolInput.file_path || '';
+    const command = toolInput.command || '';
+    const contextParts = [];
+    let askReason = null;
 
-    // 1. File-linked memories — intercept Edit/Write
-    if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
-      const fileName = path.basename(filePath);
-      const memories = await recallFileMemories(projectDir, fileName);
-      if (memories.length > 0) {
+    // 1. Dynamic hook rules from memory (ALL tools)
+    // Note: deny/ask exit immediately — any accumulated contextParts are intentionally
+    // discarded because the tool call is being blocked or requires confirmation.
+    const rules = await fetchHookRules(projectDir, toolName, toolInput);
+    for (const rule of rules) {
+      if (rule.action === 'deny') {
         const output = {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
-            additionalContext: formatFileContext(memories, fileName),
+            permissionDecision: 'deny',
+            permissionDecisionReason: `[succ rule] ${rule.content}`,
           },
         };
         console.log(JSON.stringify(output));
         process.exit(0);
       }
+      if (rule.action === 'ask' && !askReason) {
+        askReason = rule.content;
+      }
+      if (rule.action === 'inject') {
+        contextParts.push(`<hook-rule>${rule.content}</hook-rule>`);
+      }
     }
 
-    // Bash-only features below — exit early for non-Bash tools
-    const command = hookInput.tool_input?.command || '';
-    if (!command) {
-      process.exit(0);
+    // 2. File-linked memories (Edit/Write only — Read is too frequent, wastes context)
+    if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
+      const fileName = path.basename(filePath);
+      const memories = await recallFileMemories(projectDir, fileName);
+      if (memories.length > 0) {
+        contextParts.push(formatFileContext(memories, fileName));
+      }
     }
 
-    const config = loadConfig(projectDir);
+    // 3. Command safety guard (Bash only)
+    if (command) {
+      const config = loadConfig(projectDir);
+      const dangerousResult = checkDangerous(command, config);
+      if (dangerousResult) {
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: dangerousResult.mode === 'ask' ? 'ask' : 'deny',
+            permissionDecisionReason: `[succ guard] ${dangerousResult.reason}`,
+          },
+        };
+        console.log(JSON.stringify(output));
+        process.exit(0);
+      }
 
-    // 2. Command safety guard
-    const dangerousResult = checkDangerous(command, config);
-    if (dangerousResult) {
+      // 4. Hook rule ask (after safety guard, so deny takes priority)
+      if (askReason) {
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'ask',
+            permissionDecisionReason: `[succ rule] ${askReason}`,
+          },
+        };
+        console.log(JSON.stringify(output));
+        process.exit(0);
+      }
+
+      // 5. Git commit — inject guidelines + diff review reminder
+      if (/\bgit\s+commit\b/.test(command)) {
+        const commitContext = buildCommitContext(config);
+        if (commitContext) {
+          contextParts.push(commitContext);
+        }
+      }
+    } else if (askReason) {
+      // Non-Bash ask rule
       const output = {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          permissionDecision: dangerousResult.mode === 'ask' ? 'ask' : 'deny',
-          permissionDecisionReason: `[succ guard] ${dangerousResult.reason}`,
+          permissionDecision: 'ask',
+          permissionDecisionReason: `[succ rule] ${askReason}`,
         },
       };
       console.log(JSON.stringify(output));
       process.exit(0);
     }
 
-    // 3. Git commit — inject guidelines + diff review reminder
-    if (/\bgit\s+commit\b/.test(command)) {
-      const additionalContext = buildCommitContext(config);
-      if (additionalContext) {
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            additionalContext,
-          },
-        };
-        console.log(JSON.stringify(output));
-        process.exit(0);
-      }
+    // 6. Emit combined context
+    if (contextParts.length > 0) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: contextParts.join('\n'),
+        },
+      };
+      console.log(JSON.stringify(output));
     }
 
-    // No action needed
     process.exit(0);
   } catch {
     // Fail-open: don't block on hook errors
