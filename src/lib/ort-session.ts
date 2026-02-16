@@ -170,7 +170,10 @@ export async function resolveModelPath(modelName: string): Promise<string> {
         await tempModel.dispose();
       }
     } catch (err) {
-      logWarn('ort-session', `AutoModel dispose failed (non-critical): ${err instanceof Error ? err.message : err}`);
+      logWarn(
+        'ort-session',
+        `AutoModel dispose failed (non-critical): ${err instanceof Error ? err.message : err}`
+      );
     }
   }
 

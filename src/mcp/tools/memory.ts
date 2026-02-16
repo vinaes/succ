@@ -159,7 +159,11 @@ async function rememberWithLLMExtraction(params: {
 
       try {
         const embedding = await getEmbedding(factContent);
-        const factTags = [...tags, ...fact.tags, fact.type, 'extracted'];
+        // Merge file:{basename} tags from LLM-extracted file references
+        const fileTags = fact.files?.length
+          ? fact.files.map((f: string) => `file:${path.basename(f)}`)
+          : [];
+        const factTags = [...new Set([...tags, ...fact.tags, ...fileTags, fact.type, 'extracted'])];
 
         // Score quality
         let qualityScore = null;
@@ -457,6 +461,12 @@ export function registerMemoryTools(server: McpServer) {
         .describe(
           'When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'
         ),
+      files: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'File paths this memory relates to. Adds file:{basename} tags for auto-recall on edit.'
+        ),
       extract: z
         .boolean()
         .optional()
@@ -473,6 +483,7 @@ export function registerMemoryTools(server: McpServer) {
       global: useGlobal,
       valid_from,
       valid_until,
+      files,
       extract,
       project_path,
     }) => {
@@ -481,6 +492,12 @@ export function registerMemoryTools(server: McpServer) {
       const globalOnlyMode = isGlobalOnlyMode();
       if (globalOnlyMode && !useGlobal) {
         useGlobal = true;
+      }
+
+      // Add file:{basename} tags for file-linked memories
+      if (files && files.length > 0) {
+        const fileTags = files.map((f) => `file:${path.basename(f)}`);
+        tags = [...new Set([...tags, ...fileTags])];
       }
 
       try {

@@ -262,6 +262,49 @@ describe('Database Module', () => {
       expect(stats.total_memories).toBeDefined();
       expect(stats.by_type).toBeDefined();
     });
+
+    it('should get memories by tag', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0.42);
+      db.saveMemory(
+        'file-linked test memory',
+        embedding,
+        ['file:foo.ts', 'architecture'],
+        undefined,
+        {
+          deduplicate: false,
+          autoLink: false,
+        }
+      );
+
+      const results = db.getMemoriesByTag('file:foo.ts');
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].content).toBe('file-linked test memory');
+      expect(results[0].tags).toContain('file:foo.ts');
+    });
+
+    it('should return empty array for non-existent tag', async () => {
+      const db = await import('./db/index.js');
+
+      const results = db.getMemoriesByTag('file:nonexistent.xyz');
+      expect(results).toEqual([]);
+    });
+
+    it('should respect limit in getMemoriesByTag', async () => {
+      const db = await import('./db/index.js');
+
+      const embedding = new Array(384).fill(0.43);
+      for (let i = 0; i < 3; i++) {
+        db.saveMemory(`limited tag test ${i}`, embedding, ['file:limit-test.ts'], undefined, {
+          deduplicate: false,
+          autoLink: false,
+        });
+      }
+
+      const results = db.getMemoriesByTag('file:limit-test.ts', 2);
+      expect(results.length).toBe(2);
+    });
   });
 
   describe('Batch memory operations', () => {

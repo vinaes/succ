@@ -1236,6 +1236,44 @@ export class PostgresBackend {
     };
   }
 
+  async getMemoriesByTag(tag: string, limit: number = 5): Promise<Memory[]> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `SELECT id, content, tags, source, type, quality_score, quality_factors,
+              access_count, last_accessed, valid_from, valid_until,
+              correction_count, is_invariant, priority_score, created_at
+       FROM memories
+       WHERE tags::jsonb ? $1
+         AND invalidated_by IS NULL
+         AND (LOWER(project_id) = $3 OR project_id IS NULL)
+       ORDER BY priority_score DESC NULLS LAST, created_at DESC
+       LIMIT $2`,
+      [tag, limit, this.projectId]
+    );
+
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      content: row.content,
+      tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+      source: row.source,
+      type: row.type as MemoryType,
+      quality_score: row.quality_score,
+      quality_factors: row.quality_factors
+        ? typeof row.quality_factors === 'string'
+          ? JSON.parse(row.quality_factors)
+          : row.quality_factors
+        : null,
+      access_count: row.access_count ?? 0,
+      last_accessed: row.last_accessed,
+      correction_count: row.correction_count ?? 0,
+      is_invariant: !!row.is_invariant,
+      priority_score: row.priority_score ?? null,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+      created_at: row.created_at,
+    }));
+  }
+
   async deleteMemory(id: number): Promise<boolean> {
     const pool = await this.getPool();
     // Only delete memories belonging to current project or global memories

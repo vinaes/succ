@@ -508,6 +508,11 @@ export async function getMemoryById(id: number): Promise<any | null> {
   return d.getMemoryById(id);
 }
 
+export async function getMemoriesByTag(tag: string, limit?: number): Promise<any[]> {
+  const d = await getStorageDispatcher();
+  return d.getMemoriesByTag(tag, limit);
+}
+
 export async function deleteMemoriesByIds(ids: number[]): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesByIds(ids);

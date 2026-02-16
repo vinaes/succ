@@ -28,6 +28,7 @@ export interface ExtractedFact {
   type: 'decision' | 'learning' | 'observation' | 'error' | 'pattern';
   confidence: number;
   tags: string[];
+  files?: string[];
 }
 
 /**
@@ -109,6 +110,9 @@ function parseFactsResponse(response: string): ExtractedFact[] {
         type: f.type,
         confidence: Math.max(0, Math.min(1, f.confidence || 0.7)),
         tags: Array.isArray(f.tags) ? f.tags.filter((t: any) => typeof t === 'string') : [],
+        files: Array.isArray(f.files)
+          ? f.files.filter((t: any) => typeof t === 'string')
+          : undefined,
       }));
   } catch {
     return [];

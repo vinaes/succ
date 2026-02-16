@@ -878,6 +878,44 @@ export function getMemoryById(id: number): Memory | null {
 }
 
 /**
+ * Get memories by tag — fast SQL query without embeddings.
+ * Uses json_each() to query tags array. ~5ms on SQLite.
+ * Used by file-linked memories to surface related memories on file edit.
+ */
+export function getMemoriesByTag(tag: string, limit: number = 5): Memory[] {
+  const rows = cachedPrepare(
+    `
+    SELECT DISTINCT m.id, m.content, m.tags, m.source, m.type, m.quality_score, m.quality_factors,
+           m.access_count, m.last_accessed, m.valid_from, m.valid_until,
+           m.correction_count, m.is_invariant, m.priority_score, m.created_at
+    FROM memories m, json_each(m.tags) t
+    WHERE t.value = ?
+      AND m.invalidated_by IS NULL
+    ORDER BY m.priority_score DESC NULLS LAST, m.created_at DESC
+    LIMIT ?
+    `
+  ).all(tag, limit) as Array<Record<string, any>>;
+
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    tags: parseTags(row.tags),
+    source: row.source,
+    type: row.type ?? null,
+    quality_score: row.quality_score,
+    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
+    valid_from: row.valid_from,
+    valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!row.is_invariant,
+    priority_score: row.priority_score ?? null,
+    created_at: row.created_at,
+  }));
+}
+
+/**
  * Delete memories by IDs (batch operation for retention cleanup).
  */
 export function deleteMemoriesByIds(ids: number[]): number {

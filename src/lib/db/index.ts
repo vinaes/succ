@@ -100,6 +100,7 @@ export {
   deleteMemoriesOlderThan,
   deleteMemoriesByTag,
   getMemoryById,
+  getMemoriesByTag,
   deleteMemoriesByIds,
   searchMemoriesAsOf,
 } from './memories.js';

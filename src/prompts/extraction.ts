@@ -27,6 +27,7 @@ Rules:
 - Each fact should stand alone (make sense without the full transcript)
 - Minimum 50 characters per fact
 - For dead_end type: clearly state what was tried and WHY it failed
+- If file paths or filenames are mentioned, include a "files" array with the basenames (e.g., ["cloud-init.ts", "deploy-test.sh"])
 
 Output as JSON array:
 [
@@ -34,7 +35,8 @@ Output as JSON array:
     "content": "The authentication middleware in src/auth/middleware.ts uses JWT tokens with 1-hour expiry",
     "type": "observation",
     "confidence": 0.9,
-    "tags": ["auth", "jwt", "middleware"]
+    "tags": ["auth", "jwt", "middleware"],
+    "files": ["middleware.ts"]
   },
   {
     "content": "DEAD END: Tried using Redis for session storage — memory usage too high for VPS tier, switched to SQLite",
@@ -73,6 +75,7 @@ Rules:
 - Each fact should stand alone (make sense without the full context)
 - Minimum 50 characters per fact
 - For dead_end type: clearly state what was tried and WHY it failed
+- If file paths or filenames are mentioned, include a "files" array with the basenames (e.g., ["cloud-init.ts", "deploy-test.sh"])
 
 Output as JSON array:
 [
@@ -80,7 +83,8 @@ Output as JSON array:
     "content": "The authentication middleware in src/auth/middleware.ts uses JWT tokens with 1-hour expiry",
     "type": "observation",
     "confidence": 0.9,
-    "tags": ["auth", "jwt", "middleware"]
+    "tags": ["auth", "jwt", "middleware"],
+    "files": ["middleware.ts"]
   },
   {
     "content": "DEAD END: Tried using Redis for session storage — memory usage too high for VPS tier, switched to SQLite",

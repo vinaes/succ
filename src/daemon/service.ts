@@ -45,6 +45,7 @@ import {
   getRecentMemories,
   getPinnedMemories,
   setMemoryInvariant,
+  getMemoriesByTag,
   // Global memory
   saveGlobalMemory,
   closeGlobalDb,
@@ -927,6 +928,15 @@ export async function routeRequest(
       }
     }
     return { cleaned, total: pinned.length };
+  }
+
+  if (pathname === '/api/recall-by-tag' && method === 'POST') {
+    const { tag, limit = 5 } = body;
+    if (!tag) {
+      throw new ValidationError('tag required');
+    }
+    const results = await getMemoriesByTag(tag, limit);
+    return { results };
   }
 
   if (pathname === '/api/remember' && method === 'POST') {

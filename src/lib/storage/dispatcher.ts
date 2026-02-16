@@ -696,6 +696,13 @@ export class StorageDispatcher {
     return sqlite.getMemoryById(id);
   }
 
+  async getMemoriesByTag(tag: string, limit: number = 5): Promise<any[]> {
+    if (this.backend === 'postgresql' && this.postgres)
+      return this.postgres.getMemoriesByTag(tag, limit);
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getMemoriesByTag(tag, limit);
+  }
+
   async deleteMemory(id: number): Promise<boolean> {
     // Tier 1 immutability guard: pinned memories cannot be deleted
     await this._guardPinned(id);
