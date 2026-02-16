@@ -44,7 +44,7 @@ Or if running from source:
 | `succ_reindex` | Detect stale/deleted index entries, re-index modified files, clean up deleted ones |
 | `succ_symbols` | Extract AST symbols from a source file via tree-sitter (13 languages) |
 | `succ_analyze_file` | Analyze a file. Modes: claude (CLI/Haiku), local (Ollama/LM Studio), openrouter (cloud) |
-| `succ_remember` | Save to memory (supports `global` flag for cross-project) |
+| `succ_remember` | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
 | `succ_recall` | Recall memories (searches both local and global) |
 | `succ_forget` | Delete memories by id, age, or tag |
 | `succ_dead_end` | Record failed approach to prevent retrying. Boosted in recall results |

@@ -787,6 +787,56 @@ Commands in data contexts (grep, echo, comments) are not blocked. `rm -rf` on sa
 
 ---
 
+## Dynamic Hook Rules
+
+Memories tagged with `hook-rule` automatically become pre-tool rules. When any tool is called, the pre-tool hook matches rules against the tool name and input, then injects context, blocks, or asks for confirmation.
+
+### Creating rules
+
+Save a memory with the `hook-rule` tag via `succ_remember`:
+
+```
+succ_remember content="Run diff-reviewer before deploying" tags=["hook-rule","tool:Skill","match:deploy"] type="decision"
+succ_remember content="Never force-push to main" tags=["hook-rule","tool:Bash","match:push.*--force.*main"] type="error"
+succ_remember content="Editing test files — run tests after" tags=["hook-rule","tool:Edit","match:\\.test\\."] type="decision"
+```
+
+### Tags
+
+| Tag | Required | Description |
+|-----|----------|-------------|
+| `hook-rule` | Yes | Marks the memory as a pre-tool rule |
+| `tool:{Name}` | No | Filter by tool name (`Bash`, `Edit`, `Write`, `Read`, `Skill`, `Task`). Omit to match all tools |
+| `match:{regex}` | No | Regex tested against tool input (command, skill name, file basename, prompt). Omit to match all inputs |
+
+### Action types
+
+The memory `type` determines what happens when the rule matches:
+
+| Memory type | Action | Behavior |
+|-------------|--------|----------|
+| `error` | **deny** | Tool call is blocked |
+| `pattern` | **ask** | User is prompted for confirmation |
+| Any other (`decision`, `observation`, `learning`, etc.) | **inject** | Content added as `additionalContext` (guides the agent) |
+
+Rules are cached for 60 seconds in the daemon. Cache is invalidated when a new `hook-rule` memory is saved via `/api/remember`. Regex patterns are capped at 200 characters for ReDoS protection.
+
+---
+
+## File-Linked Memories
+
+Link memories to specific files. When those files are edited, the pre-tool hook auto-recalls related memories and injects them as context.
+
+### Creating file-linked memories
+
+```
+succ_remember content="This file uses singleton pattern for ONNX session" files=["src/lib/ort-session.ts"] tags=["architecture"]
+```
+
+The `files` parameter auto-generates `file:{basename}` tags (e.g., `file:ort-session.ts`). When the Edit or Write tool targets a file with matching basename, linked memories are recalled via the daemon and injected as `<file-context>`.
+
+---
+
 ## Readiness Gate Settings
 
 Confidence assessment for search results. When enabled, succ evaluates whether search results are sufficient before proceeding.

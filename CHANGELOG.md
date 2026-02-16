@@ -5,6 +5,34 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.29] - 2026-02-16
+
+### Added
+- **Dynamic hook rules from memory** — memories tagged `hook-rule` automatically become pre-tool rules; filter by `tool:{Name}` and `match:{regex}` tags; action derived from memory type (`error`=deny, `pattern`=ask, else=inject as additionalContext)
+- **File-linked memories** — `succ_remember` accepts `files` parameter; memories auto-recalled when editing linked files via pre-tool hook
+- `POST /api/hook-rules` daemon endpoint with 60s cache and automatic invalidation on new hook-rule saves
+- `POST /api/recall-by-tag` daemon endpoint for tag-based memory retrieval
+- `getMemoriesByTag()` storage function for efficient tag-based lookups
+- ReDoS guard — regex patterns from hook-rule tags capped at 200 characters
+- Hook-rules convention documented in session-start hook and MCP `succ_remember` tool description
+- `fetchAsMarkdown` exported from public API
+- 21 unit tests for hook-rules matching logic
+
+### Changed
+- Pre-tool hook refactored from early-exit to `contextParts[]` accumulator — hook rules, file-linked memories, and commit format context can now coexist in a single `additionalContext` output
+- Pre-tool hook extracted `getDaemonPort()` helper to deduplicate port-reading logic
+- Web search tools use `OPENROUTER_API_KEY` env var (not generic `llm.api_key`)
+- Web search tools conditionally shown based on API key availability
+- Lint + format checks added to build pipeline (`prettier --check && eslint && tsc`)
+- All ESLint warnings fixed across codebase
+
+### Fixed
+- Windows CI — `.gitattributes` enforces LF line endings, `endOfLine: "lf"` in `.prettierrc`, `prepare` script runs only `tsc` (not prettier+eslint)
+- `tool_input` type guard in `/api/hook-rules` — non-object input safely defaults to `{}`
+- ONNX model download uses `AutoModel` instead of `AutoTokenizer`
+- Lowercase GitHub org in `package.json` for npm provenance
+- Package renamed to `@vinaes/succ` for npm org publishing
+
 ## [1.3.15] - 2026-02-16
 
 ### Added

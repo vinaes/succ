@@ -63,6 +63,8 @@ succ analyze
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
 | **Working Memory** | Priority scoring, validity filtering, diversity, pinned memories |
+| **Dynamic Hook Rules** | Save memories that auto-fire as pre-tool rules — inject context, block, or ask confirmation |
+| **File-Linked Memories** | Link memories to files; auto-recalled when editing those files |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 13-language instrumentation |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
@@ -86,6 +88,8 @@ succ analyze
 - **Skill Discovery** — Auto-suggest relevant skills based on user prompt (opt-in, disabled by default)
 - **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app) (requires skills.enabled = true)
 - **Soul Document** — Define AI personality and values
+- **Dynamic Hook Rules** — Memories tagged `hook-rule` auto-fire before matching tool calls; filter by `tool:{Name}` and `match:{regex}` tags; `error` type blocks, `pattern` asks confirmation, others inject as context
+- **File-Linked Memories** — Attach memories to files via `files` parameter; pre-tool hook auto-recalls related memories when editing those files
 - **Auto-Hooks** — Context injection at session start/end
 - **Idle Reflections** — AI generates insights during idle time
 - **Session Context** — Auto-generated briefings for next session
