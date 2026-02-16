@@ -5,6 +5,38 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.15] - 2026-02-16
+
+### Added
+- **Auto-archive on supersedes** — memories linked with `relation=supersedes` are automatically tagged `superseded` and routed to `archive/` in brain vault; stale files cleaned up on re-export
+- `succ_extract` MCP tool — structured data extraction from URLs using JSON schema + LLM
+- `succ_fetch` `mode=fit` (default) — Readability-based content pruning for 30-50% fewer tokens
+- `succ_fetch` `links=citations` — inline links converted to numbered references with footer
+- **Graph cleanup pipeline** — `graphCleanup()` combines prune, enrich, reconnect orphans, rebuild communities + centrality in one call
+- Session hook tool documentation section for `succ_fetch` and `succ_extract`
+
+### Changed
+- Brain vault flat structure — removed numbered prefixes (`00_Inbox` → `inbox`, `01_Projects/<name>/` → `project/`, `02_Knowledge` → `knowledge`, etc.)
+- Removed dead directories: `.self/` (unused since Feb 2), `06_Evolution/` (zero references)
+- Fixed `Reflections` → `reflections` case inconsistency (Linux/macOS compatibility)
+- Daemon idle reflection refactored to use `graphCleanup()` pipeline
+- `succ init` onboarding updated — multi-editor support, new brain vault dirs, current feature list
+- `succ_fetch` defaults to `mode=fit` instead of `mode=full`
+- Author updated to vinaes
+
+### Fixed
+- `callLLM` respects WebSocket transport — unblocks nested Claude CLI spawn
+- Retry with exponential backoff for md.succ.ai fetch failures
+- Obsidian export paths updated to match new lowercase directory names
+- Test data sanitized for public release, npm package cleanup
+
+### Dependencies
+- `better-sqlite3` 11.10.0 → 12.6.2
+- `glob` 10.5.0 → 13.0.3
+- `ora` 9.1.0 → 9.3.0
+- `commander` → 14.0.3
+- `@types/node` → 25.2.3
+
 ## [1.3.0] - 2026-02-14
 
 ### Added
