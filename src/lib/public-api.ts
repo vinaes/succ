@@ -181,6 +181,10 @@ export { extractSymbolsFromFile } from './tree-sitter/public.js';
 export type { ExtractSymbolsOptions, ExtractSymbolsResult } from './tree-sitter/public.js';
 export type { SymbolInfo, SymbolType } from './tree-sitter/types.js';
 
+// --- Web fetch (md.succ.ai) ---
+export { fetchAsMarkdown } from './md-fetch.js';
+export type { MdFetchResult, MdFetchOptions } from './md-fetch.js';
+
 // --- Errors ---
 export {
   SuccError,
