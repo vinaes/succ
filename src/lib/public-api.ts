@@ -25,6 +25,7 @@ export {
   saveMemoriesBatch,
   searchMemories,
   getRecentMemories,
+  getPinnedMemories,
   getMemoryById,
   deleteMemory,
   deleteMemoriesOlderThan,
@@ -200,6 +201,7 @@ export {
 // --- Types ---
 export type { MemoryBatchInput, MemoryBatchResult } from './storage/index.js';
 export type {
+  HybridMemoryResult,
   LinkRelation,
   MemoryType,
   StorageConfig,
