@@ -67,6 +67,7 @@ process.stdin.on('end', async () => {
     let includeCoAuthoredBy = true;   // default: true
     let communicationAutoAdapt = true; // default: true
     let communicationTrackHistory = false; // default: false
+    let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
     const configPaths = [
       path.join(succDir, 'config.json'),
       path.join(require('os').homedir(), '.succ', 'config.json'),
@@ -83,6 +84,10 @@ process.stdin.on('end', async () => {
           }
           if (config.communicationTrackHistory === true) {
             communicationTrackHistory = true;
+          }
+          // Check for OpenRouter API key in config (llm.api_key)
+          if (!hasOpenRouterKey && config.llm?.api_key) {
+            hasOpenRouterKey = true;
           }
           break;
         } catch {
@@ -179,12 +184,12 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_prd_export** [prd_id="prd_xxx"] — Obsidian Mermaid export
 </prd>
 
-<web-search hint="Perplexity Sonar via OpenRouter. Requires OPENROUTER_API_KEY.">
+${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 **succ_quick_search** query="..." — cheap & fast, simple facts
 **succ_web_search** query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
 **succ_deep_research** query="..." — multi-step research (30-120s, 30+ sources)
 **succ_web_search_history** [tool_name="..."] [limit=20] — past searches and costs
-</web-search>
+</web-search>` : ''}
 
 <debug hint="Structured debugging with hypothesis testing. Sessions in .succ/debugs/.">
 **succ_debug** action="create|hypothesis|instrument|result|resolve|abandon|status|list|log|show_log|detect_lang|gen_log"
@@ -203,8 +208,8 @@ Without it, succ works in global-only mode and can't access project data.
 | Multi-step tasks, research | succ-general | general-purpose agent |
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
-| Web page fetch | succ_fetch | WebFetch |
-| Web search | succ_quick_search / succ_web_search | WebSearch / Brave |
+| Web page fetch | succ_fetch | WebFetch |${hasOpenRouterKey ? `
+| Web search | succ_quick_search / succ_web_search | WebSearch / Brave |` : ''}
 
 Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
 
