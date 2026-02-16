@@ -596,7 +596,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
     if (mcpResult === 'added') {
       console.log('  5. Restart Claude Code to enable succ tools');
     }
-    console.log('\n  Other editors: `succ setup cursor`, `succ setup windsurf`, `succ setup continue`');
+    console.log(
+      '\n  Other editors: `succ setup cursor`, `succ setup windsurf`, `succ setup continue`'
+    );
   }
 }
 

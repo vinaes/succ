@@ -163,7 +163,11 @@ async function cleanup(options: GraphOptions): Promise<void> {
   console.log(`  Pruned:              ${result.pruned}`);
   console.log(`  Enriched:            ${result.enriched}`);
   console.log(`  Orphans connected:   ${result.orphansConnected}`);
-  console.log(`  Communities:         ${result.communitiesDetected === -1 ? 'skipped' : result.communitiesDetected}`);
-  console.log(`  Centrality updated:  ${result.centralityUpdated === -1 ? 'skipped' : result.centralityUpdated}`);
+  console.log(
+    `  Communities:         ${result.communitiesDetected === -1 ? 'skipped' : result.communitiesDetected}`
+  );
+  console.log(
+    `  Centrality updated:  ${result.centralityUpdated === -1 ? 'skipped' : result.centralityUpdated}`
+  );
   console.log('');
 }

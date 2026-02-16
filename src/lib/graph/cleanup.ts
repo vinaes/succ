@@ -47,7 +47,7 @@ export interface CleanupResult {
 export async function graphCleanup(options: CleanupOptions = {}): Promise<CleanupResult> {
   const {
     pruneThreshold = 0.75,
-    orphanThreshold = 0.60,
+    orphanThreshold = 0.6,
     orphanMaxLinks = 3,
     skipEnrich = false,
     skipOrphans = false,
@@ -70,11 +70,17 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
   const pruneCandidates = allLinks.filter(
     (l) => l.relation === 'similar_to' && l.weight < pruneThreshold && !l.llm_enriched
   );
-  onProgress?.('load', `Found ${pruneCandidates.length} weak similar_to links (of ${allLinks.length} total)`);
+  onProgress?.(
+    'load',
+    `Found ${pruneCandidates.length} weak similar_to links (of ${allLinks.length} total)`
+  );
 
   // Step 2: Prune weak similar_to links
   if (pruneCandidates.length > 0) {
-    onProgress?.('prune', `Pruning ${pruneCandidates.length} links below threshold ${pruneThreshold}...`);
+    onProgress?.(
+      'prune',
+      `Pruning ${pruneCandidates.length} links below threshold ${pruneThreshold}...`
+    );
     if (!dryRun) {
       const idsToDelete = pruneCandidates.map((l) => l.id);
       result.pruned = await deleteMemoryLinksByIds(idsToDelete);
@@ -90,7 +96,10 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
     if (!dryRun) {
       const enrichResult = await enrichExistingLinks();
       result.enriched = enrichResult.enriched;
-      onProgress?.('enrich', `Enriched ${enrichResult.enriched}, failed ${enrichResult.failed}, skipped ${enrichResult.skipped}`);
+      onProgress?.(
+        'enrich',
+        `Enriched ${enrichResult.enriched}, failed ${enrichResult.failed}, skipped ${enrichResult.skipped}`
+      );
     } else {
       // Count unenriched similar_to remaining after prune
       const remaining = allLinks.filter(
@@ -116,7 +125,10 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
       } else {
         result.orphansConnected = orphanIds.length; // best estimate
       }
-      onProgress?.('orphans', `Connected ${result.orphansConnected} of ${orphanIds.length} orphans`);
+      onProgress?.(
+        'orphans',
+        `Connected ${result.orphansConnected} of ${orphanIds.length} orphans`
+      );
     }
   }
 
@@ -127,7 +139,10 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
       const communityResult = await detectCommunities();
       result.communitiesDetected = communityResult.communities.length;
       result.communityResult = communityResult;
-      onProgress?.('communities', `Detected ${result.communitiesDetected} communities (${communityResult.isolated} isolated)`);
+      onProgress?.(
+        'communities',
+        `Detected ${result.communitiesDetected} communities (${communityResult.isolated} isolated)`
+      );
     } else {
       result.communitiesDetected = -1; // unknown in dry-run
       onProgress?.('communities', 'Skipped (dry-run)');

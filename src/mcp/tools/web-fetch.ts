@@ -33,15 +33,14 @@ export function registerWebFetchTools(server: McpServer) {
       mode: z
         .enum(['fit', 'full'])
         .optional()
-        .describe('Content mode: "fit" (default) prunes boilerplate for 30-50% fewer tokens, "full" returns complete content'),
+        .describe(
+          'Content mode: "fit" (default) prunes boilerplate for 30-50% fewer tokens, "full" returns complete content'
+        ),
       links: z
         .enum(['citations'])
         .optional()
         .describe('Set to "citations" to convert inline links to numbered references with footer'),
-      max_tokens: z
-        .number()
-        .optional()
-        .describe('Truncate output to N tokens (use with mode=fit)'),
+      max_tokens: z.number().optional().describe('Truncate output to N tokens (use with mode=fit)'),
       project_path: projectPathParam,
     },
     async ({ url, format, mode, links, max_tokens, project_path }) => {
@@ -49,7 +48,11 @@ export function registerWebFetchTools(server: McpServer) {
 
       try {
         const effectiveMode = mode === 'full' ? undefined : (mode ?? 'fit');
-        const result = await fetchAsMarkdown(url, { mode: effectiveMode, links, maxTokens: max_tokens });
+        const result = await fetchAsMarkdown(url, {
+          mode: effectiveMode,
+          links,
+          maxTokens: max_tokens,
+        });
 
         // Use fit content unless user explicitly requested full mode
         const content = mode === 'full' ? result.content : (result.fitContent ?? result.content);
@@ -64,7 +67,9 @@ export function registerWebFetchTools(server: McpServer) {
             `Tier: ${result.tier}`,
             `Method: ${result.method}`,
             `Time: ${result.time_ms}ms`,
-            result.fitContent ? `Mode: fit (${result.fitTokens ?? '?'} tokens, was ${result.tokens})` : '',
+            result.fitContent
+              ? `Mode: fit (${result.fitTokens ?? '?'} tokens, was ${result.tokens})`
+              : '',
             result.byline ? `Author: ${result.byline}` : '',
             result.excerpt ? `Excerpt: ${result.excerpt}` : '',
             '',
@@ -126,7 +131,9 @@ export function registerWebFetchTools(server: McpServer) {
 
         const result = await extractFromUrl(url, schema);
         const output = JSON.stringify(result.data, null, 2);
-        return createToolResponse(`Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`);
+        return createToolResponse(
+          `Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`
+        );
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return createErrorResponse(

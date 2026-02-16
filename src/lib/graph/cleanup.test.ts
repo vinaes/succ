@@ -81,9 +81,33 @@ describe('graphCleanup', () => {
 
   it('prunes weak similar_to links below threshold', async () => {
     mockLinks = [
-      { id: 1, source_id: 10, target_id: 20, relation: 'similar_to', weight: 0.5, created_at: '2025-01-01', llm_enriched: false },
-      { id: 2, source_id: 10, target_id: 30, relation: 'similar_to', weight: 0.8, created_at: '2025-01-01', llm_enriched: false },
-      { id: 3, source_id: 20, target_id: 30, relation: 'related', weight: 0.3, created_at: '2025-01-01', llm_enriched: false },
+      {
+        id: 1,
+        source_id: 10,
+        target_id: 20,
+        relation: 'similar_to',
+        weight: 0.5,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
+      {
+        id: 2,
+        source_id: 10,
+        target_id: 30,
+        relation: 'similar_to',
+        weight: 0.8,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
+      {
+        id: 3,
+        source_id: 20,
+        target_id: 30,
+        relation: 'related',
+        weight: 0.3,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
     ];
 
     const result = await graphCleanup({
@@ -99,7 +123,15 @@ describe('graphCleanup', () => {
 
   it('does not prune llm_enriched links', async () => {
     mockLinks = [
-      { id: 1, source_id: 10, target_id: 20, relation: 'similar_to', weight: 0.5, created_at: '2025-01-01', llm_enriched: true },
+      {
+        id: 1,
+        source_id: 10,
+        target_id: 20,
+        relation: 'similar_to',
+        weight: 0.5,
+        created_at: '2025-01-01',
+        llm_enriched: true,
+      },
     ];
 
     const result = await graphCleanup({
@@ -115,7 +147,15 @@ describe('graphCleanup', () => {
 
   it('does not prune non-similar_to relations', async () => {
     mockLinks = [
-      { id: 1, source_id: 10, target_id: 20, relation: 'caused_by', weight: 0.3, created_at: '2025-01-01', llm_enriched: false },
+      {
+        id: 1,
+        source_id: 10,
+        target_id: 20,
+        relation: 'caused_by',
+        weight: 0.3,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
     ];
 
     const result = await graphCleanup({
@@ -161,7 +201,15 @@ describe('graphCleanup', () => {
 
   it('dry-run does not mutate but returns counts', async () => {
     mockLinks = [
-      { id: 1, source_id: 10, target_id: 20, relation: 'similar_to', weight: 0.5, created_at: '2025-01-01', llm_enriched: false },
+      {
+        id: 1,
+        source_id: 10,
+        target_id: 20,
+        relation: 'similar_to',
+        weight: 0.5,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
     ];
     isolatedIds = [100];
 
@@ -177,8 +225,24 @@ describe('graphCleanup', () => {
 
   it('full pipeline runs all steps', async () => {
     mockLinks = [
-      { id: 1, source_id: 10, target_id: 20, relation: 'similar_to', weight: 0.5, created_at: '2025-01-01', llm_enriched: false },
-      { id: 2, source_id: 10, target_id: 30, relation: 'similar_to', weight: 0.9, created_at: '2025-01-01', llm_enriched: false },
+      {
+        id: 1,
+        source_id: 10,
+        target_id: 20,
+        relation: 'similar_to',
+        weight: 0.5,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
+      {
+        id: 2,
+        source_id: 10,
+        target_id: 30,
+        relation: 'similar_to',
+        weight: 0.9,
+        created_at: '2025-01-01',
+        llm_enriched: false,
+      },
     ];
     isolatedIds = [50];
 

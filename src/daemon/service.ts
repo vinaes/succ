@@ -614,8 +614,7 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
 
           // Proximity links from co-occurrence (not part of cleanup pipeline)
           try {
-            const { createProximityLinks } =
-              await import('../lib/graph/contextual-proximity.js');
+            const { createProximityLinks } = await import('../lib/graph/contextual-proximity.js');
             const r = await createProximityLinks({ minCooccurrence: 2 });
             log(`[reflection] Created ${r.created} proximity links`);
           } catch (err) {
@@ -623,7 +622,10 @@ async function handleReflection(sessionId: string, session: SessionState): Promi
           }
 
           // Synthesize patterns from community clusters (uses cleanup's community result)
-          if (cleanupResult.communityResult && cleanupResult.communityResult.communities.length > 0) {
+          if (
+            cleanupResult.communityResult &&
+            cleanupResult.communityResult.communities.length > 0
+          ) {
             try {
               const { synthesizeFromCommunities } =
                 await import('../lib/reflection-synthesizer.js');
