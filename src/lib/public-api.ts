@@ -115,8 +115,8 @@ export { getTokenStatsAggregated, getTokenStatsSummary } from './storage/index.j
 
 // --- Web search ---
 export { recordWebSearch, getWebSearchHistory, getWebSearchSummary } from './storage/index.js';
-export { callOpenRouterSearch } from './llm.js';
-export type { ChatMessage, OpenRouterSearchResponse } from './llm.js';
+export { callOpenRouterSearch, getLLMConfig } from './llm.js';
+export type { ChatMessage, OpenRouterSearchResponse, LLMBackend } from './llm.js';
 
 // --- AI readiness ---
 export { calculateAIReadinessScore, formatAIReadinessScore } from './ai-readiness.js';
@@ -225,3 +225,7 @@ export { getMemoriesByTag } from './storage/index.js';
 // --- LLM fact extraction ---
 export { extractFactsWithLLM } from './session-summary.js';
 export type { ExtractedFact } from './session-summary.js';
+
+// --- Graph cleanup pipeline ---
+export { graphCleanup } from './graph/cleanup.js';
+export type { CleanupOptions, CleanupResult } from './graph/cleanup.js';
