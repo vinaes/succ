@@ -13,6 +13,7 @@ import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
 import { DependencyError } from './errors.js';
+import { logWarn } from './fault-logger.js';
 
 export interface NativeOrtSessionConfig {
   model: string;
@@ -168,8 +169,8 @@ export async function resolveModelPath(modelName: string): Promise<string> {
       if (tempModel?.dispose) {
         await tempModel.dispose();
       }
-    } catch {
-      // Dispose failure is non-critical — model files are already downloaded
+    } catch (err) {
+      logWarn('ort-session', `AutoModel dispose failed (non-critical): ${err instanceof Error ? err.message : err}`);
     }
   }
 
