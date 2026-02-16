@@ -86,6 +86,14 @@ export function createMemoryLink(
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
 
+    // Auto-tag superseded memories for archive
+    if (relation === 'supersedes') {
+      const target = getMemoryById(targetId);
+      if (target && !target.tags.includes('superseded')) {
+        updateMemoryTags(targetId, [...target.tags, 'superseded']);
+      }
+    }
+
     // Schedule auto-export if enabled (async, non-blocking)
     triggerAutoExport().catch((err) => {
       logWarn('graph', err instanceof Error ? err.message : 'Auto-export failed');

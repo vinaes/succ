@@ -422,4 +422,124 @@ describe('Graph Export Module', () => {
       expect(content).toContain('**Total Links:**');
     });
   });
+
+  describe('Auto-archive for superseded memories', () => {
+    it('should route superseded memories to archive folder', async () => {
+      mockMemories.push({
+        id: 1,
+        content: 'Old decision that was superseded',
+        tags: '["decision", "superseded"]',
+        source: 'test',
+        type: 'decision',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const { exportGraphSilent } = await import('./graph-export.js');
+      await exportGraphSilent('obsidian', tempDir);
+
+      // Should be in archive, not project/decisions
+      const archiveDir = path.join(tempDir, 'archive');
+      expect(fs.existsSync(archiveDir)).toBe(true);
+      const files = fs.readdirSync(archiveDir);
+      expect(files.some((f) => f.includes('(1).md'))).toBe(true);
+
+      // Should NOT be in project/decisions
+      const decisionsDir = path.join(tempDir, 'project', 'decisions');
+      if (fs.existsSync(decisionsDir)) {
+        const decisionFiles = fs.readdirSync(decisionsDir);
+        expect(decisionFiles.some((f) => f.includes('(1).md'))).toBe(false);
+      }
+    });
+
+    it('should route memories with archived tag to archive folder', async () => {
+      mockMemories.push({
+        id: 1,
+        content: 'Manually archived learning',
+        tags: '["learning", "archived"]',
+        source: 'test',
+        type: 'learning',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const { exportGraphSilent } = await import('./graph-export.js');
+      await exportGraphSilent('obsidian', tempDir);
+
+      const archiveDir = path.join(tempDir, 'archive');
+      expect(fs.existsSync(archiveDir)).toBe(true);
+      const files = fs.readdirSync(archiveDir);
+      expect(files.some((f) => f.includes('(1).md'))).toBe(true);
+    });
+
+    it('should clean up old file when memory moves to archive', async () => {
+      // First export: memory goes to inbox
+      mockMemories.push({
+        id: 1,
+        content: 'Memory that will be superseded',
+        tags: '[]',
+        source: 'test',
+        type: 'observation',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const { exportGraphSilent } = await import('./graph-export.js');
+      await exportGraphSilent('obsidian', tempDir);
+
+      const inboxDir = path.join(tempDir, 'inbox');
+      expect(fs.readdirSync(inboxDir).some((f) => f.includes('(1).md'))).toBe(true);
+
+      // Second export: memory now has superseded tag
+      mockMemories[0].tags = '["superseded"]';
+      await exportGraphSilent('obsidian', tempDir);
+
+      // Should be in archive now
+      const archiveDir = path.join(tempDir, 'archive');
+      expect(fs.existsSync(archiveDir)).toBe(true);
+      expect(fs.readdirSync(archiveDir).some((f) => f.includes('(1).md'))).toBe(true);
+
+      // Should be cleaned from inbox
+      expect(fs.readdirSync(inboxDir).some((f) => f.includes('(1).md'))).toBe(false);
+    });
+
+    it('should use archive path in wiki-links for superseded memories', async () => {
+      mockMemories.push(
+        {
+          id: 1,
+          content: 'New memory',
+          tags: '[]',
+          source: 'test',
+          type: 'observation',
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 2,
+          content: 'Superseded memory',
+          tags: '["superseded"]',
+          source: 'test',
+          type: 'observation',
+          created_at: '2026-01-02T00:00:00.000Z',
+        }
+      );
+
+      mockLinks.push({
+        source_id: 1,
+        target_id: 2,
+        relation: 'supersedes',
+        weight: 1.0,
+      });
+
+      const { exportGraphSilent } = await import('./graph-export.js');
+      await exportGraphSilent('obsidian', tempDir);
+
+      // Check source memory's wiki-link points to archive
+      const inboxDir = path.join(tempDir, 'inbox');
+      const files = fs.readdirSync(inboxDir);
+      const sourceFile = files.find((f) => f.includes('(1).md'));
+      expect(sourceFile).toBeDefined();
+      if (sourceFile) {
+        const content = fs.readFileSync(path.join(inboxDir, sourceFile), 'utf-8');
+        expect(content).toContain('archive/');
+        expect(content).toContain('supersedes');
+      }
+    });
+  });
 });

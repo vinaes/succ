@@ -32,6 +32,11 @@ interface ExportMemoryRow {
  * Map memory type to brain vault folder
  */
 function getTargetFolder(type: MemoryType | string, tags: string[], brainDir: string): string {
+  // Superseded/archived memories always go to archive (overrides type-based routing)
+  if (tags.includes('superseded') || tags.includes('archived')) {
+    return path.join(brainDir, 'archive');
+  }
+
   // Decision memories go to project decisions folder
   if (type === 'decision' || tags.includes('decision')) {
     return path.join(brainDir, 'project', 'decisions');
@@ -67,6 +72,10 @@ function getWikiLinkPath(
 ): string {
   const typePascal = targetType.charAt(0).toUpperCase() + targetType.slice(1);
 
+  // Superseded/archived memories link to archive
+  if (targetTags.includes('superseded') || targetTags.includes('archived')) {
+    return `archive/${dateStr} ${typePascal} (${targetId})`;
+  }
   if (targetType === 'decision' || targetTags.includes('decision')) {
     return `project/decisions/${dateStr} ${typePascal} (${targetId})`;
   }
@@ -292,6 +301,34 @@ async function exportToObsidian(
     memoryTagsMap.set(m.id, m.tags);
     memoryDatesMap.set(m.id, new Date(m.created_at).toISOString().split('T')[0]);
     memoryTypesMap.set(m.id, m.type || 'observation');
+  }
+
+  // Clean up stale files when memories move between folders (e.g. superseded → archive)
+  const expectedFolderMap = new Map<number, string>();
+  for (const m of memories) {
+    const type = m.type || 'observation';
+    expectedFolderMap.set(m.id, getTargetFolder(type, m.tags, brainDir));
+  }
+
+  const memoryDirs = ['inbox', 'project/decisions', 'knowledge', 'archive'];
+  const idPattern = /\((\d+)\)\.md$/;
+  for (const dir of memoryDirs) {
+    const fullDir = path.join(brainDir, dir);
+    if (!fs.existsSync(fullDir)) continue;
+    try {
+      const files = fs.readdirSync(fullDir);
+      for (const file of files) {
+        const match = file.match(idPattern);
+        if (!match) continue;
+        const fileId = parseInt(match[1], 10);
+        const expectedDir = expectedFolderMap.get(fileId);
+        if (expectedDir && expectedDir !== fullDir) {
+          fs.unlinkSync(path.join(fullDir, file));
+        }
+      }
+    } catch (err) {
+      logWarn('graph-export', `Failed to scan ${dir} for stale files: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   for (const memory of memories) {
