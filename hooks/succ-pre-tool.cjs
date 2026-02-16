@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /**
- * PreToolUse Hook — Command safety guard + commit context injection
+ * PreToolUse Hook — Command safety guard + commit context + file-linked memories
  *
- * Fires before every Bash tool call. Three features:
+ * Fires before every tool call. Four features:
  *
- * 1. Command safety guard — blocks dangerous git/filesystem/database/docker commands
+ * 1. File-linked memories — intercepts Edit/Write, queries daemon for related memories,
+ *    injects them as additionalContext (~10ms, fail-open)
+ *
+ * 2. Command safety guard — blocks dangerous git/filesystem/database/docker commands
  *    Config: commandSafetyGuard.mode = 'deny' | 'ask' | 'off' (default: 'deny')
  *    Config: commandSafetyGuard.allowlist = string[]
  *    Config: commandSafetyGuard.customPatterns = [{ pattern: "regex", reason: "why" }]
  *
- * 2. Commit guidelines injection — injects co-author format into context
+ * 3. Commit guidelines injection — injects co-author format into context
  *    when Claude is about to run git commit
  *    Config: includeCoAuthoredBy (default: true)
  *
- * 3. Pre-commit diff review reminder — injects reminder to run diff-reviewer
+ * 4. Pre-commit diff review reminder — injects reminder to run diff-reviewer
  *    Config: preCommitReview (default: false)
  */
 
@@ -24,72 +27,182 @@ const path = require('path');
 
 const DANGEROUS_PATTERNS = [
   // ── Git — data loss ──
-  { pattern: /\bgit\s+reset\s+--hard\b/, reason: 'git reset --hard destroys uncommitted changes. Use git stash first.' },
-  { pattern: /\bgit\s+reset\s+--merge\b/, reason: 'git reset --merge can destroy uncommitted changes.' },
-  { pattern: /\bgit\s+checkout\s+--\s/, reason: 'git checkout -- discards file modifications. Use git stash first.' },
-  { pattern: /\bgit\s+checkout\s+\.\s*($|[;&|])/, reason: 'git checkout . discards all modifications. Use git stash first.' },
-  { pattern: /\bgit\s+restore\s+--staged\s+--worktree\b/, reason: 'git restore --staged --worktree discards both staged and unstaged changes.' },
-  { pattern: /\bgit\s+clean\s+-[a-zA-Z]*f/, reason: 'git clean -f permanently deletes untracked files.' },
-  { pattern: /\bgit\s+push\s+.*--force(?!-with-lease)\b/, reason: 'git push --force rewrites remote history. Use --force-with-lease instead.' },
-  { pattern: /\bgit\s+push\s+-f\b/, reason: 'git push -f rewrites remote history. Use --force-with-lease instead.' },
-  { pattern: /\bgit\s+branch\s+-D\b/, reason: 'git branch -D force-deletes without merge verification. Use -d for safe delete.' },
-  { pattern: /\bgit\s+stash\s+drop\b/, reason: 'git stash drop permanently destroys stashed work.' },
+  {
+    pattern: /\bgit\s+reset\s+--hard\b/,
+    reason: 'git reset --hard destroys uncommitted changes. Use git stash first.',
+  },
+  {
+    pattern: /\bgit\s+reset\s+--merge\b/,
+    reason: 'git reset --merge can destroy uncommitted changes.',
+  },
+  {
+    pattern: /\bgit\s+checkout\s+--\s/,
+    reason: 'git checkout -- discards file modifications. Use git stash first.',
+  },
+  {
+    pattern: /\bgit\s+checkout\s+\.\s*($|[;&|])/,
+    reason: 'git checkout . discards all modifications. Use git stash first.',
+  },
+  {
+    pattern: /\bgit\s+restore\s+--staged\s+--worktree\b/,
+    reason: 'git restore --staged --worktree discards both staged and unstaged changes.',
+  },
+  {
+    pattern: /\bgit\s+clean\s+-[a-zA-Z]*f/,
+    reason: 'git clean -f permanently deletes untracked files.',
+  },
+  {
+    pattern: /\bgit\s+push\s+.*--force(?!-with-lease)\b/,
+    reason: 'git push --force rewrites remote history. Use --force-with-lease instead.',
+  },
+  {
+    pattern: /\bgit\s+push\s+-f\b/,
+    reason: 'git push -f rewrites remote history. Use --force-with-lease instead.',
+  },
+  {
+    pattern: /\bgit\s+branch\s+-D\b/,
+    reason: 'git branch -D force-deletes without merge verification. Use -d for safe delete.',
+  },
+  {
+    pattern: /\bgit\s+stash\s+drop\b/,
+    reason: 'git stash drop permanently destroys stashed work.',
+  },
   { pattern: /\bgit\s+stash\s+clear\b/, reason: 'git stash clear destroys ALL stashed work.' },
-  { pattern: /\bgit\s+rebase\s+-i\b/, reason: 'git rebase -i requires interactive terminal (not available in hooks).' },
-  { pattern: /\bgit\s+reflog\s+expire\s+--expire=now\b/, reason: 'git reflog expire --expire=now permanently removes recovery points.' },
+  {
+    pattern: /\bgit\s+rebase\s+-i\b/,
+    reason: 'git rebase -i requires interactive terminal (not available in hooks).',
+  },
+  {
+    pattern: /\bgit\s+reflog\s+expire\s+--expire=now\b/,
+    reason: 'git reflog expire --expire=now permanently removes recovery points.',
+  },
 
   // ── Filesystem — data loss ──
-  { pattern: /\brm\s+.*\.succ\b/, reason: '.succ/ contains your memory, brain vault, and config. This would destroy all succ data.' },
-  { pattern: /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\b/, reason: 'rm -rf can permanently delete files. Verify the target path.', checkPath: true },
-  { pattern: /\brm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\b/, reason: 'rm -fr can permanently delete files. Verify the target path.', checkPath: true },
+  {
+    pattern: /\brm\s+.*\.succ\b/,
+    reason:
+      '.succ/ contains your memory, brain vault, and config. This would destroy all succ data.',
+  },
+  {
+    pattern: /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\b/,
+    reason: 'rm -rf can permanently delete files. Verify the target path.',
+    checkPath: true,
+  },
+  {
+    pattern: /\brm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\b/,
+    reason: 'rm -fr can permanently delete files. Verify the target path.',
+    checkPath: true,
+  },
 
   // ── Docker — container/image/volume destruction ──
-  { pattern: /\bdocker\s+system\s+prune\b/, reason: 'docker system prune removes all unused containers, networks, images, and optionally volumes.' },
-  { pattern: /\bdocker\s+volume\s+prune\b/, reason: 'docker volume prune removes all unused volumes (potential data loss).' },
-  { pattern: /\bdocker\s+rm\s+-f\b/, reason: 'docker rm -f force-removes running containers without graceful shutdown.' },
-  { pattern: /\bdocker\s+rmi\s+-f\b/, reason: 'docker rmi -f force-removes images that may be in use.' },
-  { pattern: /\bdocker-compose\s+down\s+-v\b/, reason: 'docker-compose down -v removes named volumes (database data loss).' },
-  { pattern: /\bdocker\s+compose\s+down\s+-v\b/, reason: 'docker compose down -v removes named volumes (database data loss).' },
+  {
+    pattern: /\bdocker\s+system\s+prune\b/,
+    reason:
+      'docker system prune removes all unused containers, networks, images, and optionally volumes.',
+  },
+  {
+    pattern: /\bdocker\s+volume\s+prune\b/,
+    reason: 'docker volume prune removes all unused volumes (potential data loss).',
+  },
+  {
+    pattern: /\bdocker\s+rm\s+-f\b/,
+    reason: 'docker rm -f force-removes running containers without graceful shutdown.',
+  },
+  {
+    pattern: /\bdocker\s+rmi\s+-f\b/,
+    reason: 'docker rmi -f force-removes images that may be in use.',
+  },
+  {
+    pattern: /\bdocker-compose\s+down\s+-v\b/,
+    reason: 'docker-compose down -v removes named volumes (database data loss).',
+  },
+  {
+    pattern: /\bdocker\s+compose\s+down\s+-v\b/,
+    reason: 'docker compose down -v removes named volumes (database data loss).',
+  },
 
   // ── SQLite — database destruction ──
-  { pattern: /\bsqlite3?\b.*\bDROP\s+TABLE\b/i, reason: 'DROP TABLE permanently deletes a SQLite table and all its data.' },
-  { pattern: /\bsqlite3?\b.*\bDROP\s+DATABASE\b/i, reason: 'DROP DATABASE permanently deletes the entire SQLite database.' },
-  { pattern: /\bsqlite3?\b.*\bDELETE\s+FROM\s+\w+\s*;/i, reason: 'DELETE FROM without WHERE deletes all rows in a SQLite table.' },
-  { pattern: /\bsqlite3?\b.*\bTRUNCATE\b/i, reason: 'TRUNCATE removes all data from a SQLite table.' },
+  {
+    pattern: /\bsqlite3?\b.*\bDROP\s+TABLE\b/i,
+    reason: 'DROP TABLE permanently deletes a SQLite table and all its data.',
+  },
+  {
+    pattern: /\bsqlite3?\b.*\bDROP\s+DATABASE\b/i,
+    reason: 'DROP DATABASE permanently deletes the entire SQLite database.',
+  },
+  {
+    pattern: /\bsqlite3?\b.*\bDELETE\s+FROM\s+\w+\s*;/i,
+    reason: 'DELETE FROM without WHERE deletes all rows in a SQLite table.',
+  },
+  {
+    pattern: /\bsqlite3?\b.*\bTRUNCATE\b/i,
+    reason: 'TRUNCATE removes all data from a SQLite table.',
+  },
 
   // ── PostgreSQL — database destruction ──
-  { pattern: /\bpsql\b.*\bDROP\s+TABLE\b/i, reason: 'DROP TABLE permanently deletes a PostgreSQL table and all its data.' },
-  { pattern: /\bpsql\b.*\bDROP\s+DATABASE\b/i, reason: 'DROP DATABASE permanently deletes the entire PostgreSQL database.' },
-  { pattern: /\bpsql\b.*\bDELETE\s+FROM\s+\w+\s*;/i, reason: 'DELETE FROM without WHERE deletes all rows in a PostgreSQL table.' },
-  { pattern: /\bpsql\b.*\bTRUNCATE\b/i, reason: 'TRUNCATE removes all data from a PostgreSQL table.' },
+  {
+    pattern: /\bpsql\b.*\bDROP\s+TABLE\b/i,
+    reason: 'DROP TABLE permanently deletes a PostgreSQL table and all its data.',
+  },
+  {
+    pattern: /\bpsql\b.*\bDROP\s+DATABASE\b/i,
+    reason: 'DROP DATABASE permanently deletes the entire PostgreSQL database.',
+  },
+  {
+    pattern: /\bpsql\b.*\bDELETE\s+FROM\s+\w+\s*;/i,
+    reason: 'DELETE FROM without WHERE deletes all rows in a PostgreSQL table.',
+  },
+  {
+    pattern: /\bpsql\b.*\bTRUNCATE\b/i,
+    reason: 'TRUNCATE removes all data from a PostgreSQL table.',
+  },
   { pattern: /\bdropdb\b/, reason: 'dropdb permanently deletes a PostgreSQL database.' },
   { pattern: /\bdropuser\b/, reason: 'dropuser permanently deletes a PostgreSQL user/role.' },
 
   // ── Qdrant — vector database destruction ──
-  { pattern: /\bcurl\b.*\bqdrant\b.*\bDELETE\b/i, reason: 'DELETE on Qdrant API can remove collections or points permanently.' },
-  { pattern: /\bcurl\b.*\b:6333\b.*\bDELETE\b/i, reason: 'DELETE on Qdrant port 6333 can remove collections or points permanently.' },
-  { pattern: /\bcurl\b.*\b:6334\b.*\bDELETE\b/i, reason: 'DELETE on Qdrant gRPC port can remove data permanently.' },
+  {
+    pattern: /\bcurl\b.*\bqdrant\b.*\bDELETE\b/i,
+    reason: 'DELETE on Qdrant API can remove collections or points permanently.',
+  },
+  {
+    pattern: /\bcurl\b.*\b:6333\b.*\bDELETE\b/i,
+    reason: 'DELETE on Qdrant port 6333 can remove collections or points permanently.',
+  },
+  {
+    pattern: /\bcurl\b.*\b:6334\b.*\bDELETE\b/i,
+    reason: 'DELETE on Qdrant gRPC port can remove data permanently.',
+  },
 ];
 
 // Paths where rm -rf is considered safe (normalized, lowercase)
 const SAFE_RM_PATHS = [
-  '/tmp', '/var/tmp',
-  'node_modules', 'dist', 'build', '.cache',
-  '__pycache__', '.pytest_cache', '.tox',
-  'target/debug', 'target/release',
-  '.next', '.nuxt', '.turbo', 'coverage',
+  '/tmp',
+  '/var/tmp',
+  'node_modules',
+  'dist',
+  'build',
+  '.cache',
+  '__pycache__',
+  '.pytest_cache',
+  '.tox',
+  'target/debug',
+  'target/release',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  'coverage',
 ];
 
 // Prefixes that indicate the command is data, not execution
 const DATA_PREFIXES = [
-  /^\s*(?:#|\/\/)/,           // comments
-  /^\s*echo\b/,              // echo
-  /^\s*printf\b/,            // printf
-  /^\s*cat\s*<</,            // heredoc (cat <<)
-  /^\s*grep\b/,              // grep
-  /^\s*rg\b/,                // ripgrep
-  /^\s*ag\b/,                // silver searcher
-  /^\s*(?:"|').*(?:"|')\s*$/,// quoted string
+  /^\s*(?:#|\/\/)/, // comments
+  /^\s*echo\b/, // echo
+  /^\s*printf\b/, // printf
+  /^\s*cat\s*<</, // heredoc (cat <<)
+  /^\s*grep\b/, // grep
+  /^\s*rg\b/, // ripgrep
+  /^\s*ag\b/, // silver searcher
+  /^\s*(?:"|').*(?:"|')\s*$/, // quoted string
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -143,7 +256,7 @@ function loadConfig(projectDir) {
 
 function isDataContext(command) {
   const trimmed = command.trim();
-  return DATA_PREFIXES.some(prefix => prefix.test(trimmed));
+  return DATA_PREFIXES.some((prefix) => prefix.test(trimmed));
 }
 
 function isRmPathSafe(command) {
@@ -153,7 +266,7 @@ function isRmPathSafe(command) {
   const target = match[1].trim().replace(/["']/g, '');
   const normalized = target.toLowerCase().replace(/\\/g, '/');
 
-  return SAFE_RM_PATHS.some(safe => {
+  return SAFE_RM_PATHS.some((safe) => {
     if (normalized === safe || normalized.endsWith('/' + safe)) return true;
     if (safe === '/tmp' && normalized.startsWith('/tmp/')) return true;
     if (safe === '/var/tmp' && normalized.startsWith('/var/tmp/')) return true;
@@ -236,6 +349,34 @@ MEDIUM and below — commit is OK, mention findings in summary.
   return parts.join('\n');
 }
 
+// ─── File-linked memories helpers ────────────────────────────────────
+
+async function recallFileMemories(projectDir, fileName) {
+  const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
+  if (!fs.existsSync(portFile)) return [];
+  const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
+  if (!port || isNaN(port)) return [];
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/recall-by-tag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag: `file:${fileName}`, limit: 5 }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
+  } catch {
+    return []; // fail-open
+  }
+}
+
+function formatFileContext(memories, fileName) {
+  const lines = memories.map((m) => `- [${m.type || 'observation'}] ${m.content.slice(0, 200)}`);
+  return `<file-context file="${fileName}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────
 
 let input = '';
@@ -247,7 +388,7 @@ process.stdin.on('readable', () => {
   }
 });
 
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const hookInput = JSON.parse(input);
     let projectDir = hookInput.cwd || process.cwd();
@@ -267,6 +408,26 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
+    const toolName = hookInput.tool_name || '';
+    const filePath = hookInput.tool_input?.file_path || '';
+
+    // 1. File-linked memories — intercept Edit/Write
+    if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
+      const fileName = path.basename(filePath);
+      const memories = await recallFileMemories(projectDir, fileName);
+      if (memories.length > 0) {
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            additionalContext: formatFileContext(memories, fileName),
+          },
+        };
+        console.log(JSON.stringify(output));
+        process.exit(0);
+      }
+    }
+
+    // Bash-only features below — exit early for non-Bash tools
     const command = hookInput.tool_input?.command || '';
     if (!command) {
       process.exit(0);
@@ -274,7 +435,7 @@ process.stdin.on('end', () => {
 
     const config = loadConfig(projectDir);
 
-    // 1. Command safety guard
+    // 2. Command safety guard
     const dangerousResult = checkDangerous(command, config);
     if (dangerousResult) {
       const output = {
@@ -288,7 +449,7 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    // 2. Git commit — inject guidelines + diff review reminder
+    // 3. Git commit — inject guidelines + diff review reminder
     if (/\bgit\s+commit\b/.test(command)) {
       const additionalContext = buildCommitContext(config);
       if (additionalContext) {
