@@ -151,9 +151,27 @@ export async function resolveModelPath(modelName: string): Promise<string> {
   const hfCachePath = findHfHubCache(modelName);
   if (hfCachePath) return hfCachePath;
 
-  // 3. Not cached — trigger download via AutoTokenizer (downloads full repo including onnx/)
-  const { AutoTokenizer } = await import('@huggingface/transformers');
-  await AutoTokenizer.from_pretrained(modelName);
+  // 3. Not cached — trigger download via AutoModel (downloads config.json + onnx/model.onnx)
+  // Note: AutoTokenizer only downloads tokenizer files, NOT the ONNX model.
+  // AutoModel.from_pretrained() downloads the full model including onnx/model.onnx.
+  const transformers = await import('@huggingface/transformers');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const AutoModel = (transformers as any).AutoModel;
+  let tempModel;
+  try {
+    tempModel = await AutoModel.from_pretrained(modelName, {
+      device: 'cpu',
+      dtype: 'fp32',
+    });
+  } finally {
+    try {
+      if (tempModel?.dispose) {
+        await tempModel.dispose();
+      }
+    } catch {
+      // Dispose failure is non-critical — model files are already downloaded
+    }
+  }
 
   // Retry after download
   const retryPath = findTransformersJsCache(modelName) || findHfHubCache(modelName);
