@@ -207,3 +207,21 @@ export type {
   PostgresConfig,
   QdrantConfig,
 } from './storage/types.js';
+
+// --- Temporal utilities ---
+export { parseDuration } from './temporal.js';
+
+// --- Quality scoring ---
+export { scoreMemory, passesQualityThreshold } from './quality.js';
+export type { QualityScore } from './quality.js';
+
+// --- Sensitive content filter ---
+export { scanSensitive } from './sensitive-filter.js';
+export type { FilterResult } from './sensitive-filter.js';
+
+// --- File-linked memory recall ---
+export { getMemoriesByTag } from './storage/index.js';
+
+// --- LLM fact extraction ---
+export { extractFactsWithLLM } from './session-summary.js';
+export type { ExtractedFact } from './session-summary.js';
