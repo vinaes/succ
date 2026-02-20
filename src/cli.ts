@@ -697,13 +697,33 @@ program
 
 program
   .command('setup [editor]')
-  .description('Configure succ MCP server for an editor (claude, cursor, windsurf, continue)')
+  .description(
+    'Configure succ MCP server for an editor (claude, cursor, windsurf, continue, codex)'
+  )
   .option('--detect', 'Auto-detect installed editors and configure all')
   .action(async (editor, options) => {
     const { setup } = await import('./commands/setup.js');
     return setup({
       editor,
       detect: options.detect,
+    });
+  });
+
+program
+  .command('codex-chat')
+  .alias('codex')
+  .description('Launch Codex with fresh succ context (AGENTS.md + session hooks)')
+  .option('--project <path>', 'Project directory (default: cwd)')
+  .option('--codex-bin <path>', 'Path to codex binary')
+  .option('--no-brief', 'Skip AGENTS.md generation')
+  .option('--no-end-hook', 'Disable session-end hook')
+  .action(async (options) => {
+    const { codexChat } = await import('./commands/codex-chat.js');
+    return codexChat({
+      project: options.project,
+      codexBin: options.codexBin,
+      noBrief: options.brief === false,
+      noEndHook: options.endHook === false,
     });
   });
 

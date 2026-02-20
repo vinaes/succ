@@ -2,19 +2,34 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 
 interface EditorConfig {
   name: string;
   /** Config file paths per platform */
   configPaths: Record<string, string>;
   /** Config format: 'object' = { mcpServers: { name: config } }, 'array' = { mcpServers: [{ name, ...config }] } */
-  format: 'object' | 'array';
+  format: 'object' | 'array' | 'toml';
   /** Detection: directory that indicates the editor is installed */
   detectPaths: Record<string, string[]>;
 }
 
 const EDITOR_CONFIGS: Record<string, EditorConfig> = {
+  codex: {
+    name: 'Codex',
+    configPaths: {
+      win32: path.join(os.homedir(), '.codex', 'config.toml'),
+      darwin: path.join(os.homedir(), '.codex', 'config.toml'),
+      linux: path.join(os.homedir(), '.codex', 'config.toml'),
+    },
+    format: 'toml',
+    detectPaths: {
+      win32: [path.join(os.homedir(), '.codex')],
+      darwin: [path.join(os.homedir(), '.codex')],
+      linux: [path.join(os.homedir(), '.codex')],
+    },
+  },
   claude: {
     name: 'Claude Code',
     configPaths: {
@@ -95,14 +110,18 @@ function isEditorDetected(editor: EditorConfig): boolean {
   return paths.some((p) => fs.existsSync(p));
 }
 
-function hasExistingSuccConfig(configPath: string, format: 'object' | 'array'): boolean {
+function hasExistingSuccConfig(configPath: string, format: 'object' | 'array' | 'toml'): boolean {
   if (!fs.existsSync(configPath)) return false;
   try {
+    if (format === 'toml') {
+      const parsed = parseToml(fs.readFileSync(configPath, 'utf8')) as any;
+      return !!parsed?.mcp_servers?.succ;
+    }
+
     const content = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     if (format === 'object') {
       return !!content?.mcpServers?.succ;
     }
-    // array format
     const servers = content?.mcpServers;
     if (!Array.isArray(servers)) return false;
     return servers.some((s: any) => s.name === 'succ');
@@ -111,7 +130,7 @@ function hasExistingSuccConfig(configPath: string, format: 'object' | 'array'): 
   }
 }
 
-function configureEditor(editorKey: string, editor: EditorConfig): boolean {
+function configureEditor(editorKey: string, editor: EditorConfig, projectDir?: string): boolean {
   const platform = process.platform;
   const configPath = editor.configPaths[platform] || editor.configPaths.linux;
   const mcpConfig = getSuccMcpCommand();
@@ -134,21 +153,43 @@ function configureEditor(editorKey: string, editor: EditorConfig): boolean {
   let config: any = {};
   if (fs.existsSync(configPath)) {
     try {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    } catch {
-      // Corrupted file — start fresh
+      if (editor.format === 'toml') {
+        config = parseToml(fs.readFileSync(configPath, 'utf8')) as any;
+      } else {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      }
+    } catch (err) {
+      logWarn('setup', `Failed to parse config at ${configPath}, starting fresh: ${(err as Error).message}`);
+      config = {};
     }
   }
 
-  if (editor.format === 'object') {
-    // Object format: { mcpServers: { succ: { command, args } } }
+  if (editor.format === 'toml') {
+    if (!config.mcp_servers) config.mcp_servers = {};
+    config.mcp_servers.succ = {
+      command: mcpConfig.command,
+      args: mcpConfig.args,
+    };
+
+    // Trust current project if provided
+    if (projectDir) {
+      if (!config.projects) config.projects = {};
+      config.projects[projectDir] = {
+        ...(config.projects[projectDir] || {}),
+        trust_level: 'trusted',
+      };
+    }
+
+    const serialized = stringifyToml(config);
+    fs.writeFileSync(configPath, serialized.endsWith('\n') ? serialized : `${serialized}\n`);
+  } else if (editor.format === 'object') {
     if (!config.mcpServers) config.mcpServers = {};
     config.mcpServers.succ = {
       command: mcpConfig.command,
       args: mcpConfig.args,
     };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
   } else {
-    // Array format: { mcpServers: [{ name: "succ", command, args }] }
     if (!Array.isArray(config.mcpServers)) config.mcpServers = [];
     const existing = config.mcpServers.findIndex((s: any) => s.name === 'succ');
     const entry = {
@@ -161,9 +202,8 @@ function configureEditor(editorKey: string, editor: EditorConfig): boolean {
     } else {
       config.mcpServers.push(entry);
     }
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
   }
-
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
   return true;
 }
 
@@ -198,7 +238,7 @@ export async function setup(options: SetupOptions): Promise<void> {
       if (alreadyConfigured) {
         console.log(`  ${editor.name}: already configured`);
       } else {
-        configureEditor(key, editor);
+        configureEditor(key, editor, process.cwd());
         console.log(`  ${editor.name}: configured (${configPath})`);
       }
     }
@@ -233,10 +273,10 @@ export async function setup(options: SetupOptions): Promise<void> {
     console.log(`${editor.name} already has succ configured.`);
     console.log(`Config: ${configPath}`);
     // Update anyway in case the path changed
-    configureEditor(editorKey, editor);
+    configureEditor(editorKey, editor, process.cwd());
     console.log('Configuration updated.');
   } else {
-    configureEditor(editorKey, editor);
+    configureEditor(editorKey, editor, process.cwd());
     console.log(`${editor.name} configured successfully!`);
     console.log(`Config: ${configPath}`);
   }

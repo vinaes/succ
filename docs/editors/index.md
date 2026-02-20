@@ -10,6 +10,7 @@ succ works with any editor that supports the [Model Context Protocol (MCP)](http
 | [Cursor](./cursor.md) | `.cursor/mcp.json` | Full support |
 | [Windsurf](./windsurf.md) | `~/.codeium/windsurf/mcp_config.json` | Full support |
 | [Continue.dev](./continue-dev.md) | `~/.continue/config.json` | Full support |
+| [Codex](./codex.md) | `~/.codex/config.toml` | Full support (launch via `succ codex`) |
 
 ## Quick Setup
 
@@ -24,6 +25,7 @@ succ setup claude
 succ setup cursor
 succ setup windsurf
 succ setup continue
+succ setup codex
 ```
 
 ## Manual Setup

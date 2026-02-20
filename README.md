@@ -29,6 +29,7 @@
 | **Cursor** | `succ setup cursor` |
 | **Windsurf** | `succ setup windsurf` |
 | **Continue.dev** | `succ setup continue` |
+| **Codex** | `succ setup codex`, then always launch via `succ codex` |
 
 See [Editor Guides](docs/editors/index.md) for detailed setup.
 
@@ -146,6 +147,7 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 |---------|-------------|
 | `succ init` | Interactive setup wizard |
 | `succ setup <editor>` | Configure MCP for any editor |
+| `succ codex-chat` | Launch Codex chat with succ briefing/hooks |
 | `succ analyze` | Generate brain vault with Claude agents |
 | `succ index [path]` | Index files for semantic search |
 | `succ search <query>` | Semantic search in brain vault |
