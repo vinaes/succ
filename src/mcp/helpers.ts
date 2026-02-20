@@ -287,3 +287,51 @@ export function createErrorResponse(text: string, component?: string, error?: Er
     isError: true,
   };
 }
+
+/**
+ * Extract a concise answer from search results using LLM.
+ *
+ * Instead of returning raw results, sends them to an LLM with the user's
+ * question and returns only the extracted answer. Saves 50-80% output tokens.
+ *
+ * Uses prompt templates from `src/prompts/extraction.ts` split into
+ * system (stable, cacheable) + user (dynamic results + question).
+ * Uses `llm.extract` config for model selection (defaults to parent llm config).
+ */
+export async function extractAnswerFromResults(
+  results: string,
+  question: string,
+  toolName: string
+): Promise<string> {
+  const { callLLM } = await import('../lib/llm.js');
+  const { getExtractConfig } = await import('../lib/config.js');
+  const { SEARCH_EXTRACT_SYSTEM, SEARCH_EXTRACT_PROMPT } = await import('../prompts/extraction.js');
+  const extractConfig = getExtractConfig();
+
+  // Replace {question} first to prevent search results containing literal '{question}'
+  // from being substituted. Use function callback to avoid special replacement patterns ($&, $`).
+  const userPrompt = SEARCH_EXTRACT_PROMPT.replace('{question}', () => question).replace(
+    '{results}',
+    () => results
+  );
+
+  try {
+    const answer = await callLLM(
+      userPrompt,
+      {
+        maxTokens: extractConfig.maxTokens,
+        systemPrompt: SEARCH_EXTRACT_SYSTEM,
+      },
+      {
+        backend: extractConfig.mode === 'claude' ? 'claude' : 'api',
+        model: extractConfig.model ?? '',
+        endpoint: extractConfig.apiUrl,
+        apiKey: extractConfig.apiKey,
+      }
+    );
+    return answer;
+  } catch (err) {
+    logWarn('mcp', `Extract failed for ${toolName}: ${err}`);
+    return `Extract failed: ${err instanceof Error ? err.message : String(err)}\n\nFalling back to raw results would require re-calling without extract parameter.`;
+  }
+}

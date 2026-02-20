@@ -44,76 +44,85 @@ export function registerDebugTools(server: McpServer) {
   // =========================================================================
   // succ_debug — main debug session management tool
   // =========================================================================
-  server.tool(
+  server.registerTool(
     'succ_debug',
-    'Language-independent structured debugging. Create sessions, add hypotheses, track instrumented files, record results. Integrates with succ_dead_end for failed hypotheses.\n\nExamples:\n- Start: succ_debug(action="create", bug_description="Login fails with 500", error_output="TypeError: ...")\n- Hypothesize: succ_debug(action="hypothesis", description="DB pool exhausted", confidence="high", test="Check pool stats")\n- Record result: succ_debug(action="result", hypothesis_id=1, confirmed=true, logs="Pool: 0 available")\n- Resolve: succ_debug(action="resolve", root_cause="Pool not releasing", fix_description="Added release() in finally")',
     {
-      action: z
-        .enum([
-          'create', // Start a new debug session
-          'hypothesis', // Add a hypothesis to the active session
-          'instrument', // Record instrumented files/lines
-          'result', // Record hypothesis result (confirmed/refuted)
-          'resolve', // Mark session as resolved with root cause + fix
-          'abandon', // Abandon session
-          'status', // Show active session status
-          'list', // List all sessions
-          'log', // Append to session log
-          'show_log', // Show session log
-          'detect_lang', // Detect language from file path
-          'gen_log', // Generate log statement for a language
-        ])
-        .describe('Action to perform'),
-      // Session creation params
-      bug_description: z.string().optional().describe('Bug description (for create)'),
-      error_output: z.string().optional().describe('Error output or stack trace (for create)'),
-      reproduction_command: z
-        .string()
-        .optional()
-        .describe('Command to reproduce the bug (for create)'),
-      language: z.string().optional().describe('Override language detection (for create)'),
-      // Hypothesis params
-      description: z.string().optional().describe('Hypothesis description (for hypothesis)'),
-      confidence: z
-        .enum(['high', 'medium', 'low'])
-        .optional()
-        .describe('Confidence level (for hypothesis)'),
-      evidence: z.string().optional().describe('Evidence supporting hypothesis (for hypothesis)'),
-      test: z.string().optional().describe('How to test this hypothesis (for hypothesis)'),
-      // Instrument params
-      file_path: z
-        .string()
-        .optional()
-        .describe('Instrumented file path (for instrument, detect_lang)'),
-      lines: z
-        .array(z.number())
-        .optional()
-        .describe('Line numbers of added instrumentation (for instrument)'),
-      // Result params
-      hypothesis_id: z.number().optional().describe('Hypothesis ID (1-based) (for result)'),
-      confirmed: z.boolean().optional().describe('Whether hypothesis was confirmed (for result)'),
-      logs: z.string().optional().describe('Log output from reproduction (for result)'),
-      // Resolve params
-      root_cause: z.string().optional().describe('Root cause description (for resolve)'),
-      fix_description: z.string().optional().describe('Fix description (for resolve)'),
-      files_modified: z
-        .array(z.string())
-        .optional()
-        .describe('Files modified to fix (for resolve)'),
-      // Session selector
-      session_id: z.string().optional().describe('Session ID (defaults to active session)'),
-      // List params
-      include_resolved: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Include resolved sessions in list'),
-      // Log params
-      entry: z.string().optional().describe('Log entry text (for log)'),
-      // gen_log params
-      tag: z.string().optional().describe('Log tag (for gen_log)'),
-      value: z.string().optional().describe('Value to log (for gen_log)'),
-      project_path: projectPathParam,
+      description:
+        'Language-independent structured debugging. Create sessions, add hypotheses, track instrumented files, record results. Integrates with succ_dead_end for failed hypotheses.\n\nExamples:\n- Start: succ_debug(action="create", bug_description="Login fails with 500", error_output="TypeError: ...")\n- Hypothesize: succ_debug(action="hypothesis", description="DB pool exhausted", confidence="high", test="Check pool stats")\n- Record result: succ_debug(action="result", hypothesis_id=1, confirmed=true, logs="Pool: 0 available")\n- Resolve: succ_debug(action="resolve", root_cause="Pool not releasing", fix_description="Added release() in finally")',
+      inputSchema: {
+        action: z
+          .enum([
+            'create', // Start a new debug session
+            'hypothesis', // Add a hypothesis to the active session
+            'instrument', // Record instrumented files/lines
+            'result', // Record hypothesis result (confirmed/refuted)
+            'resolve', // Mark session as resolved with root cause + fix
+            'abandon', // Abandon session
+            'status', // Show active session status
+            'list', // List all sessions
+            'log', // Append to session log
+            'show_log', // Show session log
+            'detect_lang', // Detect language from file path
+            'gen_log', // Generate log statement for a language
+          ])
+          .describe('Action to perform'),
+        // Session creation params
+        bug_description: z.string().optional().describe('Bug description (for create)'),
+        error_output: z.string().optional().describe('Error output or stack trace (for create)'),
+        reproduction_command: z
+          .string()
+          .optional()
+          .describe('Command to reproduce the bug (for create)'),
+        language: z.string().optional().describe('Override language detection (for create)'),
+        // Hypothesis params
+        description: z.string().optional().describe('Hypothesis description (for hypothesis)'),
+        confidence: z
+          .enum(['high', 'medium', 'low'])
+          .optional()
+          .describe('Confidence level (for hypothesis)'),
+        evidence: z.string().optional().describe('Evidence supporting hypothesis (for hypothesis)'),
+        test: z.string().optional().describe('How to test this hypothesis (for hypothesis)'),
+        // Instrument params
+        file_path: z
+          .string()
+          .optional()
+          .describe('Instrumented file path (for instrument, detect_lang)'),
+        lines: z
+          .array(z.number())
+          .optional()
+          .describe('Line numbers of added instrumentation (for instrument)'),
+        // Result params
+        hypothesis_id: z.number().optional().describe('Hypothesis ID (1-based) (for result)'),
+        confirmed: z.boolean().optional().describe('Whether hypothesis was confirmed (for result)'),
+        logs: z.string().optional().describe('Log output from reproduction (for result)'),
+        // Resolve params
+        root_cause: z.string().optional().describe('Root cause description (for resolve)'),
+        fix_description: z.string().optional().describe('Fix description (for resolve)'),
+        files_modified: z
+          .array(z.string())
+          .optional()
+          .describe('Files modified to fix (for resolve)'),
+        // Session selector
+        session_id: z.string().optional().describe('Session ID (defaults to active session)'),
+        // List params
+        include_resolved: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Include resolved sessions in list'),
+        // Log params
+        entry: z.string().optional().describe('Log entry text (for log)'),
+        // gen_log params
+        tag: z.string().optional().describe('Log tag (for gen_log)'),
+        value: z.string().optional().describe('Value to log (for gen_log)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (params) => {
       await applyProjectPath(params.project_path);

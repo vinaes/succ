@@ -19,29 +19,43 @@ import { fetchAsMarkdown, extractFromUrl } from '../../lib/md-fetch.js';
 const COMPONENT = 'web-fetch';
 
 export function registerWebFetchTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     'succ_fetch',
-    'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns LLM-optimized content by default (mode=fit, 30-50% fewer tokens). Use mode=full for complete content. Prefer this over built-in WebFetch.\n\nExamples:\n- Fetch page: succ_fetch(url="https://docs.example.com/api")\n- Full + metadata: succ_fetch(url="https://example.com", mode="full", format="json")',
     {
-      url: z.string().url().describe('URL to fetch and convert to markdown'),
-      format: z
-        .enum(['markdown', 'json'])
-        .optional()
-        .describe(
-          'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)'
-        ),
-      mode: z
-        .enum(['fit', 'full'])
-        .optional()
-        .describe(
-          'Content mode: "fit" (default) prunes boilerplate for 30-50% fewer tokens, "full" returns complete content'
-        ),
-      links: z
-        .enum(['citations'])
-        .optional()
-        .describe('Set to "citations" to convert inline links to numbered references with footer'),
-      max_tokens: z.number().optional().describe('Truncate output to N tokens (use with mode=fit)'),
-      project_path: projectPathParam,
+      description:
+        'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns LLM-optimized content by default (mode=fit, 30-50% fewer tokens). Use mode=full for complete content. Prefer this over built-in WebFetch.\n\nExamples:\n- Fetch page: succ_fetch(url="https://docs.example.com/api")\n- Full + metadata: succ_fetch(url="https://example.com", mode="full", format="json")',
+      inputSchema: {
+        url: z.string().url().describe('URL to fetch and convert to markdown'),
+        format: z
+          .enum(['markdown', 'json'])
+          .optional()
+          .describe(
+            'Output format: "markdown" (default) returns clean content, "json" includes metadata (tokens, quality, extraction method)'
+          ),
+        mode: z
+          .enum(['fit', 'full'])
+          .optional()
+          .describe(
+            'Content mode: "fit" (default) prunes boilerplate for 30-50% fewer tokens, "full" returns complete content'
+          ),
+        links: z
+          .enum(['citations'])
+          .optional()
+          .describe(
+            'Set to "citations" to convert inline links to numbered references with footer'
+          ),
+        max_tokens: z
+          .number()
+          .optional()
+          .describe('Truncate output to N tokens (use with mode=fit)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ url, format, mode, links, max_tokens, project_path }) => {
       await applyProjectPath(project_path);
@@ -106,17 +120,26 @@ export function registerWebFetchTools(server: McpServer) {
     }
   );
 
-  server.tool(
+  server.registerTool(
     'succ_extract',
-    'Extract structured data from a URL using a JSON schema. The page is fetched, converted to Markdown, then an LLM extracts data matching the schema. Automatically retries with headless browser for SPA/JS-heavy sites. Rate limited: 10 requests/minute.\n\nExamples:\n- succ_extract(url="https://example.com/products", schema=\'{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"price":{"type":"number"}}}}}}\')',
     {
-      url: z.string().url().describe('URL to extract data from'),
-      schema: z
-        .string()
-        .describe(
-          'JSON Schema as a string (e.g. \'{"type":"object","properties":{"title":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}}}}}}\') — defines the structure of data to extract'
-        ),
-      project_path: projectPathParam,
+      description:
+        'Extract structured data from a URL using a JSON schema. The page is fetched, converted to Markdown, then an LLM extracts data matching the schema. Automatically retries with headless browser for SPA/JS-heavy sites. Rate limited: 10 requests/minute.\n\nExamples:\n- succ_extract(url="https://example.com/products", schema=\'{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"price":{"type":"number"}}}}}}\')',
+      inputSchema: {
+        url: z.string().url().describe('URL to extract data from'),
+        schema: z
+          .string()
+          .describe(
+            'JSON Schema as a string (e.g. \'{"type":"object","properties":{"title":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}}}}}}\') — defines the structure of data to extract'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ url, schema: schemaStr, project_path }) => {
       await applyProjectPath(project_path);

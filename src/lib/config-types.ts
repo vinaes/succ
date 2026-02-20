@@ -121,6 +121,9 @@ export interface SuccConfig {
   observer?: ObserverConfig;
   // Error reporting (brain-faults.log + webhook + sentry)
   error_reporting?: ErrorReportingConfig;
+  // Tool profile: controls which MCP tools are registered
+  // auto (detect by client, default) | core (8 tools) | standard (20 tools) | full (31 tools)
+  tool_profile?: 'auto' | 'core' | 'standard' | 'full';
 }
 
 /**
@@ -253,6 +256,13 @@ export interface LLMConfig {
     model?: string;
     api_url?: string;
     api_key?: string;
+  };
+  extract?: {
+    mode?: 'claude' | 'api'; // Default: from llm.type
+    model?: string; // Default: fast/cheap model (e.g. haiku)
+    api_url?: string;
+    api_key?: string;
+    max_tokens?: number; // Default: 500
   };
 }
 

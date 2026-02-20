@@ -31,8 +31,8 @@ const tools = new Map<string, { handler: ToolHandler; description: string }>();
 
 function createMockServer(): McpServer {
   const mockServer = {
-    tool: vi.fn((name: string, description: string, schema: any, handler: ToolHandler) => {
-      tools.set(name, { handler, description });
+    registerTool: vi.fn((name: string, config: any, handler: ToolHandler) => {
+      tools.set(name, { handler, description: config?.description ?? '' });
     }),
   } as unknown as McpServer;
   return mockServer;

@@ -131,6 +131,7 @@ const SuccConfigSchema = z
     llm: LLMSchema,
     error_reporting: ErrorReportingSchema,
     retrieval: RetrievalSchema,
+    tool_profile: z.enum(['auto', 'core', 'standard', 'full']).optional(),
   })
   .passthrough();
 

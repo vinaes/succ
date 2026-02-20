@@ -16,11 +16,20 @@ import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerConfigTools(server: McpServer) {
   // Tool: succ_config - Show current configuration
-  server.tool(
+  server.registerTool(
     'succ_config',
-    'Get the current succ configuration with all settings and their effective values (with defaults applied). Shows embedding mode, analyze mode, quality scoring, graph settings, idle reflection, etc.',
     {
-      project_path: projectPathParam,
+      description:
+        'Get the current succ configuration with all settings and their effective values (with defaults applied). Shows embedding mode, analyze mode, quality scoring, graph settings, idle reflection, etc.',
+      inputSchema: {
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ project_path }) => {
       await applyProjectPath(project_path);
@@ -51,26 +60,35 @@ export function registerConfigTools(server: McpServer) {
   );
 
   // Tool: succ_config_set - Update configuration values
-  server.tool(
+  server.registerTool(
     'succ_config_set',
-    'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: llm.type (claude/api), llm.model, llm.api_key, llm.api_url, llm.embeddings.mode (local/api), llm.embeddings.model, llm.analyze.mode (claude/api), llm.analyze.model, llm.quality.mode (local/api), quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled, retrieval.quality_boost_enabled, retrieval.quality_boost_weight, retrieval.mmr_enabled, retrieval.mmr_lambda, retrieval.query_expansion_enabled, retrieval.query_expansion_mode, error_reporting.enabled, error_reporting.level, error_reporting.max_file_size_mb, error_reporting.webhook_url, error_reporting.sentry_dsn, error_reporting.sentry_environment, error_reporting.sentry_sample_rate',
     {
-      key: z
-        .string()
-        .describe(
-          'Config key to set (e.g., "llm.api_key", "llm.embeddings.mode", "idle_reflection.enabled")'
-        ),
-      value: z
-        .string()
-        .describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
-      scope: z
-        .enum(['global', 'project'])
-        .optional()
-        .default('global')
-        .describe(
-          'Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'
-        ),
-      project_path: projectPathParam,
+      description:
+        'Update succ configuration values. Saves to global (~/.succ/config.json) or project (.succ/config.json). Common keys: llm.type (claude/api), llm.model, llm.api_key, llm.api_url, llm.embeddings.mode (local/api), llm.embeddings.model, llm.analyze.mode (claude/api), llm.analyze.model, llm.quality.mode (local/api), quality_scoring_enabled, sensitive_filter_enabled, graph_auto_link, idle_reflection.enabled, idle_watcher.enabled, retrieval.quality_boost_enabled, retrieval.quality_boost_weight, retrieval.mmr_enabled, retrieval.mmr_lambda, retrieval.query_expansion_enabled, retrieval.query_expansion_mode, error_reporting.enabled, error_reporting.level, error_reporting.max_file_size_mb, error_reporting.webhook_url, error_reporting.sentry_dsn, error_reporting.sentry_environment, error_reporting.sentry_sample_rate, tool_profile (auto/core/standard/full), llm.extract.mode, llm.extract.model, llm.extract.api_url, llm.extract.api_key, llm.extract.max_tokens\n\nExamples:\n- Set API key: succ_config_set(key="llm.api_key", value="sk-...", scope="global")\n- Change profile: succ_config_set(key="tool_profile", value="core")',
+      inputSchema: {
+        key: z
+          .string()
+          .describe(
+            'Config key to set (e.g., "llm.api_key", "llm.embeddings.mode", "idle_reflection.enabled")'
+          ),
+        value: z
+          .string()
+          .describe('Value to set (strings, numbers, booleans as strings: "true"/"false")'),
+        scope: z
+          .enum(['global', 'project'])
+          .optional()
+          .default('global')
+          .describe(
+            'Where to save: "global" (~/.succ/config.json) or "project" (.succ/config.json). Default: global'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ key, value, scope, project_path }) => {
       await applyProjectPath(project_path);
@@ -160,20 +178,29 @@ export function registerConfigTools(server: McpServer) {
   );
 
   // Tool: succ_checkpoint - Create and manage checkpoints (full backup/restore)
-  server.tool(
+  server.registerTool(
     'succ_checkpoint',
-    'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).\n\nExamples:\n- Create backup: succ_checkpoint(action="create", compress=true)\n- List backups: succ_checkpoint(action="list")',
     {
-      action: z
-        .enum(['create', 'list'])
-        .describe('Action: create (new checkpoint) or list (show available)'),
-      compress: z.boolean().optional().describe('Compress with gzip (default: false)'),
-      include_brain: z.boolean().optional().describe('Include brain vault files (default: true)'),
-      include_documents: z
-        .boolean()
-        .optional()
-        .describe('Include indexed documents (default: true)'),
-      project_path: projectPathParam,
+      description:
+        'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).\n\nExamples:\n- Create backup: succ_checkpoint(action="create", compress=true)\n- List backups: succ_checkpoint(action="list")',
+      inputSchema: {
+        action: z
+          .enum(['create', 'list'])
+          .describe('Action: create (new checkpoint) or list (show available)'),
+        compress: z.boolean().optional().describe('Compress with gzip (default: false)'),
+        include_brain: z.boolean().optional().describe('Include brain vault files (default: true)'),
+        include_documents: z
+          .boolean()
+          .optional()
+          .describe('Include indexed documents (default: true)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ action, compress, include_brain, include_documents, project_path }) => {
       await applyProjectPath(project_path);

@@ -499,6 +499,30 @@ export function getWebSearchConfig(): Required<WebSearchConfig> {
   };
 }
 
+export function getToolProfile(): 'auto' | 'core' | 'standard' | 'full' {
+  const config = getConfig();
+  return config.tool_profile ?? 'auto';
+}
+
+export function getExtractConfig(): {
+  mode: 'claude' | 'api';
+  model?: string;
+  apiUrl?: string;
+  apiKey?: string;
+  maxTokens: number;
+} {
+  const config = getConfig();
+  const llm = config.llm ?? {};
+  const extract = llm.extract ?? {};
+  return {
+    mode: extract.mode ?? llm.type ?? 'claude',
+    model: extract.model,
+    apiUrl: extract.api_url ?? llm.api_url,
+    apiKey: extract.api_key ?? llm.api_key,
+    maxTokens: extract.max_tokens ?? 500,
+  };
+}
+
 export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   const config = getConfig();
   const userConfig = config.idle_reflection || {};

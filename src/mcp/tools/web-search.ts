@@ -195,25 +195,34 @@ async function saveResultToMemory(
 
 export function registerWebSearchTools(server: McpServer) {
   // succ_quick_search — cheapest, fastest web search
-  server.tool(
+  server.registerTool(
     'succ_quick_search',
-    'Quick, cheap web search via OpenRouter (default: Perplexity Sonar, ~$1/MTok). Best for simple factual queries: version numbers, release dates, quick lookups. Configure model with web_search.quick_search_model. Requires OPENROUTER_API_KEY.',
     {
-      query: z
-        .string()
-        .describe(
-          'Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'
-        ),
-      system_prompt: z
-        .string()
-        .optional()
-        .describe('Optional system prompt to guide response format'),
-      max_tokens: z.number().optional().describe('Max response tokens (default: 2000)'),
-      save_to_memory: z
-        .boolean()
-        .optional()
-        .describe('Save result to succ memory (default: from config)'),
-      project_path: projectPathParam,
+      description:
+        'Quick, cheap web search via OpenRouter (default: Perplexity Sonar, ~$1/MTok). Best for simple factual queries: version numbers, release dates, quick lookups. Configure model with web_search.quick_search_model. Requires OPENROUTER_API_KEY.\n\nExamples:\n- succ_quick_search(query="Node.js 22 LTS release date")',
+      inputSchema: {
+        query: z
+          .string()
+          .describe(
+            'Simple factual query (e.g., "latest Node.js LTS version", "TypeScript 5.8 release date")'
+          ),
+        system_prompt: z
+          .string()
+          .optional()
+          .describe('Optional system prompt to guide response format'),
+        max_tokens: z.number().optional().describe('Max response tokens (default: 2000)'),
+        save_to_memory: z
+          .boolean()
+          .optional()
+          .describe('Save result to succ memory (default: from config)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ query, system_prompt, max_tokens, save_to_memory, project_path }) => {
       await applyProjectPath(project_path);
@@ -302,31 +311,40 @@ export function registerWebSearchTools(server: McpServer) {
   );
 
   // succ_web_search — fast real-time web search
-  server.tool(
+  server.registerTool(
     'succ_web_search',
-    'Web search via OpenRouter (default: Perplexity Sonar Pro). Higher quality than succ_quick_search. Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Alternatives: x-ai/grok-3:online, google/gemini-2.0-flash-001:online, or any model with :online suffix. Requires OPENROUTER_API_KEY.',
     {
-      query: z
-        .string()
-        .describe(
-          'The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'
-        ),
-      model: z
-        .string()
-        .optional()
-        .describe(
-          'Override search model. Default from config (perplexity/sonar-pro). Perplexity: sonar, sonar-pro, sonar-reasoning-pro. Grok: x-ai/grok-3:online, x-ai/grok-3-mini:online. Any OpenRouter model with :online suffix supports web search.'
-        ),
-      system_prompt: z
-        .string()
-        .optional()
-        .describe('Optional system prompt to guide the response format or focus'),
-      max_tokens: z.number().optional().describe('Max response tokens (default: 4000)'),
-      save_to_memory: z
-        .boolean()
-        .optional()
-        .describe('Save result to succ memory (default: from config)'),
-      project_path: projectPathParam,
+      description:
+        'Web search via OpenRouter (default: Perplexity Sonar Pro). Higher quality than succ_quick_search. Use for complex queries, documentation lookups, multi-faceted questions. Returns answers with citations. Alternatives: x-ai/grok-3:online, google/gemini-2.0-flash-001:online, or any model with :online suffix. Requires OPENROUTER_API_KEY.\n\nExamples:\n- succ_web_search(query="React 19 Server Components best practices")\n- Custom model: succ_web_search(query="nginx reverse proxy", model="x-ai/grok-3:online")',
+      inputSchema: {
+        query: z
+          .string()
+          .describe(
+            'The search query (e.g., "latest React 19 features", "how to configure nginx reverse proxy")'
+          ),
+        model: z
+          .string()
+          .optional()
+          .describe(
+            'Override search model. Default from config (perplexity/sonar-pro). Perplexity: sonar, sonar-pro, sonar-reasoning-pro. Grok: x-ai/grok-3:online, x-ai/grok-3-mini:online. Any OpenRouter model with :online suffix supports web search.'
+          ),
+        system_prompt: z
+          .string()
+          .optional()
+          .describe('Optional system prompt to guide the response format or focus'),
+        max_tokens: z.number().optional().describe('Max response tokens (default: 4000)'),
+        save_to_memory: z
+          .boolean()
+          .optional()
+          .describe('Save result to succ memory (default: from config)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ query, model, system_prompt, max_tokens, save_to_memory, project_path }) => {
       await applyProjectPath(project_path);
@@ -416,29 +434,38 @@ export function registerWebSearchTools(server: McpServer) {
   );
 
   // succ_deep_research — expensive multi-step research
-  server.tool(
+  server.registerTool(
     'succ_deep_research',
-    'Deep multi-step web research via OpenRouter (default: Perplexity Sonar Deep Research). Autonomously searches, reads, and synthesizes multiple sources. WARNING: Significantly more expensive and slower than succ_web_search (30-120s, runs 30+ searches). Configure model with web_search.deep_research_model. Requires OPENROUTER_API_KEY.',
     {
-      query: z
-        .string()
-        .describe(
-          'The research question (e.g., "Compare React Server Components vs Astro Islands for e-commerce")'
-        ),
-      system_prompt: z
-        .string()
-        .optional()
-        .describe('Optional system prompt to guide research focus or output format'),
-      max_tokens: z.number().optional().describe('Max response tokens (default: 8000)'),
-      include_reasoning: z
-        .boolean()
-        .optional()
-        .describe("Include the model's internal reasoning process (default: false)"),
-      save_to_memory: z
-        .boolean()
-        .optional()
-        .describe('Save result to succ memory (default: from config)'),
-      project_path: projectPathParam,
+      description:
+        'Deep multi-step web research via OpenRouter (default: Perplexity Sonar Deep Research). Autonomously searches, reads, and synthesizes multiple sources. WARNING: Significantly more expensive and slower than succ_web_search (30-120s, runs 30+ searches). Configure model with web_search.deep_research_model. Requires OPENROUTER_API_KEY.\n\nExamples:\n- succ_deep_research(query="Compare React Server Components vs Astro Islands for e-commerce")',
+      inputSchema: {
+        query: z
+          .string()
+          .describe(
+            'The research question (e.g., "Compare React Server Components vs Astro Islands for e-commerce")'
+          ),
+        system_prompt: z
+          .string()
+          .optional()
+          .describe('Optional system prompt to guide research focus or output format'),
+        max_tokens: z.number().optional().describe('Max response tokens (default: 8000)'),
+        include_reasoning: z
+          .boolean()
+          .optional()
+          .describe("Include the model's internal reasoning process (default: false)"),
+        save_to_memory: z
+          .boolean()
+          .optional()
+          .describe('Save result to succ memory (default: from config)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({
       query,
@@ -537,20 +564,29 @@ export function registerWebSearchTools(server: McpServer) {
   );
 
   // succ_web_search_history — view past searches
-  server.tool(
+  server.registerTool(
     'succ_web_search_history',
-    'View web search history with filtering. Shows past searches, costs, and usage statistics. Useful for tracking spend, reviewing past queries, and auditing search usage.',
     {
-      tool_name: z
-        .enum(['succ_quick_search', 'succ_web_search', 'succ_deep_research'])
-        .optional()
-        .describe('Filter by tool'),
-      model: z.string().optional().describe('Filter by model (e.g., "perplexity/sonar-pro")'),
-      query_text: z.string().optional().describe('Filter by query substring'),
-      date_from: z.string().optional().describe('Start date (ISO, e.g., "2025-01-01")'),
-      date_to: z.string().optional().describe('End date (ISO, e.g., "2025-12-31")'),
-      limit: z.number().optional().describe('Max records to return (default: 20)'),
-      project_path: projectPathParam,
+      description:
+        'View web search history with filtering. Shows past searches, costs, and usage statistics. Useful for tracking spend, reviewing past queries, and auditing search usage.\n\nExamples:\n- Recent: succ_web_search_history(limit=5)\n- Filter: succ_web_search_history(tool_name="succ_deep_research", date_from="2025-01-01")',
+      inputSchema: {
+        tool_name: z
+          .enum(['succ_quick_search', 'succ_web_search', 'succ_deep_research'])
+          .optional()
+          .describe('Filter by tool'),
+        model: z.string().optional().describe('Filter by model (e.g., "perplexity/sonar-pro")'),
+        query_text: z.string().optional().describe('Filter by query substring'),
+        date_from: z.string().optional().describe('Start date (ISO, e.g., "2025-01-01")'),
+        date_to: z.string().optional().describe('End date (ISO, e.g., "2025-12-31")'),
+        limit: z.number().optional().describe('Max records to return (default: 20)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ tool_name, model, query_text, date_from, date_to, limit, project_path }) => {
       await applyProjectPath(project_path);

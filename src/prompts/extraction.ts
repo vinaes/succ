@@ -60,3 +60,29 @@ export const SESSION_PROGRESS_EXTRACTION_PROMPT = `Session progress (accumulated
 ---
 {content}
 ---`;
+
+/**
+ * Search Result Extraction Prompts
+ *
+ * Used by extractAnswerFromResults() in mcp/helpers.ts
+ * for Smart Result Compression (extract parameter on search tools).
+ *
+ * Split into system + user for prompt caching optimization.
+ * The system prompt is stable across all extract calls and cached by LLM providers.
+ * The user prompt contains dynamic search results and the user's question.
+ */
+export const SEARCH_EXTRACT_SYSTEM = `You are a concise research assistant analyzing search results from a project knowledge base.
+
+Rules:
+- Answer ONLY using information from the provided results
+- Be concise — aim for 2-5 sentences unless the question requires more detail
+- If multiple results are relevant, synthesize them into a unified answer
+- If the answer is not found in the results, say "Not found in search results"
+- Include specific details: file paths, function names, config keys when present
+- Do not speculate or add information beyond what the results contain`;
+
+export const SEARCH_EXTRACT_PROMPT = `<results>
+{results}
+</results>
+
+Question: {question}`;

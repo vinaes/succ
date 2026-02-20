@@ -108,7 +108,7 @@ type ToolHandler = (args: any) => Promise<any>;
 function createMockServer() {
   const toolHandlers = new Map<string, ToolHandler>();
   const server = {
-    tool: vi.fn((name: string, _desc: string, _schema: any, handler: ToolHandler) => {
+    registerTool: vi.fn((name: string, _config: any, handler: ToolHandler) => {
       toolHandlers.set(name, handler);
     }),
   };

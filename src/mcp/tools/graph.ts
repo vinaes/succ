@@ -22,40 +22,49 @@ import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerGraphTools(server: McpServer) {
   // Tool: succ_link - Create/manage memory links (knowledge graph)
-  server.tool(
+  server.registerTool(
     'succ_link',
-    'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.\n\nExamples:\n- Link memories: succ_link(action="create", source_id=1, target_id=2, relation="caused_by")\n- View connections: succ_link(action="show", source_id=42)\n- Auto-link similar: succ_link(action="auto", threshold=0.8)\n- Full maintenance: succ_link(action="cleanup")',
     {
-      action: z
-        .enum([
-          'create',
-          'delete',
-          'show',
-          'graph',
-          'auto',
-          'enrich',
-          'proximity',
-          'communities',
-          'centrality',
-          'export',
-          'cleanup',
-        ])
-        .describe(
-          'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality)'
-        ),
-      source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
-      target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
-      relation: z
-        .enum(LINK_RELATIONS)
-        .optional()
-        .describe(
-          'Relation type: related, caused_by, leads_to, similar_to, contradicts, implements, supersedes, references'
-        ),
-      threshold: z
-        .number()
-        .optional()
-        .describe('Similarity threshold for auto-linking (default: 0.75)'),
-      project_path: projectPathParam,
+      description:
+        'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.\n\nExamples:\n- Link memories: succ_link(action="create", source_id=1, target_id=2, relation="caused_by")\n- View connections: succ_link(action="show", source_id=42)\n- Auto-link similar: succ_link(action="auto", threshold=0.8)\n- Full maintenance: succ_link(action="cleanup")',
+      inputSchema: {
+        action: z
+          .enum([
+            'create',
+            'delete',
+            'show',
+            'graph',
+            'auto',
+            'enrich',
+            'proximity',
+            'communities',
+            'centrality',
+            'export',
+            'cleanup',
+          ])
+          .describe(
+            'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality)'
+          ),
+        source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
+        target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
+        relation: z
+          .enum(LINK_RELATIONS)
+          .optional()
+          .describe(
+            'Relation type: related, caused_by, leads_to, similar_to, contradicts, implements, supersedes, references'
+          ),
+        threshold: z
+          .number()
+          .optional()
+          .describe('Similarity threshold for auto-linking (default: 0.75)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ action, source_id, target_id, relation, threshold, project_path }) => {
       await applyProjectPath(project_path);
@@ -320,13 +329,22 @@ ${relationStats}`;
   );
 
   // Tool: succ_explore - Explore connected memories
-  server.tool(
+  server.registerTool(
     'succ_explore',
-    'Explore the knowledge graph starting from a memory. Find connected memories through links.\n\nExamples:\n- Explore connections: succ_explore(memory_id=42, depth=3)',
     {
-      memory_id: z.number().describe('Starting memory ID'),
-      depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
-      project_path: projectPathParam,
+      description:
+        'Explore the knowledge graph starting from a memory. Find connected memories through links.\n\nExamples:\n- Explore connections: succ_explore(memory_id=42, depth=3)',
+      inputSchema: {
+        memory_id: z.number().describe('Starting memory ID'),
+        depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ memory_id, depth, project_path }) => {
       await applyProjectPath(project_path);

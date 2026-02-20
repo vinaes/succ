@@ -21,31 +21,40 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   // succ_prd_generate
   // --------------------------------------------------------------------------
-  server.tool(
+  server.registerTool(
     'succ_prd_generate',
-    'Generate a PRD (Product Requirements Document) from a feature description. Auto-detects quality gates from project files. Returns PRD ID and parsed tasks.\n\nExamples:\n- succ_prd_generate(description="Add user auth with JWT", gates="test:npm test,lint:eslint .")',
     {
-      description: z
-        .string()
-        .describe('Feature description (e.g., "Add user authentication with JWT")'),
-      mode: z
-        .enum(['loop', 'team'])
-        .optional()
-        .default('loop')
-        .describe('Execution mode (default: loop)'),
-      gates: z
-        .string()
-        .optional()
-        .describe(
-          'Custom quality gates as comma-separated specs (e.g., "test:npm test,lint:eslint .")'
-        ),
-      auto_parse: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe('Automatically parse PRD into tasks (default: true)'),
-      model: z.string().optional().describe('LLM model override'),
-      project_path: projectPathParam,
+      description:
+        'Generate a PRD (Product Requirements Document) from a feature description. Auto-detects quality gates from project files. Returns PRD ID and parsed tasks.\n\nExamples:\n- succ_prd_generate(description="Add user auth with JWT", gates="test:npm test,lint:eslint .")',
+      inputSchema: {
+        description: z
+          .string()
+          .describe('Feature description (e.g., "Add user authentication with JWT")'),
+        mode: z
+          .enum(['loop', 'team'])
+          .optional()
+          .default('loop')
+          .describe('Execution mode (default: loop)'),
+        gates: z
+          .string()
+          .optional()
+          .describe(
+            'Custom quality gates as comma-separated specs (e.g., "test:npm test,lint:eslint .")'
+          ),
+        auto_parse: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe('Automatically parse PRD into tasks (default: true)'),
+        model: z.string().optional().describe('LLM model override'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ description, mode, gates, auto_parse, model, project_path }) => {
       await applyProjectPath(project_path);
@@ -83,12 +92,20 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   // succ_prd_list
   // --------------------------------------------------------------------------
-  server.tool(
+  server.registerTool(
     'succ_prd_list',
-    'List all PRDs in the project. Shows ID, title, status, and task counts.',
     {
-      all: z.boolean().optional().default(false).describe('Include archived PRDs'),
-      project_path: projectPathParam,
+      description: 'List all PRDs in the project. Shows ID, title, status, and task counts.',
+      inputSchema: {
+        all: z.boolean().optional().default(false).describe('Include archived PRDs'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ all, project_path }) => {
       await applyProjectPath(project_path);
@@ -117,15 +134,24 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   // succ_prd_status
   // --------------------------------------------------------------------------
-  server.tool(
+  server.registerTool(
     'succ_prd_status',
-    'Show detailed status of a PRD and its tasks. If no ID given, shows the latest PRD.',
     {
-      prd_id: z
-        .string()
-        .optional()
-        .describe('PRD ID (e.g., "prd_abc12345"). If omitted, uses latest PRD.'),
-      project_path: projectPathParam,
+      description:
+        'Show detailed status of a PRD and its tasks. If no ID given, shows the latest PRD.',
+      inputSchema: {
+        prd_id: z
+          .string()
+          .optional()
+          .describe('PRD ID (e.g., "prd_abc12345"). If omitted, uses latest PRD.'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ prd_id, project_path }) => {
       await applyProjectPath(project_path);
@@ -180,41 +206,53 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   // succ_prd_run
   // --------------------------------------------------------------------------
-  server.tool(
+  server.registerTool(
     'succ_prd_run',
-    'Execute or resume a PRD. Runs tasks in order with quality gates, branch isolation, and auto-commit. Use resume=true to continue an interrupted run.\n\nExamples:\n- Run latest: succ_prd_run()\n- Resume: succ_prd_run(resume=true)\n- Dry run: succ_prd_run(dry_run=true)\n- Single task: succ_prd_run(task_id="task_001")',
     {
-      prd_id: z.string().optional().describe('PRD ID. If omitted, uses latest PRD.'),
-      resume: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Resume from previous execution instead of starting fresh'),
-      task_id: z.string().optional().describe('Run a specific task only (e.g., "task_001")'),
-      dry_run: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Show execution plan without running'),
-      max_iterations: z.number().optional().describe('Max full-PRD retries (default: 3)'),
-      no_branch: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Skip branch isolation, run in current branch'),
-      model: z.string().optional().describe('Claude model override (default: sonnet)'),
-      force: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Force resume even if another runner may be active'),
-      mode: z
-        .enum(['loop', 'team'])
-        .optional()
-        .default('loop')
-        .describe('Execution mode: loop (sequential) or team (parallel)'),
-      concurrency: z.number().optional().describe('Max parallel workers in team mode (default: 3)'),
-      project_path: projectPathParam,
+      description:
+        'Execute or resume a PRD. Runs tasks in order with quality gates, branch isolation, and auto-commit. Use resume=true to continue an interrupted run.\n\nExamples:\n- Run latest: succ_prd_run()\n- Resume: succ_prd_run(resume=true)\n- Dry run: succ_prd_run(dry_run=true)\n- Single task: succ_prd_run(task_id="task_001")',
+      inputSchema: {
+        prd_id: z.string().optional().describe('PRD ID. If omitted, uses latest PRD.'),
+        resume: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Resume from previous execution instead of starting fresh'),
+        task_id: z.string().optional().describe('Run a specific task only (e.g., "task_001")'),
+        dry_run: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Show execution plan without running'),
+        max_iterations: z.number().optional().describe('Max full-PRD retries (default: 3)'),
+        no_branch: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Skip branch isolation, run in current branch'),
+        model: z.string().optional().describe('Claude model override (default: sonnet)'),
+        force: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Force resume even if another runner may be active'),
+        mode: z
+          .enum(['loop', 'team'])
+          .optional()
+          .default('loop')
+          .describe('Execution mode: loop (sequential) or team (parallel)'),
+        concurrency: z
+          .number()
+          .optional()
+          .describe('Max parallel workers in team mode (default: 3)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({
       prd_id,
@@ -280,14 +318,23 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   // succ_prd_export
   // --------------------------------------------------------------------------
-  server.tool(
+  server.registerTool(
     'succ_prd_export',
-    'Export PRD workflow to Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG, per-task detail pages). Opens in Obsidian for visual workflow review.',
     {
-      prd_id: z.string().optional().describe('PRD ID. If omitted, exports latest PRD.'),
-      all: z.boolean().optional().default(false).describe('Export all PRDs'),
-      output: z.string().optional().describe('Output directory (default: .succ/brain/prd)'),
-      project_path: projectPathParam,
+      description:
+        'Export PRD workflow to Obsidian-compatible markdown with Mermaid diagrams (Gantt timeline, dependency DAG, per-task detail pages). Opens in Obsidian for visual workflow review.',
+      inputSchema: {
+        prd_id: z.string().optional().describe('PRD ID. If omitted, exports latest PRD.'),
+        all: z.boolean().optional().default(false).describe('Export all PRDs'),
+        output: z.string().optional().describe('Output directory (default: .succ/brain/prd)'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ prd_id, all, output, project_path }) => {
       await applyProjectPath(project_path);

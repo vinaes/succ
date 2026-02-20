@@ -17,6 +17,10 @@
  * - succ_quick_search / succ_web_search / succ_deep_research: Web search via Perplexity Sonar (OpenRouter)
  * - succ_web_search_history: Browse and filter past web search history
  * - succ_debug: Language-independent structured debugging with hypothesis testing
+ *
+ * Tool profiles: auto (detect by client), core (8), standard (20), full (31)
+ * Configure via: succ_config_set(key="tool_profile", value="auto|core|standard|full")
+ * Auto-profile: Claude clients → full, other clients → standard
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -29,8 +33,8 @@ import {
 } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
-import { getProjectRoot } from '../lib/config.js';
-import { logError, logInfo } from '../lib/fault-logger.js';
+import { getProjectRoot, getToolProfile } from '../lib/config.js';
+import { logError, logInfo, logWarn } from '../lib/fault-logger.js';
 import { setupGracefulShutdown, setCurrentProject } from './helpers.js';
 import { registerResources } from './resources.js';
 import { registerSearchTools } from './tools/search.js';
@@ -45,6 +49,92 @@ import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
 import { registerWebFetchTools } from './tools/web-fetch.js';
 
+// ---------------------------------------------------------------------------
+// Tool profile definitions
+// ---------------------------------------------------------------------------
+
+/** Core tools — always available, most commonly used (8 tools) */
+const CORE_TOOLS = new Set([
+  'succ_recall',
+  'succ_remember',
+  'succ_forget',
+  'succ_search',
+  'succ_search_code',
+  'succ_dead_end',
+  'succ_fetch',
+  'succ_status',
+]);
+
+/** Standard tools — core + indexing, graph, config, basic web search (20 tools) */
+const STANDARD_TOOLS = new Set([
+  ...CORE_TOOLS,
+  'succ_index_file',
+  'succ_index_code_file',
+  'succ_reindex',
+  'succ_analyze_file',
+  'succ_symbols',
+  'succ_link',
+  'succ_explore',
+  'succ_config',
+  'succ_config_set',
+  'succ_checkpoint',
+  'succ_quick_search',
+  'succ_web_search',
+]);
+
+// RegisteredTool type from MCP SDK (registerTool is the non-deprecated API)
+type RegisteredTool = ReturnType<McpServer['registerTool']>;
+
+/**
+ * Apply tool profile — replaces non-profile tools with minimal stubs
+ * that return a helpful error message with upgrade instructions.
+ */
+function applyToolProfile(
+  tools: Map<string, RegisteredTool>,
+  profile: 'core' | 'standard' | 'full'
+): void {
+  if (profile === 'full') return;
+
+  const allowedTools = profile === 'core' ? CORE_TOOLS : STANDARD_TOOLS;
+
+  for (const [name, tool] of tools) {
+    if (allowedTools.has(name)) continue;
+
+    // Determine which profile unlocks this tool
+    const requiredProfile = STANDARD_TOOLS.has(name) ? 'standard' : 'full';
+
+    try {
+      tool.update({
+        description: `[Requires "${requiredProfile}" profile] Use succ_config_set(key="tool_profile", value="${requiredProfile}") to enable.`,
+        paramsSchema: {},
+        callback: async () => ({
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `Tool "${name}" is not available in "${profile}" profile.\n\n` +
+                `To enable:\n  succ_config_set(key="tool_profile", value="${requiredProfile}")\n\n` +
+                `Available profiles: core (8 tools), standard (20 tools), full (31 tools)`,
+            },
+          ],
+          isError: true,
+        }),
+      });
+    } catch (err) {
+      logWarn('mcp', `Failed to apply profile restriction to tool "${name}": ${err}`);
+    }
+  }
+
+  logInfo(
+    'mcp',
+    `Tool profile "${profile}": ${allowedTools.size} active, ${tools.size - allowedTools.size} gated`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Server setup
+// ---------------------------------------------------------------------------
+
 // Parse --project arg: succ-mcp --project /path/to/project
 const projectArgIdx = process.argv.indexOf('--project');
 if (projectArgIdx !== -1 && process.argv[projectArgIdx + 1]) {
@@ -57,7 +147,22 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
-// Register all resources and tools
+// ---------------------------------------------------------------------------
+// Register all tools — capture RegisteredTool references for profile gating
+// ---------------------------------------------------------------------------
+
+const registeredTools = new Map<string, RegisteredTool>();
+
+// Proxy server.registerTool() to capture references by name
+const originalRegisterTool = server.registerTool.bind(server) as (...args: any[]) => RegisteredTool;
+(server as any).registerTool = (...args: any[]) => {
+  const result = originalRegisterTool(...args);
+  if (typeof args[0] === 'string') {
+    registeredTools.set(args[0], result);
+  }
+  return result;
+};
+
 registerResources(server);
 registerSearchTools(server);
 registerMemoryTools(server);
@@ -70,6 +175,12 @@ registerPrdTools(server);
 registerWebSearchTools(server);
 registerDebugTools(server);
 registerWebFetchTools(server);
+
+// Apply tool profile (gate non-profile tools with helpful error stubs)
+const profile = getToolProfile();
+if (profile !== 'full' && profile !== 'auto') {
+  applyToolProfile(registeredTools, profile);
+}
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
@@ -128,6 +239,28 @@ async function main() {
 
   setCurrentProject(getProjectRoot());
   mcpLog(`Project: ${getProjectRoot()}`);
+  if (profile !== 'full') {
+    mcpLog(`Tool profile: ${profile}`);
+  }
+
+  // Auto-profile: detect client after MCP handshake, apply profile before tools/list.
+  // Safe for stdio transport (single-threaded message processing — oninitialized fires
+  // before the next inbound message, so tools/list always sees the updated set).
+  if (profile === 'auto') {
+    server.server.oninitialized = () => {
+      const clientInfo = server.server.getClientVersion();
+      const clientName = (clientInfo?.name ?? '').toLowerCase();
+      const isClaudeClient = clientName.includes('claude');
+      const autoProfile = isClaudeClient ? 'full' : 'standard';
+      mcpLog(
+        `Client: ${clientInfo?.name ?? 'unknown'} v${clientInfo?.version ?? '?'} → profile: ${autoProfile}`
+      );
+      logInfo('mcp', `Auto-profile: client="${clientInfo?.name}", profile="${autoProfile}"`);
+      if (autoProfile !== 'full') {
+        applyToolProfile(registeredTools, autoProfile);
+      }
+    };
+  }
 
   const transport = new StdioServerTransport();
   mcpLog('Connecting transport...');

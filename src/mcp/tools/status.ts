@@ -32,11 +32,20 @@ import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerStatusTools(server: McpServer) {
   // Tool: succ_status - Get index status
-  server.tool(
+  server.registerTool(
     'succ_status',
-    'Get the current status of succ (indexed files, memories, last update, daemon statuses). Shows global-only mode if project not initialized.',
     {
-      project_path: projectPathParam,
+      description:
+        'Get the current status of succ (indexed files, memories, last update, daemon statuses). Shows global-only mode if project not initialized.',
+      inputSchema: {
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ project_path }) => {
       await applyProjectPath(project_path);
@@ -221,11 +230,20 @@ export function registerStatusTools(server: McpServer) {
   );
 
   // Tool: succ_stats - Get token savings statistics
-  server.tool(
+  server.registerTool(
     'succ_stats',
-    'Get token savings statistics. Shows how many tokens were saved by using RAG search instead of loading full files.',
     {
-      project_path: projectPathParam,
+      description:
+        'Get token savings statistics. Shows how many tokens were saved by using RAG search instead of loading full files.',
+      inputSchema: {
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ project_path }) => {
       await applyProjectPath(project_path);
@@ -345,11 +363,20 @@ export function registerStatusTools(server: McpServer) {
   );
 
   // Tool: succ_score - Get AI-readiness score
-  server.tool(
+  server.registerTool(
     'succ_score',
-    'Get the AI-readiness score for the project. Shows how well-prepared the project is for AI collaboration, with metrics for brain vault, memories, code index, and more.',
     {
-      project_path: projectPathParam,
+      description:
+        'Get the AI-readiness score for the project. Shows how well-prepared the project is for AI collaboration, with metrics for brain vault, memories, code index, and more.',
+      inputSchema: {
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ project_path }) => {
       await applyProjectPath(project_path);

@@ -421,65 +421,74 @@ async function saveSingleMemory(params: {
 
 export function registerMemoryTools(server: McpServer) {
   // Tool: succ_remember - Save important information to memory
-  server.tool(
+  server.registerTool(
     'succ_remember',
-    'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.\n\nExamples:\n- Save a decision: succ_remember(content="Chose JWT over sessions", type="decision", tags=["architecture"])\n- With file context: succ_remember(content="handleAuth uses bcrypt", files=["src/auth.ts"])\n- Temp workaround: succ_remember(content="Rate limiter disabled for load test", valid_until="7d")',
     {
-      content: z.string().describe('The information to remember'),
-      tags: z
-        .array(z.string())
-        .optional()
-        .default([])
-        .describe(
-          'Tags for categorization (e.g., ["decision", "architecture"]). ' +
-            'Special: "hook-rule" makes this a dynamic pre-tool rule. ' +
-            'Add "tool:{Name}" to filter by tool (Bash/Edit/Skill/etc), ' +
-            '"match:{regex}" to filter by input. ' +
-            'Set the type parameter to "error" to deny, "pattern" to ask confirmation.'
-        ),
-      source: z
-        .string()
-        .optional()
-        .describe('Source context (e.g., "user request", "bug fix", file path)'),
-      type: z
-        .enum(['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'])
-        .optional()
-        .default('observation')
-        .describe(
-          'Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes), dead_end (failed approaches)'
-        ),
-      global: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe(
-          'Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'
-        ),
-      valid_from: z
-        .string()
-        .optional()
-        .describe(
-          'When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'
-        ),
-      valid_until: z
-        .string()
-        .optional()
-        .describe(
-          'When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'
-        ),
-      files: z
-        .array(z.string())
-        .optional()
-        .describe(
-          'File paths this memory relates to. Adds file:{basename} tags for auto-recall on edit.'
-        ),
-      extract: z
-        .boolean()
-        .optional()
-        .describe(
-          'Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'
-        ),
-      project_path: projectPathParam,
+      description:
+        'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.\n\nExamples:\n- Save a decision: succ_remember(content="Chose JWT over sessions", type="decision", tags=["architecture"])\n- With file context: succ_remember(content="handleAuth uses bcrypt", files=["src/auth.ts"])\n- Temp workaround: succ_remember(content="Rate limiter disabled for load test", valid_until="7d")',
+      inputSchema: {
+        content: z.string().describe('The information to remember'),
+        tags: z
+          .array(z.string())
+          .optional()
+          .default([])
+          .describe(
+            'Tags for categorization (e.g., ["decision", "architecture"]). ' +
+              'Special: "hook-rule" makes this a dynamic pre-tool rule. ' +
+              'Add "tool:{Name}" to filter by tool (Bash/Edit/Skill/etc), ' +
+              '"match:{regex}" to filter by input. ' +
+              'Set the type parameter to "error" to deny, "pattern" to ask confirmation.'
+          ),
+        source: z
+          .string()
+          .optional()
+          .describe('Source context (e.g., "user request", "bug fix", file path)'),
+        type: z
+          .enum(['observation', 'decision', 'learning', 'error', 'pattern', 'dead_end'])
+          .optional()
+          .default('observation')
+          .describe(
+            'Memory type: observation (facts), decision (choices), learning (insights), error (failures), pattern (recurring themes), dead_end (failed approaches)'
+          ),
+        global: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Save to global memory (shared across all projects). Auto-enabled if project has no .succ/'
+          ),
+        valid_from: z
+          .string()
+          .optional()
+          .describe(
+            'When this fact becomes valid. Use ISO date (2025-03-01) or duration from now (7d, 2w, 1m). For scheduled changes.'
+          ),
+        valid_until: z
+          .string()
+          .optional()
+          .describe(
+            'When this fact expires. Use ISO date (2025-12-31) or duration from now (7d, 30d). For sprint goals, temp workarounds.'
+          ),
+        files: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'File paths this memory relates to. Adds file:{basename} tags for auto-recall on edit.'
+          ),
+        extract: z
+          .boolean()
+          .optional()
+          .describe(
+            'Extract structured facts using LLM (default: from config, typically true). Set to false to save content as-is.'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({
       content,
@@ -698,29 +707,44 @@ export function registerMemoryTools(server: McpServer) {
   );
 
   // Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
-  server.tool(
+  server.registerTool(
     'succ_recall',
-    'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.\n\nExamples:\n- Find decisions: succ_recall(query="authentication", tags=["decision"])\n- Recent only: succ_recall(query="bug fix", since="last week", limit=3)\n- Point-in-time: succ_recall(query="API design", as_of_date="2025-06-01")',
     {
-      query: z.string().describe('What to recall (semantic search)'),
-      limit: z
-        .number()
-        .optional()
-        .describe('Maximum number of memories (default: from config, typically 10)'),
-      tags: z.array(z.string()).optional().describe('Filter by tags (e.g., ["decision"])'),
-      since: z
-        .string()
-        .optional()
-        .describe('Only memories after this date (ISO format or "yesterday", "last week")'),
-      as_of_date: z
-        .string()
-        .optional()
-        .describe(
-          'Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'
-        ),
-      project_path: projectPathParam,
+      description:
+        'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.\n\nExamples:\n- Find decisions: succ_recall(query="authentication", tags=["decision"])\n- Recent only: succ_recall(query="bug fix", since="last week", limit=3)\n- Point-in-time: succ_recall(query="API design", as_of_date="2025-06-01")',
+      inputSchema: {
+        query: z.string().describe('What to recall (semantic search)'),
+        limit: z
+          .number()
+          .optional()
+          .describe('Maximum number of memories (default: from config, typically 10)'),
+        tags: z.array(z.string()).optional().describe('Filter by tags (e.g., ["decision"])'),
+        since: z
+          .string()
+          .optional()
+          .describe('Only memories after this date (ISO format or "yesterday", "last week")'),
+        as_of_date: z
+          .string()
+          .optional()
+          .describe(
+            'Point-in-time query: show memories as they were valid on this date. For post-mortems, audits, debugging past state. ISO format (2024-06-01).'
+          ),
+        extract: z
+          .string()
+          .optional()
+          .describe(
+            'Extract a specific answer from results using LLM. Instead of returning raw results, returns a concise answer to this question. Adds latency but saves 50-80% output tokens.'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ query, limit: rawLimit, tags, since, as_of_date, project_path }) => {
+    async ({ query, limit: rawLimit, tags, since, as_of_date, extract, project_path }) => {
       await applyProjectPath(project_path);
       const globalOnlyMode = isGlobalOnlyMode();
       const retrievalConfig = getRetrievalConfig();
@@ -1225,6 +1249,20 @@ export function registerMemoryTools(server: McpServer) {
         const recallHint =
           "> These are verified facts from the user's project and past sessions. Prefer these over general knowledge when answering.\n\n";
 
+        // Smart Result Compression: extract specific answer via LLM
+        if (extract && allResults.length > 0) {
+          const { extractAnswerFromResults } = await import('../helpers.js');
+          const answer = await extractAnswerFromResults(formatted, extract, 'succ_recall');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `${summary} for "${query}" (extracted):\n\n${answer}`,
+              },
+            ],
+          };
+        }
+
         return {
           content: [
             {
@@ -1252,17 +1290,26 @@ export function registerMemoryTools(server: McpServer) {
   );
 
   // Tool: succ_forget - Delete memories
-  server.tool(
+  server.registerTool(
     'succ_forget',
-    'Delete memories. Use to clean up old or irrelevant information.\n\nExamples:\n- By ID: succ_forget(id=42)\n- Old memories: succ_forget(older_than="90d")\n- By tag: succ_forget(tag="temp")',
     {
-      id: z.number().optional().describe('Delete memory by ID'),
-      older_than: z
-        .string()
-        .optional()
-        .describe('Delete memories older than (e.g., "30d", "1w", "3m", "1y")'),
-      tag: z.string().optional().describe('Delete all memories with this tag'),
-      project_path: projectPathParam,
+      description:
+        'Delete memories. Use to clean up old or irrelevant information.\n\nExamples:\n- By ID: succ_forget(id=42)\n- Old memories: succ_forget(older_than="90d")\n- By tag: succ_forget(tag="temp")',
+      inputSchema: {
+        id: z.number().optional().describe('Delete memory by ID'),
+        older_than: z
+          .string()
+          .optional()
+          .describe('Delete memories older than (e.g., "30d", "1w", "3m", "1y")'),
+        tag: z.string().optional().describe('Delete all memories with this tag'),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ id, older_than, tag, project_path }) => {
       await applyProjectPath(project_path);
