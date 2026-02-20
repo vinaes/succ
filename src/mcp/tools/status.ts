@@ -23,6 +23,7 @@ import {
   getIdleReflectionConfig,
   getRetentionConfig,
   getProjectRoot,
+  getConfig,
 } from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
@@ -211,6 +212,26 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch {
               /* ignore */
+            }
+
+            // md.succ.ai API health check
+            {
+              const { md_api_url } = getConfig();
+              const mdBase = (md_api_url || 'https://md.succ.ai').replace(/\/+$/, '');
+              try {
+                const hcRes = await fetch(`${mdBase}/status`, {
+                  signal: AbortSignal.timeout(3000),
+                });
+                status.push(
+                  '',
+                  '## Services',
+                  hcRes.ok
+                    ? `  🟢 md.succ.ai: ok (${mdBase})`
+                    : `  🔴 md.succ.ai: HTTP ${hcRes.status} (${mdBase})`
+                );
+              } catch {
+                status.push('', '## Services', `  🔴 md.succ.ai: unreachable (${mdBase})`);
+              }
             }
 
             status.push('', '## Daemons', daemonLines);
