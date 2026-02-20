@@ -254,6 +254,7 @@ export function registerIndexingTools(server: McpServer) {
                     text: `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`,
                   },
                 ],
+                isError: true,
               };
             }
 

@@ -324,7 +324,7 @@ export async function extractAnswerFromResults(
       },
       {
         backend: extractConfig.mode === 'claude' ? 'claude' : 'api',
-        model: extractConfig.model ?? '',
+        ...(extractConfig.model && { model: extractConfig.model }),
         endpoint: extractConfig.apiUrl,
         apiKey: extractConfig.apiKey,
       }

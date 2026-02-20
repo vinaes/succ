@@ -49,6 +49,7 @@ import {
   parseRelativeDate,
   projectPathParam,
   applyProjectPath,
+  extractAnswerFromResults,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
 
@@ -487,7 +488,7 @@ export function registerMemoryTools(server: McpServer) {
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     async ({
@@ -738,10 +739,10 @@ export function registerMemoryTools(server: McpServer) {
         project_path: projectPathParam,
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     async ({ query, limit: rawLimit, tags, since, as_of_date, extract, project_path }) => {
@@ -1251,7 +1252,6 @@ export function registerMemoryTools(server: McpServer) {
 
         // Smart Result Compression: extract specific answer via LLM
         if (extract && allResults.length > 0) {
-          const { extractAnswerFromResults } = await import('../helpers.js');
           const answer = await extractAnswerFromResults(formatted, extract, 'succ_recall');
           return {
             content: [

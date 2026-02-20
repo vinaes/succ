@@ -229,7 +229,7 @@ export function registerWebSearchTools(server: McpServer) {
         project_path: projectPathParam,
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
         openWorldHint: true,

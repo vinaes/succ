@@ -16,7 +16,12 @@ import {
 import { isGlobalOnlyMode, getReadinessGateConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
-import { trackTokenSavings, projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  trackTokenSavings,
+  projectPathParam,
+  applyProjectPath,
+  extractAnswerFromResults,
+} from '../helpers.js';
 
 export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
@@ -148,7 +153,6 @@ export function registerSearchTools(server: McpServer) {
 
         // Smart Result Compression: extract specific answer via LLM
         if (extract && results.length > 0) {
-          const { extractAnswerFromResults } = await import('../helpers.js');
           const answer = await extractAnswerFromResults(formatted, extract, 'succ_search');
           return {
             content: [
@@ -338,7 +342,6 @@ export function registerSearchTools(server: McpServer) {
 
         // Smart Result Compression: extract specific answer via LLM
         if (extract && codeResults.length > 0) {
-          const { extractAnswerFromResults } = await import('../helpers.js');
           const answer = await extractAnswerFromResults(formatted, extract, 'succ_search_code');
           return {
             content: [
