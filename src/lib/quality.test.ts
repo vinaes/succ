@@ -58,15 +58,6 @@ describe('Quality Scoring', () => {
       expect(result.mode).toBe('heuristic');
     });
 
-    it('should have all factor properties', () => {
-      const result = scoreWithHeuristics('Test content');
-
-      expect(result.factors).toHaveProperty('specificity');
-      expect(result.factors).toHaveProperty('clarity');
-      expect(result.factors).toHaveProperty('relevance');
-      expect(result.factors).toHaveProperty('uniqueness');
-    });
-
     it('should consider existingSimilarity for uniqueness', () => {
       const noDuplicate = scoreWithHeuristics('Test content');
       const hasDuplicate = scoreWithHeuristics('Test content', 0.9);

@@ -19,12 +19,9 @@ import {
 } from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
 
-const SYNTHESIS_PROMPT = `You are analyzing a cluster of related observations from a developer's coding sessions.
+const SYNTHESIS_SYSTEM = `You are analyzing a cluster of related observations from a developer's coding sessions.
 
-Observations:
-{observations}
-
-Based on these observations, extract 1-3 high-level patterns, preferences, or learnings.
+Based on the observations, extract 1-3 high-level patterns, preferences, or learnings.
 Each should be a clear, concise statement that captures recurring behavior or important context.
 
 Rules:
@@ -35,6 +32,9 @@ Rules:
 
 Output as JSON array:
 [{"content": "...", "type": "pattern|learning"}]`;
+
+const SYNTHESIS_PROMPT = `Observations:
+{observations}`;
 
 const MIN_CLUSTER_SIZE = 5;
 const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;
@@ -109,6 +109,7 @@ export async function synthesizeFromCommunities(
         useSleepAgent: true,
         maxTokens: 1000,
         temperature: 0.3,
+        systemPrompt: SYNTHESIS_SYSTEM,
       });
 
       if (llmResponse.includes('NO_PATTERNS')) {

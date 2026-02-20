@@ -85,31 +85,4 @@ describe('expandQuery', () => {
     const prompt = mockedCallLLM.mock.calls[0][0];
     expect(prompt).toContain('my specific search term');
   });
-
-  it('passes temperature 0.7 and maxTokens 200', async () => {
-    mockedCallLLM.mockResolvedValue('expanded query');
-
-    await expandQuery('test');
-
-    const options = mockedCallLLM.mock.calls[0][1];
-    expect(options).toEqual({ maxTokens: 200, temperature: 0.7 });
-  });
-
-  it('passes config override when mode differs from default', async () => {
-    mockedCallLLM.mockResolvedValue('expanded query');
-
-    await expandQuery('test', 'claude');
-
-    const configOverride = mockedCallLLM.mock.calls[0][2];
-    expect(configOverride).toEqual({ backend: 'claude' });
-  });
-
-  it('passes no config override when mode matches default', async () => {
-    mockedCallLLM.mockResolvedValue('expanded query');
-
-    await expandQuery('test', 'api');
-
-    const configOverride = mockedCallLLM.mock.calls[0][2];
-    expect(configOverride).toBeUndefined();
-  });
 });

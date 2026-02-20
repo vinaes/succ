@@ -7,7 +7,7 @@
 
 import { callLLM, callLLMWithFallback, getLLMConfig, type LLMBackend } from '../llm.js';
 import { logWarn } from '../fault-logger.js';
-import { PRD_PARSE_PROMPT } from '../../prompts/prd.js';
+import { PRD_PARSE_SYSTEM, PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
 import type { Task } from './types.js';
@@ -71,6 +71,7 @@ export async function parsePrd(
     maxTokens: 8000,
     temperature: 0.2, // Low temperature for structured output
     timeout: 120_000, // Parsing needs more time than default 30s
+    systemPrompt: PRD_PARSE_SYSTEM,
   };
 
   // 3. Call LLM (with backend fallback on transport errors)

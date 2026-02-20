@@ -17,7 +17,7 @@ import { projectPathParam, applyProjectPath } from '../helpers.js';
 export function registerDeadEndTools(server: McpServer) {
   server.tool(
     'succ_dead_end',
-    'Record a failed approach to prevent retrying it. Stores "tried X, didn\'t work because Y" knowledge. Dead-ends are automatically boosted in recall results so AI agents see them before retrying a failed approach.',
+    'Record a failed approach to prevent retrying it. Stores "tried X, didn\'t work because Y" knowledge. Dead-ends are automatically boosted in recall results so AI agents see them before retrying a failed approach.\n\nExamples:\n- succ_dead_end(approach="Redis for sessions", why_failed="Memory too high for VPS", tags=["infra"])',
     {
       approach: z.string().describe('What was tried (e.g., "Using Redis for session storage")'),
       why_failed: z

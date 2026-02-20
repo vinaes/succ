@@ -2,18 +2,10 @@
  * Daemon Service Prompts
  *
  * Used by background services for reflection and discovery.
+ * Split into system + user for prompt caching optimization.
  */
 
-/**
- * Personal reflection prompt for AI journal entries.
- * Used by daemon service.ts during idle time.
- */
-export const REFLECTION_PROMPT = `You are writing a brief personal reflection for an AI's internal journal.
-
-Session context (recent conversation):
----
-{transcript}
----
+export const REFLECTION_SYSTEM = `You are writing a brief personal reflection for an AI's internal journal.
 
 Write a short reflection (3-5 sentences) about this session. Be honest and introspective.
 Consider:
@@ -23,14 +15,12 @@ Consider:
 
 Output ONLY the reflection text, no headers or formatting. Write in first person as if you are the AI reflecting on your own work.`;
 
-/**
- * Discovery agent prompt for finding patterns and learnings.
- * Used by daemon analyzer.ts during background analysis.
- */
-export const DISCOVERY_PROMPT = `You are analyzing a software project to discover patterns, learnings, and insights worth remembering.
+export const REFLECTION_PROMPT = `Session context (recent conversation):
+---
+{transcript}
+---`;
 
-Project context:
-{context}
+export const DISCOVERY_SYSTEM = `You are analyzing a software project to discover patterns, learnings, and insights worth remembering.
 
 Find 2-5 interesting discoveries. Each should be a concrete, reusable insight.
 
@@ -45,3 +35,6 @@ Output as JSON array:
 ]
 
 If no interesting discoveries, output: []`;
+
+export const DISCOVERY_PROMPT = `Project context:
+{context}`;

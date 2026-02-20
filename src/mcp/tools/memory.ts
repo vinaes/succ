@@ -423,7 +423,7 @@ export function registerMemoryTools(server: McpServer) {
   // Tool: succ_remember - Save important information to memory
   server.tool(
     'succ_remember',
-    'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.',
+    'Save important information to long-term memory. By default, uses LLM to extract structured facts from content. Use extract=false to save content as-is. In projects without .succ/, automatically saves to global memory. Use valid_until for temporary info.\n\nExamples:\n- Save a decision: succ_remember(content="Chose JWT over sessions", type="decision", tags=["architecture"])\n- With file context: succ_remember(content="handleAuth uses bcrypt", files=["src/auth.ts"])\n- Temp workaround: succ_remember(content="Rate limiter disabled for load test", valid_until="7d")',
     {
       content: z.string().describe('The information to remember'),
       tags: z
@@ -700,7 +700,7 @@ export function registerMemoryTools(server: McpServer) {
   // Tool: succ_recall - Recall past memories (hybrid BM25 + semantic search)
   server.tool(
     'succ_recall',
-    'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.',
+    'Recall relevant memories from past sessions using hybrid search (BM25 + semantic). Searches both project-local and global (cross-project) memories. Works even in projects without .succ/ (global-only mode). Use as_of_date for point-in-time queries.\n\nExamples:\n- Find decisions: succ_recall(query="authentication", tags=["decision"])\n- Recent only: succ_recall(query="bug fix", since="last week", limit=3)\n- Point-in-time: succ_recall(query="API design", as_of_date="2025-06-01")',
     {
       query: z.string().describe('What to recall (semantic search)'),
       limit: z
@@ -1254,7 +1254,7 @@ export function registerMemoryTools(server: McpServer) {
   // Tool: succ_forget - Delete memories
   server.tool(
     'succ_forget',
-    'Delete memories. Use to clean up old or irrelevant information.',
+    'Delete memories. Use to clean up old or irrelevant information.\n\nExamples:\n- By ID: succ_forget(id=42)\n- Old memories: succ_forget(older_than="90d")\n- By tag: succ_forget(tag="temp")',
     {
       id: z.number().optional().describe('Delete memory by ID'),
       older_than: z

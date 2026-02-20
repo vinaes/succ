@@ -12,7 +12,7 @@ import { searchMemories, closeDb, getRecentMemories } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
-import { SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
+import { SESSION_BRIEFING_SYSTEM, SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
 import { logWarn } from './fault-logger.js';
 import fs from 'fs';
 import path from 'path';
@@ -162,7 +162,12 @@ async function generateBriefingWithLLM(
     const configOverride = backendOverride ? { backend: backendOverride } : undefined;
     const result = await callLLM(
       prompt,
-      { timeout: 45000, maxTokens: 1000, useSleepAgent: true },
+      {
+        timeout: 45000,
+        maxTokens: 1000,
+        useSleepAgent: true,
+        systemPrompt: SESSION_BRIEFING_SYSTEM,
+      },
       configOverride
     );
     return result?.trim() || null;

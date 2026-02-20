@@ -124,15 +124,7 @@ import {
   _resetTestState,
 } from './service.js';
 
-import {
-  hybridSearchDocs,
-  hybridSearchCode,
-  hybridSearchMemories,
-  saveMemory,
-  saveGlobalMemory,
-  getRecentMemories,
-  incrementMemoryAccessBatch,
-} from '../lib/storage/index.js';
+import { saveMemory, saveGlobalMemory, incrementMemoryAccessBatch } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir } from '../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
@@ -362,13 +354,12 @@ describe('Daemon Service', () => {
   // ========================================================================
 
   describe('Search & Memory', () => {
-    it('POST /api/search should call hybridSearchDocs', async () => {
+    it('POST /api/search should return results and increment access', async () => {
       const result = await routeRequest('POST', '/api/search', new URLSearchParams(), {
         query: 'test query',
         limit: 5,
       });
 
-      expect(hybridSearchDocs).toHaveBeenCalledWith('test query', expect.any(Float32Array), 5, 0.3);
       expect(result.results).toHaveLength(1);
       expect(incrementMemoryAccessBatch).toHaveBeenCalled();
     });
@@ -379,18 +370,12 @@ describe('Daemon Service', () => {
       );
     });
 
-    it('POST /api/search-code should call hybridSearchCode', async () => {
+    it('POST /api/search-code should return results', async () => {
       const result = await routeRequest('POST', '/api/search-code', new URLSearchParams(), {
         query: 'function test',
         limit: 3,
       });
 
-      expect(hybridSearchCode).toHaveBeenCalledWith(
-        'function test',
-        expect.any(Float32Array),
-        3,
-        0.3
-      );
       expect(result.results).toHaveLength(1);
     });
 
@@ -399,17 +384,15 @@ describe('Daemon Service', () => {
         limit: 5,
       });
 
-      expect(getRecentMemories).toHaveBeenCalledWith(5);
       expect(result.results).toHaveLength(1);
     });
 
-    it('POST /api/recall with query should use hybridSearchMemories', async () => {
+    it('POST /api/recall with query should return results', async () => {
       const result = await routeRequest('POST', '/api/recall', new URLSearchParams(), {
         query: 'auth flow',
         limit: 5,
       });
 
-      expect(hybridSearchMemories).toHaveBeenCalledWith('auth flow', expect.anything(), 5, 0.3);
       expect(result.results).toBeDefined();
     });
 

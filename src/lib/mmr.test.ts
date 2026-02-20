@@ -88,8 +88,8 @@ describe('applyMMR', () => {
       },
     ];
     const result = applyMMR(items, [1, 0, 0, 0], 0.8);
-    expect(result[0]).toHaveProperty('content');
-    expect(result[0]).toHaveProperty('tags');
+    expect(result[0].content).toBe('hello');
+    expect(result[0].tags).toBe('test');
   });
 
   it('with default lambda=0.8, is conservative — mild diversity', () => {

@@ -17,7 +17,7 @@ export function registerIndexingTools(server: McpServer) {
   // Tool: succ_index_file - Index a single documentation file
   server.tool(
     'succ_index_file',
-    'Index a single file for semantic search. Faster than full reindex for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).',
+    'Index a single file for semantic search. Faster than full reindex for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).\n\nExamples:\n- succ_index_file(file="docs/api.md")\n- Force: succ_index_file(file=".succ/brain/architecture.md", force=true)',
     {
       file: z.string().describe('Path to the file to index'),
       force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
@@ -77,7 +77,7 @@ export function registerIndexingTools(server: McpServer) {
   // Tool: succ_analyze_file - Analyze a single file and generate documentation
   server.tool(
     'succ_analyze_file',
-    'Analyze a single source file and generate documentation in brain vault. Modes: claude (CLI with Haiku), local (Ollama/LM Studio), openrouter (cloud API). Check succ_status first - if analyze daemon is running, it handles this automatically.',
+    'Analyze a single source file and generate documentation in brain vault. Modes: claude (CLI with Haiku), local (Ollama/LM Studio), openrouter (cloud API). Check succ_status first - if analyze daemon is running, it handles this automatically.\n\nExamples:\n- succ_analyze_file(file="src/auth.ts")\n- Use API: succ_analyze_file(file="src/server.ts", mode="api")',
     {
       file: z.string().describe('Path to the file to analyze'),
       mode: z
@@ -130,7 +130,7 @@ export function registerIndexingTools(server: McpServer) {
   // Tool: succ_index_code_file - Index a single code file
   server.tool(
     'succ_index_code_file',
-    'Index a single source code file for semantic search. Faster than full index-code for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).',
+    'Index a single source code file for semantic search. Faster than full index-code for small changes. Embedding modes (configured via config.json): local (Transformers.js, default), openrouter (cloud API), custom (Ollama/LM Studio/llama.cpp).\n\nExamples:\n- succ_index_code_file(file="src/lib/auth.ts")\n- Force: succ_index_code_file(file="src/lib/storage/index.ts", force=true)',
     {
       file: z.string().describe('Path to the code file to index'),
       force: z.boolean().optional().default(false).describe('Force reindex even if unchanged'),
@@ -230,7 +230,7 @@ export function registerIndexingTools(server: McpServer) {
   // Tool: succ_symbols - Extract AST symbols from a source file using tree-sitter
   server.tool(
     'succ_symbols',
-    'Extract functions, classes, interfaces, and type definitions from a source file using tree-sitter AST parsing. Returns symbol names, types, signatures, and line numbers. Supports 13 languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.',
+    'Extract functions, classes, interfaces, and type definitions from a source file using tree-sitter AST parsing. Returns symbol names, types, signatures, and line numbers. Supports 13 languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.\n\nExamples:\n- All symbols: succ_symbols(file="src/auth.ts")\n- Functions only: succ_symbols(file="src/server.ts", type="function")',
     {
       file: z.string().describe('Path to the source file to extract symbols from'),
       type: z

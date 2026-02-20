@@ -143,8 +143,7 @@ async function generateViaApi(context: string, prompt: string): Promise<string> 
   }
 
   try {
-    const fullPrompt = `${context}\n\n---\n\n${prompt}`;
-    return await callLLM(fullPrompt, { maxTokens: 1024 }, { backend: 'api' });
+    return await callLLM(context, { maxTokens: 1024, systemPrompt: prompt }, { backend: 'api' });
   } catch (error) {
     logError('soul', 'API error:', error instanceof Error ? error : new Error(String(error)));
     console.error('API error:', error);

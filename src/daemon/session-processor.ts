@@ -24,7 +24,7 @@ import { scoreMemory } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
 import { logError, logWarn } from '../lib/fault-logger.js';
-import { SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
+import { FACT_EXTRACTION_SYSTEM, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -212,8 +212,17 @@ function chunkEntries(
  * Run LLM with a prompt and return the response
  * Uses sleep agent for background processing if enabled.
  */
-async function runLLM(prompt: string, timeoutMs: number = 60000): Promise<string> {
-  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000, useSleepAgent: true });
+async function runLLM(
+  prompt: string,
+  timeoutMs: number = 60000,
+  systemPrompt?: string
+): Promise<string> {
+  return callLLM(prompt, {
+    timeout: timeoutMs,
+    maxTokens: 2000,
+    useSleepAgent: true,
+    systemPrompt,
+  });
 }
 
 // ============================================================================
@@ -377,7 +386,7 @@ async function extractFactsFromContent(
   const prompt = SESSION_PROGRESS_EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
 
   try {
-    const result = await runLLM(prompt, 45000);
+    const result = await runLLM(prompt, 45000, FACT_EXTRACTION_SYSTEM);
     return parseFactsResponse(result);
   } catch (err) {
     log(`[session-processor] LLM extraction failed: ${err}`);

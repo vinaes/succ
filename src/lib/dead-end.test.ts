@@ -8,10 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { MEMORY_TYPES } from './storage/index.js';
 import type { MemoryType } from './storage/index.js';
-import {
-  FACT_EXTRACTION_PROMPT,
-  SESSION_PROGRESS_EXTRACTION_PROMPT,
-} from '../prompts/extraction.js';
+import { FACT_EXTRACTION_SYSTEM } from '../prompts/extraction.js';
 
 describe('Dead-End Tracking', () => {
   describe('Memory type registration', () => {
@@ -188,24 +185,19 @@ describe('Dead-End Tracking', () => {
   });
 
   describe('Extraction prompt integration', () => {
-    it('should include dead_end type in FACT_EXTRACTION_PROMPT', () => {
-      expect(FACT_EXTRACTION_PROMPT).toContain('Dead Ends');
-      expect(FACT_EXTRACTION_PROMPT).toContain('dead_end');
-    });
-
-    it('should include dead_end type in SESSION_PROGRESS_EXTRACTION_PROMPT', () => {
-      expect(SESSION_PROGRESS_EXTRACTION_PROMPT).toContain('Dead Ends');
-      expect(SESSION_PROGRESS_EXTRACTION_PROMPT).toContain('dead_end');
+    it('should include dead_end type in extraction system prompt', () => {
+      expect(FACT_EXTRACTION_SYSTEM).toContain('Dead Ends');
+      expect(FACT_EXTRACTION_SYSTEM).toContain('dead_end');
     });
 
     it('should explain dead_end extraction criteria', () => {
-      expect(FACT_EXTRACTION_PROMPT).toContain('tried and explicitly failed');
-      expect(FACT_EXTRACTION_PROMPT).toContain('WHY it failed');
+      expect(FACT_EXTRACTION_SYSTEM).toContain('tried and explicitly failed');
+      expect(FACT_EXTRACTION_SYSTEM).toContain('WHY it failed');
     });
 
     it('should include dead_end example in JSON output format', () => {
-      expect(FACT_EXTRACTION_PROMPT).toContain('"type": "dead_end"');
-      expect(FACT_EXTRACTION_PROMPT).toContain('"DEAD END:');
+      expect(FACT_EXTRACTION_SYSTEM).toContain('"type": "dead_end"');
+      expect(FACT_EXTRACTION_SYSTEM).toContain('"DEAD END:');
     });
   });
 });

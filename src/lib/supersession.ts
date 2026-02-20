@@ -15,13 +15,7 @@ import { callLLM } from './llm.js';
 import { invalidateMemory, getAllMemoriesWithEmbeddings } from './storage/index.js';
 import { cosineSimilarity } from './embeddings.js';
 
-const SUPERSESSION_PROMPT = `You are comparing two memories from a developer's project.
-
-OLD memory:
-{old_content}
-
-NEW memory:
-{new_content}
+const SUPERSESSION_SYSTEM = `You are comparing two memories from a developer's project.
 
 Classify the relationship. Choose exactly ONE:
 - "supersedes" — the NEW memory contradicts or replaces the OLD (e.g., preference changed, config updated, decision reversed)
@@ -30,6 +24,12 @@ Classify the relationship. Choose exactly ONE:
 
 Respond with JSON only:
 {"relation": "supersedes|refines|independent", "confidence": 0.0-1.0, "reason": "brief explanation"}`;
+
+const SUPERSESSION_PROMPT = `OLD memory:
+{old_content}
+
+NEW memory:
+{new_content}`;
 
 const SIMILARITY_THRESHOLD = 0.8;
 const CONFIDENCE_THRESHOLD = 0.9;
@@ -89,6 +89,7 @@ export async function checkSupersession(
           useSleepAgent: true,
           maxTokens: 200,
           temperature: 0.1,
+          systemPrompt: SUPERSESSION_SYSTEM,
         });
 
         // Parse JSON response

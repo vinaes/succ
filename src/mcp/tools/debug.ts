@@ -46,7 +46,7 @@ export function registerDebugTools(server: McpServer) {
   // =========================================================================
   server.tool(
     'succ_debug',
-    'Language-independent structured debugging. Create sessions, add hypotheses, track instrumented files, record results. Integrates with succ_dead_end for failed hypotheses.',
+    'Language-independent structured debugging. Create sessions, add hypotheses, track instrumented files, record results. Integrates with succ_dead_end for failed hypotheses.\n\nExamples:\n- Start: succ_debug(action="create", bug_description="Login fails with 500", error_output="TypeError: ...")\n- Hypothesize: succ_debug(action="hypothesis", description="DB pool exhausted", confidence="high", test="Check pool stats")\n- Record result: succ_debug(action="result", hypothesis_id=1, confirmed=true, logs="Pool: 0 available")\n- Resolve: succ_debug(action="resolve", root_cause="Pool not releasing", fix_description="Added release() in finally")',
     {
       action: z
         .enum([

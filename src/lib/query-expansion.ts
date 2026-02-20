@@ -8,16 +8,16 @@
 import { callLLM, getLLMConfig } from './llm.js';
 import type { LLMBackend } from './llm.js';
 
-const EXPANSION_PROMPT = `You are a search query expander. Given a user's search query about code, software development, or technical decisions, generate 3-5 alternative search queries that would help find relevant information.
+const EXPANSION_SYSTEM = `You are a search query expander. Given a user's search query about code, software development, or technical decisions, generate 3-5 alternative search queries that would help find relevant information.
 
 Rules:
 - Each query should capture a different aspect or phrasing of the original intent
 - Include synonyms, related concepts, and alternative terminology
 - Keep queries concise (3-8 words each)
 - Return ONLY the queries, one per line, no numbering or bullets
-- Do not repeat the original query
+- Do not repeat the original query`;
 
-User query: "{query}"
+const EXPANSION_PROMPT = `User query: "{query}"
 
 Alternative queries:`;
 
@@ -41,6 +41,7 @@ export async function expandQuery(query: string, mode?: LLMBackend): Promise<str
       {
         maxTokens: 200,
         temperature: 0.7,
+        systemPrompt: EXPANSION_SYSTEM,
       },
       configOverride
     );

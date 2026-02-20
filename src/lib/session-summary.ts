@@ -17,7 +17,7 @@ import { logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, type LLMBackend } from './llm.js';
-import { FACT_EXTRACTION_PROMPT } from '../prompts/index.js';
+import { FACT_EXTRACTION_SYSTEM, FACT_EXTRACTION_PROMPT } from '../prompts/index.js';
 import { getLLMTaskConfig } from './config.js';
 
 /**
@@ -65,7 +65,12 @@ export async function extractFactsWithLLM(
   try {
     const result = await callLLM(
       prompt,
-      { timeout: 30000, maxTokens: 2000, useSleepAgent: true },
+      {
+        timeout: 30000,
+        maxTokens: 2000,
+        useSleepAgent: true,
+        systemPrompt: FACT_EXTRACTION_SYSTEM,
+      },
       {
         backend: options.mode,
         model: options.model,

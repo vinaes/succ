@@ -162,7 +162,7 @@ export function registerConfigTools(server: McpServer) {
   // Tool: succ_checkpoint - Create and manage checkpoints (full backup/restore)
   server.tool(
     'succ_checkpoint',
-    'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).',
+    'Create or list checkpoints (full backup of memories, documents, brain vault). Use "create" to make a backup, "list" to see available checkpoints. Note: Restore requires CLI (succ checkpoint restore <file>).\n\nExamples:\n- Create backup: succ_checkpoint(action="create", compress=true)\n- List backups: succ_checkpoint(action="list")',
     {
       action: z
         .enum(['create', 'list'])

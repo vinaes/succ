@@ -49,6 +49,12 @@ export interface LLMOptions {
   useSleepAgent?: boolean;
   /** Use chat_llm config (for interactive chats like succ chat, onboarding) */
   useChatLLM?: boolean;
+  /**
+   * Separate system prompt for prompt caching optimization.
+   * When provided, sent as a dedicated system message before the user prompt.
+   * This enables LLM providers to cache the stable system prefix across calls.
+   */
+  systemPrompt?: string;
 }
 
 export interface ChatMessage {
@@ -194,13 +200,19 @@ export async function callLLM(
   const maxTokens = options.maxTokens || config.maxTokens || 2000;
   const temperature = options.temperature ?? config.temperature ?? 0.3;
 
+  // When systemPrompt is provided, prepend it for CLI backends
+  const effectivePrompt =
+    config.backend === 'claude' && options.systemPrompt
+      ? `System: ${options.systemPrompt}\n\n${prompt}`
+      : prompt;
+
   switch (config.backend) {
     case 'claude': {
       if (getClaudeMode() === 'ws') {
         const transport = await ClaudeWSTransport.getInstance();
-        return transport.send(prompt, { model: config.model, timeout });
+        return transport.send(effectivePrompt, { model: config.model, timeout });
       }
-      return runClaudeCLI(prompt, config.model, timeout);
+      return runClaudeCLI(effectivePrompt, config.model, timeout);
     }
 
     case 'api':
@@ -211,7 +223,8 @@ export async function callLLM(
         timeout,
         maxTokens,
         temperature,
-        config.apiKey
+        config.apiKey,
+        options.systemPrompt
       );
 
     default:
@@ -439,14 +452,21 @@ async function callApiLLM(
   timeout: number,
   maxTokens: number,
   temperature: number,
-  apiKey?: string
+  apiKey?: string,
+  systemPrompt?: string
 ): Promise<string> {
+  const messages: ChatMessage[] = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: buildApiHeaders(endpoint, apiKey),
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature,
       max_tokens: maxTokens,
     }),

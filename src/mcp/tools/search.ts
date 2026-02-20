@@ -22,7 +22,7 @@ export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
   server.tool(
     'succ_search',
-    'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. Output modes: full (default), lean (file+lines only, saves tokens). In projects without .succ/, returns a hint to initialize or use global memory.',
+    'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. Output modes: full (default), lean (file+lines only, saves tokens). In projects without .succ/, returns a hint to initialize or use global memory.\n\nExamples:\n- Search docs: succ_search(query="API authentication", limit=3)\n- Token-efficient: succ_search(query="config system", output="lean")',
     {
       query: z.string().describe('The search query'),
       limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
@@ -157,7 +157,7 @@ export function registerSearchTools(server: McpServer) {
   // Tool: succ_search_code - Search indexed code (hybrid BM25 + vector)
   server.tool(
     'succ_search_code',
-    'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).',
+    'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
     {
       query: z
         .string()

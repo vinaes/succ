@@ -24,7 +24,7 @@ export function registerGraphTools(server: McpServer) {
   // Tool: succ_link - Create/manage memory links (knowledge graph)
   server.tool(
     'succ_link',
-    'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.',
+    'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.\n\nExamples:\n- Link memories: succ_link(action="create", source_id=1, target_id=2, relation="caused_by")\n- View connections: succ_link(action="show", source_id=42)\n- Auto-link similar: succ_link(action="auto", threshold=0.8)\n- Full maintenance: succ_link(action="cleanup")',
     {
       action: z
         .enum([
@@ -322,7 +322,7 @@ ${relationStats}`;
   // Tool: succ_explore - Explore connected memories
   server.tool(
     'succ_explore',
-    'Explore the knowledge graph starting from a memory. Find connected memories through links.',
+    'Explore the knowledge graph starting from a memory. Find connected memories through links.\n\nExamples:\n- Explore connections: succ_explore(memory_id=42, depth=3)',
     {
       memory_id: z.number().describe('Starting memory ID'),
       depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),

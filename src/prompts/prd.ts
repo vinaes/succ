@@ -2,16 +2,18 @@
  * PRD Pipeline Prompt Templates
  *
  * Three core prompts:
- * 1. PRD_GENERATE_PROMPT — description → PRD markdown
- * 2. PRD_PARSE_PROMPT — PRD markdown → Task[] JSON
- * 3. TASK_EXECUTION_PROMPT — task context → agent instructions (used in Phase 2)
+ * 1. PRD_GENERATE — description -> PRD markdown
+ * 2. PRD_PARSE — PRD markdown -> Task[] JSON
+ * 3. TASK_EXECUTION — task context -> agent instructions
+ *
+ * Split into system + user for prompt caching optimization.
  */
 
 // ============================================================================
 // PRD Generation
 // ============================================================================
 
-export const PRD_GENERATE_PROMPT = `You are a senior software architect creating a Product Requirements Document (PRD) for an AI coding agent.
+export const PRD_GENERATE_SYSTEM = `You are a senior software architect creating a Product Requirements Document (PRD) for an AI coding agent.
 
 ## Your Task
 
@@ -76,9 +78,9 @@ Generate a Markdown document with EXACTLY these sections:
 4. Each story should be independently testable
 5. Include 3-15 stories (if more needed, the scope is too large)
 6. Be specific about acceptance criteria — vague criteria lead to premature completion
-7. Quality Gates must include at least one automated check
+7. Quality Gates must include at least one automated check`;
 
-## Technical Context (from codebase analysis)
+export const PRD_GENERATE_PROMPT = `## Technical Context (from codebase analysis)
 
 {codebase_context}
 
@@ -90,7 +92,7 @@ Generate a Markdown document with EXACTLY these sections:
 // PRD Parsing (into Tasks)
 // ============================================================================
 
-export const PRD_PARSE_PROMPT = `You are a task decomposition engine. Parse the given PRD into a JSON array of executable tasks.
+export const PRD_PARSE_SYSTEM = `You are a task decomposition engine. Parse the given PRD into a JSON array of executable tasks.
 
 ## Output Format
 
@@ -143,9 +145,9 @@ Each task must be completable in a SINGLE Claude Code session (~10 minutes, ~80K
 Your output will be validated:
 - Tasks with empty files_to_modify will generate a warning
 - Tasks count < 3 or > 25 will generate a warning
-- Circular dependencies will be rejected
+- Circular dependencies will be rejected`;
 
-## Technical Context (from codebase analysis)
+export const PRD_PARSE_PROMPT = `## Technical Context (from codebase analysis)
 
 {codebase_context}
 
@@ -154,7 +156,7 @@ Your output will be validated:
 {prd_content}`;
 
 // ============================================================================
-// Task Execution (Phase 2 — defined here for completeness)
+// Task Execution
 // ============================================================================
 
 export const TASK_EXECUTION_PROMPT = `You are an AI coding agent executing a specific task from a PRD pipeline.

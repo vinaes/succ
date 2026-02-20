@@ -23,7 +23,7 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   server.tool(
     'succ_prd_generate',
-    'Generate a PRD (Product Requirements Document) from a feature description. Auto-detects quality gates from project files. Returns PRD ID and parsed tasks.',
+    'Generate a PRD (Product Requirements Document) from a feature description. Auto-detects quality gates from project files. Returns PRD ID and parsed tasks.\n\nExamples:\n- succ_prd_generate(description="Add user auth with JWT", gates="test:npm test,lint:eslint .")',
     {
       description: z
         .string()
@@ -182,7 +182,7 @@ export function registerPrdTools(server: McpServer) {
   // --------------------------------------------------------------------------
   server.tool(
     'succ_prd_run',
-    'Execute or resume a PRD. Runs tasks in order with quality gates, branch isolation, and auto-commit. Use resume=true to continue an interrupted run.',
+    'Execute or resume a PRD. Runs tasks in order with quality gates, branch isolation, and auto-commit. Use resume=true to continue an interrupted run.\n\nExamples:\n- Run latest: succ_prd_run()\n- Resume: succ_prd_run(resume=true)\n- Dry run: succ_prd_run(dry_run=true)\n- Single task: succ_prd_run(task_id="task_001")',
     {
       prd_id: z.string().optional().describe('PRD ID. If omitted, uses latest PRD.'),
       resume: z
