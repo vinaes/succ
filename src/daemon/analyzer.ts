@@ -14,7 +14,7 @@ import { getEmbeddings } from '../lib/embeddings.js';
 import { saveMemory, hybridSearchDocs } from '../lib/storage/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM } from '../lib/llm.js';
-import { DISCOVERY_PROMPT } from '../prompts/index.js';
+import { DISCOVERY_SYSTEM, DISCOVERY_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -174,7 +174,7 @@ async function runDiscoveryAgent(
 
     const result = await callLLM(
       prompt,
-      { timeout: 60000, maxTokens: 2048, useSleepAgent: true },
+      { timeout: 60000, maxTokens: 2048, useSleepAgent: true, systemPrompt: DISCOVERY_SYSTEM },
       configOverride
     );
     return parseDiscoveries(result);

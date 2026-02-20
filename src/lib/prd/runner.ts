@@ -465,7 +465,8 @@ async function executeTask(
 
   // Gather context
   const context = await gatherTaskContext(task, prdId);
-  let prompt = buildTaskPrompt(task, prd, context);
+  const { system, user } = buildTaskPrompt(task, prd, context);
+  let prompt = `${system}\n\n${user}`;
 
   for (let attempt = 1; attempt <= task.max_attempts; attempt++) {
     console.log(`  Attempt ${attempt}/${task.max_attempts}...`);

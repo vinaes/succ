@@ -5,7 +5,7 @@
  * Uses TASK_EXECUTION_PROMPT template and fills in context.
  */
 
-import { TASK_EXECUTION_PROMPT } from '../../prompts/prd.js';
+import { TASK_EXECUTION_SYSTEM, TASK_EXECUTION_USER_PROMPT } from '../../prompts/prd.js';
 import type { Task, Prd } from './types.js';
 import type { TaskContext } from './context.js';
 
@@ -13,10 +13,18 @@ import type { TaskContext } from './context.js';
 // Build the agent prompt
 // ============================================================================
 
+export interface TaskPrompt {
+  /** Stable system instructions — cacheable across all tasks */
+  system: string;
+  /** Per-task user content with filled placeholders */
+  user: string;
+}
+
 /**
- * Build the full prompt for executing a task.
+ * Build the prompt for executing a task.
+ * Returns separate system/user parts for prompt caching optimization.
  */
-export function buildTaskPrompt(task: Task, prd: Prd, context: TaskContext): string {
+export function buildTaskPrompt(task: Task, prd: Prd, context: TaskContext): TaskPrompt {
   const acceptanceCriteria =
     task.acceptance_criteria.length > 0
       ? task.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')
@@ -34,10 +42,10 @@ export function buildTaskPrompt(task: Task, prd: Prd, context: TaskContext): str
 
   const qualityGates =
     prd.quality_gates.length > 0
-      ? prd.quality_gates.map((g) => `   - ${g.type}: \`${g.command}\``).join('\n')
-      : '   (No quality gates configured)';
+      ? prd.quality_gates.map((g) => `- ${g.type}: \`${g.command}\``).join('\n')
+      : '(No quality gates configured)';
 
-  return TASK_EXECUTION_PROMPT.replace('{task_title}', `${task.id}: ${task.title}`)
+  const user = TASK_EXECUTION_USER_PROMPT.replace('{task_title}', `${task.id}: ${task.title}`)
     .replace('{task_description}', task.description)
     .replace('{acceptance_criteria}', acceptanceCriteria)
     .replace('{files_to_modify}', filesToModify)
@@ -46,6 +54,8 @@ export function buildTaskPrompt(task: Task, prd: Prd, context: TaskContext): str
     .replace('{dead_end_warnings}', context.dead_end_warnings)
     .replace('{progress_so_far}', context.progress_so_far)
     .replace('{quality_gates}', qualityGates);
+
+  return { system: TASK_EXECUTION_SYSTEM, user };
 }
 
 /**

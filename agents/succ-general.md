@@ -90,7 +90,7 @@ succ_remember content="<giant 5000 word analysis>"  # Too big for one memory ent
 
 ### 4. After writing vault files — index them
 ```
-succ_index_file file=".succ/brain/knowledge/OpenClaw-Memory-Analysis.md"
+succ_index(action="doc", file=".succ/brain/knowledge/OpenClaw-Memory-Analysis.md")
 ```
 This makes the document searchable via `succ_search`.
 

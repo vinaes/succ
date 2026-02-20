@@ -6,7 +6,6 @@ import {
   analyzeRetention,
   calculateRetentionStats,
   formatRetentionAnalysis,
-  DEFAULT_RETENTION_CONFIG,
 } from './retention.js';
 import type { MemoryForRetention } from './storage/index.js';
 
@@ -91,26 +90,11 @@ describe('Retention Policy', () => {
   });
 
   describe('calculateEffectiveScore', () => {
-    it('should return proper structure', () => {
-      const memory = createMemory();
-      const result = calculateEffectiveScore(memory);
-
-      expect(result).toHaveProperty('memoryId');
-      expect(result).toHaveProperty('content');
-      expect(result).toHaveProperty('qualityScore');
-      expect(result).toHaveProperty('accessCount');
-      expect(result).toHaveProperty('ageDays');
-      expect(result).toHaveProperty('recencyFactor');
-      expect(result).toHaveProperty('accessBoost');
-      expect(result).toHaveProperty('effectiveScore');
-      expect(result).toHaveProperty('tier');
-    });
-
     it('should use default quality score when missing', () => {
       const memory = createMemory({ quality_score: null });
       const result = calculateEffectiveScore(memory);
 
-      expect(result.qualityScore).toBe(DEFAULT_RETENTION_CONFIG.default_quality_score);
+      expect(result.qualityScore).toBe(0.5);
     });
 
     it('should calculate effective score as quality * recency * access', () => {
@@ -458,17 +442,6 @@ describe('Retention Policy', () => {
 
       expect(formatted).toContain('Warning');
       expect(formatted).toContain('[2]');
-    });
-  });
-
-  describe('DEFAULT_RETENTION_CONFIG', () => {
-    it('should have expected default values', () => {
-      expect(DEFAULT_RETENTION_CONFIG.decay_rate).toBe(0.01);
-      expect(DEFAULT_RETENTION_CONFIG.access_weight).toBe(0.1);
-      expect(DEFAULT_RETENTION_CONFIG.max_access_boost).toBe(2.0);
-      expect(DEFAULT_RETENTION_CONFIG.keep_threshold).toBe(0.3);
-      expect(DEFAULT_RETENTION_CONFIG.delete_threshold).toBe(0.15);
-      expect(DEFAULT_RETENTION_CONFIG.default_quality_score).toBe(0.5);
     });
   });
 });

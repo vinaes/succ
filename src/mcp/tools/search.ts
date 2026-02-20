@@ -16,29 +16,49 @@ import {
 import { isGlobalOnlyMode, getReadinessGateConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
-import { trackTokenSavings, projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  trackTokenSavings,
+  projectPathParam,
+  applyProjectPath,
+  extractAnswerFromResults,
+} from '../helpers.js';
 
 export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
-  server.tool(
+  server.registerTool(
     'succ_search',
-    'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. Output modes: full (default), lean (file+lines only, saves tokens). In projects without .succ/, returns a hint to initialize or use global memory.',
     {
-      query: z.string().describe('The search query'),
-      limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
-      threshold: z
-        .number()
-        .optional()
-        .default(0.2)
-        .describe('Similarity threshold 0-1 (default: 0.2)'),
-      output: z
-        .enum(['full', 'lean'])
-        .optional()
-        .default('full')
-        .describe('Output mode: full (content blocks), lean (file+lines only, saves tokens)'),
-      project_path: projectPathParam,
+      description:
+        'Search the project knowledge base using hybrid search (BM25 + semantic). Returns relevant chunks from indexed documentation. Output modes: full (default), lean (file+lines only, saves tokens). In projects without .succ/, returns a hint to initialize or use global memory.\n\nExamples:\n- Search docs: succ_search(query="API authentication", limit=3)\n- Token-efficient: succ_search(query="config system", output="lean")',
+      inputSchema: {
+        query: z.string().describe('The search query'),
+        limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
+        threshold: z
+          .number()
+          .optional()
+          .default(0.2)
+          .describe('Similarity threshold 0-1 (default: 0.2)'),
+        output: z
+          .enum(['full', 'lean'])
+          .optional()
+          .default('full')
+          .describe('Output mode: full (content blocks), lean (file+lines only, saves tokens)'),
+        extract: z
+          .string()
+          .optional()
+          .describe(
+            'Extract a specific answer from results using LLM. Instead of returning raw results, returns a concise answer to this question. Adds latency but saves 50-80% output tokens.'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ query, limit, threshold, output, project_path }) => {
+    async ({ query, limit, threshold, output, extract, project_path }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -130,6 +150,20 @@ export function registerSearchTools(server: McpServer) {
         }
 
         const modeLabel = output !== 'full' ? ` [${output}]` : '';
+
+        // Smart Result Compression: extract specific answer via LLM
+        if (extract && results.length > 0) {
+          const answer = await extractAnswerFromResults(formatted, extract, 'succ_search');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${results.length} results for "${query}" (extracted):\n\n${answer}`,
+              },
+            ],
+          };
+        }
+
         return {
           content: [
             {
@@ -155,37 +189,52 @@ export function registerSearchTools(server: McpServer) {
   );
 
   // Tool: succ_search_code - Search indexed code (hybrid BM25 + vector)
-  server.tool(
+  server.registerTool(
     'succ_search_code',
-    'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).',
     {
-      query: z
-        .string()
-        .describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
-      limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
-      threshold: z
-        .number()
-        .optional()
-        .default(0.25)
-        .describe('Similarity threshold 0-1 (default: 0.25)'),
-      regex: z
-        .string()
-        .optional()
-        .describe('Regex filter — only return results whose content matches this pattern'),
-      symbol_type: z
-        .enum(['function', 'method', 'class', 'interface', 'type_alias'])
-        .optional()
-        .describe('Filter by AST symbol type (e.g., "function", "class")'),
-      output: z
-        .enum(['full', 'lean', 'signatures'])
-        .optional()
-        .default('full')
-        .describe(
-          'Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'
-        ),
-      project_path: projectPathParam,
+      description:
+        'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
+      inputSchema: {
+        query: z
+          .string()
+          .describe('What to search for (e.g., "useGlobalHooks", "authentication logic")'),
+        limit: z.number().optional().default(5).describe('Maximum number of results (default: 5)'),
+        threshold: z
+          .number()
+          .optional()
+          .default(0.25)
+          .describe('Similarity threshold 0-1 (default: 0.25)'),
+        regex: z
+          .string()
+          .optional()
+          .describe('Regex filter — only return results whose content matches this pattern'),
+        symbol_type: z
+          .enum(['function', 'method', 'class', 'interface', 'type_alias'])
+          .optional()
+          .describe('Filter by AST symbol type (e.g., "function", "class")'),
+        output: z
+          .enum(['full', 'lean', 'signatures'])
+          .optional()
+          .default('full')
+          .describe(
+            'Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'
+          ),
+        extract: z
+          .string()
+          .optional()
+          .describe(
+            'Extract a specific answer from results using LLM. Instead of returning raw results, returns a concise answer to this question. Adds latency but saves 50-80% output tokens.'
+          ),
+        project_path: projectPathParam,
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ query, limit, threshold, regex, symbol_type, output, project_path }) => {
+    async ({ query, limit, threshold, regex, symbol_type, output, extract, project_path }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -290,6 +339,20 @@ export function registerSearchTools(server: McpServer) {
         }
 
         const modeLabel = output !== 'full' ? ` [${output}]` : '';
+
+        // Smart Result Compression: extract specific answer via LLM
+        if (extract && codeResults.length > 0) {
+          const answer = await extractAnswerFromResults(formatted, extract, 'succ_search_code');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${codeResults.length} code matches for "${query}" (extracted):\n\n${answer}`,
+              },
+            ],
+          };
+        }
+
         return {
           content: [
             {

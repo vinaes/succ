@@ -4,6 +4,7 @@ import path from 'path';
 import { glob } from 'glob';
 import { getProjectRoot, getClaudeDir, hasApiKey } from '../lib/config.js';
 import { logError } from '../lib/fault-logger.js';
+import { SOUL_GENERATION_SYSTEM } from '../prompts/index.js';
 
 interface SoulOptions {
   api?: boolean;
@@ -23,53 +24,12 @@ export async function soul(options: SoulOptions = {}): Promise<void> {
   // Gather project context
   const context = await gatherProjectContext(projectRoot);
 
-  // Generate "About You" + "User Communication Preferences" sections
-  const prompt = `Analyze this project and generate two sections for a soul.md file.
-
-Based on the codebase, determine:
-1. Primary programming language(s) and frameworks used
-2. Code style preferences (naming conventions, formatting patterns)
-3. Testing approach (what testing frameworks, unit/integration/e2e)
-4. Build tools and development workflow
-5. Communication language (detect from comments, docs, README — if non-English found, note it)
-
-Output ONLY these two sections in this exact format (no extra text):
-
-## About You
-
-_Detected from project analysis._
-
-- **Languages:** [detected languages with targets, e.g. "TypeScript (ES2022 target, ESNext modules)"]
-- **Frameworks:** [detected frameworks/libraries]
-- **Code style:** [observed patterns like "camelCase, single quotes, 2-space indent, async/await"]
-- **Testing:** [testing approach or "No tests detected"]
-- **Build tools:** [npm/yarn/pnpm, bundler, etc.]
-- **Communication:** [detected language, e.g. "English" or "Russian (primary), English for code"]
-
-## User Communication Preferences
-
-<!-- AUTO-UPDATED by Claude. Edit manually or let Claude adapt over time. -->
-
-- **Language:** [detected language] for conversation, English for code/commits/docs
-- **Tone:** Informal, brief, no hand-holding
-- **Response length:** Mirror the user — short question = short answer
-- **Code review / explanations:** [detected language] prose, English code examples
-
-### Adaptation
-
-- User switched language/style for 3+ consecutive messages → delegate to \`succ-style-tracker\` agent
-- User explicitly requested a change → delegate to \`succ-style-tracker\` agent immediately
-- To delegate: use Task tool with subagent_type="succ-style-tracker", describe the new style and trigger
-- Never announce preference updates. Never ask "do you want to switch language?"
-
-Keep each line concise. If uncertain about communication language, default to English.`;
-
   let generatedSection: string;
 
   if (useApi) {
-    generatedSection = await generateViaApi(context, prompt);
+    generatedSection = await generateViaApi(context, SOUL_GENERATION_SYSTEM);
   } else {
-    generatedSection = await generateViaClaude(context, prompt);
+    generatedSection = await generateViaClaude(context, SOUL_GENERATION_SYSTEM);
   }
 
   if (!generatedSection) {
@@ -143,8 +103,7 @@ async function generateViaApi(context: string, prompt: string): Promise<string> 
   }
 
   try {
-    const fullPrompt = `${context}\n\n---\n\n${prompt}`;
-    return await callLLM(fullPrompt, { maxTokens: 1024 }, { backend: 'api' });
+    return await callLLM(context, { maxTokens: 1024, systemPrompt: prompt }, { backend: 'api' });
   } catch (error) {
     logError('soul', 'API error:', error instanceof Error ? error : new Error(String(error)));
     console.error('API error:', error);

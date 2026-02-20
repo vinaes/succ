@@ -179,9 +179,9 @@ describe('gatherTaskContext', () => {
     const result = await gatherTaskContext(makeTask(), 'prd_test');
 
     // Should still return valid context (empty memories or error message)
-    expect(result).toHaveProperty('recalled_memories');
-    expect(result).toHaveProperty('dead_end_warnings');
-    expect(result).toHaveProperty('progress_so_far');
+    expect(typeof result.recalled_memories).toBe('string');
+    expect(typeof result.dead_end_warnings).toBe('string');
+    expect(typeof result.progress_so_far).toBe('string');
   });
 
   it('should skip individual failed queries without aborting', async () => {

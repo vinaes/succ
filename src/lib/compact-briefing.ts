@@ -11,8 +11,11 @@ import { searchMemories, getRecentMemories } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { callLLM } from './llm.js';
 import {
+  BRIEFING_STRUCTURED_SYSTEM,
   BRIEFING_STRUCTURED_PROMPT,
+  BRIEFING_PROSE_SYSTEM,
   BRIEFING_PROSE_PROMPT,
+  BRIEFING_MINIMAL_SYSTEM,
   BRIEFING_MINIMAL_PROMPT,
 } from '../prompts/index.js';
 
@@ -150,12 +153,13 @@ function extractTopics(transcript: string): string[] {
  */
 async function generateBriefingText(
   prompt: string,
-  config: CompactBriefingConfig
+  config: CompactBriefingConfig,
+  systemPrompt?: string
 ): Promise<string> {
   const timeoutMs = config.timeout_ms || 30000;
 
   // Use unified llm.* config only
-  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000 });
+  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000, systemPrompt });
 }
 
 // ============================================================================
@@ -198,15 +202,19 @@ export async function generateCompactBriefing(
 
     // Select prompt based on format
     let promptTemplate: string;
+    let systemPrompt: string;
     switch (mergedConfig.format) {
       case 'prose':
+        systemPrompt = BRIEFING_PROSE_SYSTEM;
         promptTemplate = BRIEFING_PROSE_PROMPT;
         break;
       case 'minimal':
+        systemPrompt = BRIEFING_MINIMAL_SYSTEM;
         promptTemplate = BRIEFING_MINIMAL_PROMPT;
         break;
       case 'structured':
       default:
+        systemPrompt = BRIEFING_STRUCTURED_SYSTEM;
         promptTemplate = BRIEFING_STRUCTURED_PROMPT;
         break;
     }
@@ -217,7 +225,7 @@ export async function generateCompactBriefing(
       .replace('{memories_section}', memoriesSection || '');
 
     // Generate briefing using configured provider
-    const briefing = await generateBriefingText(prompt, mergedConfig);
+    const briefing = await generateBriefingText(prompt, mergedConfig, systemPrompt);
 
     if (!briefing.trim()) {
       return { success: false, error: 'Empty briefing generated' };

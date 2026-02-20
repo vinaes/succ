@@ -73,7 +73,7 @@ import {
   removeObservations,
   cleanupStaleObservations,
 } from '../lib/session-observations.js';
-import { REFLECTION_PROMPT } from '../prompts/index.js';
+import { REFLECTION_SYSTEM, REFLECTION_PROMPT } from '../prompts/index.js';
 import { matchRules } from '../lib/hook-rules.js';
 import type { Memory } from '../lib/storage/types.js';
 
@@ -390,7 +390,8 @@ async function writeReflection(
   try {
     reflectionText = await callLLM(prompt, {
       timeout: 60000,
-      useSleepAgent: true, // Use sleep_agent config if available
+      useSleepAgent: true,
+      systemPrompt: REFLECTION_SYSTEM,
     });
   } catch (err) {
     log(`[reflection] LLM call failed: ${err}`);

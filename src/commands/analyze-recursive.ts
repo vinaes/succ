@@ -5,6 +5,7 @@ import { NetworkError, ValidationError } from '../lib/errors.js';
 import { formatSymbolMap, batchChunks } from './analyze-helpers.js';
 import { cleanMarkdownOutput } from './analyze-utils.js';
 import { gatherMinimalContext, getExistingBrainDocs } from './analyze-profile.js';
+import { DOCUMENTATION_WRITER_SYSTEM_SHORT } from '../prompts/index.js';
 
 /** Threshold for switching to recursive analysis (chars) */
 export const RECURSIVE_ANALYSIS_THRESHOLD = 10_000;
@@ -58,8 +59,7 @@ async function callAnalyzeLLM(prompt: string, mode: 'claude' | 'api'): Promise<s
         messages: [
           {
             role: 'system',
-            content:
-              'You are an expert software documentation writer. Generate clear, concise documentation.',
+            content: DOCUMENTATION_WRITER_SYSTEM_SHORT,
           },
           { role: 'user', content: prompt },
         ],

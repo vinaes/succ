@@ -19,12 +19,11 @@ import * as path from 'path';
 import { saveMemoriesBatch, type MemoryBatchInput } from '../lib/storage/index.js';
 import { getEmbedding } from '../lib/embeddings.js';
 import { getSuccDir, getIdleReflectionConfig, getConfig } from '../lib/config.js';
-import { countTokens } from '../lib/token-counter.js';
 import { scoreMemory } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
-import { logError, logWarn } from '../lib/fault-logger.js';
-import { SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
+import { logWarn } from '../lib/fault-logger.js';
+import { FACT_EXTRACTION_SYSTEM, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
 // Types
@@ -133,77 +132,6 @@ export function parseTranscript(transcriptPath: string): TranscriptEntry[] {
   return entries;
 }
 
-/**
- * Format transcript entries for summarization
- */
-function formatEntries(entries: TranscriptEntry[]): string {
-  const parts: string[] = [];
-
-  for (const entry of entries) {
-    if (entry.type === 'user' && entry.message?.content) {
-      const content =
-        typeof entry.message.content === 'string'
-          ? entry.message.content
-          : entry.message.content.map((c) => c.text || '').join('\n');
-      if (content.trim()) {
-        parts.push(`USER: ${content.slice(0, 500)}`);
-      }
-    } else if (entry.type === 'assistant' && entry.message?.content) {
-      const content =
-        typeof entry.message.content === 'string'
-          ? entry.message.content
-          : entry.message.content.map((c) => c.text || '').join('\n');
-      if (content.trim()) {
-        parts.push(`ASSISTANT: ${content.slice(0, 1000)}`);
-      }
-    } else if (entry.tool_name) {
-      const input = JSON.stringify(entry.tool_input || {}).slice(0, 200);
-      parts.push(`TOOL[${entry.tool_name}]: ${input}`);
-    }
-  }
-
-  return parts.join('\n\n');
-}
-
-// ============================================================================
-// Chunking
-// ============================================================================
-
-/**
- * Split entries into chunks of approximately targetTokens each
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function chunkEntries(
-  entries: TranscriptEntry[],
-  targetTokens: number = 25000
-): TranscriptEntry[][] {
-  if (entries.length === 0) return [];
-
-  const chunks: TranscriptEntry[][] = [];
-  let currentChunk: TranscriptEntry[] = [];
-  let currentTokens = 0;
-
-  for (const entry of entries) {
-    const formatted = formatEntries([entry]);
-    const tokens = countTokens(formatted);
-
-    if (currentTokens + tokens > targetTokens && currentChunk.length > 0) {
-      chunks.push(currentChunk);
-      currentChunk = [];
-      currentTokens = 0;
-    }
-
-    currentChunk.push(entry);
-    currentTokens += tokens;
-  }
-
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
-
-  return chunks;
-}
-
 // ============================================================================
 // LLM Integration (uses shared llm.ts module)
 // ============================================================================
@@ -212,153 +140,17 @@ function chunkEntries(
  * Run LLM with a prompt and return the response
  * Uses sleep agent for background processing if enabled.
  */
-async function runLLM(prompt: string, timeoutMs: number = 60000): Promise<string> {
-  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000, useSleepAgent: true });
-}
-
-// ============================================================================
-// Summarization
-// ============================================================================
-
-/**
- * Summarize a single chunk of transcript
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function summarizeChunk(
-  entries: TranscriptEntry[],
-  chunkIndex: number,
-  totalChunks: number
+async function runLLM(
+  prompt: string,
+  timeoutMs: number = 60000,
+  systemPrompt?: string
 ): Promise<string> {
-  const formatted = formatEntries(entries);
-
-  if (!formatted.trim()) {
-    return '';
-  }
-
-  const prompt = `Summarize this part ${chunkIndex + 1}/${totalChunks} of a coding session transcript.
-
-Focus on:
-- What was accomplished (decisions made, code written/modified)
-- Problems encountered and how they were solved
-- Key technical details worth remembering
-
-Be concise but include specific details (file names, function names, error messages).
-
-Transcript:
----
-${formatted}
----
-
-Output a bullet-point summary (5-15 bullets).`;
-
-  try {
-    return await runLLM(prompt, 45000);
-  } catch (err) {
-    logError('daemon', 'Failed to summarize session chunk', err instanceof Error ? err : undefined);
-    return '';
-  }
-}
-
-/**
- * Combine multiple chunk summaries into a final handoff document
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function combineSummaries(summaries: string[]): Promise<string> {
-  const validSummaries = summaries.filter((s) => s.trim());
-
-  if (validSummaries.length === 0) {
-    return '';
-  }
-
-  if (validSummaries.length === 1) {
-    return validSummaries[0];
-  }
-
-  const prompt = `Combine these ${validSummaries.length} session summary parts into one cohesive handoff document.
-
-Structure the output as:
-
-## Accomplishments
-- What was completed
-
-## Current State
-- What's working
-- What's partially done
-
-## Key Decisions
-- Important choices made and why
-
-## Next Steps
-- What should be done next
-
-Keep it concise (300-500 words total).
-
-Summary Parts:
-${validSummaries.map((s, i) => `### Part ${i + 1}\n${s}`).join('\n\n')}`;
-
-  try {
-    return await runLLM(prompt, 60000);
-  } catch (err) {
-    logError(
-      'daemon',
-      'Failed to combine session summaries',
-      err instanceof Error ? err : undefined
-    );
-    // Fallback: just concatenate
-    return validSummaries.join('\n\n---\n\n');
-  }
-}
-
-/**
- * Extract reusable learnings from the summary
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function extractLearnings(summary: string): Promise<string[]> {
-  if (!summary.trim()) {
-    return [];
-  }
-
-  const prompt = `Extract reusable learnings from this session summary.
-
-Focus on:
-- Bug fixes: what was wrong and how it was fixed
-- Technical discoveries: APIs, patterns, gotchas
-- Workarounds found for specific problems
-- Configuration or setup knowledge
-
-Each learning should be a standalone, reusable piece of knowledge.
-Format as a bullet list with "-" prefix.
-If there are no notable learnings, output exactly: NONE
-
-Summary:
----
-${summary}
----`;
-
-  try {
-    const result = await runLLM(prompt, 30000);
-
-    if (result.toUpperCase().includes('NONE')) {
-      return [];
-    }
-
-    // Parse bullet points
-    const learnings = result
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith('-') || line.startsWith('•'))
-      .map((line) => line.replace(/^[-•]\s*/, '').trim())
-      .filter((line) => line.length > 10);
-
-    return learnings;
-  } catch (err) {
-    logError(
-      'daemon',
-      'Failed to extract learnings from summary',
-      err instanceof Error ? err : undefined
-    );
-    return [];
-  }
+  return callLLM(prompt, {
+    timeout: timeoutMs,
+    maxTokens: 2000,
+    useSleepAgent: true,
+    systemPrompt,
+  });
 }
 
 // ============================================================================
@@ -377,7 +169,7 @@ async function extractFactsFromContent(
   const prompt = SESSION_PROGRESS_EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
 
   try {
-    const result = await runLLM(prompt, 45000);
+    const result = await runLLM(prompt, 45000, FACT_EXTRACTION_SYSTEM);
     return parseFactsResponse(result);
   } catch (err) {
     log(`[session-processor] LLM extraction failed: ${err}`);

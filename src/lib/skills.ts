@@ -20,7 +20,9 @@ import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
 import { callLLM as sharedCallLLM, getLLMConfig, type LLMBackend } from './llm.js';
 import {
+  KEYWORD_EXTRACTION_SYSTEM,
   KEYWORD_EXTRACTION_PROMPT as KEYWORD_PROMPT,
+  SKILL_RANKING_SYSTEM,
   SKILL_RANKING_PROMPT as RANKING_PROMPT,
 } from '../prompts/index.js';
 
@@ -167,11 +169,12 @@ export function invalidateSkillsIndex(): void {
 async function callLLM(
   prompt: string,
   config: LLMConfig,
-  timeout: number = 15000
+  timeout: number = 15000,
+  systemPrompt?: string
 ): Promise<string> {
   return sharedCallLLM(
     prompt,
-    { timeout, maxTokens: 500 },
+    { timeout, maxTokens: 500, systemPrompt },
     {
       backend: config.backend,
       model: config.model,
@@ -193,7 +196,7 @@ export async function extractKeywords(prompt: string, config: LLMConfig): Promis
 
   try {
     logInfo('skills', `Calling LLM for keyword extraction (backend=${config.backend})`);
-    const result = await callLLM(llmPrompt, config, 30000); // 30s timeout for slow models
+    const result = await callLLM(llmPrompt, config, 30000, KEYWORD_EXTRACTION_SYSTEM);
     logInfo('skills', `LLM result: ${result.slice(0, 200)}`);
 
     // Parse JSON response
@@ -305,7 +308,7 @@ export async function rankSkillsWithLLM(
       'skills',
       `Ranking ${candidates.length} candidates with LLM (model=${rankingConfig.model})`
     );
-    const result = await callLLM(llmPrompt, rankingConfig, 30000);
+    const result = await callLLM(llmPrompt, rankingConfig, 30000, SKILL_RANKING_SYSTEM);
     logInfo('skills', `Ranking result: ${result.slice(0, 300)}`);
 
     // Parse JSON response

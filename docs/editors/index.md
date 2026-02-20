@@ -52,7 +52,7 @@ See the editor-specific guides for exact config file format and location.
 
 1. Your editor spawns the `succ-mcp` process
 2. Communication happens via JSON-RPC 2.0 over stdin/stdout
-3. succ provides 30 tools (search, code search, symbols, remember, recall, debug, PRD, web search, web fetch, etc.) and 4 resources
+3. succ provides 14 consolidated tools (search, code search, memory, indexing, debug, PRD, web search, web fetch, etc.) and 4 resources
 4. The editor calls these tools automatically when relevant
 
 See [MCP Server docs](../mcp.md) for the full list of available tools and resources.

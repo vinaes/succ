@@ -58,7 +58,7 @@ succ analyze
 | **Persistent Memory** | Decisions, learnings, patterns across sessions |
 | **Cross-Project** | Global memories shared between all projects |
 | **Knowledge Graph** | Link memories, LLM-enriched relations, community detection, centrality |
-| **MCP Native** | 30 tools — Claude uses succ tools directly |
+| **MCP Native** | 14 consolidated tools — Claude uses succ tools directly |
 | **Web Search** | Real-time web search via Perplexity Sonar (quick, quality, deep research) |
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
@@ -381,7 +381,7 @@ Automatically run the `succ-diff-reviewer` agent before every git commit to catc
 
 When enabled, Claude will run a diff review before each commit. Critical findings block the commit; high findings trigger a warning.
 
-Disabled by default. Set via `succ config_set preCommitReview true`.
+Disabled by default. Set via `succ_config(action="set", key="preCommitReview", value="true")`.
 
 </details>
 

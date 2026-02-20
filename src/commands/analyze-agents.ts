@@ -11,6 +11,7 @@ import {
   printTimingSummary,
   type AgentTiming,
 } from './analyze-utils.js';
+import { PROJECT_ANALYSIS_WRAPPER, DOCUMENTATION_WRITER_SYSTEM } from '../prompts/index.js';
 
 export interface Agent {
   name: string;
@@ -181,13 +182,10 @@ export async function runClaudeAgent(agent: Agent, context: string): Promise<voi
   fs.mkdirSync(outputDir, { recursive: true });
 
   // Build prompt with context
-  const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:
-
-${context}
-
----
-
-${agent.prompt}`;
+  const fullPrompt = PROJECT_ANALYSIS_WRAPPER.replace('{context}', context).replace(
+    '{agent_prompt}',
+    agent.prompt
+  );
 
   const stdout = await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 180000 });
 
@@ -259,8 +257,7 @@ export async function runAgentsApi(
           messages: [
             {
               role: 'system',
-              content:
-                'You are an expert software documentation writer. Analyze the provided code and generate high-quality technical documentation in markdown format. Be precise and thorough.',
+              content: DOCUMENTATION_WRITER_SYSTEM,
             },
             {
               role: 'user',
@@ -316,8 +313,11 @@ export function createLLMCaller(
   mode: 'api' | 'claude',
   maxTokens: number
 ): (prompt: string, context: string) => Promise<string> {
+  const systemPrompt =
+    'You are analyzing a software project. Provide concrete, actionable insights.';
+
   return async (prompt: string, context: string) => {
-    const fullPrompt = `You are analyzing a software project. Here is the project context:\n\n${context}\n\n---\n\n${prompt}`;
+    const userContent = `Project context:\n\n${context}\n\n---\n\n${prompt}`;
 
     if (mode === 'api') {
       // Use callApiRaw from analyze-profile.ts
@@ -347,7 +347,10 @@ export function createLLMCaller(
         headers,
         body: JSON.stringify({
           model: cfg.model,
-          messages: [{ role: 'user', content: fullPrompt }],
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
           max_tokens: maxTokens,
         }),
       });
@@ -359,7 +362,7 @@ export function createLLMCaller(
       return data.choices?.[0]?.message?.content || '';
     } else {
       // Claude CLI mode — use spawnClaudeCLI
-      return spawnClaudeCLI(fullPrompt);
+      return spawnClaudeCLI(`System: ${systemPrompt}\n\n${userContent}`);
     }
   };
 }

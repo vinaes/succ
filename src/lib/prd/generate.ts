@@ -11,7 +11,7 @@ import { execSync } from 'child_process';
 import { callLLMWithFallback } from '../llm.js';
 import { getProjectRoot, getConfig } from '../config.js';
 import type { QualityGatesConfig } from '../config.js';
-import { PRD_GENERATE_PROMPT } from '../../prompts/prd.js';
+import { PRD_GENERATE_SYSTEM, PRD_GENERATE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createPrd, createGate } from './types.js';
 import { savePrd, savePrdMarkdown, saveTasks } from './state.js';
@@ -332,6 +332,7 @@ export async function generatePrd(
     maxTokens: 6000,
     temperature: 0.5,
     timeout: 120_000, // PRD generation needs more time than default 30s
+    systemPrompt: PRD_GENERATE_SYSTEM,
   });
 
   // 4. Detect or parse quality gates

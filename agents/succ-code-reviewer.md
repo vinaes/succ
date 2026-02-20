@@ -166,7 +166,7 @@ OWASP categories checked: A01-A10
 - Use Obsidian format: YAML frontmatter (`date`, `tags`, `status`), `[[wikilinks]]`, Mermaid diagrams
 - Save review reports to `.succ/brain/knowledge/Reviews/` (e.g. `2026-02-09_auth-module-review.md`)
 - Key findings → `succ_remember` with tags `["review", "security"]` or `["review", "bug"]`
-- After writing vault files → `succ_index_file` to make them searchable
+- After writing vault files → `succ_index(action="doc")` to make them searchable
 - Do NOT create files in project root, `/output/`, `/review/`, or any other directory outside `.succ/brain/`
 
 ## Rules

@@ -29,7 +29,7 @@ import { cosineSimilarity, getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig, getLLMTaskConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { callLLM, type LLMBackend } from './llm.js';
-import { MEMORY_MERGE_PROMPT } from '../prompts/index.js';
+import { MEMORY_MERGE_SYSTEM, MEMORY_MERGE_PROMPT } from '../prompts/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -575,7 +575,12 @@ export async function llmMergeContent(
   try {
     const result = await callLLM(
       prompt,
-      { timeout: options.timeoutMs || 30000, maxTokens: 500, useSleepAgent: true },
+      {
+        timeout: options.timeoutMs || 30000,
+        maxTokens: 500,
+        useSleepAgent: true,
+        systemPrompt: MEMORY_MERGE_SYSTEM,
+      },
       {
         backend: options.mode,
         model: options.model,

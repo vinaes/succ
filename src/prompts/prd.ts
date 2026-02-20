@@ -2,16 +2,18 @@
  * PRD Pipeline Prompt Templates
  *
  * Three core prompts:
- * 1. PRD_GENERATE_PROMPT — description → PRD markdown
- * 2. PRD_PARSE_PROMPT — PRD markdown → Task[] JSON
- * 3. TASK_EXECUTION_PROMPT — task context → agent instructions (used in Phase 2)
+ * 1. PRD_GENERATE — description -> PRD markdown
+ * 2. PRD_PARSE — PRD markdown -> Task[] JSON
+ * 3. TASK_EXECUTION — task context -> agent instructions
+ *
+ * Split into system + user for prompt caching optimization.
  */
 
 // ============================================================================
 // PRD Generation
 // ============================================================================
 
-export const PRD_GENERATE_PROMPT = `You are a senior software architect creating a Product Requirements Document (PRD) for an AI coding agent.
+export const PRD_GENERATE_SYSTEM = `You are a senior software architect creating a Product Requirements Document (PRD) for an AI coding agent.
 
 ## Your Task
 
@@ -76,9 +78,9 @@ Generate a Markdown document with EXACTLY these sections:
 4. Each story should be independently testable
 5. Include 3-15 stories (if more needed, the scope is too large)
 6. Be specific about acceptance criteria — vague criteria lead to premature completion
-7. Quality Gates must include at least one automated check
+7. Quality Gates must include at least one automated check`;
 
-## Technical Context (from codebase analysis)
+export const PRD_GENERATE_PROMPT = `## Technical Context (from codebase analysis)
 
 {codebase_context}
 
@@ -90,7 +92,7 @@ Generate a Markdown document with EXACTLY these sections:
 // PRD Parsing (into Tasks)
 // ============================================================================
 
-export const PRD_PARSE_PROMPT = `You are a task decomposition engine. Parse the given PRD into a JSON array of executable tasks.
+export const PRD_PARSE_SYSTEM = `You are a task decomposition engine. Parse the given PRD into a JSON array of executable tasks.
 
 ## Output Format
 
@@ -143,9 +145,9 @@ Each task must be completable in a SINGLE Claude Code session (~10 minutes, ~80K
 Your output will be validated:
 - Tasks with empty files_to_modify will generate a warning
 - Tasks count < 3 or > 25 will generate a warning
-- Circular dependencies will be rejected
+- Circular dependencies will be rejected`;
 
-## Technical Context (from codebase analysis)
+export const PRD_PARSE_PROMPT = `## Technical Context (from codebase analysis)
 
 {codebase_context}
 
@@ -154,12 +156,39 @@ Your output will be validated:
 {prd_content}`;
 
 // ============================================================================
-// Task Execution (Phase 2 — defined here for completeness)
+// Task Execution — split into system (stable, cacheable) + user (per-task)
 // ============================================================================
 
-export const TASK_EXECUTION_PROMPT = `You are an AI coding agent executing a specific task from a PRD pipeline.
+/** Stable instructions for PRD task execution agents. Cacheable across all tasks. */
+export const TASK_EXECUTION_SYSTEM = `You are an AI coding agent executing a specific task from a PRD pipeline.
 
-## Your Task
+## Rules
+
+1. Focus ONLY on this task — do not modify files outside of "Files to Modify"
+2. Follow existing code conventions (imports, naming, patterns)
+3. If a task is impossible or blocked, explain WHY clearly instead of producing broken code
+4. Run quality gates after your changes (listed in the task context below)
+5. Do not add comments explaining what you changed — the code should be self-explanatory
+6. Do not add extra features beyond what acceptance criteria require
+
+## Memory Tools
+
+You have access to succ MCP tools. Use them:
+
+- **succ_recall** query="relevant topic" — Search past decisions, patterns, gotchas before starting work
+- **succ_remember** content="what you learned" type="learning" — Record important decisions or patterns you discover
+- **succ_dead_end** approach="what you tried" why_failed="why it failed" — Record failed approaches so future tasks don't repeat them
+- **succ_search** query="topic" — Search project documentation
+- **succ_search_code** query="function name" — Search source code
+
+Always pass project_path to these tools.
+
+## Important
+
+If you cannot complete this task, output a clear explanation starting with "BLOCKED:" followed by the reason. This allows the pipeline to record a dead-end and retry with different context.`;
+
+/** Per-task template with {placeholders} for dynamic content. */
+export const TASK_EXECUTION_USER_PROMPT = `## Your Task
 
 {task_title}
 
@@ -189,28 +218,9 @@ export const TASK_EXECUTION_PROMPT = `You are an AI coding agent executing a spe
 
 {progress_so_far}
 
-## Rules
+## Quality Gates
 
-1. Focus ONLY on this task — do not modify files outside of "Files to Modify"
-2. Follow existing code conventions (imports, naming, patterns)
-3. If a task is impossible or blocked, explain WHY clearly instead of producing broken code
-4. Run quality gates after your changes:
-{quality_gates}
-5. Do not add comments explaining what you changed — the code should be self-explanatory
-6. Do not add extra features beyond what acceptance criteria require
+{quality_gates}`;
 
-## Memory Tools
-
-You have access to succ MCP tools. Use them:
-
-- **succ_recall** query="relevant topic" — Search past decisions, patterns, gotchas before starting work
-- **succ_remember** content="what you learned" type="learning" — Record important decisions or patterns you discover
-- **succ_dead_end** approach="what you tried" why_failed="why it failed" — Record failed approaches so future tasks don't repeat them
-- **succ_search** query="topic" — Search project documentation
-- **succ_search_code** query="function name" — Search source code
-
-Always pass project_path to these tools.
-
-## Important
-
-If you cannot complete this task, output a clear explanation starting with "BLOCKED:" followed by the reason. This allows the pipeline to record a dead-end and retry with different context.`;
+/** @deprecated Use TASK_EXECUTION_SYSTEM + TASK_EXECUTION_USER_PROMPT separately for caching. */
+export const TASK_EXECUTION_PROMPT = TASK_EXECUTION_SYSTEM + '\n\n' + TASK_EXECUTION_USER_PROMPT;

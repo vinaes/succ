@@ -3,20 +3,15 @@
  *
  * Used for session summarization and handoff between contexts.
  * Three formats: structured (XML), prose (conversational), minimal (4 lines).
+ *
+ * Split into system + user for prompt caching optimization.
  */
 
 /**
  * Structured format with XML tags.
  * Used by compact-briefing.ts as default format.
  */
-export const BRIEFING_STRUCTURED_PROMPT = `Summarize this coding session for handoff to a fresh context.
-
-Session transcript:
----
-{transcript}
----
-
-{memories_section}
+export const BRIEFING_STRUCTURED_SYSTEM = `Summarize this coding session for handoff to a fresh context.
 
 Output in this EXACT XML format (keep the XML tags exactly as shown):
 
@@ -45,18 +40,18 @@ Output in this EXACT XML format (keep the XML tags exactly as shown):
 Be concise and specific. Include file names, function names, and technical details.
 If a section is empty (e.g., no decisions), output the tag with "None" inside.`;
 
-/**
- * Prose format with conversational summary.
- * Used by compact-briefing.ts when format=prose.
- */
-export const BRIEFING_PROSE_PROMPT = `Summarize this coding session for handoff to a fresh context.
-
-Session transcript:
+export const BRIEFING_STRUCTURED_PROMPT = `Session transcript:
 ---
 {transcript}
 ---
 
-{memories_section}
+{memories_section}`;
+
+/**
+ * Prose format with conversational summary.
+ * Used by compact-briefing.ts when format=prose.
+ */
+export const BRIEFING_PROSE_SYSTEM = `Summarize this coding session for handoff to a fresh context.
 
 Output in this EXACT XML format:
 
@@ -72,18 +67,18 @@ Output in this EXACT XML format:
 
 Be conversational but concise. Include specific technical details (files, functions, errors).`;
 
-/**
- * Minimal format - just 4 lines.
- * Used by compact-briefing.ts when format=minimal.
- */
-export const BRIEFING_MINIMAL_PROMPT = `Summarize this coding session in exactly 4 lines.
-
-Session transcript:
+export const BRIEFING_PROSE_PROMPT = `Session transcript:
 ---
 {transcript}
 ---
 
-{memories_section}
+{memories_section}`;
+
+/**
+ * Minimal format - just 4 lines.
+ * Used by compact-briefing.ts when format=minimal.
+ */
+export const BRIEFING_MINIMAL_SYSTEM = `Summarize this coding session in exactly 4 lines.
 
 Output EXACTLY 4 lines:
 Task: [what was being done]
@@ -93,21 +88,18 @@ Next: [what to do next]
 
 Be extremely concise. Use technical terms.`;
 
-/**
- * Session briefing for precompute-context.
- * Used to prepare context for the next session.
- */
-export const SESSION_BRIEFING_PROMPT = `You are preparing a briefing for an AI assistant's next coding session.
-
-Session transcript (recent activity):
+export const BRIEFING_MINIMAL_PROMPT = `Session transcript:
 ---
 {transcript}
 ---
 
-Relevant memories from past sessions:
----
-{memories}
----
+{memories_section}`;
+
+/**
+ * Session briefing for precompute-context.
+ * Used to prepare context for the next session.
+ */
+export const SESSION_BRIEFING_SYSTEM = `You are preparing a briefing for an AI assistant's next coding session.
 
 Generate a concise briefing (3-5 bullet points) that will help the assistant quickly understand:
 1. What was being worked on
@@ -124,3 +116,13 @@ Output format:
 
 ## Suggested Focus
 [One sentence about what to focus on next]`;
+
+export const SESSION_BRIEFING_PROMPT = `Session transcript (recent activity):
+---
+{transcript}
+---
+
+Relevant memories from past sessions:
+---
+{memories}
+---`;

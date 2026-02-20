@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { PostgresBackend, createPostgresBackend } from './postgresql.js';
+import { getEmbeddingInfo } from '../../embeddings.js';
 
 const TEST_CONFIG = {
   backend: 'postgresql' as const,
@@ -42,6 +43,9 @@ describe('PostgreSQL Backend Integration', async () => {
     return;
   }
 
+  // Use real embedding dimensions from config (tables are created with this size)
+  const DIMS = getEmbeddingInfo().dimensions ?? 384;
+
   let backend: PostgresBackend;
 
   beforeAll(async () => {
@@ -61,7 +65,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should upsert and search documents', async () => {
-      const embedding = new Array(384).fill(0).map(() => Math.random());
+      const embedding = new Array(DIMS).fill(0).map(() => Math.random());
 
       await backend.upsertDocumentsBatch([
         {
@@ -87,7 +91,7 @@ describe('PostgreSQL Backend Integration', async () => {
           content: 'a',
           startLine: 1,
           endLine: 1,
-          embedding: new Array(384).fill(0.1),
+          embedding: new Array(DIMS).fill(0.1),
         },
         {
           filePath: '/test/b.ts',
@@ -95,7 +99,7 @@ describe('PostgreSQL Backend Integration', async () => {
           content: 'b',
           startLine: 1,
           endLine: 1,
-          embedding: new Array(384).fill(0.2),
+          embedding: new Array(DIMS).fill(0.2),
         },
       ];
 
@@ -106,7 +110,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should delete documents by path', async () => {
-      const embedding = new Array(384).fill(0.3);
+      const embedding = new Array(DIMS).fill(0.3);
 
       await backend.upsertDocumentsBatch([
         {
@@ -130,8 +134,8 @@ describe('PostgreSQL Backend Integration', async () => {
 
     it('should search documents by vector similarity', async () => {
       // Use distinct random embeddings for deterministic matching
-      const embedding1 = new Array(384).fill(0).map(() => Math.random());
-      const embedding2 = new Array(384).fill(0).map(() => Math.random());
+      const embedding1 = new Array(DIMS).fill(0).map(() => Math.random());
+      const embedding2 = new Array(DIMS).fill(0).map(() => Math.random());
 
       await backend.upsertDocumentsBatch([
         {
@@ -162,7 +166,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
   describe('Memory Operations', () => {
     it('should save and retrieve memory', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       // saveMemory signature: (content, embedding, tags, source, type, ...)
       const id = await backend.saveMemory(
@@ -186,7 +190,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should get recent memories', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id1 = await backend.saveMemory('Memory 1', embedding);
       const id2 = await backend.saveMemory('Memory 2', embedding);
@@ -200,7 +204,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should delete memory', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id = await backend.saveMemory('To be deleted', embedding);
 
@@ -214,14 +218,14 @@ describe('PostgreSQL Backend Integration', async () => {
     it('should search memories by vector similarity', async () => {
       // Use distinct embeddings — uniform fill has same cosine direction,
       // so we make them differ in structure
-      const embedding1 = new Array(384).fill(0).map((_, i) => (i < 192 ? 0.9 : 0.1));
-      const embedding2 = new Array(384).fill(0).map((_, i) => (i < 192 ? 0.1 : 0.9));
+      const embedding1 = new Array(DIMS).fill(0).map((_, i) => (i < DIMS / 2 ? 0.9 : 0.1));
+      const embedding2 = new Array(DIMS).fill(0).map((_, i) => (i < DIMS / 2 ? 0.1 : 0.9));
 
       const id1 = await backend.saveMemory('First memory', embedding1);
       const id2 = await backend.saveMemory('Second memory', embedding2);
 
       // Query with embedding close to embedding1
-      const queryEmbedding = new Array(384).fill(0).map((_, i) => (i < 192 ? 0.9 : 0.1));
+      const queryEmbedding = new Array(DIMS).fill(0).map((_, i) => (i < DIMS / 2 ? 0.9 : 0.1));
       const results = await backend.searchMemories(queryEmbedding, 10, 0.0);
 
       expect(results.length).toBeGreaterThan(0);
@@ -235,7 +239,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
   describe('Memory Links', () => {
     it('should create and retrieve memory links', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id1 = await backend.saveMemory('Memory A', embedding);
       const id2 = await backend.saveMemory('Memory B', embedding);
@@ -312,7 +316,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
   describe('Global Memory Operations', () => {
     it('should save and search global memories', async () => {
-      const embedding = new Array(384).fill(0.3);
+      const embedding = new Array(DIMS).fill(0.3);
 
       const id = await backend.saveGlobalMemory(
         'Global knowledge about TypeScript patterns',
@@ -332,7 +336,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should get recent global memories', async () => {
-      const embedding = new Array(384).fill(0.4);
+      const embedding = new Array(DIMS).fill(0.4);
 
       const id1 = await backend.saveGlobalMemory('Global mem 1', embedding, ['test']);
       const id2 = await backend.saveGlobalMemory('Global mem 2', embedding, ['test']);
@@ -346,7 +350,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should delete global memory', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id = await backend.saveGlobalMemory('To delete globally', embedding);
       const deleted = await backend.deleteGlobalMemory(id);
@@ -358,7 +362,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should get global memory stats', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id = await backend.saveGlobalMemory('Stats test', embedding, ['stats']);
 
@@ -489,7 +493,7 @@ describe('PostgreSQL Backend Integration', async () => {
 
   describe('Additional Operations', () => {
     it('should clear all documents', async () => {
-      const embedding = new Array(384).fill(0.1);
+      const embedding = new Array(DIMS).fill(0.1);
 
       await backend.upsertDocumentsBatch([
         {
@@ -516,7 +520,7 @@ describe('PostgreSQL Backend Integration', async () => {
     });
 
     it('should increment memory access count', async () => {
-      const embedding = new Array(384).fill(0.5);
+      const embedding = new Array(DIMS).fill(0.5);
 
       const id = await backend.saveMemory('Access count test', embedding);
 

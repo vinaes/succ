@@ -41,9 +41,8 @@ Explain these concepts naturally throughout the conversation (start with the fir
    - Runs silently, keeps knowledge fresh
 
 5. **Web Tools** (mention if relevant)
-   - succ_fetch: fetches any URL as clean markdown (strips ads, nav)
-   - succ_extract: extracts structured data from web pages via LLM
-   - Web search via Perplexity for up-to-date information
+   - succ_fetch: fetches any URL as clean markdown (strips ads, nav); pass schema= to extract structured data
+   - Web search via Perplexity for up-to-date information (succ_web)
 
 6. **PRD Pipeline** (mention if relevant)
    - Generate product requirements from descriptions

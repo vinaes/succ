@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import Database from 'better-sqlite3';
 import { getDbPath, getGlobalDbPath } from '../config.js';
 import { initDb, initGlobalDb, loadSqliteVec } from './schema.js';
@@ -66,7 +68,14 @@ export function applySqliteTuning(database: Database.Database): void {
  */
 export function getDb(): Database.Database {
   if (!db) {
-    db = new Database(getDbPath());
+    const dbPath = getDbPath();
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      throw new Error(
+        `Project not initialized: directory ${dir} does not exist. Run \`succ init\` first.`
+      );
+    }
+    db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
     applySqliteTuning(db);
     loadSqliteVec(db);
