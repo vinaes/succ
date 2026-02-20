@@ -55,6 +55,14 @@ export interface LLMOptions {
    * This enables LLM providers to cache the stable system prefix across calls.
    */
   systemPrompt?: string;
+  /**
+   * Enable Anthropic-style cache_control on system messages.
+   * When true + systemPrompt present, emits content block format:
+   *   { role: 'system', content: [{ type: 'text', text: ..., cache_control: { type: 'ephemeral' } }] }
+   * Auto-enabled for anthropic.com and openrouter.ai endpoints.
+   * Set to false to explicitly disable. No-op for localhost/other endpoints.
+   */
+  cacheControl?: boolean;
 }
 
 export interface ChatMessage {
@@ -224,7 +232,8 @@ export async function callLLM(
         maxTokens,
         temperature,
         config.apiKey,
-        options.systemPrompt
+        options.systemPrompt,
+        options.cacheControl
       );
 
     default:
@@ -453,11 +462,24 @@ async function callApiLLM(
   maxTokens: number,
   temperature: number,
   apiKey?: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  cacheControl?: boolean
 ): Promise<string> {
-  const messages: ChatMessage[] = [];
+  // Auto-enable cache_control for Anthropic direct API only.
+  // OpenRouter uses OpenAI-compatible format — cache_control content blocks may be rejected.
+  // Set cacheControl: true explicitly if your OpenRouter model supports it.
+  const useCache = cacheControl ?? endpoint.includes('anthropic.com');
+
+  const messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }> = [];
   if (systemPrompt) {
-    messages.push({ role: 'system', content: systemPrompt });
+    if (useCache) {
+      messages.push({
+        role: 'system',
+        content: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      });
+    } else {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
   }
   messages.push({ role: 'user', content: prompt });
 

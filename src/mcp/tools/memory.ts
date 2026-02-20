@@ -52,6 +52,7 @@ import {
   extractAnswerFromResults,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { TEMPORAL_SUBQUERY_SYSTEM } from '../../prompts/index.js';
 
 /**
  * Extended memory result type with all optional fields
@@ -1503,8 +1504,7 @@ async function extractTemporalSubqueriesAsync(query: string): Promise<string[]> 
       [
         {
           role: 'system',
-          content:
-            'Extract temporal sub-queries from the user\'s search query. If the query asks about a time range (e.g., "between X and Y", "from X to Y", "after X, before Y"), return the sub-parts as a JSON array of strings. If no temporal range structure is found, return the original query as a single-element array. Return ONLY a valid JSON array of strings, nothing else.',
+          content: TEMPORAL_SUBQUERY_SYSTEM,
         },
         { role: 'user', content: query },
       ],

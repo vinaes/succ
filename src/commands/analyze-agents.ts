@@ -11,6 +11,7 @@ import {
   printTimingSummary,
   type AgentTiming,
 } from './analyze-utils.js';
+import { PROJECT_ANALYSIS_WRAPPER, DOCUMENTATION_WRITER_SYSTEM } from '../prompts/index.js';
 
 export interface Agent {
   name: string;
@@ -181,13 +182,10 @@ export async function runClaudeAgent(agent: Agent, context: string): Promise<voi
   fs.mkdirSync(outputDir, { recursive: true });
 
   // Build prompt with context
-  const fullPrompt = `You are analyzing a software project. Here is the project structure and key files:
-
-${context}
-
----
-
-${agent.prompt}`;
+  const fullPrompt = PROJECT_ANALYSIS_WRAPPER.replace('{context}', context).replace(
+    '{agent_prompt}',
+    agent.prompt
+  );
 
   const stdout = await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 180000 });
 
@@ -259,8 +257,7 @@ export async function runAgentsApi(
           messages: [
             {
               role: 'system',
-              content:
-                'You are an expert software documentation writer. Analyze the provided code and generate high-quality technical documentation in markdown format. Be precise and thorough.',
+              content: DOCUMENTATION_WRITER_SYSTEM,
             },
             {
               role: 'user',

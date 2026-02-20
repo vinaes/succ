@@ -45,7 +45,7 @@ export {
 } from './extraction.js';
 
 // Memory prompts (consolidate)
-export { MEMORY_MERGE_SYSTEM, MEMORY_MERGE_PROMPT } from './memory.js';
+export { MEMORY_MERGE_SYSTEM, MEMORY_MERGE_PROMPT, TEMPORAL_SUBQUERY_SYSTEM } from './memory.js';
 
 // Skills prompts
 export {
@@ -64,10 +64,26 @@ export {
 } from './daemon.js';
 
 // Analysis prompts (analyze command)
-export { PROJECT_ANALYSIS_WRAPPER, DOCUMENTATION_WRITER_SYSTEM } from './analyze.js';
+export {
+  PROJECT_ANALYSIS_WRAPPER,
+  DOCUMENTATION_WRITER_SYSTEM,
+  DOCUMENTATION_WRITER_SYSTEM_SHORT,
+} from './analyze.js';
 
 // Quality scoring
 export { QUALITY_SCORER_SYSTEM } from './quality.js';
+
+// Query expansion prompts
+export { EXPANSION_SYSTEM, EXPANSION_PROMPT } from './query-expansion.js';
+
+// Graph relation classification prompts
+export { CLASSIFY_SYSTEM, CLASSIFY_PROMPT_SINGLE, CLASSIFY_PROMPT_BATCH } from './graph.js';
+
+// Supersession prompts
+export { SUPERSESSION_SYSTEM, SUPERSESSION_PROMPT } from './supersession.js';
+
+// Reflection synthesis prompts
+export { SYNTHESIS_SYSTEM, SYNTHESIS_PROMPT } from './synthesis.js';
 
 // PRD pipeline prompts
 export {
@@ -75,5 +91,10 @@ export {
   PRD_GENERATE_PROMPT,
   PRD_PARSE_SYSTEM,
   PRD_PARSE_PROMPT,
+  TASK_EXECUTION_SYSTEM,
+  TASK_EXECUTION_USER_PROMPT,
   TASK_EXECUTION_PROMPT,
 } from './prd.js';
+
+// Soul generation prompts
+export { SOUL_GENERATION_SYSTEM } from './soul.js';

@@ -18,23 +18,7 @@ import {
   incrementCorrectionCount,
 } from './storage/index.js';
 import type { CommunityResult } from './graph/community-detection.js';
-
-const SYNTHESIS_SYSTEM = `You are analyzing a cluster of related observations from a developer's coding sessions.
-
-Based on the observations, extract 1-3 high-level patterns, preferences, or learnings.
-Each should be a clear, concise statement that captures recurring behavior or important context.
-
-Rules:
-- Only output patterns that emerge from MULTIPLE observations
-- Be specific: include tool names, language preferences, workflow patterns
-- Do NOT repeat individual observations — synthesize them
-- If observations are too diverse to synthesize, output "NO_PATTERNS"
-
-Output as JSON array:
-[{"content": "...", "type": "pattern|learning"}]`;
-
-const SYNTHESIS_PROMPT = `Observations:
-{observations}`;
+import { SYNTHESIS_SYSTEM, SYNTHESIS_PROMPT } from '../prompts/index.js';
 
 const MIN_CLUSTER_SIZE = 5;
 const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;

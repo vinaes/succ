@@ -241,7 +241,8 @@ function dispatchTask(
   // Build a promise that gathers context, builds prompt, then executes
   const promise = (async (): Promise<WorkerResult> => {
     const context = await gatherTaskContext(task, prdId);
-    const prompt = buildTaskPrompt(task, prd, context);
+    const { system, user } = buildTaskPrompt(task, prd, context);
+    const prompt = `${system}\n\n${user}`;
 
     const executeOptions: ExecuteOptions = {
       cwd: wt.path, // worker runs in its own worktree

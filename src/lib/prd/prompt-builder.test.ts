@@ -11,7 +11,23 @@ describe('Prompt Builder', () => {
   };
 
   describe('buildTaskPrompt', () => {
-    it('should include task title and description', () => {
+    it('should return system and user parts', () => {
+      const task = createTask({
+        prd_id: 'prd_test',
+        sequence: 1,
+        title: 'Test task',
+        description: 'desc',
+      });
+      const prd = createPrd({ title: 'Test PRD', description: 'desc' });
+      const { system, user } = buildTaskPrompt(task, prd, mockContext);
+
+      expect(system).toContain('You are an AI coding agent');
+      expect(system).toContain('## Rules');
+      expect(system).toContain('## Memory Tools');
+      expect(user).toContain('## Your Task');
+    });
+
+    it('should include task title and description in user part', () => {
       const task = createTask({
         prd_id: 'prd_test',
         sequence: 1,
@@ -19,10 +35,10 @@ describe('Prompt Builder', () => {
         description: 'Add a new column to the database schema',
       });
       const prd = createPrd({ title: 'Test PRD', description: 'desc' });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('task_001: Add schema column');
-      expect(prompt).toContain('Add a new column to the database schema');
+      expect(user).toContain('task_001: Add schema column');
+      expect(user).toContain('Add a new column to the database schema');
     });
 
     it('should include acceptance criteria', () => {
@@ -34,10 +50,10 @@ describe('Prompt Builder', () => {
         acceptance_criteria: ['Column exists in DB', 'Migration runs without errors'],
       });
       const prd = createPrd({ title: 'Test PRD', description: 'desc' });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('Column exists in DB');
-      expect(prompt).toContain('Migration runs without errors');
+      expect(user).toContain('Column exists in DB');
+      expect(user).toContain('Migration runs without errors');
     });
 
     it('should include files to modify', () => {
@@ -49,10 +65,10 @@ describe('Prompt Builder', () => {
         files_to_modify: ['src/db/schema.ts', 'src/db/migration.ts'],
       });
       const prd = createPrd({ title: 'Test PRD', description: 'desc' });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('src/db/schema.ts');
-      expect(prompt).toContain('src/db/migration.ts');
+      expect(user).toContain('src/db/schema.ts');
+      expect(user).toContain('src/db/migration.ts');
     });
 
     it('should include recalled memories and dead-end warnings', () => {
@@ -63,11 +79,11 @@ describe('Prompt Builder', () => {
         description: 'desc',
       });
       const prd = createPrd({ title: 'Test PRD', description: 'desc' });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('Use ESM imports');
-      expect(prompt).toContain('DEAD-END');
-      expect(prompt).toContain('CommonJS');
+      expect(user).toContain('Use ESM imports');
+      expect(user).toContain('DEAD-END');
+      expect(user).toContain('CommonJS');
     });
 
     it('should include quality gates', () => {
@@ -85,10 +101,10 @@ describe('Prompt Builder', () => {
           createGate('test', 'npm test'),
         ],
       });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('npx tsc --noEmit');
-      expect(prompt).toContain('npm test');
+      expect(user).toContain('npx tsc --noEmit');
+      expect(user).toContain('npm test');
     });
 
     it('should include progress so far', () => {
@@ -99,9 +115,9 @@ describe('Prompt Builder', () => {
         description: 'desc',
       });
       const prd = createPrd({ title: 'Test PRD', description: 'desc' });
-      const prompt = buildTaskPrompt(task, prd, mockContext);
+      const { user } = buildTaskPrompt(task, prd, mockContext);
 
-      expect(prompt).toContain('Started task_001');
+      expect(user).toContain('Started task_001');
     });
   });
 

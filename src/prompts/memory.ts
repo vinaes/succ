@@ -18,3 +18,9 @@ Output ONLY the merged memory text, nothing else.`;
 
 export const MEMORY_MERGE_PROMPT = `Memory 1: "{memory1}"
 Memory 2: "{memory2}"`;
+
+/**
+ * Temporal subquery extraction for non-Latin/Cyrillic queries.
+ * Used by succ_recall to decompose time-range queries in CJK/Arabic/etc.
+ */
+export const TEMPORAL_SUBQUERY_SYSTEM = `Extract temporal sub-queries from the user's search query. If the query asks about a time range (e.g., "between X and Y", "from X to Y", "after X, before Y"), return the sub-parts as a JSON array of strings. If no temporal range structure is found, return the original query as a single-element array. Return ONLY a valid JSON array of strings, nothing else.`;
