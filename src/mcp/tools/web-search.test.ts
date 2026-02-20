@@ -155,11 +155,8 @@ describe('Web Search MCP Tools', () => {
   // --------------------------------------------------------------------------
 
   describe('registration', () => {
-    it('should register all four tools', () => {
-      expect(toolHandlers.has('succ_quick_search')).toBe(true);
-      expect(toolHandlers.has('succ_web_search')).toBe(true);
-      expect(toolHandlers.has('succ_deep_research')).toBe(true);
-      expect(toolHandlers.has('succ_web_search_history')).toBe(true);
+    it('should register the consolidated succ_web tool', () => {
+      expect(toolHandlers.has('succ_web')).toBe(true);
     });
   });
 
@@ -167,10 +164,10 @@ describe('Web Search MCP Tools', () => {
   // succ_quick_search
   // --------------------------------------------------------------------------
 
-  describe('succ_quick_search', () => {
+  describe('succ_web action=quick', () => {
     it('should return formatted results with citations', async () => {
-      const handler = toolHandlers.get('succ_quick_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'quick', query: 'test' });
 
       expect(result.content[0].text).toContain('TypeScript 5.8 introduced');
       expect(result.content[0].text).toContain('**Sources:**');
@@ -179,8 +176,8 @@ describe('Web Search MCP Tools', () => {
     it('should handle API errors gracefully', async () => {
       vi.mocked(callOpenRouterSearch).mockRejectedValueOnce(new Error('network error'));
 
-      const handler = toolHandlers.get('succ_quick_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'quick', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Quick search failed: network error');
@@ -189,24 +186,28 @@ describe('Web Search MCP Tools', () => {
     it('should error when OpenRouter not configured', async () => {
       vi.mocked(isApiConfigured).mockReturnValueOnce(false);
 
-      const handler = toolHandlers.get('succ_quick_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'quick', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('API key not configured');
     });
 
     it('should save to memory when save_to_memory=true', async () => {
-      const handler = toolHandlers.get('succ_quick_search')!;
-      const result = await handler({ query: 'test query', save_to_memory: true });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'quick', query: 'test query', save_to_memory: true });
 
       expect(saveMemory).toHaveBeenCalled();
       expect(result.content[0].text).toContain('Saved to memory');
     });
 
     it('should accept system_prompt parameter', async () => {
-      const handler = toolHandlers.get('succ_quick_search')!;
-      const result = await handler({ query: 'test', system_prompt: 'Answer briefly' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({
+        action: 'quick',
+        query: 'test',
+        system_prompt: 'Answer briefly',
+      });
 
       expect(callOpenRouterSearch).toHaveBeenCalled();
       expect(result.isError).toBeFalsy();
@@ -217,10 +218,10 @@ describe('Web Search MCP Tools', () => {
   // succ_web_search
   // --------------------------------------------------------------------------
 
-  describe('succ_web_search', () => {
+  describe('succ_web action=search', () => {
     it('should return formatted search results with citations', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'TypeScript 5.8 features' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'TypeScript 5.8 features' });
 
       expect(result.content[0].text).toContain('TypeScript 5.8 introduced');
       expect(result.content[0].text).toContain('**Sources:**');
@@ -229,8 +230,8 @@ describe('Web Search MCP Tools', () => {
     });
 
     it('should show usage and cost info', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.content[0].text).toContain('Tokens:');
       expect(result.content[0].text).toContain('Cost:');
@@ -239,8 +240,8 @@ describe('Web Search MCP Tools', () => {
     it('should error when OpenRouter not configured', async () => {
       vi.mocked(isApiConfigured).mockReturnValueOnce(false);
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('API key not configured');
@@ -263,8 +264,8 @@ describe('Web Search MCP Tools', () => {
         daily_budget_usd: 0,
       });
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('disabled');
@@ -273,8 +274,8 @@ describe('Web Search MCP Tools', () => {
     it('should handle API errors gracefully', async () => {
       vi.mocked(callOpenRouterSearch).mockRejectedValueOnce(new Error('timeout'));
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Web search failed: timeout');
@@ -288,8 +289,8 @@ describe('Web Search MCP Tools', () => {
         usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
       });
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       // Falls back to hostname when no title in search_results
       expect(result.content[0].text).toContain('docs.example.com');
@@ -300,29 +301,33 @@ describe('Web Search MCP Tools', () => {
   // succ_deep_research
   // --------------------------------------------------------------------------
 
-  describe('succ_deep_research', () => {
+  describe('succ_web action=deep', () => {
     beforeEach(() => {
       vi.mocked(callOpenRouterSearch).mockResolvedValue({ ...mockDeepResearchResponse });
     });
 
     it('should include reasoning when requested', async () => {
-      const handler = toolHandlers.get('succ_deep_research')!;
-      const result = await handler({ query: 'React vs Vue', include_reasoning: true });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({
+        action: 'deep',
+        query: 'React vs Vue',
+        include_reasoning: true,
+      });
 
       expect(result.content[0].text).toContain('**Reasoning Process:**');
       expect(result.content[0].text).toContain('compare rendering performance');
     });
 
     it('should not include reasoning by default', async () => {
-      const handler = toolHandlers.get('succ_deep_research')!;
-      const result = await handler({ query: 'React vs Vue' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'deep', query: 'React vs Vue' });
 
       expect(result.content[0].text).not.toContain('**Reasoning Process:**');
     });
 
     it('should show citations', async () => {
-      const handler = toolHandlers.get('succ_deep_research')!;
-      const result = await handler({ query: 'React vs Vue' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'deep', query: 'React vs Vue' });
 
       expect(result.content[0].text).toContain('react.dev');
       expect(result.content[0].text).toContain('vuejs.org');
@@ -354,8 +359,8 @@ describe('Web Search MCP Tools', () => {
       // Simulate exceeded budget via DB
       vi.mocked(getTodayWebSearchSpend).mockResolvedValueOnce(0.05);
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('budget exceeded');
@@ -380,22 +385,22 @@ describe('Web Search MCP Tools', () => {
 
       vi.mocked(getTodayWebSearchSpend).mockResolvedValue(0.05);
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.content[0].text).toContain('Budget:');
     });
 
     it('should record spend to DB after successful search', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      await handler({ query: 'test query' });
+      const handler = toolHandlers.get('succ_web')!;
+      await handler({ action: 'search', query: 'test query' });
 
       expect(recordWebSearch).toHaveBeenCalled();
     });
 
     it('should allow unlimited when budget is 0', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test' });
 
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).not.toContain('Budget:');
@@ -408,16 +413,16 @@ describe('Web Search MCP Tools', () => {
 
   describe('save to memory', () => {
     it('should save to memory when save_to_memory=true', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test query', save_to_memory: true });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test query', save_to_memory: true });
 
       expect(saveMemory).toHaveBeenCalled();
       expect(result.content[0].text).toContain('Saved to memory');
     });
 
     it('should not save to memory by default', async () => {
-      const handler = toolHandlers.get('succ_web_search')!;
-      await handler({ query: 'test query' });
+      const handler = toolHandlers.get('succ_web')!;
+      await handler({ action: 'search', query: 'test query' });
 
       expect(saveMemory).not.toHaveBeenCalled();
     });
@@ -425,8 +430,8 @@ describe('Web Search MCP Tools', () => {
     it('should save deep research to memory', async () => {
       vi.mocked(callOpenRouterSearch).mockResolvedValueOnce({ ...mockDeepResearchResponse });
 
-      const handler = toolHandlers.get('succ_deep_research')!;
-      const result = await handler({ query: 'React vs Vue', save_to_memory: true });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'deep', query: 'React vs Vue', save_to_memory: true });
 
       expect(saveMemory).toHaveBeenCalled();
       expect(result.content[0].text).toContain('Saved to memory');
@@ -435,8 +440,8 @@ describe('Web Search MCP Tools', () => {
     it('should include citations in saved memory', async () => {
       vi.mocked(callOpenRouterSearch).mockResolvedValueOnce({ ...mockSearchResponse });
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      await handler({ query: 'test', save_to_memory: true });
+      const handler = toolHandlers.get('succ_web')!;
+      await handler({ action: 'search', query: 'test', save_to_memory: true });
 
       const savedContent = vi.mocked(saveMemory).mock.calls[0][0] as string;
       expect(savedContent).toContain('Sources:');
@@ -460,8 +465,8 @@ describe('Web Search MCP Tools', () => {
         daily_budget_usd: 0,
       });
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      await handler({ query: 'test' });
+      const handler = toolHandlers.get('succ_web')!;
+      await handler({ action: 'search', query: 'test' });
 
       expect(saveMemory).toHaveBeenCalled();
     });
@@ -474,8 +479,8 @@ describe('Web Search MCP Tools', () => {
         similarity: 0.95,
       });
 
-      const handler = toolHandlers.get('succ_web_search')!;
-      const result = await handler({ query: 'test', save_to_memory: true });
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'search', query: 'test', save_to_memory: true });
 
       expect(result.content[0].text).toContain('already in memory');
     });
@@ -485,7 +490,7 @@ describe('Web Search MCP Tools', () => {
   // succ_web_search_history
   // --------------------------------------------------------------------------
 
-  describe('succ_web_search_history', () => {
+  describe('succ_web action=history', () => {
     it('should return summary and records', async () => {
       vi.mocked(getWebSearchSummary).mockResolvedValueOnce({
         total_searches: 5,
@@ -513,8 +518,8 @@ describe('Web Search MCP Tools', () => {
         },
       ]);
 
-      const handler = toolHandlers.get('succ_web_search_history')!;
-      const result = await handler({});
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'history' });
 
       expect(result.content[0].text).toContain('Web Search Summary');
       expect(result.content[0].text).toContain('Total: 5 searches');
@@ -533,15 +538,20 @@ describe('Web Search MCP Tools', () => {
       });
       vi.mocked(getWebSearchHistory).mockResolvedValueOnce([]);
 
-      const handler = toolHandlers.get('succ_web_search_history')!;
-      const result = await handler({});
+      const handler = toolHandlers.get('succ_web')!;
+      const result = await handler({ action: 'history' });
 
       expect(result.content[0].text).toContain('No search records found');
     });
 
     it('should pass filters to getWebSearchHistory', async () => {
-      const handler = toolHandlers.get('succ_web_search_history')!;
-      await handler({ tool_name: 'succ_quick_search', date_from: '2025-01-01', limit: 5 });
+      const handler = toolHandlers.get('succ_web')!;
+      await handler({
+        action: 'history',
+        tool_name: 'succ_quick_search',
+        date_from: '2025-01-01',
+        limit: 5,
+      });
 
       expect(getWebSearchHistory).toHaveBeenCalledWith(
         expect.objectContaining({

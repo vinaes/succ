@@ -134,7 +134,7 @@ Without it, succ works in global-only mode and can't access project data.
 | Where is X implemented? | succ_search_code |
 | Find functions/classes named X | succ_search_code symbol_type="function" |
 | Find code matching regex | succ_search_code regex="pattern" |
-| What symbols are in file X? | succ_symbols file="X" |
+| What symbols are in file X? | succ_index action="symbols" file="X" |
 | Fetch web page content | succ_fetch |
 | Find regex pattern in code | Grep |
 | List files by pattern | Glob |
@@ -150,7 +150,7 @@ Without it, succ works in global-only mode and can't access project data.
 **succ_search_code** query="handleAuth" [limit=5] [regex="pattern"] [symbol_type="function|method|class|interface|type_alias"] [output="full|lean|signatures"]
 → Search source code (hybrid BM25 + semantic, with AST symbol metadata)
 
-**succ_symbols** file="src/auth.ts" [type="all|function|method|class|interface|type_alias"]
+**succ_index** action="symbols" file="src/auth.ts" [type="all|function|method|class|interface|type_alias"]
 → Extract AST symbols via tree-sitter (13 languages)
 </search>
 
@@ -188,33 +188,33 @@ Examples:
 </hook-rules>
 
 <ops>
-**succ_index_file** file="doc.md" [force=true] — index doc for succ_search
-**succ_index_code_file** file="src/auth.ts" [force=true] — index code for succ_search_code
-**succ_reindex** — detect stale/deleted files, re-index modified, clean deleted
-**succ_analyze_file** file="src/auth.ts" [mode="claude|api"] — generate brain vault doc
-**succ_link** action="create|delete|show|graph|auto|enrich|proximity|communities|centrality|export" [source_id=1] [target_id=2]
-**succ_explore** memory_id=42 [depth=2] — traverse knowledge graph
+**succ_index** action="doc" file="doc.md" [force=true] — index doc for succ_search
+**succ_index** action="code" file="src/auth.ts" [force=true] — index code for succ_search_code
+**succ_index** action="refresh" — detect stale/deleted files, re-index modified, clean deleted
+**succ_index** action="analyze" file="src/auth.ts" [mode="claude|api"] — generate brain vault doc
+**succ_index** action="symbols" file="src/auth.ts" [type="all|function|method|class|interface|type_alias"] — extract AST symbols
+**succ_link** action="create|delete|show|graph|auto|enrich|proximity|communities|centrality|export|explore" [source_id=1] [target_id=2]
 </ops>
 
 <status>
 **succ_status** — indexed docs/code, memories, daemon status
-**succ_stats** — token savings from RAG vs full-file reads
-**succ_score** — AI-readiness score
-**succ_config** / **succ_config_set** key="..." value="..." [scope="global|project"]
-**succ_checkpoint** action="create|list" [compress=true]
+**succ_status** action="stats" — token savings from RAG vs full-file reads
+**succ_status** action="score" — AI-readiness score
+**succ_config** / **succ_config** action="set" key="..." value="..." [scope="global|project"]
+**succ_config** action="checkpoint_create" [compress=true] / action="checkpoint_list"
 </status>
 
 <prd hint="PRD pipeline — generate, track, execute with quality gates">
-**succ_prd_generate** description="..." [gates="test:npm test,lint:eslint ."] [auto_parse=true]
-**succ_prd_list** / **succ_prd_status** [prd_id="prd_xxx"] / **succ_prd_run** [resume=true] [mode="loop|team"]
-**succ_prd_export** [prd_id="prd_xxx"] — Obsidian Mermaid export
+**succ_prd** action="generate" description="..." [gates="test:npm test,lint:eslint ."] [auto_parse=true]
+**succ_prd** action="list" / action="status" [prd_id="prd_xxx"] / action="run" [resume=true] [mode="loop|team"]
+**succ_prd** action="export" [prd_id="prd_xxx"] — Obsidian Mermaid export
 </prd>
 
 ${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
-**succ_quick_search** query="..." — cheap & fast, simple facts
-**succ_web_search** query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
-**succ_deep_research** query="..." — multi-step research (30-120s, 30+ sources)
-**succ_web_search_history** [tool_name="..."] [limit=20] — past searches and costs
+**succ_web** action="quick" query="..." — cheap & fast, simple facts
+**succ_web** action="search" query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
+**succ_web** action="deep" query="..." — multi-step research (30-120s, 30+ sources)
+**succ_web** action="history" [tool_name="..."] [limit=20] — past searches and costs
 </web-search>` : ''}
 
 <debug hint="Structured debugging with hypothesis testing. Sessions in .succ/debugs/.">
@@ -235,11 +235,11 @@ ${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
 | Web page fetch | succ_fetch | WebFetch |${hasOpenRouterKey ? `
-| Web search | succ_quick_search / succ_web_search | WebSearch / Brave |` : ''}
+| Web search | succ_web(action="quick") / succ_web(action="search") | WebSearch / Brave |` : ''}
 
 Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
 
-**Output rule:** Key findings → \`succ_remember\`. Research → \`.succ/brain/\` as Obsidian markdown → \`succ_index_file\`.
+**Output rule:** Key findings → \`succ_remember\`. Research → \`.succ/brain/\` as Obsidian markdown → \`succ_index(action="doc")\`.
 
 **Proactive agents** (run without being asked):
 | Agent | When |

@@ -35,38 +35,85 @@ Or if running from source:
 
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `succ_search` | Hybrid search in brain vault (BM25 + semantic). Output modes: `full`, `lean` |
-| `succ_search_code` | Search indexed code (hybrid BM25 + semantic). Regex/symbol filters. Output modes: `full`, `lean`, `signatures` |
-| `succ_index_file` | Index a single brain file. Embedding modes: local (Transformers.js), openrouter, custom (Ollama/LM Studio) |
-| `succ_index_code_file` | Index a single code file. Same embedding modes |
-| `succ_reindex` | Detect stale/deleted index entries, re-index modified files, clean up deleted ones |
-| `succ_symbols` | Extract AST symbols from a source file via tree-sitter (13 languages) |
-| `succ_analyze_file` | Analyze a file. Modes: claude (CLI/Haiku), local (Ollama/LM Studio), openrouter (cloud) |
-| `succ_remember` | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
-| `succ_recall` | Recall memories (searches both local and global) |
-| `succ_forget` | Delete memories by id, age, or tag |
-| `succ_dead_end` | Record failed approach to prevent retrying. Boosted in recall results |
-| `succ_link` | Create/manage links between memories (knowledge graph) |
-| `succ_explore` | Explore knowledge graph from a memory |
-| `succ_status` | Get index, memory, and daemon statistics |
-| `succ_stats` | Get token savings statistics |
-| `succ_score` | Get AI-readiness score (how ready is project for AI) |
-| `succ_config` | Show current configuration with all effective values |
-| `succ_config_set` | Update config value (key=value). Saves to ~/.succ/config.json |
-| `succ_checkpoint` | Create/list backups of succ data |
-| `succ_debug` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
-| `succ_prd_generate` | Generate PRD from feature description |
-| `succ_prd_list` | List all PRDs |
-| `succ_prd_status` | Show PRD details and task status |
-| `succ_prd_run` | Execute PRD tasks with quality gates |
-| `succ_prd_export` | Export PRD workflow to Obsidian |
-| `succ_quick_search` | Quick web search (default: Perplexity Sonar, configurable) |
-| `succ_web_search` | Quality web search (default: Perplexity Sonar Pro, configurable) |
-| `succ_deep_research` | Deep multi-step research (default: Perplexity Deep Research, configurable) |
-| `succ_web_search_history` | View past web searches with filtering — costs, usage stats |
-| `succ_fetch` | Fetch any URL and convert to clean Markdown via md.succ.ai (Readability + Playwright). No content summarization or truncation. Prefer over built-in WebFetch |
+14 consolidated tools (down from 31) — related actions are grouped under a single tool with an `action` parameter.
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `succ_search` | — | Hybrid search in brain vault (BM25 + semantic). Output modes: `full`, `lean` |
+| `succ_search_code` | — | Search indexed code (hybrid BM25 + semantic). Regex/symbol filters. Output modes: `full`, `lean`, `signatures` |
+| `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols` | Index files, refresh stale entries, analyze with LLM, extract AST symbols |
+| `succ_remember` | — | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
+| `succ_recall` | — | Recall memories (searches both local and global) |
+| `succ_forget` | — | Delete memories by id, age, or tag |
+| `succ_dead_end` | — | Record failed approach to prevent retrying. Boosted in recall results |
+| `succ_link` | `create`, `delete`, `show`, `graph`, `auto`, `enrich`, `proximity`, `communities`, `centrality`, `export`, `explore` | Create/manage knowledge graph links; explore graph from a memory |
+| `succ_status` | — (default), `stats`, `score` | Get index/memory/daemon status; token savings statistics; AI-readiness score |
+| `succ_config` | — (default: show), `set`, `checkpoint_create`, `checkpoint_list` | Show/update config; create or list backups |
+| `succ_debug` | `create`, `hypothesis`, `instrument`, `result`, `resolve`, `abandon`, `status`, `list`, `log`, `show_log`, `detect_lang`, `gen_log` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
+| `succ_prd` | `generate`, `list`, `status`, `run`, `export` | Full PRD pipeline — generate, track, and execute feature tasks with quality gates |
+| `succ_web` | `quick`, `search`, `deep`, `history` | Web search via Perplexity Sonar (quick facts, quality search, deep research, history) |
+| `succ_fetch` | — | Fetch any URL and convert to clean Markdown via md.succ.ai (Readability + Playwright). Prefer over built-in WebFetch |
+
+### succ_index actions
+
+| Action | Old tool | Description |
+|--------|----------|-------------|
+| `doc` | `succ_index_file` | Index a brain vault doc for `succ_search` |
+| `code` | `succ_index_code_file` | Index a source file for `succ_search_code` |
+| `refresh` | `succ_reindex` | Detect stale/deleted entries, re-index modified, clean deleted |
+| `analyze` | `succ_analyze_file` | Analyze a file with LLM, generate brain vault doc |
+| `symbols` | `succ_symbols` | Extract AST symbols via tree-sitter (13 languages) |
+
+### succ_link actions
+
+| Action | Description |
+|--------|-------------|
+| `create` / `delete` | Add or remove a link between two memories |
+| `show` | Show a memory with its links |
+| `graph` | Graph statistics |
+| `auto` | Auto-link similar memories by similarity threshold |
+| `enrich` | LLM-classify relation types |
+| `proximity` | Co-occurrence proximity linking |
+| `communities` | Detect memory clusters |
+| `centrality` | Compute centrality scores |
+| `export` | Export graph (Obsidian/JSON) |
+| `explore` | Traverse graph from a memory (`succ_explore` equivalent) |
+
+### succ_status actions
+
+| Action | Old tool | Description |
+|--------|----------|-------------|
+| (default) | `succ_status` | Indexed docs/code, memories, daemon status |
+| `stats` | `succ_stats` | Token savings from RAG vs full-file reads |
+| `score` | `succ_score` | AI-readiness score for the project |
+
+### succ_config actions
+
+| Action | Old tool | Description |
+|--------|----------|-------------|
+| (default) | `succ_config` | Show current configuration with all effective values |
+| `set` | `succ_config_set` | Update config value (key=value). Saves to `~/.succ/config.json` |
+| `checkpoint_create` | `succ_checkpoint` action="create" | Create a backup of succ data |
+| `checkpoint_list` | `succ_checkpoint` action="list" | List available backups |
+
+### succ_prd actions
+
+| Action | Old tool | Description |
+|--------|----------|-------------|
+| `generate` | `succ_prd_generate` | Generate PRD from feature description |
+| `list` | `succ_prd_list` | List all PRDs |
+| `status` | `succ_prd_status` | Show PRD details and task status |
+| `run` | `succ_prd_run` | Execute PRD tasks with quality gates |
+| `export` | `succ_prd_export` | Export PRD workflow to Obsidian (Mermaid diagrams) |
+
+### succ_web actions
+
+| Action | Old tool | Description |
+|--------|----------|-------------|
+| `quick` | `succ_quick_search` | Quick web search (default: Perplexity Sonar) — cheap, fast, simple facts |
+| `search` | `succ_web_search` | Quality web search (default: Perplexity Sonar Pro) — complex queries, docs |
+| `deep` | `succ_deep_research` | Deep multi-step research (default: Perplexity Deep Research) — 30-120s, 30+ sources |
+| `history` | `succ_web_search_history` | View past web searches with filtering — costs, usage stats |
 
 Claude will automatically use these tools when relevant — for example, searching the knowledge base before answering questions about the project, or remembering important decisions.
 
@@ -181,15 +228,16 @@ Regex and symbol_type filters stack — both must match for a result to be inclu
 
 </details>
 
-**succ_symbols** — Extract AST symbols from a source file via tree-sitter
+**succ_index** action="symbols" — Extract AST symbols from a source file via tree-sitter
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `action` | `"symbols"` | *required* | Must be `"symbols"` |
 | `file` | string | *required* | Path to source file |
 | `type` | `"all"` \| `"function"` \| `"method"` \| `"class"` \| `"interface"` \| `"type_alias"` | `"all"` | Filter by symbol type |
 
 Supported languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, C++, C#, PHP, Ruby, Swift.
 
-**succ_reindex** — Detect and fix stale/deleted index entries. No parameters (uses project_path).
+**succ_index** action="refresh" — Detect and fix stale/deleted index entries. No additional parameters (uses project_path).
 
 **succ_dead_end** — Record a failed approach to prevent retrying
 | Parameter | Type | Default | Description |
@@ -199,13 +247,13 @@ Supported languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, 
 | `context` | string | — | Additional context (file paths, error messages) |
 | `tags` | string[] | `[]` | Tags for categorization |
 
-**succ_checkpoint** — Create/manage backups of succ data
+**succ_config** action="checkpoint_create" / action="checkpoint_list" — Create/manage backups of succ data
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `action` | `"create"` \| `"list"` | *required* | Operation to perform |
-| `compress` | boolean | false | Compress backup file |
-| `include_brain` | boolean | true | Include brain vault in backup |
-| `include_documents` | boolean | true | Include indexed documents |
+| `action` | `"checkpoint_create"` \| `"checkpoint_list"` | *required* | Operation to perform |
+| `compress` | boolean | false | Compress backup file (create only) |
+| `include_brain` | boolean | true | Include brain vault in backup (create only) |
+| `include_documents` | boolean | true | Include indexed documents (create only) |
 
 > **Note:** `restore` is available via CLI only (`succ checkpoint restore <file>`), not via MCP.
 
@@ -215,10 +263,11 @@ Supported languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, 
 | `url` | string (URL) | *required* | URL to fetch and convert to markdown |
 | `format` | `"markdown"` \| `"json"` | `"markdown"` | Output format: `markdown` returns clean content, `json` includes metadata (tokens, quality, extraction method) |
 
-**succ_web_search_history** — View past web searches
+**succ_web** action="history" — View past web searches
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `tool_name` | `"succ_quick_search"` \| `"succ_web_search"` \| `"succ_deep_research"` | — | Filter by tool |
+| `action` | `"history"` | *required* | Must be `"history"` |
+| `tool_name` | `"quick"` \| `"search"` \| `"deep"` | — | Filter by action type |
 | `model` | string | — | Filter by model (e.g., `"perplexity/sonar-pro"`) |
 | `query_text` | string | — | Filter by query substring |
 | `date_from` | string | — | Start date (ISO format) |
@@ -268,30 +317,30 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 |---------|-----|-----|-----|
 | **Initialize** | `succ init` | — | One-time setup, interactive prompts |
 | **Index brain (full)** | `succ index` | — | Heavy: scans all files, generates embeddings |
-| **Index brain (file)** | `succ add <file>` | `succ_index_file` | Light: single file, fast |
+| **Index brain (file)** | `succ add <file>` | `succ_index action="doc"` | Light: single file, fast |
 | **Index code (full)** | `succ index-code` | — | Heavy: scans entire codebase |
-| **Index code (file)** | — | `succ_index_code_file` | Light: single file on demand |
+| **Index code (file)** | — | `succ_index action="code"` | Light: single file on demand |
 | **Search brain** | `succ search` | `succ_search` | Both light, MCP adds output modes |
 | **Search code** | — | `succ_search_code` | Light: hybrid search with regex/symbol filters |
-| **Reindex stale** | — | `succ_reindex` | Light: mtime+hash detection |
-| **Extract symbols** | — | `succ_symbols` | Light: tree-sitter AST (13 languages) |
+| **Reindex stale** | — | `succ_index action="refresh"` | Light: mtime+hash detection |
+| **Extract symbols** | — | `succ_index action="symbols"` | Light: tree-sitter AST (13 languages) |
 | **Analyze (full)** | `succ analyze` | — | Heavy: runs multiple agents, generates docs |
-| **Analyze (file)** | — | `succ_analyze_file` | Light: single file with LLM |
+| **Analyze (file)** | — | `succ_index action="analyze"` | Light: single file with LLM |
 | **Remember** | `succ remember` | `succ_remember` | Both light, MCP for in-conversation |
 | **Recall** | `succ memories` | `succ_recall` | Both light, MCP for in-conversation |
 | **Forget** | `succ forget` | `succ_forget` | Both light |
-| **Knowledge graph** | `succ graph` | `succ_link`, `succ_explore` | CLI for export/stats, MCP for navigation |
+| **Knowledge graph** | `succ graph` | `succ_link` | CLI for export/stats, MCP for navigation and graph traversal |
 | **Status** | `succ status` | `succ_status` | Both light, MCP adds daemon info |
-| **Token stats** | — | `succ_stats` | Light: token savings statistics |
-| **AI-readiness** | — | `succ_score` | Light: project readiness score |
-| **Checkpoint** | — | `succ_checkpoint` | Light: create/list/restore backups |
-| **Config** | `succ config` / `succ config --show` | `succ_config` | CLI: wizard or show, MCP: show only |
+| **Token stats** | — | `succ_status action="stats"` | Light: token savings statistics |
+| **AI-readiness** | — | `succ_status action="score"` | Light: project readiness score |
+| **Checkpoint** | — | `succ_config action="checkpoint_create\|checkpoint_list"` | Light: create/list/restore backups |
+| **Config** | `succ config` / `succ config --show` | `succ_config` | CLI: wizard or show, MCP: show/set |
 | **Watch daemon** | `succ watch` | — | Long-running background process |
 | **RAG chat** | `succ chat` | — | Interactive terminal session |
 | **Soul generator** | `succ soul` | — | Heavy: analyzes project, generates persona |
 | **Consolidate** | `succ consolidate` | — | Heavy: merges/deduplicates memories |
 | **Dead-end tracking** | — | `succ_dead_end` | Light: record failed approaches |
-| **Web search history** | — | `succ_web_search_history` | Light: search cost/usage audit |
+| **Web search history** | — | `succ_web action="history"` | Light: search cost/usage audit |
 | **Web fetch** | — | `succ_fetch` | Light: fetch + convert via md.succ.ai |
 | **Session tools** | `succ session-summary`, `succ precompute-context` | — | Heavy: processes transcripts |
 

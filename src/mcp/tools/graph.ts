@@ -2,7 +2,6 @@
  * MCP Knowledge Graph tools
  *
  * - succ_link: Create/manage memory links (knowledge graph)
- * - succ_explore: Explore connected memories
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -26,7 +25,7 @@ export function registerGraphTools(server: McpServer) {
     'succ_link',
     {
       description:
-        'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.\n\nExamples:\n- Link memories: succ_link(action="create", source_id=1, target_id=2, relation="caused_by")\n- View connections: succ_link(action="show", source_id=42)\n- Auto-link similar: succ_link(action="auto", threshold=0.8)\n- Full maintenance: succ_link(action="cleanup")',
+        'Create or manage links between memories to build a knowledge graph. Links help track relationships between decisions, learnings, and context.\n\nExamples:\n- Link memories: succ_link(action="create", source_id=1, target_id=2, relation="caused_by")\n- View connections: succ_link(action="show", source_id=42)\n- Auto-link similar: succ_link(action="auto", threshold=0.8)\n- Full maintenance: succ_link(action="cleanup")\n- Explore connections: succ_link(action="explore", source_id=42, depth=3)',
       inputSchema: {
         action: z
           .enum([
@@ -41,9 +40,10 @@ export function registerGraphTools(server: McpServer) {
             'centrality',
             'export',
             'cleanup',
+            'explore',
           ])
           .describe(
-            'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality)'
+            'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality), explore (traverse graph from a memory)'
           ),
         source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
         target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
@@ -57,6 +57,12 @@ export function registerGraphTools(server: McpServer) {
           .number()
           .optional()
           .describe('Similarity threshold for auto-linking (default: 0.75)'),
+        depth: z
+          .number()
+          .optional()
+          .default(2)
+          .describe('Max traversal depth (for explore, default: 2)'),
+        memory_id: z.number().optional().describe('Alias for source_id (for explore)'),
         project_path: projectPathParam,
       },
       annotations: {
@@ -66,7 +72,16 @@ export function registerGraphTools(server: McpServer) {
         openWorldHint: false,
       },
     },
-    async ({ action, source_id, target_id, relation, threshold, project_path }) => {
+    async ({
+      action,
+      source_id,
+      target_id,
+      relation,
+      threshold,
+      depth,
+      memory_id,
+      project_path,
+    }) => {
       await applyProjectPath(project_path);
       try {
         switch (action) {
@@ -302,12 +317,68 @@ ${relationStats}`;
             };
           }
 
+          case 'explore': {
+            const startId = source_id || memory_id;
+            if (!startId) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'source_id (or memory_id) is required for explore.',
+                  },
+                ],
+              };
+            }
+
+            const connected = await findConnectedMemories(startId, depth);
+
+            if (connected.length === 0) {
+              const memory = await getMemoryById(startId);
+              if (!memory) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Memory #${startId} not found.`,
+                    },
+                  ],
+                };
+              }
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Memory #${startId} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`,
+                  },
+                ],
+              };
+            }
+
+            const formatted = connected
+              .map(({ memory, depth: d, path: memPath }) => {
+                const pathStr = memPath.map((id: number) => `#${id}`).join(' → ');
+                return `[Depth ${d}] Memory #${memory.id} (${pathStr})
+  ${memory.content.substring(0, 150)}${memory.content.length > 150 ? '...' : ''}
+  Tags: ${memory.tags.join(', ') || '(none)'}`;
+              })
+              .join('\n\n');
+
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Found ${connected.length} connected memories from #${startId} (max depth: ${depth}):\n\n${formatted}`,
+                },
+              ],
+            };
+          }
+
           default:
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, or cleanup.',
+                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, or explore.',
                 },
               ],
             };
@@ -318,84 +389,6 @@ ${relationStats}`;
             {
               type: 'text' as const,
               text: `Error: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
-      } finally {
-        closeDb();
-      }
-    }
-  );
-
-  // Tool: succ_explore - Explore connected memories
-  server.registerTool(
-    'succ_explore',
-    {
-      description:
-        'Explore the knowledge graph starting from a memory. Find connected memories through links.\n\nExamples:\n- Explore connections: succ_explore(memory_id=42, depth=3)',
-      inputSchema: {
-        memory_id: z.number().describe('Starting memory ID'),
-        depth: z.number().optional().default(2).describe('Max traversal depth (default: 2)'),
-        project_path: projectPathParam,
-      },
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async ({ memory_id, depth, project_path }) => {
-      await applyProjectPath(project_path);
-      try {
-        const connected = await findConnectedMemories(memory_id, depth);
-
-        if (connected.length === 0) {
-          const memory = await getMemoryById(memory_id);
-          if (!memory) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Memory #${memory_id} not found.`,
-                },
-              ],
-            };
-          }
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Memory #${memory_id} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`,
-              },
-            ],
-          };
-        }
-
-        const formatted = connected
-          .map(({ memory, depth: d, path: memPath }) => {
-            const pathStr = memPath.map((id: number) => `#${id}`).join(' → ');
-            return `[Depth ${d}] Memory #${memory.id} (${pathStr})
-  ${memory.content.substring(0, 150)}${memory.content.length > 150 ? '...' : ''}
-  Tags: ${memory.tags.join(', ') || '(none)'}`;
-          })
-          .join('\n\n');
-
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Found ${connected.length} connected memories from #${memory_id} (max depth: ${depth}):\n\n${formatted}`,
-            },
-          ],
-        };
-      } catch (error: any) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error exploring: ${error.message}`,
             },
           ],
           isError: true,

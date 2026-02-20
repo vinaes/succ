@@ -85,16 +85,16 @@ succ/
 │   │   ├── server.ts           # MCP server entry point
 │   │   ├── helpers.ts          # MCP utilities (project path, responses)
 │   │   ├── resources.ts        # MCP resources (brain://, soul://)
-│   │   └── tools/              # 11 MCP tool modules
-│   │       ├── search.ts       # succ_search, succ_search_code, succ_symbols
+│   │   └── tools/              # 10 MCP tool modules (14 consolidated tools)
+│   │       ├── search.ts       # succ_search, succ_search_code
 │   │       ├── memory.ts       # succ_remember, succ_recall, succ_forget
-│   │       ├── graph.ts        # succ_link, succ_explore
-│   │       ├── indexing.ts     # succ_index_file, succ_index_code_file, succ_reindex, succ_analyze_file
-│   │       ├── status.ts       # succ_status, succ_stats, succ_score
-│   │       ├── config.ts       # succ_config, succ_config_set, succ_checkpoint
+│   │       ├── graph.ts        # succ_link (create/delete/show/graph/auto/enrich/proximity/communities/centrality/export/explore)
+│   │       ├── indexing.ts     # succ_index (doc/code/refresh/analyze/symbols)
+│   │       ├── status.ts       # succ_status (default/stats/score)
+│   │       ├── config.ts       # succ_config (show/set/checkpoint_create/checkpoint_list)
 │   │       ├── dead-end.ts     # succ_dead_end
-│   │       ├── prd.ts          # succ_prd_generate/list/status/run/export
-│   │       ├── web-search.ts   # succ_quick_search, succ_web_search, succ_deep_research
+│   │       ├── prd.ts          # succ_prd (generate/list/status/run/export)
+│   │       ├── web-search.ts   # succ_web (quick/search/deep/history)
 │   │       ├── web-fetch.ts    # succ_fetch (md.succ.ai integration)
 │   │       └── debug.ts        # succ_debug
 │   ├── commands/               # CLI commands (init, index, analyze, watch, prd, etc.)

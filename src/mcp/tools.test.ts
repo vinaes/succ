@@ -433,10 +433,10 @@ describe('MCP Tools', () => {
     });
   });
 
-  describe('succ_explore', () => {
+  describe('succ_link action=explore', () => {
     it('should explore connected memories', async () => {
-      const handler = toolHandlers.get('succ_explore')!;
-      const result = await handler({ memory_id: 1, depth: 2 });
+      const handler = toolHandlers.get('succ_link')!;
+      const result = await handler({ action: 'explore', memory_id: 1, depth: 2 });
 
       expect(findConnectedMemories).toHaveBeenCalled();
       // With empty connected results, shows the memory itself
@@ -451,17 +451,17 @@ describe('MCP Tools', () => {
   describe('succ_status', () => {
     it('should return index and memory stats', async () => {
       const handler = toolHandlers.get('succ_status')!;
-      const result = await handler({});
+      const result = await handler({ action: 'overview' });
 
       expect(result.content[0].text).toContain('Documents');
       expect(result.content[0].text).toContain('Memories');
     });
   });
 
-  describe('succ_stats', () => {
+  describe('succ_status action=stats', () => {
     it('should return token savings stats', async () => {
-      const handler = toolHandlers.get('succ_stats')!;
-      const result = await handler({});
+      const handler = toolHandlers.get('succ_status')!;
+      const result = await handler({ action: 'stats' });
 
       expect(result.content[0].text).toMatch(/[Tt]oken|[Ss]aving|queries/);
     });

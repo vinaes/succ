@@ -664,7 +664,7 @@ When enabled, the `PreToolUse` hook injects a `<pre-commit-review>` instruction 
 }
 ```
 
-Enable via CLI: `succ config_set preCommitReview true`
+Enable via MCP: `succ_config action="set" key="preCommitReview" value="true"`
 
 > **Note**: This adds review time before each commit. The `succ-diff-reviewer` agent works with any programming language. Context is injected via `PreToolUse` hook, so it survives context compaction.
 
@@ -1058,11 +1058,11 @@ The same operations are available via MCP:
 
 | Tool | Description |
 |------|-------------|
-| `succ_prd_generate` | Generate PRD from description |
-| `succ_prd_list` | List all PRDs |
-| `succ_prd_status` | Show PRD and task status |
-| `succ_prd_run` | Execute or resume a PRD |
-| `succ_prd_export` | Export PRD workflow to Obsidian (Mermaid diagrams) |
+| `succ_prd action="generate"` | Generate PRD from description |
+| `succ_prd action="list"` | List all PRDs |
+| `succ_prd action="status"` | Show PRD and task status |
+| `succ_prd action="run"` | Execute or resume a PRD |
+| `succ_prd action="export"` | Export PRD workflow to Obsidian (Mermaid diagrams) |
 
 ### Execution Modes
 
@@ -1546,11 +1546,11 @@ Real-time web search via Perplexity Sonar models through OpenRouter. Requires `o
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `web_search.enabled` | boolean | true | Enable web search tools |
-| `web_search.quick_search_model` | string | `"perplexity/sonar"` | Model for `succ_quick_search` |
+| `web_search.quick_search_model` | string | `"perplexity/sonar"` | Model for `succ_web(action="quick")` |
 | `web_search.quick_search_max_tokens` | number | 2000 | Max tokens for quick search |
 | `web_search.quick_search_timeout_ms` | number | 15000 | Timeout for quick search (ms) |
-| `web_search.model` | string | `"perplexity/sonar-pro"` | Model for `succ_web_search` |
-| `web_search.deep_research_model` | string | `"perplexity/sonar-deep-research"` | Model for `succ_deep_research` |
+| `web_search.model` | string | `"perplexity/sonar-pro"` | Model for `succ_web(action="search")` |
+| `web_search.deep_research_model` | string | `"perplexity/sonar-deep-research"` | Model for `succ_web(action="deep")` |
 | `web_search.max_tokens` | number | 4000 | Max tokens for web search |
 | `web_search.deep_research_max_tokens` | number | 8000 | Max tokens for deep research |
 | `web_search.timeout_ms` | number | 30000 | Timeout for web search (ms) |
@@ -1563,9 +1563,9 @@ Real-time web search via Perplexity Sonar models through OpenRouter. Requires `o
 
 | Tool | Model | Cost | Use case |
 |------|-------|------|----------|
-| `succ_quick_search` | Sonar | ~$1/MTok | Simple facts, version numbers |
-| `succ_web_search` | Sonar Pro | ~$3-15/MTok | Complex queries, documentation |
-| `succ_deep_research` | Sonar Deep Research | ~$1+/query | Multi-step synthesis, 30+ sources |
+| `succ_web action="quick"` | Sonar | ~$1/MTok | Simple facts, version numbers |
+| `succ_web action="search"` | Sonar Pro | ~$3-15/MTok | Complex queries, documentation |
+| `succ_web action="deep"` | Sonar Deep Research | ~$1+/query | Multi-step synthesis, 30+ sources |
 
 ---
 
@@ -1698,9 +1698,9 @@ succ config set error_reporting.max_file_size_mb 10
 ### MCP
 
 ```
-succ_config_set key="error_reporting.webhook_url" value="https://my-server.com/errors" scope="project"
-succ_config_set key="error_reporting.sentry_dsn" value="https://key@glitchtip.my.com/1" scope="project"
-succ_config_set key="error_reporting.level" value="error"
+succ_config action="set" key="error_reporting.webhook_url" value="https://my-server.com/errors" scope="project"
+succ_config action="set" key="error_reporting.sentry_dsn" value="https://key@glitchtip.my.com/1" scope="project"
+succ_config action="set" key="error_reporting.level" value="error"
 ```
 
 ---

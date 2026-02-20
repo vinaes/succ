@@ -1,9 +1,10 @@
 /**
- * MCP tool: succ_fetch
+ * MCP tools: succ_fetch
  *
  * Fetches any URL and converts to clean Markdown via md.succ.ai.
  * Replaces built-in WebFetch with better content extraction (Readability),
  * JS rendering (Playwright), and no content summarization/truncation.
+ * Supports structured data extraction via JSON schema (absorbs succ_extract).
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,7 +24,7 @@ export function registerWebFetchTools(server: McpServer) {
     'succ_fetch',
     {
       description:
-        'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns LLM-optimized content by default (mode=fit, 30-50% fewer tokens). Use mode=full for complete content. Prefer this over built-in WebFetch.\n\nExamples:\n- Fetch page: succ_fetch(url="https://docs.example.com/api")\n- Full + metadata: succ_fetch(url="https://example.com", mode="full", format="json")',
+        'Fetch any URL and convert to clean Markdown. Uses Mozilla Readability for content extraction (strips nav, ads, sidebars) and Playwright headless browser for JS-heavy pages. Returns LLM-optimized content by default (mode=fit, 30-50% fewer tokens). Use mode=full for complete content. Prefer this over built-in WebFetch.\n\nPass a `schema` parameter to extract structured data from the page using LLM.\n\nExamples:\n- Fetch page: succ_fetch(url="https://docs.example.com/api")\n- Full + metadata: succ_fetch(url="https://example.com", mode="full", format="json")\n- Extract data: succ_fetch(url="https://example.com/products", schema=\'{"type":"object","properties":{"items":{"type":"array"}}}\')',
       inputSchema: {
         url: z.string().url().describe('URL to fetch and convert to markdown'),
         format: z
@@ -48,6 +49,12 @@ export function registerWebFetchTools(server: McpServer) {
           .number()
           .optional()
           .describe('Truncate output to N tokens (use with mode=fit)'),
+        schema: z
+          .string()
+          .optional()
+          .describe(
+            'JSON Schema as a string for structured extraction. When provided, the page is fetched, converted to Markdown, then an LLM extracts data matching the schema. Automatically retries with headless browser for SPA/JS-heavy sites.'
+          ),
         project_path: projectPathParam,
       },
       annotations: {
@@ -57,10 +64,34 @@ export function registerWebFetchTools(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async ({ url, format, mode, links, max_tokens, project_path }) => {
+    async ({ url, format, mode, links, max_tokens, schema, project_path }) => {
       await applyProjectPath(project_path);
 
       try {
+        // Extract mode: if schema provided, use extractFromUrl
+        if (schema) {
+          let parsedSchema: Record<string, unknown>;
+          try {
+            parsedSchema = JSON.parse(schema);
+          } catch {
+            return createErrorResponse('Invalid JSON schema string', COMPONENT);
+          }
+          try {
+            const result = await extractFromUrl(url, parsedSchema);
+            const output = JSON.stringify(result.data, null, 2);
+            return createToolResponse(
+              `Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`
+            );
+          } catch (extractError: unknown) {
+            const msg = extractError instanceof Error ? extractError.message : String(extractError);
+            return createErrorResponse(
+              `Failed to extract from ${url}: ${msg}`,
+              COMPONENT,
+              extractError instanceof Error ? extractError : undefined
+            );
+          }
+        }
+
         const effectiveMode = mode === 'full' ? undefined : (mode ?? 'fit');
         const result = await fetchAsMarkdown(url, {
           mode: effectiveMode,
@@ -113,54 +144,6 @@ export function registerWebFetchTools(server: McpServer) {
         const msg = error instanceof Error ? error.message : String(error);
         return createErrorResponse(
           `Failed to fetch ${url}: ${msg}`,
-          COMPONENT,
-          error instanceof Error ? error : undefined
-        );
-      }
-    }
-  );
-
-  server.registerTool(
-    'succ_extract',
-    {
-      description:
-        'Extract structured data from a URL using a JSON schema. The page is fetched, converted to Markdown, then an LLM extracts data matching the schema. Automatically retries with headless browser for SPA/JS-heavy sites. Rate limited: 10 requests/minute.\n\nExamples:\n- succ_extract(url="https://example.com/products", schema=\'{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"price":{"type":"number"}}}}}}\')',
-      inputSchema: {
-        url: z.string().url().describe('URL to extract data from'),
-        schema: z
-          .string()
-          .describe(
-            'JSON Schema as a string (e.g. \'{"type":"object","properties":{"title":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}}}}}}\') — defines the structure of data to extract'
-          ),
-        project_path: projectPathParam,
-      },
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
-    },
-    async ({ url, schema: schemaStr, project_path }) => {
-      await applyProjectPath(project_path);
-
-      try {
-        let schema: Record<string, unknown>;
-        try {
-          schema = JSON.parse(schemaStr);
-        } catch {
-          return createErrorResponse('Invalid JSON schema string', COMPONENT);
-        }
-
-        const result = await extractFromUrl(url, schema);
-        const output = JSON.stringify(result.data, null, 2);
-        return createToolResponse(
-          `Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`
-        );
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return createErrorResponse(
-          `Failed to extract from ${url}: ${msg}`,
           COMPONENT,
           error instanceof Error ? error : undefined
         );

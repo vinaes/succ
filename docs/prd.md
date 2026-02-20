@@ -68,7 +68,7 @@ succ prd generate "..." --model claude-sonnet                        # LLM model
 ### MCP
 
 ```
-succ_prd_generate description="Add user authentication with JWT" auto_parse=true
+succ_prd action="generate" description="Add user authentication with JWT" auto_parse=true
 ```
 
 ### What Happens During Generation
@@ -417,11 +417,11 @@ The `.succ/prds/` directory should be in `.gitignore` — it's execution state, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `succ_prd_generate` | `description`, `gates?`, `auto_parse?`, `mode?`, `model?` | Generate PRD from description |
-| `succ_prd_list` | `all?` | List PRDs |
-| `succ_prd_status` | `prd_id?` | Show PRD status (defaults to latest) |
-| `succ_prd_run` | `prd_id?`, `resume?`, `task_id?`, `dry_run?`, `max_iterations?`, `no_branch?`, `model?`, `force?`, `mode?`, `concurrency?` | Execute or resume a PRD |
-| `succ_prd_export` | `prd_id?`, `all?`, `output?` | Export workflow to Obsidian (Mermaid diagrams) |
+| `succ_prd action="generate"` | `description`, `gates?`, `auto_parse?`, `mode?`, `model?` | Generate PRD from description |
+| `succ_prd action="list"` | `all?` | List PRDs |
+| `succ_prd action="status"` | `prd_id?` | Show PRD status (defaults to latest) |
+| `succ_prd action="run"` | `prd_id?`, `resume?`, `task_id?`, `dry_run?`, `max_iterations?`, `no_branch?`, `model?`, `force?`, `mode?`, `concurrency?` | Execute or resume a PRD |
+| `succ_prd action="export"` | `prd_id?`, `all?`, `output?` | Export workflow to Obsidian (Mermaid diagrams) |
 
 ---
 

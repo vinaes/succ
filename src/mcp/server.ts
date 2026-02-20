@@ -2,24 +2,21 @@
 /**
  * succ MCP Server
  *
- * Exposes succ functionality as MCP tools that Claude can call directly:
- * - succ_search: Semantic search in brain vault
- * - succ_search_code: Search indexed source code
- * - succ_remember: Save important information to memory
- * - succ_recall: Recall past memories semantically
- * - succ_forget: Delete memories
- * - succ_index_file / succ_index_code_file / succ_analyze_file: Index files
- * - succ_link / succ_explore: Knowledge graph
- * - succ_status / succ_stats / succ_score: Status and metrics
- * - succ_config / succ_config_set / succ_checkpoint: Configuration
- * - succ_dead_end: Record failed approaches to prevent retrying
- * - succ_prd_generate / succ_prd_list / succ_prd_status / succ_prd_run: PRD pipeline
- * - succ_quick_search / succ_web_search / succ_deep_research: Web search via Perplexity Sonar (OpenRouter)
- * - succ_web_search_history: Browse and filter past web search history
- * - succ_debug: Language-independent structured debugging with hypothesis testing
+ * 14 consolidated MCP tools:
+ * - succ_search, succ_search_code: Semantic search
+ * - succ_remember, succ_recall, succ_forget: Memory management
+ * - succ_dead_end: Record failed approaches
+ * - succ_link: Knowledge graph (actions: create/delete/show/graph/auto/enrich/proximity/communities/centrality/export/cleanup/explore)
+ * - succ_fetch: Fetch URLs + structured extraction (schema param)
+ * - succ_status: Status, token stats, AI-readiness score (actions: overview/stats/score)
+ * - succ_config: Config + checkpoints (actions: show/set/checkpoint_create/checkpoint_list)
+ * - succ_index: Indexing + analysis + symbols (actions: doc/code/analyze/refresh/symbols)
+ * - succ_prd: PRD pipeline (actions: generate/list/status/run/export)
+ * - succ_web: Web search (actions: quick/search/deep/history)
+ * - succ_debug: Structured debugging (12 actions)
  *
- * Tool profiles: auto (detect by client), core (8), standard (20), full (31)
- * Configure via: succ_config_set(key="tool_profile", value="auto|core|standard|full")
+ * Tool profiles: auto (detect by client), core (8), standard (12), full (14)
+ * Configure via: succ_config(action="set", key="tool_profile", value="auto|core|standard|full")
  * Auto-profile: Claude clients → full, other clients → standard
  */
 
@@ -65,21 +62,13 @@ const CORE_TOOLS = new Set([
   'succ_status',
 ]);
 
-/** Standard tools — core + indexing, graph, config, basic web search (20 tools) */
+/** Standard tools — core + indexing, graph, config, web search (12 tools) */
 const STANDARD_TOOLS = new Set([
   ...CORE_TOOLS,
-  'succ_index_file',
-  'succ_index_code_file',
-  'succ_reindex',
-  'succ_analyze_file',
-  'succ_symbols',
+  'succ_index',
   'succ_link',
-  'succ_explore',
   'succ_config',
-  'succ_config_set',
-  'succ_checkpoint',
-  'succ_quick_search',
-  'succ_web_search',
+  'succ_web',
 ]);
 
 // RegisteredTool type from MCP SDK (registerTool is the non-deprecated API)
@@ -105,7 +94,7 @@ function applyToolProfile(
 
     try {
       tool.update({
-        description: `[Requires "${requiredProfile}" profile] Use succ_config_set(key="tool_profile", value="${requiredProfile}") to enable.`,
+        description: `[Requires "${requiredProfile}" profile] Use succ_config(action="set", key="tool_profile", value="${requiredProfile}") to enable.`,
         paramsSchema: {},
         callback: async () => ({
           content: [
@@ -113,8 +102,8 @@ function applyToolProfile(
               type: 'text' as const,
               text:
                 `Tool "${name}" is not available in "${profile}" profile.\n\n` +
-                `To enable:\n  succ_config_set(key="tool_profile", value="${requiredProfile}")\n\n` +
-                `Available profiles: core (8 tools), standard (20 tools), full (31 tools)`,
+                `To enable:\n  succ_config(action="set", key="tool_profile", value="${requiredProfile}")\n\n` +
+                `Available profiles: core (8 tools), standard (12 tools), full (14 tools)`,
             },
           ],
           isError: true,
