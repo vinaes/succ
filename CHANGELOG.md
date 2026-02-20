@@ -5,6 +5,43 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-02-20
+
+### Breaking Changes
+- **31 MCP tools consolidated into 14** — related tools merged behind `action` parameters. No aliases for old tool names. See [Migration Guide](docs/mcp.md) for consolidation map
+- **Tool profiles updated** — `core` (8 tools), `standard` (12), `full` (14)
+
+### Added
+- **Tool consolidation** — `succ_status` (overview/stats/score), `succ_config` (show/set/checkpoint_*), `succ_index` (doc/code/analyze/refresh/symbols), `succ_link` (+explore, +cleanup), `succ_fetch` (+schema extraction), `succ_prd` (generate/list/status/run/export), `succ_web` (quick/search/deep/history)
+- **Per-action profile gating** — `gateAction()` restricts expensive actions within consolidated tools (e.g., `succ_web` deep/history require `full` profile)
+- **Prompt registry** — all ~45 prompt constants centralized in `src/prompts/`, zero inline prompts remaining
+- **`cache_control` support** — `callApiLLM` auto-enables Anthropic prompt caching for system messages
+- **`systemPrompt` in `callLLM`/`callApiLLM`** — dedicated `{role: "system"}` message for LLM prompt caching; all 16 prompt call sites split into `*_SYSTEM` + `*_PROMPT`
+- **`auto` tool profile** (new default) — detects client via `getClientVersion()`, Claude clients get `full`, others get `standard`
+- **ToolAnnotations** on all 14 tools — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`
+- **`succ_fetch` schema extraction** — `schema` parameter triggers structured data extraction via LLM with JSON Schema validation
+- **md.succ.ai health check** in `succ_status` overview — pings `/status` (3s timeout), reports service availability
+- **Global error handler** in CLI — clean one-line messages instead of stack traces (`DEBUG=1` for full trace)
+- **Centralized project init guard** in `getDb()` — clear "Run `succ init` first" message instead of opaque SQLite errors
+- `getPinnedMemories` and `HybridMemoryResult` exported from public API
+- `extract` parameter on search tools for smart result compression
+- 28 tests for profile gating, LLM systemPrompt tests
+
+### Changed
+- MCP SDK upgraded 1.26.0 → 1.27.0; all tools migrated from `server.tool()` to `server.registerTool()`
+- Test audit: removed tests that duplicate type system guarantees, test implementation details, or check internal arg shapes (8 test files cleaned)
+- ~140 lines dead code removed from `session-processor.ts`
+- `closeStorageDispatcher()` called in config checkpoint to release PG/Qdrant connections
+
+### Fixed
+- Template injection in `extractAnswerFromResults` (replace order + function callbacks)
+- PG integration tests: dynamic embedding dimensions from `getEmbeddingInfo()` instead of hardcoded 384
+- `succ_fetch` schema validation: reject non-object schemas (primitives, arrays)
+- `succ_fetch` respects `format="json"` in schema extraction path
+
+### Dependencies
+- `@modelcontextprotocol/sdk` 1.26.0 → 1.27.0
+
 ## [1.3.31] - 2026-02-16
 
 ### Added

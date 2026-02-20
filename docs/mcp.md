@@ -46,7 +46,7 @@ Or if running from source:
 | `succ_recall` | — | Recall memories (searches both local and global) |
 | `succ_forget` | — | Delete memories by id, age, or tag |
 | `succ_dead_end` | — | Record failed approach to prevent retrying. Boosted in recall results |
-| `succ_link` | `create`, `delete`, `show`, `graph`, `auto`, `enrich`, `proximity`, `communities`, `centrality`, `export`, `explore` | Create/manage knowledge graph links; explore graph from a memory |
+| `succ_link` | `create`, `delete`, `show`, `graph`, `auto`, `enrich`, `proximity`, `communities`, `centrality`, `export`, `cleanup`, `explore` | Create/manage knowledge graph links; explore graph from a memory |
 | `succ_status` | — (default), `stats`, `score` | Get index/memory/daemon status; token savings statistics; AI-readiness score |
 | `succ_config` | — (default: show), `set`, `checkpoint_create`, `checkpoint_list` | Show/update config; create or list backups |
 | `succ_debug` | `create`, `hypothesis`, `instrument`, `result`, `resolve`, `abandon`, `status`, `list`, `log`, `show_log`, `detect_lang`, `gen_log` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
@@ -77,6 +77,7 @@ Or if running from source:
 | `communities` | Detect memory clusters |
 | `centrality` | Compute centrality scores |
 | `export` | Export graph (Obsidian/JSON) |
+| `cleanup` | Full maintenance: prune weak links, enrich, connect orphans, rebuild communities + centrality |
 | `explore` | Traverse graph from a memory (`succ_explore` equivalent) |
 
 ### succ_status actions
@@ -261,6 +262,10 @@ Supported languages: TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C, 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `url` | string (URL) | *required* | URL to fetch and convert to markdown |
+| `mode` | `"fit"` \| `"full"` | `"fit"` | Content mode: `fit` prunes boilerplate for 30-50% fewer tokens, `full` returns complete content |
+| `links` | `"citations"` | — | Convert inline links to numbered references with footer |
+| `max_tokens` | number | — | Truncate output to N tokens (use with mode=fit) |
+| `schema` | string (JSON Schema) | — | Structured extraction: LLM extracts data matching the schema from fetched content |
 | `format` | `"markdown"` \| `"json"` | `"markdown"` | Output format: `markdown` returns clean content, `json` includes metadata (tokens, quality, extraction method) |
 
 **succ_web** action="history" — View past web searches

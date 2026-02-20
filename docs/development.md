@@ -85,7 +85,7 @@ succ/
 │   │   ├── server.ts           # MCP server entry point
 │   │   ├── helpers.ts          # MCP utilities (project path, responses)
 │   │   ├── resources.ts        # MCP resources (brain://, soul://)
-│   │   └── tools/              # 10 MCP tool modules (14 consolidated tools)
+│   │   └── tools/              # 11 MCP tool modules (14 consolidated tools)
 │   │       ├── search.ts       # succ_search, succ_search_code
 │   │       ├── memory.ts       # succ_remember, succ_recall, succ_forget
 │   │       ├── graph.ts        # succ_link (create/delete/show/graph/auto/enrich/proximity/communities/centrality/export/explore)
