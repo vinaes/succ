@@ -7,7 +7,7 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 import { gateAction } from '../profile.js';
-import { closeDb } from '../../lib/storage/index.js';
+import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 
@@ -242,6 +242,7 @@ To restore: succ checkpoint restore "${outputPath}"`,
             };
           } finally {
             closeDb();
+            await closeStorageDispatcher();
           }
         }
 

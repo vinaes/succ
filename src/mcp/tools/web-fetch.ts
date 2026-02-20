@@ -80,11 +80,18 @@ export function registerWebFetchTools(server: McpServer) {
           let parsedSchema: Record<string, unknown>;
           try {
             parsedSchema = JSON.parse(schema);
+            if (!parsedSchema || typeof parsedSchema !== 'object' || Array.isArray(parsedSchema)) {
+              return createErrorResponse('Schema must be a JSON object', COMPONENT);
+            }
           } catch {
             return createErrorResponse('Invalid JSON schema string', COMPONENT);
           }
           try {
             const result = await extractFromUrl(url, parsedSchema);
+            if (format === 'json') {
+              const payload = { url: result.url, valid: result.valid, data: result.data };
+              return createToolResponse(JSON.stringify(payload, null, 2));
+            }
             const output = JSON.stringify(result.data, null, 2);
             return createToolResponse(
               `Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`

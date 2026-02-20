@@ -813,4 +813,11 @@ prdCmd
     });
   });
 
-program.parse();
+program.parseAsync().catch((err: Error) => {
+  const msg = err?.message || String(err);
+  console.error(`\n  Error: ${msg}\n`);
+  if (process.env.DEBUG) {
+    console.error(err.stack);
+  }
+  process.exit(1);
+});
