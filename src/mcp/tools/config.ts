@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
+import { gateAction } from '../profile.js';
 import { closeDb } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
@@ -67,6 +68,9 @@ export function registerConfigTools(server: McpServer) {
       project_path,
     }) => {
       await applyProjectPath(project_path);
+
+      const gated = gateAction('succ_config', action);
+      if (gated) return gated;
 
       switch (action) {
         case 'show': {

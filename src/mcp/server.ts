@@ -45,6 +45,7 @@ import { registerPrdTools } from './tools/prd.js';
 import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
 import { registerWebFetchTools } from './tools/web-fetch.js';
+import { setResolvedProfile } from './profile.js';
 
 // ---------------------------------------------------------------------------
 // Tool profile definitions
@@ -168,6 +169,7 @@ registerWebFetchTools(server);
 // Apply tool profile (gate non-profile tools with helpful error stubs)
 const profile = getToolProfile();
 if (profile !== 'full' && profile !== 'auto') {
+  setResolvedProfile(profile);
   applyToolProfile(registeredTools, profile);
 }
 
@@ -245,6 +247,7 @@ async function main() {
         `Client: ${clientInfo?.name ?? 'unknown'} v${clientInfo?.version ?? '?'} → profile: ${autoProfile}`
       );
       logInfo('mcp', `Auto-profile: client="${clientInfo?.name}", profile="${autoProfile}"`);
+      setResolvedProfile(autoProfile);
       if (autoProfile !== 'full') {
         applyToolProfile(registeredTools, autoProfile);
       }

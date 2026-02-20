@@ -8,6 +8,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { gateAction } from '../profile.js';
 import { z } from 'zod';
 import {
   projectPathParam,
@@ -66,6 +67,12 @@ export function registerWebFetchTools(server: McpServer) {
     },
     async ({ url, format, mode, links, max_tokens, schema, project_path }) => {
       await applyProjectPath(project_path);
+
+      // Per-action gate: extract (schema) requires higher profile
+      if (schema) {
+        const gated = gateAction('succ_fetch', '__extract');
+        if (gated) return gated;
+      }
 
       try {
         // Extract mode: if schema provided, use extractFromUrl

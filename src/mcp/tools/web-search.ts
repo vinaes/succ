@@ -15,6 +15,7 @@ import {
   type ChatMessage,
 } from '../../lib/llm.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
+import { gateAction } from '../profile.js';
 import {
   recordWebSearch,
   getTodayWebSearchSpend,
@@ -251,6 +252,9 @@ export function registerWebSearchTools(server: McpServer) {
       project_path,
     }) => {
       await applyProjectPath(project_path);
+
+      const gated = gateAction('succ_web', action);
+      if (gated) return gated;
 
       // Shared validation for search actions
       if (['quick', 'search', 'deep'].includes(action) && !query) {

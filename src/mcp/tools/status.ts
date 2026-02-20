@@ -4,6 +4,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { gateAction } from '../profile.js';
 import {
   getStats,
   getRecentGlobalMemories,
@@ -52,6 +53,9 @@ export function registerStatusTools(server: McpServer) {
     },
     async ({ action, project_path }) => {
       await applyProjectPath(project_path);
+
+      const gated = gateAction('succ_status', action);
+      if (gated) return gated;
 
       switch (action) {
         case 'overview': {
