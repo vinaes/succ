@@ -58,11 +58,11 @@ Or if running from source:
 
 | Action | Old tool | Description |
 |--------|----------|-------------|
-| `doc` | `succ_index_file` | Index a brain vault doc for `succ_search` |
-| `code` | `succ_index_code_file` | Index a source file for `succ_search_code` |
-| `refresh` | `succ_reindex` | Detect stale/deleted entries, re-index modified, clean deleted |
-| `analyze` | `succ_analyze_file` | Analyze a file with LLM, generate brain vault doc |
-| `symbols` | `succ_symbols` | Extract AST symbols via tree-sitter (13 languages) |
+| `doc` | _(was `succ_index_file`)_ | Index a brain vault doc for `succ_search` |
+| `code` | _(was `succ_index_code_file`)_ | Index a source file for `succ_search_code` |
+| `refresh` | _(was `succ_reindex`)_ | Detect stale/deleted entries, re-index modified, clean deleted |
+| `analyze` | _(was `succ_analyze_file`)_ | Analyze a file with LLM, generate brain vault doc |
+| `symbols` | _(was `succ_symbols`)_ | Extract AST symbols via tree-sitter (13 languages) |
 
 ### succ_link actions
 
