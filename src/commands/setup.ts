@@ -159,7 +159,10 @@ function configureEditor(editorKey: string, editor: EditorConfig, projectDir?: s
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       }
     } catch (err) {
-      logWarn('setup', `Failed to parse config at ${configPath}, starting fresh: ${(err as Error).message}`);
+      logWarn(
+        'setup',
+        `Failed to parse config at ${configPath}, starting fresh: ${(err as Error).message}`
+      );
       config = {};
     }
   }
