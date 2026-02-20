@@ -813,11 +813,18 @@ prdCmd
     });
   });
 
-program.parseAsync().catch((err: Error) => {
-  const msg = err?.message || String(err);
+// Global handlers for async errors that escape Commander's action chain
+function handleFatalError(err: unknown): void {
+  const error = err instanceof Error ? err : new Error(String(err));
+  const msg = error.message || String(error);
   console.error(`\n  Error: ${msg}\n`);
   if (process.env.DEBUG) {
-    console.error(err.stack);
+    console.error(error.stack);
   }
   process.exit(1);
-});
+}
+
+process.on('unhandledRejection', handleFatalError);
+process.on('uncaughtException', handleFatalError);
+
+program.parseAsync().catch(handleFatalError);
