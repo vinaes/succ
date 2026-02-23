@@ -18,6 +18,7 @@ import {
 } from '../helpers.js';
 import { fetchAsMarkdown, extractFromUrl } from '../../lib/md-fetch.js';
 
+import { logWarn } from '../../lib/fault-logger.js';
 const COMPONENT = 'web-fetch';
 
 export function registerWebFetchTools(server: McpServer) {
@@ -83,7 +84,10 @@ export function registerWebFetchTools(server: McpServer) {
             if (!parsedSchema || typeof parsedSchema !== 'object' || Array.isArray(parsedSchema)) {
               return createErrorResponse('Schema must be a JSON object', COMPONENT);
             }
-          } catch {
+          } catch (error) {
+            logWarn('web-fetch', 'Failed to parse extraction schema JSON string', {
+              error: error instanceof Error ? error.message : String(error),
+            });
             return createErrorResponse('Invalid JSON schema string', COMPONENT);
           }
           try {

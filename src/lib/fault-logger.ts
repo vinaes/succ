@@ -25,6 +25,15 @@ export interface FaultEntry {
 
 const LEVEL_ORDER: Record<FaultLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
+/**
+ * fault-logger internals cannot call logWarn/logFault from catch blocks, or we'd recurse.
+ * Fallback to stderr only.
+ */
+function internalFallbackWarn(message: string, error: unknown): void {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.warn(`[fault-logger] ${message}: ${errorMessage}`);
+}
+
 // Read version once at module load
 let _version: string | undefined;
 function getVersion(): string {
@@ -36,7 +45,8 @@ function getVersion(): string {
     );
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     _version = pkg.version || 'unknown';
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to read package.json for fault-logger version', error);
     _version = 'unknown';
   }
   return _version!;
@@ -53,7 +63,8 @@ function rotateIfNeeded(logPath: string, maxSizeMb: number): void {
       const backupPath = logPath + '.1';
       fs.renameSync(logPath, backupPath);
     }
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to rotate fault log file', error);
     // File doesn't exist or can't stat — fine, will be created on write
   }
 }
@@ -70,7 +81,8 @@ function writeToFile(entry: FaultEntry, maxSizeMb: number): void {
 
     rotateIfNeeded(logPath, maxSizeMb);
     fs.appendFileSync(logPath, JSON.stringify(entry) + '\n');
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to write fault log entry to file', error);
     // Never break caller
   }
 }
@@ -86,7 +98,8 @@ function sendToWebhook(entry: FaultEntry, url: string, headers?: Record<string, 
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(entry),
     }).catch(() => {});
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to send fault entry to webhook', error);
     // Never break caller
   }
 }
@@ -105,7 +118,8 @@ async function getSentry(): Promise<any> {
     // @ts-expect-error - @sentry/node is an optional peer dependency, may not be installed
     sentryModule = await import('@sentry/node');
     return sentryModule;
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to load @sentry/node optional peer dependency', error);
     sentryModule = false;
     return null;
   }
@@ -141,7 +155,8 @@ function sendToSentry(
           extra: entry.context,
         });
       }
-    } catch {
+    } catch (error) {
+      internalFallbackWarn('Failed to send fault entry to Sentry', error);
       // Never break caller
     }
   })();
@@ -191,7 +206,8 @@ export function logFault(
     if (config.sentry_dsn) {
       sendToSentry(entry, config.sentry_dsn, config.sentry_environment, config.sentry_sample_rate);
     }
-  } catch {
+  } catch (error) {
+    internalFallbackWarn('Failed to dispatch fault log entry to configured channels', error);
     // Absolutely never break the caller
   }
 }

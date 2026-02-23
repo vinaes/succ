@@ -141,7 +141,7 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Create index on type after migration
@@ -155,12 +155,12 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -174,48 +174,48 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add valid_from and valid_until columns for temporal awareness
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add temporal fields to memory_links
   try {
     database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_from TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_until TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add model and estimated_cost columns to token_stats
   try {
     database.prepare(`ALTER TABLE token_stats ADD COLUMN model TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE token_stats ADD COLUMN estimated_cost REAL DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add project_id column to skills table for project scoping
@@ -225,7 +225,7 @@ export function initDb(database: Database.Database): void {
     // For existing databases, the old UNIQUE(name) constraint remains.
     // The code handles this by using ON CONFLICT with name only for SQLite.
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -239,7 +239,7 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -253,12 +253,12 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -274,7 +274,7 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -289,7 +289,7 @@ export function initDb(database: Database.Database): void {
     try {
       database.prepare(`ALTER TABLE documents ADD COLUMN ${col}`).run();
     } catch {
-      // Column already exists, ignore
+      // expected: column already exists
     }
   }
   try {
@@ -357,7 +357,7 @@ export function initDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: create memory_centrality cache table
@@ -692,7 +692,7 @@ export function initGlobalDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Create index on type after migration
@@ -706,12 +706,12 @@ export function initGlobalDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -725,31 +725,31 @@ export function initGlobalDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add valid_from and valid_until columns for temporal awareness
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
 
   // Migration: add invalidated_by column for soft-delete during consolidation
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -765,12 +765,12 @@ export function initGlobalDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database
@@ -786,7 +786,7 @@ export function initGlobalDb(database: Database.Database): void {
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
   } catch {
-    // Column already exists, ignore
+    // expected: column already exists
   }
   try {
     database

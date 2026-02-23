@@ -27,17 +27,146 @@ import type {
 import { DependencyError } from '../../errors.js';
 
 // Lazy-load qdrant client
-let QdrantClient: any = null;
+type QdrantPointId = number | string;
+type QdrantCondition = Record<string, unknown>;
+
+interface QdrantFilter {
+  must?: QdrantCondition[];
+  should?: QdrantCondition[];
+}
+
+interface QdrantScoredPoint {
+  id: QdrantPointId;
+  score: number;
+  payload?: Record<string, unknown>;
+}
+
+interface QdrantQueryResponse {
+  points?: QdrantScoredPoint[];
+}
+
+interface QdrantCollectionInfo {
+  config?: {
+    params?: {
+      vectors?: unknown;
+    };
+  };
+}
+
+interface QdrantCollectionConfig {
+  vectors: {
+    dense: {
+      size: number;
+      distance: 'Cosine';
+    };
+  };
+  sparse_vectors: {
+    bm25: {
+      modifier: 'idf';
+    };
+  };
+  hnsw_config: {
+    m: number;
+    ef_construct: number;
+  };
+  quantization_config?: {
+    scalar: {
+      type: 'int8';
+      always_ram: boolean;
+    };
+  };
+}
+
+interface QdrantClientLike {
+  getCollection(name: string): Promise<QdrantCollectionInfo>;
+  deleteCollection(name: string): Promise<unknown>;
+  createCollection(name: string, config: QdrantCollectionConfig): Promise<unknown>;
+  createPayloadIndex(
+    name: string,
+    params: { field_name: string; field_schema: string | Record<string, unknown> }
+  ): Promise<unknown>;
+  upsert(
+    name: string,
+    params: { points: Array<Record<string, unknown>>; wait?: boolean }
+  ): Promise<unknown>;
+  delete(
+    name: string,
+    params: { points?: QdrantPointId[]; filter?: QdrantFilter }
+  ): Promise<unknown>;
+  query(
+    name: string,
+    params: Record<string, unknown>
+  ): Promise<QdrantQueryResponse | QdrantScoredPoint[]>;
+}
+
+type QdrantClientConstructor = new (params: { url: string; apiKey?: string }) => QdrantClientLike;
+
+interface QdrantErrorLike {
+  status?: number;
+  message?: string;
+  data?: {
+    status?: {
+      error?: string;
+    };
+  };
+}
+
+let QdrantClient: QdrantClientConstructor | null = null;
 
 import { logWarn } from '../../fault-logger.js';
 
-async function loadQdrant(): Promise<any> {
+function asQdrantError(error: unknown): QdrantErrorLike {
+  if (typeof error !== 'object' || error === null) {
+    return {};
+  }
+  return error as QdrantErrorLike;
+}
+
+function getResultPoints(results: QdrantQueryResponse | QdrantScoredPoint[]): QdrantScoredPoint[] {
+  return Array.isArray(results) ? results : (results.points ?? []);
+}
+
+function toPointId(id: QdrantPointId): number {
+  return typeof id === 'number' ? id : parseInt(id, 10);
+}
+
+function getPointPayload(point: QdrantScoredPoint): Record<string, unknown> {
+  return point.payload ?? {};
+}
+
+function asString(value: unknown, fallback: string = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function asNumber(value: unknown, fallback: number = 0): number {
+  return typeof value === 'number' ? value : fallback;
+}
+
+function asNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+async function loadQdrant(): Promise<QdrantClientConstructor> {
   if (QdrantClient) return QdrantClient;
   try {
     const module = await import('@qdrant/js-client-rest');
-    QdrantClient = module.QdrantClient;
-    return QdrantClient;
-  } catch {
+    const clientCtor = module.QdrantClient as unknown as QdrantClientConstructor;
+    QdrantClient = clientCtor;
+    return clientCtor;
+  } catch (error) {
+    logWarn('qdrant', 'Failed to import @qdrant/js-client-rest package for Qdrant backend', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new DependencyError(
       'Qdrant support requires the "@qdrant/js-client-rest" package. ' +
         'Install it with: npm install @qdrant/js-client-rest'
@@ -146,7 +275,7 @@ export interface QdrantMemoryResult extends Memory {
 // ============================================================================
 
 export class QdrantVectorStore implements VectorStore {
-  private client: any = null;
+  private client: QdrantClientLike | null = null;
   private config: QdrantConfig;
   private dimensions: number = 384;
   private prefix: string;
@@ -174,7 +303,7 @@ export class QdrantVectorStore implements VectorStore {
     return this.projectId;
   }
 
-  private async getClient(): Promise<any> {
+  private async getClient(): Promise<QdrantClientLike> {
     if (this.client) return this.client;
 
     const ClientClass = await loadQdrant();
@@ -245,12 +374,28 @@ export class QdrantVectorStore implements VectorStore {
       }
 
       this.initialized[key] = true;
-    } catch (e: any) {
-      if (e.status === 404 || e.message?.includes('Not found')) {
-        await this.createMultiVectorCollection(name, type);
+    } catch (error: unknown) {
+      const qdrantError = asQdrantError(error);
+      if (qdrantError.status === 404 || qdrantError.message?.includes('Not found')) {
+        try {
+          await this.createMultiVectorCollection(name, type);
+        } catch (createError: unknown) {
+          const createErr = asQdrantError(createError);
+          // Qdrant may still have stale data on disk after deletion — retry once
+          if (
+            createErr.status === 400 &&
+            createErr.data?.status?.error?.includes('already exists')
+          ) {
+            await client.deleteCollection(name);
+            await new Promise((r) => setTimeout(r, 500));
+            await this.createMultiVectorCollection(name, type);
+          } else {
+            throw createError;
+          }
+        }
         this.initialized[key] = true;
       } else {
-        throw e;
+        throw error;
       }
     }
   }
@@ -261,7 +406,7 @@ export class QdrantVectorStore implements VectorStore {
   ): Promise<void> {
     const client = await this.getClient();
 
-    const collectionConfig: any = {
+    const collectionConfig: QdrantCollectionConfig = {
       vectors: {
         dense: {
           size: this.dimensions,
@@ -391,9 +536,9 @@ export class QdrantVectorStore implements VectorStore {
       params: { hnsw_ef: this.searchEf, exact: false },
       with_payload: false,
     });
-    return (results.points ?? results).map((r: any) => ({
-      id: typeof r.id === 'number' ? r.id : parseInt(r.id),
-      similarity: r.score,
+    return getResultPoints(results).map((point) => ({
+      id: toPointId(point.id),
+      similarity: point.score,
     }));
   }
 
@@ -433,7 +578,7 @@ export class QdrantVectorStore implements VectorStore {
     const projectId = options?.projectId ?? this.projectId;
     const includeGlobal = options?.includeGlobal ?? true;
 
-    let filter: any = undefined;
+    let filter: QdrantFilter | undefined;
     if (projectId) {
       if (includeGlobal) {
         filter = {
@@ -458,9 +603,9 @@ export class QdrantVectorStore implements VectorStore {
       params: { hnsw_ef: this.searchEf, exact: false },
       with_payload: false,
     });
-    return (results.points ?? results).map((r: any) => ({
-      id: typeof r.id === 'number' ? r.id : parseInt(r.id),
-      similarity: r.score,
+    return getResultPoints(results).map((point) => ({
+      id: toPointId(point.id),
+      similarity: point.score,
     }));
   }
 
@@ -504,9 +649,9 @@ export class QdrantVectorStore implements VectorStore {
       params: { hnsw_ef: this.searchEf, exact: false },
       with_payload: false,
     });
-    return (results.points ?? results).map((r: any) => ({
-      id: typeof r.id === 'number' ? r.id : parseInt(r.id),
-      similarity: r.score,
+    return getResultPoints(results).map((point) => ({
+      id: toPointId(point.id),
+      similarity: point.score,
     }));
   }
 
@@ -844,7 +989,7 @@ export class QdrantVectorStore implements VectorStore {
     const name = this.collectionName('documents');
 
     // Build filter
-    const must: any[] = [];
+    const must: QdrantCondition[] = [];
     if (options?.codeOnly) must.push({ key: 'doc_type', match: { value: 'code' } });
     if (options?.docsOnly) must.push({ key: 'doc_type', match: { value: 'doc' } });
     if (options?.projectId) must.push({ key: 'project_id', match: { value: options.projectId } });
@@ -874,20 +1019,23 @@ export class QdrantVectorStore implements VectorStore {
       limit,
     });
 
-    const points = results.points ?? results;
-    return points.map((p: any) => ({
-      id: typeof p.id === 'number' ? p.id : parseInt(p.id),
-      file_path: p.payload?.file_path ?? '',
-      content: p.payload?.content ?? '',
-      start_line: p.payload?.start_line ?? 0,
-      end_line: p.payload?.end_line ?? 0,
-      similarity: p.score,
-      bm25Score: 0, // RRF doesn't expose individual scores
-      vectorScore: 0,
-      symbol_name: p.payload?.symbol_name ?? null,
-      symbol_type: p.payload?.symbol_type ?? null,
-      signature: p.payload?.signature ?? null,
-    }));
+    const points = getResultPoints(results);
+    return points.map((point) => {
+      const payload = getPointPayload(point);
+      return {
+        id: toPointId(point.id),
+        file_path: asString(payload.file_path),
+        content: asString(payload.content),
+        start_line: asNumber(payload.start_line),
+        end_line: asNumber(payload.end_line),
+        similarity: point.score,
+        bm25Score: 0, // RRF doesn't expose individual scores
+        vectorScore: 0,
+        symbol_name: asNullableString(payload.symbol_name),
+        symbol_type: asNullableString(payload.symbol_type),
+        signature: asNullableString(payload.signature),
+      };
+    });
   }
 
   /**
@@ -914,8 +1062,8 @@ export class QdrantVectorStore implements VectorStore {
     const projectId = options?.projectId ?? this.projectId;
     const now = options?.asOfDate ?? new Date();
 
-    const must: any[] = [];
-    const should: any[] = [];
+    const must: QdrantCondition[] = [];
+    const should: QdrantCondition[] = [];
 
     // Soft-delete filter
     must.push({ is_null: { key: 'invalidated_by' } });
@@ -963,7 +1111,7 @@ export class QdrantVectorStore implements VectorStore {
       }
     }
 
-    const filter: any = {};
+    const filter: QdrantFilter = {};
     if (must.length) filter.must = must;
     if (should.length) filter.should = should;
 
@@ -988,8 +1136,8 @@ export class QdrantVectorStore implements VectorStore {
       limit,
     });
 
-    const points = results.points ?? results;
-    return points.map((p: any) => this.payloadToMemory(p));
+    const points = getResultPoints(results);
+    return points.map((point) => this.payloadToMemory(point));
   }
 
   /**
@@ -1009,7 +1157,7 @@ export class QdrantVectorStore implements VectorStore {
     const client = await this.getClient();
     const name = this.collectionName('global_memories');
 
-    const must: any[] = [];
+    const must: QdrantCondition[] = [];
 
     // Soft-delete
     must.push({ is_null: { key: 'invalidated_by' } });
@@ -1064,8 +1212,8 @@ export class QdrantVectorStore implements VectorStore {
       limit,
     });
 
-    const points = results.points ?? results;
-    return points.map((p: any) => this.payloadToMemory(p));
+    const points = getResultPoints(results);
+    return points.map((point) => this.payloadToMemory(point));
   }
 
   /**
@@ -1076,7 +1224,7 @@ export class QdrantVectorStore implements VectorStore {
     embedding: number[],
     limit: number,
     threshold: number,
-    filter?: any
+    filter?: QdrantFilter
   ): Promise<VectorSearchResult[]> {
     const client = await this.getClient();
     const name = this.collectionName(collection);
@@ -1089,10 +1237,10 @@ export class QdrantVectorStore implements VectorStore {
       limit,
       with_payload: false,
     });
-    const points = results.points ?? results;
-    return points.map((r: any) => ({
-      id: typeof r.id === 'number' ? r.id : parseInt(r.id),
-      similarity: r.score,
+    const points = getResultPoints(results);
+    return points.map((point) => ({
+      id: toPointId(point.id),
+      similarity: point.score,
     }));
   }
 
@@ -1115,12 +1263,15 @@ export class QdrantVectorStore implements VectorStore {
       limit,
       with_payload: ['content'],
     });
-    const points = results.points ?? results;
-    return points.map((r: any) => ({
-      id: typeof r.id === 'number' ? r.id : parseInt(r.id),
-      content: r.payload?.content ?? '',
-      similarity: r.score,
-    }));
+    const points = getResultPoints(results);
+    return points.map((point) => {
+      const payload = getPointPayload(point);
+      return {
+        id: toPointId(point.id),
+        content: asString(payload.content),
+        similarity: point.score,
+      };
+    });
   }
 
   // ==========================================================================
@@ -1128,24 +1279,24 @@ export class QdrantVectorStore implements VectorStore {
   // ==========================================================================
 
   /** Convert a Qdrant point with memory payload to a Memory + similarity. */
-  private payloadToMemory(point: any): QdrantMemoryResult {
-    const p = point.payload ?? {};
+  private payloadToMemory(point: QdrantScoredPoint): QdrantMemoryResult {
+    const payload = getPointPayload(point);
     return {
-      id: typeof point.id === 'number' ? point.id : parseInt(point.id),
-      content: p.content ?? '',
-      tags: Array.isArray(p.tags) ? p.tags : [],
-      source: p.source ?? null,
-      type: (p.type as MemoryType) ?? null,
-      quality_score: p.quality_score ?? null,
+      id: toPointId(point.id),
+      content: asString(payload.content),
+      tags: asStringArray(payload.tags),
+      source: asNullableString(payload.source),
+      type: asNullableString(payload.type) as MemoryType | null,
+      quality_score: asNullableNumber(payload.quality_score),
       quality_factors: null,
-      access_count: p.access_count ?? 0,
-      last_accessed: p.last_accessed ?? null,
-      correction_count: p.correction_count ?? 0,
-      is_invariant: !!p.is_invariant,
-      priority_score: p.priority_score ?? null,
-      valid_from: p.valid_from ?? null,
-      valid_until: p.valid_until ?? null,
-      created_at: p.created_at ?? '',
+      access_count: asNumber(payload.access_count),
+      last_accessed: asNullableString(payload.last_accessed),
+      correction_count: asNumber(payload.correction_count),
+      is_invariant: Boolean(payload.is_invariant),
+      priority_score: asNullableNumber(payload.priority_score),
+      valid_from: asNullableString(payload.valid_from),
+      valid_until: asNullableString(payload.valid_until),
+      created_at: asString(payload.created_at),
       similarity: point.score,
     };
   }

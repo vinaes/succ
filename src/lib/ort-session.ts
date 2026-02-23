@@ -201,7 +201,10 @@ function findTransformersJsCache(modelName: string): string | null {
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) return candidate;
     }
-  } catch {
+  } catch (error) {
+    logWarn('ort-session', 'Failed to resolve ONNX model path from @huggingface/transformers cache', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // @huggingface/transformers not installed or path resolution failed
   }
   return null;
@@ -225,7 +228,10 @@ function findHfHubCache(modelName: string): string | null {
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) return candidate;
     }
-  } catch {
+  } catch (error) {
+    logWarn('ort-session', 'Failed to read HuggingFace hub cache snapshot for ONNX model', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Corrupted cache
   }
   return null;

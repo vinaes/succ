@@ -18,6 +18,7 @@ import { glob } from 'glob';
 import { getProjectRoot, getSuccDir } from '../config.js';
 import type { CodebaseContext } from './types.js';
 
+import { logWarn } from '../fault-logger.js';
 // Rough char-to-token ratio (conservative: 1 token ≈ 4 chars)
 const CHARS_PER_TOKEN = 4;
 
@@ -113,7 +114,10 @@ async function gatherCodeSearch(description: string): Promise<string> {
         );
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('codebase-context', 'Hybrid search failed for codebase context, falling back to AST/glob', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Index not available, fall through to AST/glob
   }
 
@@ -143,7 +147,10 @@ async function gatherCodeSearch(description: string): Promise<string> {
         tree.delete();
         return symbols;
       };
-    } catch {
+    } catch (error) {
+      logWarn('codebase-context', 'Tree-sitter import failed for codebase context extraction', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // tree-sitter not available
     }
 

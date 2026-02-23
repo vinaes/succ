@@ -124,7 +124,10 @@ export async function profileProjectWithAST(projectRoot: string): Promise<Projec
     const extractor = await import('../lib/tree-sitter/extractor.js');
     parseCode = parser.parseCode;
     extractSymbolsFn = extractor.extractSymbols;
-  } catch {
+  } catch (error) {
+    logWarn('analyze-profile', 'Tree-sitter import failed for symbol extraction', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // tree-sitter not available
   }
 
@@ -161,7 +164,10 @@ export async function profileProjectWithAST(projectRoot: string): Promise<Projec
             symbols: symbols.map((s) => ({ name: s.name, type: s.type })),
           });
         }
-      } catch {
+      } catch (error) {
+        logWarn('analyze-profile', 'Tree-sitter parse failed for source file', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // skip unparseable files
       }
     }
@@ -365,14 +371,20 @@ Rules:
   let parsed: ProjectProfile | null = null;
   try {
     parsed = JSON.parse(jsonStr) as ProjectProfile;
-  } catch {
+  } catch (error) {
+    logWarn('analyze-profile', 'Failed to parse LLM profile JSON response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Attempt to repair truncated JSON by closing open brackets
     const repaired = repairTruncatedJSON(jsonStr);
     if (repaired) {
       try {
         parsed = JSON.parse(repaired) as ProjectProfile;
         console.log('  (repaired truncated JSON)');
-      } catch {
+      } catch (error) {
+        logWarn('analyze-profile', 'Failed to parse repaired truncated JSON response', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         /* still broken */
       }
     }
@@ -517,7 +529,10 @@ export async function gatherProjectContext(
     try {
       const content = fs.readFileSync(filePath, 'utf-8').slice(0, charLimit);
       parts.push(`## ${sourceFile}\n\`\`\`\n${content}\n\`\`\`\n`);
-    } catch {
+    } catch (error) {
+      logWarn('analyze-profile', 'Failed to read source file for context', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       /* skip unreadable */
     }
   }
@@ -542,7 +557,10 @@ export function gatherMinimalContext(projectRoot: string): string {
         const deps = Object.keys(pkg.dependencies).slice(0, 10).join(', ');
         parts.push(`Key dependencies: ${deps}`);
       }
-    } catch {
+    } catch (error) {
+      logWarn('analyze-profile', 'Failed to parse package.json for project context', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore parse errors
     }
   }
@@ -574,7 +592,10 @@ export function gatherMinimalContext(projectRoot: string): string {
     if (dirs.length > 0) {
       parts.push(`Main directories: ${dirs.join(', ')}`);
     }
-  } catch {
+  } catch (error) {
+    logWarn('analyze-profile', 'Failed to read project root directory listing', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Ignore errors
   }
 
@@ -605,7 +626,10 @@ export function getExistingBrainDocs(brainDir: string): string[] {
           docs.push(docName);
         }
       }
-    } catch {
+    } catch (error) {
+      logWarn('analyze-profile', 'Failed to read brain vault directory for doc listing', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore errors
     }
   }

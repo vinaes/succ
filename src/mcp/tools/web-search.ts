@@ -124,7 +124,10 @@ function formatCitations(
     let title: string;
     try {
       title = result?.title || new URL(url).hostname;
-    } catch {
+    } catch (error) {
+      logWarn('web-search', 'Failed to parse citation URL for hostname extraction', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       title = url;
     }
     lines.push(`[${i + 1}] [${title}](${url})`);

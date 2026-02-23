@@ -22,6 +22,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { createRequire } from 'module';
 import {
   closeDb,
   closeGlobalDb,
@@ -46,6 +47,9 @@ import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
 import { registerWebFetchTools } from './tools/web-fetch.js';
 import { setResolvedProfile } from './profile.js';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../../package.json') as { version: string };
 
 // ---------------------------------------------------------------------------
 // Tool profile definitions
@@ -134,7 +138,7 @@ if (projectArgIdx !== -1 && process.argv[projectArgIdx + 1]) {
 // Create MCP server
 const server = new McpServer({
   name: 'succ',
-  version: '0.1.0',
+  version,
 });
 
 // ---------------------------------------------------------------------------

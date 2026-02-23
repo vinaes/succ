@@ -222,6 +222,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { logWarn } from './fault-logger.js';
 /**
  * Get current model from environment variable, Claude Code transcript, or default to sonnet
  *
@@ -242,7 +243,10 @@ export function getCurrentModel(): string {
     if (detectedModel) {
       return detectedModel;
     }
-  } catch {
+  } catch (error) {
+    logWarn('pricing', 'Failed to detect model from Claude Code session transcript', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Ignore errors, fall back to default
   }
 

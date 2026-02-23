@@ -30,6 +30,7 @@ import type {
 } from '../types.js';
 import { StorageError, ConfigError } from '../../errors.js';
 
+import { logWarn } from '../../fault-logger.js';
 // Lazy-load pg to make it optional
 let pg: typeof import('pg') | null = null;
 
@@ -38,7 +39,10 @@ async function loadPg(): Promise<typeof import('pg')> {
   try {
     pg = await import('pg');
     return pg;
-  } catch {
+  } catch (error) {
+    logWarn('postgresql', 'Failed to import pg package for PostgreSQL backend', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new ConfigError(
       'PostgreSQL support requires the "pg" package. ' + 'Install it with: npm install pg'
     );
@@ -147,7 +151,10 @@ export class PostgresBackend {
     try {
       const { getEmbeddingInfo } = await import('../../embeddings.js');
       return getEmbeddingInfo().dimensions ?? 384;
-    } catch {
+    } catch (error) {
+      logWarn('postgresql', 'Failed to read embedding dimensions, using default 384', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return 384;
     }
   }
@@ -801,7 +808,7 @@ export class PostgresBackend {
     // similarity = 1 - distance/2 for normalized vectors
     // For our use: similarity = 1 - distance (since cosine distance from pgvector is 1-cosine_similarity)
     let whereExtra = '';
-    const params: any[] = [toPgVector(queryEmbedding), this.projectId, threshold, limit];
+    const params: unknown[] = [toPgVector(queryEmbedding), this.projectId, threshold, limit];
     if (options?.codeOnly) whereExtra = " AND file_path LIKE 'code:%'";
     else if (options?.docsOnly) whereExtra = " AND file_path NOT LIKE 'code:%'";
     if (options?.symbolType) {
@@ -845,7 +852,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     let query = `SELECT id, file_path, content, start_line, end_line FROM documents WHERE id = ANY($1)`;
-    const params: any[] = [ids];
+    const params: unknown[] = [ids];
 
     if (options?.codeOnly) {
       query += ` AND file_path LIKE 'code:%'`;
@@ -878,7 +885,7 @@ export class PostgresBackend {
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until, created_at
       FROM memories WHERE id = ANY($1)`;
-    const params: any[] = [ids];
+    const params: unknown[] = [ids];
     let idx = 2;
 
     // Soft-delete filter (default: exclude invalidated)
@@ -1130,7 +1137,7 @@ export class PostgresBackend {
       WHERE 1 - (embedding <=> $1) >= $2
         AND invalidated_by IS NULL
     `;
-    const params: any[] = [toPgVector(queryEmbedding), threshold];
+    const params: unknown[] = [toPgVector(queryEmbedding), threshold];
     let paramIndex = 3;
 
     // Filter by project_id: include current project AND optionally global (NULL)
@@ -1238,7 +1245,23 @@ export class PostgresBackend {
 
   async getMemoriesByTag(tag: string, limit: number = 5): Promise<Memory[]> {
     const pool = await this.getPool();
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number;
+      content: string;
+      tags: string[] | string | null;
+      source: string | null;
+      type: MemoryType | null;
+      quality_score: number | null;
+      quality_factors: Record<string, number> | string | null;
+      access_count: number | null;
+      last_accessed: string | null;
+      valid_from: string | null;
+      valid_until: string | null;
+      correction_count: number | null;
+      is_invariant: boolean | number | null;
+      priority_score: number | null;
+      created_at: string;
+    }>(
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
               correction_count, is_invariant, priority_score, created_at
@@ -1251,7 +1274,7 @@ export class PostgresBackend {
       [tag, limit, this.projectId]
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
@@ -1321,7 +1344,7 @@ export class PostgresBackend {
              correction_count, is_invariant, priority_score, created_at
       FROM memories
     `;
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     // Filter by project_id and exclude soft-deleted
@@ -1397,7 +1420,7 @@ export class PostgresBackend {
              correction_count, is_invariant, priority_score, created_at
       FROM memories
     `;
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (this.projectId) {
@@ -1752,7 +1775,7 @@ export class PostgresBackend {
       ORDER BY embedding <=> $1
       LIMIT $3
     `;
-    const params: any[] = [toPgVector(queryEmbedding), threshold, limit];
+    const params: unknown[] = [toPgVector(queryEmbedding), threshold, limit];
 
     const result = await pool.query(query, params);
 
@@ -2225,10 +2248,16 @@ export class PostgresBackend {
       params.push(linkId);
       try {
         await pool.query(`UPDATE memory_links SET ${sets.join(', ')} WHERE id = $${idx}`, params);
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Duplicate key: a link with the target (source_id, target_id, relation) already exists.
         // Delete this link and mark the existing one as enriched instead.
-        if (err.code === '23505' && updates.relation) {
+        if (
+          typeof err === 'object' &&
+          err !== null &&
+          'code' in err &&
+          err.code === '23505' &&
+          updates.relation
+        ) {
           const row = await pool.query(
             'SELECT source_id, target_id FROM memory_links WHERE id = $1',
             [linkId]
@@ -2403,7 +2432,14 @@ export class PostgresBackend {
     const whereClause = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      event_type: string;
+      query_count: string | number;
+      total_returned_tokens: string | number;
+      total_full_source_tokens: string | number;
+      total_savings_tokens: string | number;
+      total_estimated_cost: string | number;
+    }>(
       `
       SELECT
         event_type,
@@ -2420,13 +2456,13 @@ export class PostgresBackend {
       params
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       event_type: row.event_type,
-      query_count: parseInt(row.query_count),
-      total_returned_tokens: parseInt(row.total_returned_tokens),
-      total_full_source_tokens: parseInt(row.total_full_source_tokens),
-      total_savings_tokens: parseInt(row.total_savings_tokens),
-      total_estimated_cost: parseFloat(row.total_estimated_cost),
+      query_count: parseInt(String(row.query_count), 10),
+      total_returned_tokens: parseInt(String(row.total_returned_tokens), 10),
+      total_full_source_tokens: parseInt(String(row.total_full_source_tokens), 10),
+      total_savings_tokens: parseInt(String(row.total_savings_tokens), 10),
+      total_estimated_cost: parseFloat(String(row.total_estimated_cost)),
     }));
   }
 
@@ -2499,23 +2535,35 @@ export class PostgresBackend {
     const limit = filter.limit ?? 20;
     params.push(limit);
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number | string;
+      tool_name: WebSearchHistoryRecord['tool_name'];
+      model: string;
+      query: string;
+      prompt_tokens: number | string;
+      completion_tokens: number | string;
+      estimated_cost_usd: number | string;
+      citations_count: number | string;
+      has_reasoning: boolean | number;
+      response_length_chars: number | string;
+      created_at: string | Date;
+    }>(
       `SELECT id, tool_name, model, query, prompt_tokens, completion_tokens, estimated_cost_usd, citations_count, has_reasoning, response_length_chars, created_at
        FROM web_search_history ${where} ORDER BY created_at DESC LIMIT $${paramIdx}`,
       params
     );
 
-    return result.rows.map((row: any) => ({
-      id: parseInt(row.id),
+    return result.rows.map((row) => ({
+      id: parseInt(String(row.id), 10),
       tool_name: row.tool_name,
       model: row.model,
       query: row.query,
-      prompt_tokens: parseInt(row.prompt_tokens),
-      completion_tokens: parseInt(row.completion_tokens),
-      estimated_cost_usd: parseFloat(row.estimated_cost_usd),
-      citations_count: parseInt(row.citations_count),
+      prompt_tokens: parseInt(String(row.prompt_tokens), 10),
+      completion_tokens: parseInt(String(row.completion_tokens), 10),
+      estimated_cost_usd: parseFloat(String(row.estimated_cost_usd)),
+      citations_count: parseInt(String(row.citations_count), 10),
       has_reasoning: !!row.has_reasoning,
-      response_length_chars: parseInt(row.response_length_chars),
+      response_length_chars: parseInt(String(row.response_length_chars), 10),
       created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     }));
   }
@@ -2654,7 +2702,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
 
     let query: string;
-    let params: any[];
+    let params: unknown[];
 
     if (this.projectId) {
       query = `SELECT id, content, 1 - (embedding <=> $1) as similarity
@@ -2760,7 +2808,7 @@ export class PostgresBackend {
         // Check for duplicates via pgvector
         if (shouldDedup) {
           let dupQuery: string;
-          let dupParams: any[];
+          let dupParams: unknown[];
 
           if (this.projectId) {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
@@ -2963,7 +3011,25 @@ export class PostgresBackend {
       : 'project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number;
+      project_id: string | null;
+      content: string;
+      tags: string[] | string | null;
+      source: string | null;
+      type: MemoryType | null;
+      quality_score: number | null;
+      quality_factors: Record<string, number> | string | null;
+      access_count: number | null;
+      last_accessed: string | null;
+      valid_from: string | null;
+      valid_until: string | null;
+      correction_count: number | null;
+      is_invariant: boolean | number | null;
+      priority_score: number | null;
+      created_at: string;
+      similarity: number | string;
+    }>(
       `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until, created_at,
               1 - (embedding <=> $1) as similarity
@@ -2978,7 +3044,7 @@ export class PostgresBackend {
       [toPgVector(queryEmbedding), asOfStr, threshold, ...scopeParams, limit]
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
@@ -2998,7 +3064,7 @@ export class PostgresBackend {
       valid_from: row.valid_from,
       valid_until: row.valid_until,
       created_at: row.created_at,
-      similarity: parseFloat(row.similarity),
+      similarity: parseFloat(String(row.similarity)),
     }));
   }
 
@@ -3086,7 +3152,14 @@ export class PostgresBackend {
       : 'WHERE project_id IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number;
+      content: string;
+      quality_score: number | null;
+      access_count: number | null;
+      created_at: string;
+      last_accessed: string | null;
+    }>(
       `SELECT id, content, quality_score, access_count, created_at::text as created_at, last_accessed::text as last_accessed
        FROM memories
        ${scopeCond}
@@ -3094,7 +3167,7 @@ export class PostgresBackend {
       params
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
       quality_score: row.quality_score,
@@ -3132,7 +3205,22 @@ export class PostgresBackend {
       : 'WHERE project_id IS NULL AND invalidated_by IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number;
+      content: string;
+      tags: string[] | string | null;
+      source: string | null;
+      type: string | null;
+      project_id: string | null;
+      created_at: string;
+      valid_from: string | null;
+      valid_until: string | null;
+      invalidated_by: number | null;
+      access_count: number | null;
+      last_accessed: string | null;
+      quality_score: number | null;
+      embedding: string;
+    }>(
       `SELECT id, content, tags, source, type, project_id,
               created_at::text as created_at, valid_from::text as valid_from,
               valid_until::text as valid_until, invalidated_by, access_count,
@@ -3143,10 +3231,14 @@ export class PostgresBackend {
       params
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       content: row.content,
-      tags: row.tags ?? [],
+      tags: Array.isArray(row.tags)
+        ? row.tags
+        : typeof row.tags === 'string'
+          ? JSON.parse(row.tags)
+          : [],
       source: row.source,
       type: row.type,
       projectId: row.project_id,
@@ -3176,7 +3268,15 @@ export class PostgresBackend {
     const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
     const params = this.projectId ? [this.projectId] : [];
 
-    const result = await pool.query(
+    const result = await pool.query<{
+      id: number;
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      project_id: string;
+      embedding: string;
+    }>(
       `SELECT id, file_path, content, start_line, end_line, project_id,
               embedding::text as embedding
        FROM documents ${scopeCond}
@@ -3184,7 +3284,7 @@ export class PostgresBackend {
       params
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       filePath: row.file_path,
       content: row.content,

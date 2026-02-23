@@ -20,6 +20,7 @@ import {
 import type { CommunityResult } from './graph/community-detection.js';
 import { SYNTHESIS_SYSTEM, SYNTHESIS_PROMPT } from '../prompts/index.js';
 
+import { logWarn } from './fault-logger.js';
 const MIN_CLUSTER_SIZE = 5;
 const MAX_OBSERVATIONS_PER_SYNTHESIS = 15;
 
@@ -164,7 +165,14 @@ export async function synthesizeFromCommunities(
             const newTags = [...mem.tags, 'reflected'];
             await updateMemoryTags(mem.id, newTags);
             result.observationsMarked++;
-          } catch {
+          } catch (error) {
+            logWarn(
+              'reflection-synthesizer',
+              'Failed to update memory tags to mark observation as reflected',
+              {
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
             // Non-critical — worst case we re-process next cycle
           }
         }

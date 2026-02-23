@@ -253,7 +253,10 @@ export async function estimateSpecificityByEmbedding(content: string): Promise<n
     const total = clampedHigh + clampedLow;
     if (total === 0) return 0.5;
     return clampedHigh / total;
-  } catch {
+  } catch (error) {
+    logWarn('quality', 'Embedding generation failed for specificity estimation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return 0.5; // neutral fallback
   }
 }
@@ -355,7 +358,10 @@ export async function scoreWithLocal(
             heuristicResult.factors.relevance * 0.2 +
             heuristicResult.factors.uniqueness * 0.2;
         }
-      } catch {
+      } catch (error) {
+        logWarn('quality', 'Embedding-based specificity estimation failed, using heuristic', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Non-fatal — continue with heuristic score
       }
     }
@@ -520,7 +526,10 @@ function parseScoreResponse(response: string): Omit<QualityScore, 'mode'> {
         uniqueness: clamp(parsed.factors?.uniqueness || 0.5, 0, 1),
       },
     };
-  } catch {
+  } catch (error) {
+    logWarn('quality', 'Failed to parse LLM quality score JSON response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Return default scores on parse error
     return {
       score: 0.5,

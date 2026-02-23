@@ -33,7 +33,10 @@ function resolveCodexBin(customBin?: string): string {
   try {
     execFileSync(cmd, [bin], { stdio: 'pipe' });
     return bin;
-  } catch {
+  } catch (error) {
+    logWarn('codex-chat', 'Failed to locate codex binary on PATH', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new Error(
       'Codex CLI not found on PATH. Install it (https://github.com/openai/codex) or pass --codex-bin <path>.'
     );

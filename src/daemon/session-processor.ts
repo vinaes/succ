@@ -23,6 +23,7 @@ import { scoreMemory } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
 import { logWarn } from '../lib/fault-logger.js';
+import { formatTranscriptLines, type TranscriptContent } from '../lib/transcript-utils.js';
 import { FACT_EXTRACTION_SYSTEM, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -33,11 +34,11 @@ interface TranscriptEntry {
   type: 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system' | string;
   message?: {
     role?: string;
-    content?: string | Array<{ type: string; text?: string; name?: string; input?: any }>;
+    content?: TranscriptContent;
   };
   tool_name?: string;
-  tool_input?: any;
-  tool_result?: any;
+  tool_input?: unknown;
+  tool_result?: unknown;
   timestamp?: string;
 }
 
@@ -57,6 +58,27 @@ export interface ExtractedFact {
   type: 'decision' | 'learning' | 'observation' | 'error' | 'pattern';
   confidence: number;
   tags: string[];
+}
+
+type ExtractedFactType = ExtractedFact['type'];
+
+interface ExtractedFactCandidate {
+  content?: unknown;
+  type?: unknown;
+  confidence?: unknown;
+  tags?: unknown;
+}
+
+function isExtractedFactType(value: unknown): value is ExtractedFactType {
+  return (
+    typeof value === 'string' &&
+    ['decision', 'learning', 'observation', 'error', 'pattern'].includes(value)
+  );
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 // ============================================================================
@@ -124,7 +146,10 @@ export function parseTranscript(transcriptPath: string): TranscriptEntry[] {
     try {
       const entry = JSON.parse(line);
       entries.push(entry);
-    } catch {
+    } catch (error) {
+      logWarn('session-processor', 'Failed to parse transcript JSONL line', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Skip malformed lines
     }
   }
@@ -191,7 +216,10 @@ export function parseFactsResponse(response: string): ExtractedFact[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonMatch[0]);
-  } catch {
+  } catch (error) {
+    logWarn('session-processor', 'Failed to parse facts JSON from LLM response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 
@@ -201,18 +229,19 @@ export function parseFactsResponse(response: string): ExtractedFact[] {
 
   // Validate and normalize facts
   return parsed
+    .filter((fact): fact is ExtractedFactCandidate => typeof fact === 'object' && fact !== null)
     .filter(
-      (f: any) =>
-        f.content &&
-        typeof f.content === 'string' &&
-        f.content.length >= 50 &&
-        ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
+      (fact): fact is ExtractedFactCandidate & { content: string; type: ExtractedFactType } =>
+        typeof fact.content === 'string' &&
+        fact.content.length >= 50 &&
+        isExtractedFactType(fact.type)
     )
-    .map((f: any) => ({
-      content: f.content.trim(),
-      type: f.type,
-      confidence: Math.max(0, Math.min(1, f.confidence || 0.7)),
-      tags: Array.isArray(f.tags) ? f.tags.filter((t: any) => typeof t === 'string') : [],
+    .map((fact) => ({
+      content: fact.content.trim(),
+      type: fact.type,
+      confidence:
+        typeof fact.confidence === 'number' ? Math.max(0, Math.min(1, fact.confidence)) : 0.7,
+      tags: toStringArray(fact.tags),
     }));
 }
 
@@ -415,32 +444,20 @@ export function formatTranscriptForExtraction(transcriptContent: string): string
   const formatted = lines
     .map((line) => {
       try {
-        const entry = JSON.parse(line);
-        const getTextContent = (content: any): string => {
-          if (typeof content === 'string') return content;
-          if (Array.isArray(content)) {
-            return content
-              .filter((block: any) => block.type === 'text' && block.text)
-              .map((block: any) => block.text)
-              .join(' ');
+        const entry = JSON.parse(line) as TranscriptEntry;
+        return formatTranscriptLines([entry])[0] ?? null;
+      } catch (error) {
+        logWarn(
+          'session-processor',
+          'Failed to parse transcript JSONL line for extraction formatting',
+          {
+            error: error instanceof Error ? error.message : String(error),
           }
-          return '';
-        };
-
-        if (entry.type === 'assistant' && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `Assistant: ${text.substring(0, 1000)}`;
-        }
-        if ((entry.type === 'human' || entry.type === 'user') && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `User: ${text.substring(0, 500)}`;
-        }
-      } catch {
+        );
         return null;
       }
-      return null;
     })
-    .filter(Boolean)
+    .filter((line): line is string => Boolean(line))
     .join('\n\n');
 
   return formatted;

@@ -1,4 +1,5 @@
 import { getConfig } from './config.js';
+import { logWarn } from './fault-logger.js';
 import type { SymbolType } from './tree-sitter/types.js';
 
 /** Chunking stats — tracks how many files used AST vs regex chunking */
@@ -377,7 +378,10 @@ export async function chunkCodeAsync(content: string, filePath: string): Promise
       // Empty result — fall through to regex for non-empty content
       if (content.trim().length === 0) return tsChunks;
     }
-  } catch {
+  } catch (error) {
+    logWarn('chunker', 'Tree-sitter chunking failed, falling back to regex chunker', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Tree-sitter unavailable or failed — fall through to regex
   }
 
@@ -420,6 +424,7 @@ export function extractFrontmatter(content: string): {
 
     return { frontmatter, body: match[2] };
   } catch {
+    // Expected: user-authored markdown frontmatter can be malformed.
     return { frontmatter: {}, body: content };
   }
 }

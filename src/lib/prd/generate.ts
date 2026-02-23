@@ -16,6 +16,7 @@ import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createPrd, createGate } from './types.js';
 import { savePrd, savePrdMarkdown, saveTasks } from './state.js';
 import { parsePrd } from './parse.js';
+import { logWarn } from '../fault-logger.js';
 import type { Prd, Task, QualityGate, ExecutionMode } from './types.js';
 
 // ============================================================================
@@ -77,7 +78,10 @@ export function binaryAvailable(name: string): boolean {
     const cmd = process.platform === 'win32' ? `where ${name}` : `which ${name}`;
     execSync(cmd, { stdio: 'pipe', timeout: 5000, windowsHide: true });
     return true;
-  } catch {
+  } catch (error) {
+    logWarn('generate', 'Failed to locate binary on PATH for quality gate detection', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
@@ -109,7 +113,10 @@ export function discoverProjectRoots(root: string, maxDepth = 2): ProjectRoot[] 
     let entries: string[];
     try {
       entries = fs.readdirSync(dir);
-    } catch {
+    } catch (error) {
+      logWarn('generate', 'Failed to read directory during project root scan', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return;
     }
     for (const entry of entries) {
@@ -117,7 +124,10 @@ export function discoverProjectRoots(root: string, maxDepth = 2): ProjectRoot[] 
       const full = path.join(dir, entry);
       try {
         if (!fs.statSync(full).isDirectory()) continue;
-      } catch {
+      } catch (error) {
+        logWarn('generate', 'Failed to stat entry during project root directory scan', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         continue;
       }
       const rel = relBase ? `${relBase}/${entry}` : entry;
@@ -163,7 +173,10 @@ export function detectGatesForRoot(projectRoot: ProjectRoot, absRoot: string): Q
           gates.push(createGate('test', prefix + testScript));
         }
       }
-    } catch {
+    } catch (error) {
+      logWarn('generate', 'Failed to parse package.json for test script quality gate detection', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // ignore parse errors
     }
   }

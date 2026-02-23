@@ -5,6 +5,7 @@ import { NetworkError, ValidationError } from '../lib/errors.js';
 import { formatSymbolMap, batchChunks } from './analyze-helpers.js';
 import { cleanMarkdownOutput } from './analyze-utils.js';
 import { gatherMinimalContext, getExistingBrainDocs } from './analyze-profile.js';
+import { logWarn } from '../lib/fault-logger.js';
 import { DOCUMENTATION_WRITER_SYSTEM_SHORT } from '../prompts/index.js';
 
 /** Threshold for switching to recursive analysis (chars) */
@@ -104,7 +105,10 @@ export async function analyzeFileRecursive(
     const { extractSymbolsFromFile } = await import('../lib/tree-sitter/public.js');
     const { symbols } = await extractSymbolsFromFile(absolutePath);
     symbolMap = formatSymbolMap(symbols);
-  } catch {
+  } catch (error) {
+    logWarn('analyze-recursive', 'Tree-sitter symbol extraction failed for file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // tree-sitter unavailable — continue without symbol map
   }
 

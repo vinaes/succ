@@ -17,6 +17,7 @@ import { logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, type LLMBackend } from './llm.js';
+import { formatTranscriptLines, type TranscriptMessage } from './transcript-utils.js';
 import { FACT_EXTRACTION_SYSTEM, FACT_EXTRACTION_PROMPT } from '../prompts/index.js';
 import { getLLMTaskConfig } from './config.js';
 
@@ -29,6 +30,28 @@ export interface ExtractedFact {
   confidence: number;
   tags: string[];
   files?: string[];
+}
+
+type ExtractedFactType = ExtractedFact['type'];
+
+interface ExtractedFactCandidate {
+  content?: unknown;
+  type?: unknown;
+  confidence?: unknown;
+  tags?: unknown;
+  files?: unknown;
+}
+
+function isExtractedFactType(value: unknown): value is ExtractedFactType {
+  return (
+    typeof value === 'string' &&
+    ['decision', 'learning', 'observation', 'error', 'pattern'].includes(value)
+  );
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 /**
@@ -96,30 +119,35 @@ function parseFactsResponse(response: string): ExtractedFact[] {
       return [];
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed)) {
       return [];
     }
 
     // Validate and normalize facts
     return parsed
+      .filter((fact): fact is ExtractedFactCandidate => typeof fact === 'object' && fact !== null)
       .filter(
-        (f: any) =>
-          f.content &&
-          typeof f.content === 'string' &&
-          f.content.length >= 50 &&
-          ['decision', 'learning', 'observation', 'error', 'pattern'].includes(f.type)
+        (fact): fact is ExtractedFactCandidate & { content: string; type: ExtractedFactType } =>
+          typeof fact.content === 'string' &&
+          fact.content.length >= 50 &&
+          isExtractedFactType(fact.type)
       )
-      .map((f: any) => ({
-        content: f.content.trim(),
-        type: f.type,
-        confidence: Math.max(0, Math.min(1, f.confidence || 0.7)),
-        tags: Array.isArray(f.tags) ? f.tags.filter((t: any) => typeof t === 'string') : [],
-        files: Array.isArray(f.files)
-          ? f.files.filter((t: any) => typeof t === 'string')
-          : undefined,
-      }));
-  } catch {
+      .map((fact) => {
+        const files = toStringArray(fact.files);
+        return {
+          content: fact.content.trim(),
+          type: fact.type,
+          confidence:
+            typeof fact.confidence === 'number' ? Math.max(0, Math.min(1, fact.confidence)) : 0.7,
+          tags: toStringArray(fact.tags),
+          files: files.length > 0 ? files : undefined,
+        };
+      });
+  } catch (error) {
+    logWarn('session-summary', 'Failed to parse LLM fact extraction JSON response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }
@@ -176,7 +204,10 @@ async function saveFactsAsMemories(
         source: 'session-summary',
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
       });
-    } catch {
+    } catch (error) {
+      logWarn('session-summary', 'Failed to prepare fact for memory batch save', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       errors.push(`Failed to save fact: ${fact.content.substring(0, 50)}...`);
     }
   }
@@ -354,32 +385,16 @@ export async function sessionSummary(
   const transcript = lines
     .map((line) => {
       try {
-        const entry = JSON.parse(line);
-        const getTextContent = (content: any): string => {
-          if (typeof content === 'string') return content;
-          if (Array.isArray(content)) {
-            return content
-              .filter((block: any) => block.type === 'text' && block.text)
-              .map((block: any) => block.text)
-              .join(' ');
-          }
-          return '';
-        };
-
-        if (entry.type === 'assistant' && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `Assistant: ${text.substring(0, 1000)}`;
-        }
-        if ((entry.type === 'human' || entry.type === 'user') && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `User: ${text.substring(0, 500)}`;
-        }
-      } catch {
+        const entry = JSON.parse(line) as TranscriptMessage;
+        return formatTranscriptLines([entry])[0] ?? null;
+      } catch (error) {
+        logWarn('session-summary', 'Failed to parse transcript JSONL line for extraction', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return null;
       }
-      return null;
     })
-    .filter(Boolean)
+    .filter((line): line is string => Boolean(line))
     .join('\n\n');
 
   if (transcript.length < 200) {
@@ -394,7 +409,10 @@ export async function sessionSummary(
   try {
     const { takeMemorySnapshot } = await import('./learning-delta.js');
     snapshotBefore = await takeMemorySnapshot();
-  } catch {
+  } catch (error) {
+    logWarn('session-summary', 'Failed to import learning-delta module for memory snapshot', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Learning delta is optional
   }
 
@@ -422,7 +440,10 @@ export async function sessionSummary(
       if (options.verbose) {
         console.log(`  Progress logged: +${delta.newMemories} facts`);
       }
-    } catch {
+    } catch (error) {
+      logWarn('session-summary', 'Failed to compute or append learning delta for session summary', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Progress logging is optional
     }
   }
@@ -456,7 +477,10 @@ export async function sessionSummary(
           model,
           estimated_cost: estimatedCost,
         });
-      } catch {
+      } catch (error) {
+        logWarn('session-summary', 'Failed to record token stats for session summary', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Don't fail if stats recording fails
       }
     }

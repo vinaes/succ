@@ -277,8 +277,10 @@ export class ClaudeWSTransport {
             try {
               const msg = JSON.parse(line) as NDJSONMessage;
               this.handleMessage(msg);
-            } catch {
-              logWarn('ws-transport', `Failed to parse NDJSON line: ${line.substring(0, 200)}`);
+            } catch (error) {
+              logWarn('ws-transport', `Failed to parse NDJSON line: ${line.substring(0, 200)}`, {
+                error: error instanceof Error ? error.message : String(error),
+              });
             }
           }
         });
@@ -387,7 +389,14 @@ export class ClaudeWSTransport {
           if (proc.pid && !proc.killed) {
             proc.kill('SIGKILL');
           }
-        } catch {
+        } catch (error) {
+          logWarn(
+            'claude-ws-transport',
+            'Failed to send SIGKILL to Claude CLI process',
+            {
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
           // Already dead — fine
         }
       }, 3000);
@@ -536,7 +545,14 @@ export class ClaudeWSTransport {
       if (typeof seconds === 'number' && seconds > 0) {
         return seconds * 1000;
       }
-    } catch {
+    } catch (error) {
+      logWarn(
+        'claude-ws-transport',
+        'Failed to read idle timeout from config, using default',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
       // Config not available — use default
     }
     return ClaudeWSTransport.DEFAULT_IDLE_TIMEOUT_MS;

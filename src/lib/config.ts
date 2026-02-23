@@ -82,6 +82,7 @@ import type {
   IdleOperation,
   OperationAssignment as OperationAssignmentType,
 } from './config-types.js';
+import { logWarn } from './fault-logger.js';
 import {
   DEFAULT_CONFIG,
   DEFAULT_API_URL,
@@ -115,7 +116,13 @@ export function invalidateConfigCache(): void {
 function getFileMtime(filePath: string): number {
   try {
     return fs.statSync(filePath).mtimeMs;
-  } catch {
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code !== 'ENOENT') {
+      logWarn('config', 'Failed to get config file mtime', {
+        error: err?.message ?? String(error),
+      });
+    }
     return 0;
   }
 }
@@ -155,7 +162,10 @@ export function getConfig(): SuccConfig {
   if (fs.existsSync(globalConfigPath)) {
     try {
       fileConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
-    } catch {
+    } catch (error) {
+      logWarn('config', 'Failed to parse global config file', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore parse errors
     }
   }
@@ -168,7 +178,10 @@ export function getConfig(): SuccConfig {
         fileConfig as Record<string, unknown>,
         projectConfig
       ) as Partial<SuccConfig>;
-    } catch {
+    } catch (error) {
+      logWarn('config', 'Failed to parse project config file', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore parse errors
     }
   }
@@ -541,7 +554,10 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     const idleRef = globalCfg.idle_reflection as Record<string, unknown> | undefined;
     const ops = idleRef?.operations as Record<string, unknown> | undefined;
     globalConsolidation = ops?.memory_consolidation as boolean | undefined;
-  } catch {
+  } catch (error) {
+    logWarn('config', 'Failed to read global config for memory consolidation safety check', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     /* ignore parse errors */
   }
 
@@ -725,7 +741,21 @@ function isProcessRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === 'ESRCH') {
+      // Expected: process does not exist anymore.
+      return false;
+    }
+    if (err?.code === 'EPERM') {
+      // Process exists but we don't have permission to signal it.
+      return true;
+    }
+    logWarn('config', 'Unexpected failure while checking process liveness', {
+      pid,
+      error: err?.message ?? String(error),
+      code: err?.code,
+    });
     return false;
   }
 }
@@ -751,7 +781,10 @@ export function loadGlobalConfig(): GlobalConfig {
   }
   try {
     return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  } catch {
+  } catch (error) {
+    logWarn('config', 'Failed to parse global config JSON file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {};
   }
 }
@@ -843,7 +876,10 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
             res.on('end', () => {
               try {
                 resolve(JSON.parse(data));
-              } catch {
+              } catch (error) {
+                logWarn('config', 'Failed to parse daemon services API response', {
+                  error: error instanceof Error ? error.message : String(error),
+                });
                 resolve(null);
               }
             });
@@ -855,7 +891,10 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
           resolve(null);
         });
       });
-    } catch {
+    } catch (error) {
+      logWarn('config', 'Failed to query daemon services API for status', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       /* daemon unreachable */
     }
   }

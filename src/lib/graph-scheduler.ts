@@ -1,3 +1,4 @@
+import { logWarn } from './fault-logger.js';
 /**
  * Graph Export Scheduler
  *
@@ -12,7 +13,10 @@ export async function triggerAutoExport(): Promise<void> {
     try {
       const module = await import('./graph-export.js');
       scheduleAutoExport = module.scheduleAutoExport;
-    } catch {
+    } catch (error) {
+      logWarn('graph-scheduler', 'Failed to import graph-export module for auto-export', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Graph export not available, ignore
       return;
     }

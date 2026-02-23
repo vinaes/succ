@@ -10,6 +10,7 @@
  */
 
 import type { Task } from './types.js';
+import { logWarn } from '../fault-logger.js';
 import { loadProgress } from './state.js';
 
 // ============================================================================
@@ -64,11 +65,17 @@ export async function gatherTaskContext(task: Task, prdId: string): Promise<Task
             recalled.push(line);
           }
         }
-      } catch {
+      } catch (error) {
+        logWarn('context', 'Memory recall query failed for PRD context', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Query failed — skip this query
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('context', 'Storage unavailable when building PRD memory context', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Storage not available — that's fine, we just won't have memory context
     recalled.push('(No succ memories available — storage not initialized)');
   }

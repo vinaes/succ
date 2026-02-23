@@ -14,6 +14,7 @@ import { getEmbeddings } from '../lib/embeddings.js';
 import { saveMemory, hybridSearchDocs } from '../lib/storage/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM } from '../lib/llm.js';
+import { logWarn } from '../lib/fault-logger.js';
 import { DISCOVERY_SYSTEM, DISCOVERY_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -67,7 +68,10 @@ function getCurrentCommit(projectRoot: string): string | null {
       encoding: 'utf8',
       timeout: 5000,
     }).trim();
-  } catch {
+  } catch (error) {
+    logWarn('analyzer', 'Failed to get current git commit hash', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -88,7 +92,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
       if (pkg.dependencies) {
         lines.push(`Dependencies: ${Object.keys(pkg.dependencies).slice(0, 10).join(', ')}`);
       }
-    } catch {
+    } catch (error) {
+      logWarn('analyzer', 'Failed to parse package.json for project context', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // intentional
     }
   }
@@ -116,7 +123,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
         tree.delete();
         return symbols;
       };
-    } catch {
+    } catch (error) {
+      logWarn('analyzer', 'Tree-sitter import failed for symbol extraction', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // tree-sitter not available
     }
 
@@ -145,7 +155,10 @@ async function gatherProjectContext(projectRoot: string): Promise<string> {
             lines.push(`  src/${file} [${symbolList}]`);
             continue;
           }
-        } catch {
+        } catch (error) {
+          logWarn('analyzer', 'Tree-sitter symbol extraction failed for source file', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // fall through
         }
       }
@@ -202,7 +215,10 @@ function parseDiscoveries(content: string): Discovery[] {
         Array.isArray(d.tags) &&
         ['learning', 'pattern', 'decision', 'observation'].includes(d.type)
     );
-  } catch {
+  } catch (error) {
+    logWarn('analyzer', 'Failed to parse discovery JSON from LLM response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

@@ -27,6 +27,7 @@ import {
 } from '../../lib/config.js';
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerStatusTools(server: McpServer) {
@@ -134,7 +135,10 @@ export function registerStatusTools(server: McpServer) {
                   '  Run `succ reindex` to refresh'
                 );
               }
-            } catch {
+            } catch (error) {
+              logWarn('status', 'Failed to check index freshness for status overview', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               // Skip freshness check if it fails
             }
 
@@ -161,7 +165,10 @@ export function registerStatusTools(server: McpServer) {
                   );
                 }
               }
-            } catch {
+            } catch (error) {
+              logWarn('status', 'Failed to analyze memory retention health for status overview', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               // Skip retention health if it fails
             }
 
@@ -195,7 +202,10 @@ export function registerStatusTools(server: McpServer) {
                   `  Session started: ${new Date(sc.startedAt).toLocaleTimeString()}`
                 );
               }
-            } catch {
+            } catch (error) {
+              logWarn('status', 'Failed to load current session counters for status overview', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               /* ignore */
             }
 
@@ -210,7 +220,10 @@ export function registerStatusTools(server: McpServer) {
                   `  Today: ${wsSummary.today_searches} ($${wsSummary.today_cost_usd.toFixed(4)})`
                 );
               }
-            } catch {
+            } catch (error) {
+              logWarn('status', 'Failed to fetch web search history summary for status overview', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               /* ignore */
             }
 
@@ -229,7 +242,10 @@ export function registerStatusTools(server: McpServer) {
                     ? `  🟢 md.succ.ai: ok (${mdBase})`
                     : `  🔴 md.succ.ai: HTTP ${hcRes.status} (${mdBase})`
                 );
-              } catch {
+              } catch (error) {
+                logWarn('status', 'Failed to reach md.succ.ai health check endpoint', {
+                  error: error instanceof Error ? error.message : String(error),
+                });
                 status.push('', '## Services', `  🔴 md.succ.ai: unreachable (${mdBase})`);
               }
             }
@@ -337,7 +353,10 @@ export function registerStatusTools(server: McpServer) {
                   `  Today: ${wsSummary.today_searches} searches, $${wsSummary.today_cost_usd.toFixed(4)}`
                 );
               }
-            } catch {
+            } catch (error) {
+              logWarn('status', 'Failed to fetch web search history summary for stats view', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               /* ignore */
             }
 

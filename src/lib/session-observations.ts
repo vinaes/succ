@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from './config.js';
 
+import { logWarn } from './fault-logger.js';
 export interface Observation {
   /** Extracted fact content */
   content: string;
@@ -80,7 +81,14 @@ export function readObservations(sessionId: string): Observation[] {
     .map((line) => {
       try {
         return JSON.parse(line) as Observation;
-      } catch {
+      } catch (error) {
+        logWarn(
+          'session-observations',
+          'Failed to parse observation JSONL line',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
         return null;
       }
     })
@@ -118,7 +126,14 @@ export function removeObservations(sessionId: string): void {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
-  } catch {
+  } catch (error) {
+    logWarn(
+      'session-observations',
+      'Failed to delete session observations file',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // Non-critical
   }
 }
@@ -144,7 +159,14 @@ export function cleanupStaleObservations(maxAgeHours: number = 48): number {
         fs.unlinkSync(filePath);
         cleaned++;
       }
-    } catch {
+    } catch (error) {
+      logWarn(
+        'session-observations',
+        'Failed to stat or delete stale observation file during cleanup',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
       // Skip files we can't stat
     }
   }

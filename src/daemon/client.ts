@@ -140,7 +140,10 @@ export function getDaemonPid(projectDir?: string): number | null {
       return null;
     }
     return pid;
-  } catch {
+  } catch (error) {
+    logWarn('client', 'Failed to read daemon PID file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -272,7 +275,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
           session_id: sessionId,
           run_reflection: runReflection,
         });
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: unregisterSession', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return { success: false, remaining_sessions: -1 };
       }
     },
@@ -294,7 +300,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
           is_service: isService,
         });
         return result?.success === true;
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: sessionActivity', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return false;
       }
     },
@@ -307,7 +316,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
         const endpoint = includeService ? '/api/sessions?includeService=true' : '/api/sessions';
         const result = await httpGet(port, endpoint);
         return result?.sessions || {};
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: getSessions', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return {};
       }
     },
@@ -320,7 +332,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const result = await httpPost(port, '/api/search', { query, limit, threshold });
         return result?.results || [];
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: search', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return [];
       }
     },
@@ -332,7 +347,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const result = await httpPost(port, '/api/search-code', { query, limit });
         return result?.results || [];
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: searchCode', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return [];
       }
     },
@@ -377,7 +395,10 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       try {
         const result = await httpPost(port, '/api/reflect', { session_id: sessionId, force });
         return result?.success === true;
-      } catch {
+      } catch (error) {
+        logWarn('client', 'Daemon call failed: triggerReflection', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return false;
       }
     },
@@ -441,7 +462,10 @@ export async function ensureDaemonRunning(projectDir?: string): Promise<boolean>
     }
 
     return false;
-  } catch {
+  } catch (error) {
+    logWarn('client', 'Failed to spawn daemon process', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

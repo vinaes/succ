@@ -20,6 +20,7 @@ import {
   bulkRestore,
 } from './storage/index.js';
 import { getSuccDir } from './config.js';
+import { logWarn } from './fault-logger.js';
 import { NotFoundError, ValidationError } from './errors.js';
 
 // Checkpoint format version
@@ -138,7 +139,10 @@ function getBrainVaultFiles(): CheckpointBrainFile[] {
             path: relativePath.replace(/\\/g, '/'),
             content,
           });
-        } catch {
+        } catch (error) {
+          logWarn('checkpoint', 'Failed to read brain vault file for checkpoint', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Skip files we can't read
         }
       }
@@ -166,7 +170,10 @@ function getSuccVersion(): string {
       process.platform === 'win32' ? packagePath.replace(/^\/([A-Za-z]):/, '$1:') : packagePath;
     const pkg = JSON.parse(fs.readFileSync(normalizedPath, 'utf8'));
     return pkg.version || 'unknown';
-  } catch {
+  } catch (error) {
+    logWarn('checkpoint', 'Failed to read package.json for succ version', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return 'unknown';
   }
 }
@@ -246,7 +253,10 @@ export async function createCheckpoint(options: CreateCheckpointOptions = {}): P
       if (fs.existsSync(configPath)) {
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       }
-    } catch {
+    } catch (error) {
+      logWarn('checkpoint', 'Failed to read succ config file for checkpoint', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // No config or can't read
     }
   }
@@ -416,7 +426,10 @@ export async function restoreCheckpoint(
     if (fs.existsSync(configPath)) {
       try {
         existingConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      } catch {
+      } catch (error) {
+        logWarn('checkpoint', 'Failed to parse existing config file during checkpoint restore', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Ignore parse errors
       }
     }
@@ -456,7 +469,10 @@ export function listCheckpoints(): Array<{
       try {
         const checkpoint = readCheckpoint(filePath);
         created_at = checkpoint.created_at;
-      } catch {
+      } catch (error) {
+        logWarn('checkpoint', 'Failed to read checkpoint file metadata for listing', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         created_at = stats.mtime.toISOString();
       }
 

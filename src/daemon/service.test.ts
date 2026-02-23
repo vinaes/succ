@@ -305,7 +305,7 @@ describe('Daemon Service', () => {
     it('POST /api/session/activity should auto-register unknown session', async () => {
       const result = await routeRequest('POST', '/api/session/activity', new URLSearchParams(), {
         session_id: 'new-sess',
-        type: 'tool_use',
+        type: 'user_prompt',
       });
 
       expect(result.success).toBe(true);

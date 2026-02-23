@@ -14,6 +14,7 @@
  */
 
 import type { StorageDispatcher } from './dispatcher.js';
+import { logWarn } from '../fault-logger.js';
 import { ConfigError } from '../errors.js';
 
 // Internal SQL query result types (mirrors dispatcher.ts)
@@ -51,6 +52,22 @@ interface SqlDocumentWithEmbedding extends SqlDocumentRow {
   embedding: Buffer;
 }
 
+interface PgGlobalMemoryRow {
+  id: number;
+  content: string;
+  embedding: string | null;
+  tags: string[] | string | null;
+  source: string | null;
+  type: string | null;
+  quality_score: number | null;
+  access_count: number;
+  created_at: string | null;
+  last_accessed: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  invalidated_by: number | null;
+}
+
 // Helper function to parse PG vector string '[1.0,2.0,3.0]' to number[]
 function parsePgVector(str: string | null): number[] | null {
   if (!str || typeof str !== 'string') return null;
@@ -61,7 +78,7 @@ function parsePgVector(str: string | null): number[] | null {
 
 // Helper to get getSqliteFns() from dispatcher
 async function getSqliteFns(d: StorageDispatcher): Promise<typeof import('../db/index.js')> {
-  return (d as any).getSqliteFns();
+  return d.getSqliteFns();
 }
 
 // =============================================================================
@@ -99,8 +116,8 @@ export async function getAllMemoriesForExportImpl(d: StorageDispatcher): Promise
     invalidated_by: number | null;
   }
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const pool = await postgres.getPool();
@@ -209,8 +226,8 @@ export async function getAllDocumentsForExportImpl(d: StorageDispatcher): Promis
     created_at: string;
   }
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const pool = await postgres.getPool();
@@ -298,8 +315,8 @@ export async function getAllMemoryLinksForExportImpl(d: StorageDispatcher): Prom
     llm_enriched: number | boolean;
   }
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const pool = await postgres.getPool();
@@ -347,8 +364,8 @@ export async function getAllCentralityForExportImpl(d: StorageDispatcher): Promi
     updated_at: string;
   }
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const pool = await postgres.getPool();
@@ -435,8 +452,8 @@ export async function bulkRestoreImpl(
   let documentsRestored = 0;
   const memoryIdMap = new Map<number, number>();
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     // PostgreSQL: explicit transaction with proper cleanup
@@ -668,8 +685,8 @@ export async function backfillQdrantImpl(
   const log = options?.onProgress ?? (() => {});
   const dryRun = options?.dryRun ?? false;
 
-  const vectorBackend = (d as any).vectorBackend as 'builtin' | 'qdrant';
-  const qdrant = (d as any).qdrant;
+  const vectorBackend = d.vectorBackend;
+  const qdrant = d.qdrant;
 
   if (vectorBackend !== 'qdrant' || !qdrant) {
     throw new ConfigError('Qdrant is not configured. Set storage.vector = "qdrant" in config.');
@@ -695,7 +712,7 @@ async function backfillMemoriesImpl(
   log: (msg: string) => void,
   dryRun: boolean
 ): Promise<number> {
-  const qdrant = (d as any).qdrant;
+  const qdrant = d.qdrant;
 
   if (!qdrant) {
     log('Skipping memories: Qdrant not configured');
@@ -703,8 +720,8 @@ async function backfillMemoriesImpl(
   }
 
   const projectId = qdrant.getProjectId();
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const rows = await postgres.getAllMemoriesWithEmbeddings();
@@ -712,8 +729,8 @@ async function backfillMemoriesImpl(
     if (dryRun || rows.length === 0) return rows.length;
 
     const items = rows
-      .filter((r: any) => r.embedding?.length > 0)
-      .map((r: any) => ({ id: r.id, embedding: r.embedding, meta: { ...r, projectId } }));
+      .filter((row) => row.embedding.length > 0)
+      .map((row) => ({ id: row.id, embedding: row.embedding, meta: { ...row, projectId } }));
 
     log(`Upserting ${items.length} memories to Qdrant...`);
     await qdrant!.upsertMemoriesBatchWithPayload(items);
@@ -772,20 +789,20 @@ async function backfillGlobalMemoriesImpl(
   log: (msg: string) => void,
   dryRun: boolean
 ): Promise<number> {
-  const qdrant = (d as any).qdrant;
+  const qdrant = d.qdrant;
 
   if (!qdrant) {
     log('Skipping global memories: Qdrant not configured');
     return 0;
   }
 
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   // PostgreSQL: global memories are rows with project_id IS NULL
   if (backend === 'postgresql' && postgres) {
     const pool = await postgres.getPool();
-    const { rows } = await pool.query(
+    const { rows } = await pool.query<PgGlobalMemoryRow>(
       `SELECT id, content, embedding::text, tags, source, type,
               quality_score, access_count,
               created_at::text as created_at,
@@ -800,25 +817,29 @@ async function backfillGlobalMemoriesImpl(
     if (dryRun || rows.length === 0) return rows.length;
 
     const items = rows
-      .filter((r: any) => r.embedding)
-      .map((r: any) => ({
-        id: r.id,
-        embedding: parsePgVector(r.embedding),
-        meta: {
-          content: r.content,
-          tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : (r.tags ?? []),
-          source: r.source,
-          type: r.type,
-          projectId: null,
-          createdAt: r.created_at ?? new Date().toISOString(),
-          validFrom: r.valid_from,
-          validUntil: r.valid_until,
-          invalidatedBy: r.invalidated_by,
-          accessCount: r.access_count ?? 0,
-          lastAccessed: r.last_accessed,
-          qualityScore: r.quality_score,
-        },
-      }));
+      .map((row) => {
+        const embedding = parsePgVector(row.embedding);
+        if (!embedding) return null;
+        return {
+          id: row.id,
+          embedding,
+          meta: {
+            content: row.content,
+            tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags ?? []),
+            source: row.source,
+            type: row.type,
+            projectId: null,
+            createdAt: row.created_at ?? new Date().toISOString(),
+            validFrom: row.valid_from,
+            validUntil: row.valid_until,
+            invalidatedBy: row.invalidated_by,
+            accessCount: row.access_count ?? 0,
+            lastAccessed: row.last_accessed,
+            qualityScore: row.quality_score,
+          },
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     log(`Upserting ${items.length} global memories to Qdrant...`);
     await qdrant!.upsertGlobalMemoriesBatchWithPayload(items);
@@ -831,7 +852,7 @@ async function backfillGlobalMemoriesImpl(
   const gdb = sqlite.getGlobalDb();
 
   // Check if vec tables exist (they may not if sqlite-vec was never initialized)
-  let rows: any[];
+  let rows: SqlMemoryRow[];
   try {
     rows = gdb
       .prepare(
@@ -845,7 +866,14 @@ async function backfillGlobalMemoriesImpl(
        ORDER BY m.id`
       )
       .all() as SqlMemoryRow[];
-  } catch {
+  } catch (error) {
+    logWarn(
+      'dispatcher-export',
+      'Failed to query global memories with vector join, falling back to no-embedding query',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // sqlite-vec tables may not exist — fall back to memory-only query (no embeddings)
     log('Global DB has no vector tables — fetching memories without embeddings');
     rows = gdb
@@ -862,23 +890,23 @@ async function backfillGlobalMemoriesImpl(
   if (dryRun || rows.length === 0) return rows.length;
 
   const items = rows
-    .filter((r: any) => r.embedding)
-    .map((r: any) => ({
-      id: r.id,
-      embedding: Array.from(new Float32Array(r.embedding.buffer ?? r.embedding)),
+    .filter((row): row is SqlMemoryWithEmbedding => !!row.embedding)
+    .map((row) => ({
+      id: row.id,
+      embedding: Array.from(new Float32Array(row.embedding.buffer ?? row.embedding)),
       meta: {
-        content: r.content,
-        tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : (r.tags ?? []),
-        source: r.source,
-        type: r.type,
+        content: row.content,
+        tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : (row.tags ?? []),
+        source: row.source,
+        type: row.type,
         projectId: null,
-        createdAt: r.created_at ?? new Date().toISOString(),
-        validFrom: r.valid_from,
-        validUntil: r.valid_until,
-        invalidatedBy: r.invalidated_by,
-        accessCount: r.access_count ?? 0,
-        lastAccessed: r.last_accessed,
-        qualityScore: r.quality_score,
+        createdAt: row.created_at ?? new Date().toISOString(),
+        validFrom: row.valid_from,
+        validUntil: row.valid_until,
+        invalidatedBy: row.invalidated_by,
+        accessCount: row.access_count ?? 0,
+        lastAccessed: row.last_accessed,
+        qualityScore: row.quality_score,
       },
     }));
 
@@ -893,7 +921,7 @@ async function backfillDocumentsImpl(
   log: (msg: string) => void,
   dryRun: boolean
 ): Promise<number> {
-  const qdrant = (d as any).qdrant;
+  const qdrant = d.qdrant;
 
   if (!qdrant) {
     log('Skipping documents: Qdrant not configured');
@@ -901,8 +929,8 @@ async function backfillDocumentsImpl(
   }
 
   const projectId = qdrant!.getProjectId() ?? '';
-  const backend = (d as any).backend as 'sqlite' | 'postgresql';
-  const postgres = (d as any).postgres;
+  const backend = d.backend;
+  const postgres = d.postgres;
 
   if (backend === 'postgresql' && postgres) {
     const rows = await postgres.getAllDocumentsWithEmbeddings();
@@ -910,8 +938,8 @@ async function backfillDocumentsImpl(
     if (dryRun || rows.length === 0) return rows.length;
 
     const items = rows
-      .filter((r: any) => r.embedding?.length > 0)
-      .map((r: any) => ({ id: r.id, embedding: r.embedding, meta: r }));
+      .filter((row) => row.embedding.length > 0)
+      .map((row) => ({ id: row.id, embedding: row.embedding, meta: row }));
 
     log(`Upserting ${items.length} documents to Qdrant...`);
     await qdrant!.upsertDocumentsBatchWithPayload(items);

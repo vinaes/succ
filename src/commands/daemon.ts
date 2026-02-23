@@ -19,7 +19,7 @@ import {
   ensureDaemonRunning,
 } from '../daemon/client.js';
 import { getSuccDir } from '../lib/config.js';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 export interface DaemonOptions {
   json?: boolean;
@@ -158,7 +158,10 @@ export async function daemonStop(options: DaemonOptions & { force?: boolean } = 
     try {
       process.kill(pid, 'SIGTERM');
       console.log(`Sent SIGTERM to daemon (pid=${pid})`);
-    } catch {
+    } catch (error) {
+      logWarn('daemon', 'Failed to send SIGTERM to daemon process', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Process may have already exited
     }
   }
@@ -253,12 +256,18 @@ function cleanupDaemonFiles(): void {
 
   try {
     fs.unlinkSync(path.join(tmpDir, 'daemon.pid'));
-  } catch {
+  } catch (error) {
+    logWarn('daemon', 'Failed to delete daemon PID file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // intentional
   }
   try {
     fs.unlinkSync(path.join(tmpDir, 'daemon.port'));
-  } catch {
+  } catch (error) {
+    logWarn('daemon', 'Failed to delete daemon port file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // intentional
   }
 }

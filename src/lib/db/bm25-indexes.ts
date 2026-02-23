@@ -28,7 +28,10 @@ function getCodeBm25Index(): bm25.BM25Index {
     try {
       codeBm25Index = bm25.deserializeIndex(stored.value);
       return codeBm25Index;
-    } catch {
+    } catch (error) {
+      logWarn('bm25-indexes', 'Failed to deserialize stored code BM25 index, rebuilding', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Invalid stored index, rebuild
     }
   }
@@ -133,7 +136,10 @@ function getDocsBm25Index(): bm25.BM25Index {
     try {
       docsBm25Index = bm25.deserializeIndex(stored.value);
       return docsBm25Index;
-    } catch {
+    } catch (error) {
+      logWarn('bm25-indexes', 'Failed to deserialize stored docs BM25 index, rebuilding', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Invalid stored index, rebuild
     }
   }
@@ -217,7 +223,10 @@ function getMemoriesBm25Index(): bm25.BM25Index {
     try {
       memoriesBm25Index = bm25.deserializeIndex(stored.value);
       return memoriesBm25Index;
-    } catch {
+    } catch (error) {
+      logWarn('bm25-indexes', 'Failed to deserialize stored memories BM25 index, rebuilding', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Invalid stored index, rebuild
     }
   }
@@ -301,7 +310,10 @@ function getGlobalMemoriesBm25Index(): bm25.BM25Index {
     try {
       globalMemoriesBm25Index = bm25.deserializeIndex(stored.value);
       return globalMemoriesBm25Index;
-    } catch {
+    } catch (error) {
+      logWarn('bm25-indexes', 'Failed to deserialize stored global memories BM25 index, rebuilding', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Invalid stored index, rebuild
     }
   }

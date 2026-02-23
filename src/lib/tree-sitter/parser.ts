@@ -14,6 +14,7 @@ import { getLanguageForExtension, getWasmFileForLanguage } from './types.js';
 
 // Re-export key types from web-tree-sitter for consumers
 import type { Tree, Node, Query, QueryMatch, QueryCapture } from 'web-tree-sitter';
+import { logWarn } from '../fault-logger.js';
 export type { Tree, Node, Query, QueryMatch, QueryCapture };
 
 // State — lazily initialized
@@ -87,7 +88,10 @@ export async function initTreeSitter(): Promise<boolean> {
       });
 
       initialized = true;
-    } catch {
+    } catch (error) {
+      logWarn('parser', 'Failed to initialize web-tree-sitter WASM runtime', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       initialized = false;
     }
   })();
@@ -114,7 +118,10 @@ function getTreeSitterWasmPath(): string {
       'web-tree-sitter.wasm'
     );
     if (fs.existsSync(fromThisFile)) return fromThisFile;
-  } catch {
+  } catch (error) {
+    logWarn('parser', 'Failed to resolve web-tree-sitter.wasm path from import.meta.url', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // import.meta.url may not resolve correctly in all environments
   }
 
@@ -207,11 +214,17 @@ export async function loadLanguage(
       const lang = await LanguageClass.load(localPath);
       languageCache.set(language, lang);
       return lang;
-    } catch {
+    } catch (error) {
+      logWarn('parser', 'Failed to load cached grammar WASM file, will delete and re-download', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Corrupted file — delete and re-download
       try {
         fs.unlinkSync(localPath);
-      } catch {
+      } catch (error) {
+        logWarn('parser', 'Failed to delete corrupted grammar WASM cache file', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // intentional
       }
     }
@@ -225,7 +238,10 @@ export async function loadLanguage(
     const lang = await LanguageClass.load(localPath);
     languageCache.set(language, lang);
     return lang;
-  } catch {
+  } catch (error) {
+    logWarn('parser', 'Failed to load downloaded grammar WASM file from disk', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -242,7 +258,10 @@ function findLocalGrammar(wasmFileName: string): string | null {
   try {
     const thisDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'));
     roots.push(path.resolve(thisDir, '..', '..', '..'));
-  } catch {
+  } catch (error) {
+    logWarn('parser', 'Failed to resolve grammar search root from import.meta.url', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // import.meta.url may not work in all contexts
   }
 
@@ -277,7 +296,10 @@ async function downloadGrammar(wasmFileName: string, destPath: string): Promise<
     try {
       fs.copyFileSync(localPath, destPath);
       return true;
-    } catch {
+    } catch (error) {
+      logWarn('parser', 'Failed to copy local grammar WASM to grammars cache directory', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Fall through to CDN download
     }
   }
@@ -309,7 +331,10 @@ async function downloadGrammar(wasmFileName: string, destPath: string): Promise<
 
       fs.writeFileSync(destPath, buffer);
       return true;
-    } catch {
+    } catch (error) {
+      logWarn('parser', 'Failed to download grammar WASM from CDN source, trying next', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Try next source
       continue;
     }
@@ -331,7 +356,10 @@ export async function parseCode(code: string, language: string): Promise<Tree | 
 
   try {
     return parser.parse(code);
-  } catch {
+  } catch (error) {
+    logWarn('parser', 'Failed to parse source code with tree-sitter parser', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -351,7 +379,10 @@ export async function parseFile(
   try {
     const tree = parser.parse(content);
     return [tree, language];
-  } catch {
+  } catch (error) {
+    logWarn('parser', 'Failed to parse file content with tree-sitter parser', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [null, undefined];
   }
 }
@@ -399,7 +430,10 @@ export function resetParserState(): void {
   for (const parser of parserPool.values()) {
     try {
       parser.delete();
-    } catch {
+    } catch (error) {
+      logWarn('parser', 'Failed to delete parser instance during parser state reset', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // intentional
     }
   }

@@ -328,7 +328,7 @@ export async function getStaleFiles(projectRoot: string): Promise<IndexFreshness
         }
       }
     } catch {
-      // File doesn't exist on disk
+      // Expected: file no longer exists on disk
       deleted.push(entry.file_path);
     }
   }

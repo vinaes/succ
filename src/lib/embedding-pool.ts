@@ -18,6 +18,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { DependencyError } from './errors.js';
 
+import { logWarn } from './fault-logger.js';
 interface WorkerRequest {
   type: 'init' | 'embed' | 'shutdown';
   model?: string;
@@ -188,7 +189,10 @@ export class EmbeddingPool {
           setTimeout(() => {
             try {
               pw.worker.terminate();
-            } catch {
+            } catch (error) {
+              logWarn('embedding-pool', 'Failed to terminate embedding worker thread', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               /* ignore */
             }
             resolve();

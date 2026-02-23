@@ -100,6 +100,13 @@ export interface DocumentBatchWithHash extends DocumentBatch {
   hash: string;
 }
 
+export interface RecentDocumentRecord {
+  file_path: string;
+  content: string;
+  start_line: number;
+  end_line: number;
+}
+
 export const MEMORY_TYPES = [
   'observation',
   'decision',
@@ -128,6 +135,26 @@ export interface Memory {
   created_at: string;
 }
 
+export type MemoryRecord = Memory;
+
+export interface WorkingMemoryRecord {
+  id: number;
+  content: string;
+  quality_score: number | null;
+  access_count: number;
+  created_at: string;
+  last_accessed: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  correction_count: number;
+  is_invariant: boolean;
+  type?: MemoryType | null;
+  tags?: string[] | null;
+  source?: string | null;
+  quality_factors?: Record<string, number> | null;
+  priority_score?: number | null;
+}
+
 export interface MemoryInput {
   content: string;
   embedding: number[];
@@ -151,6 +178,18 @@ export interface SaveMemoryResult {
   linksCreated?: number;
 }
 
+export interface MemoryBatchResult {
+  saved: number;
+  skipped: number;
+  results: Array<{
+    index: number;
+    isDuplicate: boolean;
+    id?: number;
+    reason: 'duplicate' | 'saved';
+    similarity?: number;
+  }>;
+}
+
 export interface MemorySearchResult extends Memory {
   similarity: number;
 }
@@ -169,7 +208,46 @@ export interface GlobalMemory {
 }
 
 export interface GlobalMemorySearchResult extends GlobalMemory {
+  access_count?: number;
+  last_accessed?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  correction_count?: number;
+  is_invariant?: boolean;
+  priority_score?: number | null;
   similarity: number;
+}
+
+export interface SqliteGlobalMemoryStats {
+  total_memories: number;
+  oldest_memory: string | null;
+  newest_memory: string | null;
+  projects: string[];
+}
+
+export interface PostgresGlobalMemoryStats {
+  total: number;
+  by_type: Record<string, number>;
+  by_quality: { high: number; medium: number; low: number; unscored: number };
+}
+
+export type GlobalMemoryStats = SqliteGlobalMemoryStats | PostgresGlobalMemoryStats;
+
+export interface MemoryStats {
+  total_memories: number;
+  active_memories: number;
+  invalidated_memories: number;
+  oldest_memory: string | null;
+  newest_memory: string | null;
+  by_type: Record<string, number>;
+  stale_count: number;
+}
+
+export interface ConsolidationRecord {
+  mergedMemoryId: number;
+  mergedContent: string;
+  originalIds: number[];
+  mergedAt: string;
 }
 
 // ============================================================================
@@ -182,8 +260,9 @@ export interface SearchResult {
   start_line: number;
   end_line: number;
   similarity: number;
-  symbol_name?: string;
-  symbol_type?: string;
+  symbol_name?: string | null;
+  symbol_type?: string | null;
+  signature?: string | null;
 }
 
 export interface HybridSearchResult extends SearchResult {
@@ -194,9 +273,9 @@ export interface HybridSearchResult extends SearchResult {
 export interface HybridMemoryResult {
   id: number;
   content: string;
-  tags: string | null;
+  tags: string[];
   source: string | null;
-  type: string | null;
+  type: MemoryType | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;
@@ -210,10 +289,10 @@ export interface HybridMemoryResult {
 export interface HybridGlobalMemoryResult {
   id: number;
   content: string;
-  tags: string | null;
+  tags: string[];
   source: string | null;
   project: string | null;
-  type: string | null;
+  type: MemoryType | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;
@@ -262,20 +341,34 @@ export interface MemoryWithLinks extends Memory {
     target_id: number;
     relation: LinkRelation;
     weight: number;
-    target_content: string;
+    target_content?: string;
+    valid_from?: string | null;
+    valid_until?: string | null;
   }>;
   incoming_links: Array<{
     source_id: number;
     relation: LinkRelation;
     weight: number;
-    source_content: string;
+    source_content?: string;
+    valid_from?: string | null;
+    valid_until?: string | null;
   }>;
 }
 
 export interface ConnectedMemory {
-  memory: Memory;
+  memory: MemoryRecord;
   depth: number;
   path: number[];
+}
+
+export interface LinkInfo {
+  outgoing: MemoryLink[];
+  incoming: MemoryLink[];
+}
+
+export interface LinkCandidate {
+  id: number;
+  similarity: number;
 }
 
 export interface GraphStats {
@@ -283,6 +376,13 @@ export interface GraphStats {
   total_links: number;
   avg_links_per_memory: number;
   isolated_memories: number;
+  relations: Record<string, number>;
+}
+
+export interface GraphStatsAsOf {
+  total_memories: number;
+  total_links: number;
+  avg_links_per_memory: number;
   relations: Record<string, number>;
 }
 
@@ -315,6 +415,35 @@ export interface TokenStatsAggregated {
   avg_savings_tokens: number;
   avg_savings_percent: number;
 }
+
+export interface TokenStatsByEvent {
+  event_type: string;
+  query_count: number;
+  total_returned_tokens: number;
+  total_full_source_tokens: number;
+  total_savings_tokens: number;
+  total_estimated_cost: number;
+}
+
+export interface TokenStatsSummaryLegacy {
+  total_queries: number;
+  total_returned_tokens: number;
+  total_full_source_tokens: number;
+  total_savings_tokens: number;
+  total_estimated_cost: number;
+}
+
+export interface TokenStatsSummaryNormalized {
+  total_calls: number;
+  total_returned_tokens: number;
+  total_full_source_tokens: number;
+  total_savings_tokens: number;
+  total_estimated_cost: number;
+  savings_percent: number;
+  by_event_type: TokenStatsByEvent[];
+}
+
+export type TokenStatsSummary = TokenStatsSummaryLegacy | TokenStatsSummaryNormalized;
 
 // ============================================================================
 // Retention Types

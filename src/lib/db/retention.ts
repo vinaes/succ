@@ -1,4 +1,6 @@
 import { getDb } from './connection.js';
+import type { MemoryType } from './schema.js';
+import { parseTags, parseMemoryType, parseQualityFactors } from './parse-helpers.js';
 
 /**
  * Increment access count for a memory.
@@ -87,11 +89,11 @@ export function updatePriorityScore(memoryId: number, score: number): void {
 export function getPinnedMemories(threshold: number = 2): Array<{
   id: number;
   content: string;
-  tags: string | null;
+  tags: string[];
   source: string | null;
-  type: string | null;
+  type: MemoryType | null;
   quality_score: number | null;
-  quality_factors: string | null;
+  quality_factors: Record<string, number> | null;
   access_count: number;
   last_accessed: string | null;
   valid_from: string | null;
@@ -114,13 +116,39 @@ export function getPinnedMemories(threshold: number = 2): Array<{
       ORDER BY is_invariant DESC, correction_count DESC, quality_score DESC
     `
     )
-    .all(threshold) as any[];
-  return rows.map((row: any) => ({
-    ...row,
+    .all(threshold) as Array<{
+    id: number;
+    content: string;
+    tags: string | null;
+    source: string | null;
+    type: string | null;
+    quality_score: number | null;
+    quality_factors: string | null;
+    access_count: number | null;
+    last_accessed: string | null;
+    valid_from: string | null;
+    valid_until: string | null;
+    correction_count: number | null;
+    is_invariant: number | null;
+    priority_score: number | null;
+    created_at: string;
+  }>;
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    tags: parseTags(row.tags),
+    source: row.source,
+    type: parseMemoryType(row.type),
+    quality_score: row.quality_score,
+    quality_factors: parseQualityFactors(row.quality_factors),
     access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
+    valid_from: row.valid_from,
+    valid_until: row.valid_until,
     correction_count: row.correction_count ?? 0,
     is_invariant: !!row.is_invariant,
     priority_score: row.priority_score ?? null,
+    created_at: row.created_at,
   }));
 }
 

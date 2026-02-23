@@ -91,7 +91,10 @@ function getModifiedFiles(cwd: string): string[] {
   try {
     const output = git('diff --name-only HEAD~1', cwd);
     return output ? output.split('\n').filter(Boolean) : [];
-  } catch {
+  } catch (error) {
+    logWarn('runner', 'Failed to get modified files via git diff HEAD~1', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }
@@ -103,7 +106,10 @@ export function isProcessRunning(pid: number): boolean {
   try {
     process.kill(pid, 0); // signal 0 = check existence, doesn't kill
     return true;
-  } catch {
+  } catch (error) {
+    logWarn('runner', 'Failed to check process liveness via signal 0', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
@@ -211,7 +217,10 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
     if (!options.noBranch) {
       try {
         git(`rev-parse --verify ${existing.branch}`, root);
-      } catch {
+      } catch (error) {
+        logWarn('runner', 'Failed to verify PRD resume branch exists', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw new NotFoundError(`Branch ${existing.branch} not found. Cannot resume.`);
       }
     }
@@ -397,7 +406,10 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
             // Ensure clean working tree before stash pop to avoid conflicts
             resetWorkingTree(root);
             git('stash pop', root);
-          } catch {
+          } catch (error) {
+            logWarn('runner', 'Failed to pop git stash after PRD branch teardown', {
+              error: error instanceof Error ? error.message : String(error),
+            });
             console.log('Warning: Could not pop stash. Check git stash list.');
           }
         }

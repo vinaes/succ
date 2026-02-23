@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { logWarn } from './fault-logger.js';
 import { execFileSync } from 'child_process';
 
 export interface AgentState {
@@ -28,7 +29,10 @@ export function loadAnalyzeState(succDir: string): AnalyzeState | null {
   if (!fs.existsSync(statePath)) return null;
   try {
     return JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-  } catch {
+  } catch (error) {
+    logWarn('analyze-state', 'Failed to parse analyze state JSON file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -49,7 +53,10 @@ export function getGitHead(projectRoot: string): string {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     }).trim();
-  } catch {
+  } catch (error) {
+    logWarn('analyze-state', 'Failed to get git HEAD commit hash', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return '';
   }
 }
@@ -67,7 +74,10 @@ export function getChangedFiles(projectRoot: string, sinceCommit: string): strin
       windowsHide: true,
     }).trim();
     return output ? output.split('\n') : [];
-  } catch {
+  } catch (error) {
+    logWarn('analyze-state', 'Failed to get git diff for changed files since commit', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

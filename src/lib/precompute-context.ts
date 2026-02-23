@@ -14,6 +14,7 @@ import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
 import { SESSION_BRIEFING_SYSTEM, SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
 import { logWarn } from './fault-logger.js';
+import { formatTranscriptLines, type TranscriptMessage } from './transcript-utils.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -306,32 +307,20 @@ export async function precomputeContextCLI(
   const transcript = lines
     .map((line) => {
       try {
-        const entry = JSON.parse(line);
-        const getTextContent = (content: any): string => {
-          if (typeof content === 'string') return content;
-          if (Array.isArray(content)) {
-            return content
-              .filter((block: any) => block.type === 'text' && block.text)
-              .map((block: any) => block.text)
-              .join(' ');
+        const entry = JSON.parse(line) as TranscriptMessage;
+        return formatTranscriptLines([entry])[0] ?? null;
+      } catch (error) {
+        logWarn(
+          'precompute-context',
+          'Failed to parse transcript JSONL line for context precomputation',
+          {
+            error: error instanceof Error ? error.message : String(error),
           }
-          return '';
-        };
-
-        if (entry.type === 'assistant' && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `Assistant: ${text.substring(0, 1000)}`;
-        }
-        if ((entry.type === 'human' || entry.type === 'user') && entry.message?.content) {
-          const text = getTextContent(entry.message.content);
-          if (text) return `User: ${text.substring(0, 500)}`;
-        }
-      } catch {
+        );
         return null;
       }
-      return null;
     })
-    .filter(Boolean)
+    .filter((line): line is string => Boolean(line))
     .join('\n\n');
 
   if (transcript.length < 200) {

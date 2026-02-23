@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { countTokens } from './token-counter.js';
+import { logWarn } from './fault-logger.js';
 import { getSuccDir } from './config.js';
 
 export interface TokenBudgetEntry {
@@ -150,7 +151,10 @@ export function flushBudgets(): void {
       data[sessionId] = budget;
     }
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch {
+  } catch (error) {
+    logWarn('token-budget', 'Failed to flush session token budgets to disk', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Non-critical — budgets are ephemeral
   }
 }
@@ -168,7 +172,10 @@ export function loadBudgets(): void {
         budgets.set(sessionId, budget as TokenBudgetEntry);
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('token-budget', 'Failed to load session token budgets from disk', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Non-critical
   }
 }

@@ -42,7 +42,7 @@ class ProcessRegistry {
         process.kill(pid, 'SIGTERM');
         logInfo('process-registry', `Sent SIGTERM to pid=${pid} (${info.label})`);
       } catch {
-        // ESRCH = process already dead — that's fine
+        // Expected during cleanup: ESRCH means process is already dead.
       }
     }
 
@@ -57,7 +57,7 @@ class ProcessRegistry {
           process.kill(pid, 'SIGKILL');
           logWarn('process-registry', `Force-killed pid=${pid} (${info.label})`);
         } catch {
-          // Already dead
+          // Expected during cleanup: process already exited before SIGKILL.
         }
       }
     }, 2000).unref();
@@ -91,7 +91,7 @@ class ProcessRegistry {
         try {
           process.kill(pid, 'SIGTERM');
         } catch {
-          /* noop */
+          // Expected during shutdown cleanup: process may already be gone.
         }
       }
     });

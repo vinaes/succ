@@ -7,6 +7,7 @@
 
 import { getConfig } from './config.js';
 
+import { logWarn } from './fault-logger.js';
 const DEFAULT_MD_API_URL = 'https://md.succ.ai';
 const DEFAULT_TIMEOUT = 300_000;
 
@@ -58,7 +59,10 @@ export async function fetchAsMarkdown(
     try {
       const config = getConfig();
       baseUrl = config.md_api_url || DEFAULT_MD_API_URL;
-    } catch {
+    } catch (error) {
+      logWarn('md-fetch', 'Failed to read md_api_url from config, using default', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       baseUrl = DEFAULT_MD_API_URL;
     }
   }
@@ -161,7 +165,10 @@ export async function extractFromUrl(
     try {
       const config = getConfig();
       baseUrl = config.md_api_url || DEFAULT_MD_API_URL;
-    } catch {
+    } catch (error) {
+      logWarn('md-fetch', 'Failed to read md_api_url from config for extract, using default', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       baseUrl = DEFAULT_MD_API_URL;
     }
   }

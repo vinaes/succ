@@ -143,7 +143,10 @@ export async function trackTokenSavings(
           const avgTokensPerResult = returnedTokens / results.length;
           fullSourceTokens = Math.round(avgTokensPerResult * totalMemories);
         }
-      } catch {
+      } catch (error) {
+        logWarn('helpers', 'Failed to fetch memory stats for recall token savings estimation', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Fallback: no savings for recall
       }
     } else if (eventType === 'search' || eventType === 'search_code') {
@@ -170,7 +173,10 @@ export async function trackTokenSavings(
               break;
             }
           }
-        } catch {
+        } catch (error) {
+          logWarn('helpers', 'Failed to read source file for token savings estimation', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // File not readable, skip
         }
       }

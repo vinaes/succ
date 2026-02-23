@@ -18,6 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir, getProjectRoot } from './config.js';
+import { logWarn } from './fault-logger.js';
 import {
   getMemoryStats,
   getCodeFileCount,
@@ -151,7 +152,10 @@ export async function calculateMemoryCoverageScore(): Promise<MetricResult> {
       details: `${total} memories`,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to retrieve memory stats for coverage score', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       name: 'memory_coverage',
       label: 'Memory Coverage',
@@ -214,7 +218,10 @@ export async function calculateCodeIndexScore(): Promise<MetricResult> {
       details: `${percentage}% indexed (${indexedCount}/${totalSourceFiles} files)`,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to retrieve code index stats for score calculation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       name: 'code_index',
       label: 'Code Index',
@@ -381,7 +388,10 @@ export function calculateAgentsConfiguredScore(): MetricResult {
   try {
     const files = fs.readdirSync(agentsDir);
     agentCount = files.filter((f) => f.endsWith('.md')).length;
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to read agents directory for agent count', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Ignore errors
   }
 
@@ -463,7 +473,10 @@ export async function calculateDocIndexScore(): Promise<MetricResult> {
       details: `${indexedCount}/${totalMdFiles} files indexed`,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to retrieve doc index stats for score calculation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       name: 'doc_index',
       label: 'Doc Index',
@@ -523,7 +536,10 @@ export async function calculateQualityAverageScore(): Promise<MetricResult> {
       details: `${(avg * 100).toFixed(0)}% avg (${result.count} scored)`,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to retrieve average memory quality for score calculation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       name: 'quality_average',
       label: 'Quality Average',
@@ -589,7 +605,10 @@ export async function calculateIndexFreshnessScore(): Promise<MetricResult> {
       details: details.join(', '),
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to retrieve index freshness data for score calculation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       name: 'index_freshness',
       label: 'Index Freshness',
@@ -697,7 +716,10 @@ function countMarkdownFiles(dir: string): number {
         count++;
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to read brain vault directory for markdown file count', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Ignore errors
   }
 
@@ -731,7 +753,10 @@ function countSourceFiles(dir: string, extensions: string[]): number {
         }
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('ai-readiness', 'Failed to read source directory for file count', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Ignore errors
   }
 

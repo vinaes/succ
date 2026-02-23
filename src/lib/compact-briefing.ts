@@ -10,6 +10,7 @@ import { getCompactBriefingConfig, CompactBriefingConfig } from './config.js';
 import { searchMemories, getRecentMemories } from './storage/index.js';
 import { getEmbedding } from './embeddings.js';
 import { callLLM } from './llm.js';
+import { getTextContent, type TranscriptContent } from './transcript-utils.js';
 import {
   BRIEFING_STRUCTURED_SYSTEM,
   BRIEFING_STRUCTURED_PROMPT,
@@ -19,6 +20,7 @@ import {
   BRIEFING_MINIMAL_PROMPT,
 } from '../prompts/index.js';
 
+import { logWarn } from './fault-logger.js';
 // ============================================================================
 // Types
 // ============================================================================
@@ -33,11 +35,11 @@ interface TranscriptEntry {
   type: 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system' | string;
   message?: {
     role?: string;
-    content?: string | Array<{ type: string; text?: string; name?: string; input?: any }>;
+    content?: TranscriptContent;
   };
   tool_name?: string;
-  tool_input?: any;
-  tool_result?: any;
+  tool_input?: unknown;
+  tool_result?: unknown;
   timestamp?: string;
 }
 
@@ -56,17 +58,6 @@ function parseTranscript(content: string): string {
     try {
       const entry: TranscriptEntry = JSON.parse(line);
 
-      const getTextContent = (content: any): string => {
-        if (typeof content === 'string') return content;
-        if (Array.isArray(content)) {
-          return content
-            .filter((block: any) => block.type === 'text' && block.text)
-            .map((block: any) => block.text)
-            .join(' ');
-        }
-        return '';
-      };
-
       if (entry.type === 'user' && entry.message?.content) {
         const text = getTextContent(entry.message.content);
         if (text.trim()) {
@@ -81,7 +72,10 @@ function parseTranscript(content: string): string {
         const input = JSON.stringify(entry.tool_input || {}).slice(0, 200);
         parts.push(`TOOL[${entry.tool_name}]: ${input}`);
       }
-    } catch {
+    } catch (error) {
+      logWarn('compact-briefing', 'Failed to parse transcript JSONL line for briefing', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Skip malformed lines
     }
   }
@@ -115,7 +109,10 @@ async function findRelevantMemories(
     const results = await searchMemories(embedding, limit, 0.3);
 
     return results.map((m) => ({ content: m.content, tags: m.tags }));
-  } catch {
+  } catch (error) {
+    logWarn('compact-briefing', 'Failed to search memories for briefing context', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

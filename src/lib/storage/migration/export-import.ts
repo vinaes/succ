@@ -8,6 +8,7 @@
  */
 
 import fs from 'fs';
+import { logWarn } from '../../fault-logger.js';
 import { getDb, getGlobalDb } from '../../db/connection.js';
 /**
  * Export format version for compatibility checking
@@ -116,7 +117,14 @@ export function exportData(): ExportData {
   let globalDb;
   try {
     globalDb = getGlobalDb();
-  } catch {
+  } catch (error) {
+    logWarn(
+      'export-import',
+      'Failed to open global DB for export, skipping global memories',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // Global DB might not exist
     globalDb = null;
   }
@@ -322,7 +330,14 @@ export function importData(data: ExportData): {
   let globalDb;
   try {
     globalDb = getGlobalDb();
-  } catch {
+  } catch (error) {
+    logWarn(
+      'export-import',
+      'Failed to open global DB for import, skipping global memories restore',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     globalDb = null;
   }
 

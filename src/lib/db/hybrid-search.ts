@@ -2,15 +2,17 @@ import { getDb, getGlobalDb, cachedPrepare, cachedPrepareGlobal } from './connec
 import { cosineSimilarity } from '../embeddings.js';
 import * as bm25 from '../bm25.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
-import { sqliteVecAvailable } from './schema.js';
+import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { getTokenFrequency, getTotalTokenCount } from './token-frequency.js';
 import { SearchResult } from './types.js';
+import { logWarn } from '../fault-logger.js';
 import {
   getCodeBm25Index,
   getDocsBm25Index,
   getMemoriesBm25Index,
   getGlobalMemoriesBm25Index,
 } from './bm25-indexes.js';
+import { parseTags, parseMemoryType } from './parse-helpers.js';
 
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
@@ -28,9 +30,9 @@ export interface HybridSearchResult extends SearchResult {
 export interface HybridMemoryResult {
   id: number;
   content: string;
-  tags: string | null;
+  tags: string[];
   source: string | null;
-  type: string | null;
+  type: MemoryType | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;
@@ -50,6 +52,7 @@ export interface HybridGlobalMemoryResult {
   tags: string[];
   source: string | null;
   project: string | null;
+  type: MemoryType | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;
@@ -161,7 +164,10 @@ export function hybridSearchCode(
         }
         vectorResults.sort((a, b) => b.score - a.score);
       }
-    } catch {
+    } catch (error) {
+      logWarn('hybrid-search', 'Code vector search failed, using fallback strategy', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Fall through to brute-force
       vectorResults = [];
     }
@@ -293,7 +299,10 @@ export function hybridSearchCode(
   if (filters?.regex && filters.regex.length <= 500) {
     try {
       regexFilter = new RegExp(filters.regex, 'i');
-    } catch {
+    } catch (error) {
+      logWarn('hybrid-search', 'Invalid regex filter, skipping regex constraint', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       /* invalid regex — skip */
     }
   }
@@ -410,7 +419,10 @@ export function hybridSearchDocs(
         }
         vectorResults.sort((a, b) => b.score - a.score);
       }
-    } catch {
+    } catch (error) {
+      logWarn('hybrid-search', 'Docs vector search failed, using fallback strategy', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       vectorResults = [];
     }
   }
@@ -560,7 +572,10 @@ export function hybridSearchMemories(
         }
         vectorResults.sort((a, b) => b.score - a.score);
       }
-    } catch {
+    } catch (error) {
+      logWarn('hybrid-search', 'Memory vector search failed, using fallback strategy', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       vectorResults = [];
     }
   }
@@ -620,9 +635,9 @@ export function hybridSearchMemories(
     results.push({
       id: row.id,
       content: row.content,
-      tags: row.tags,
+      tags: parseTags(row.tags),
       source: row.source,
-      type: row.type,
+      type: parseMemoryType(row.type),
       created_at: row.created_at,
       similarity: c.score,
       bm25Score: bm25Map.get(c.docId),
@@ -662,6 +677,7 @@ export function hybridSearchGlobalMemories(
     tags: string | null;
     source: string | null;
     project: string | null;
+    type: string | null;
     created_at: string;
   };
   let vectorResults: { docId: number; score: number }[] = [];
@@ -694,7 +710,7 @@ export function hybridSearchGlobalMemories(
         const rows = database
           .prepare(
             `
-          SELECT id, content, tags, source, project, created_at
+          SELECT id, content, tags, source, project, type, created_at
           FROM memories WHERE ${whereClause}
         `
           )
@@ -711,7 +727,10 @@ export function hybridSearchGlobalMemories(
         }
         vectorResults.sort((a, b) => b.score - a.score);
       }
-    } catch {
+    } catch (error) {
+      logWarn('hybrid-search', 'Global vector search failed, using fallback strategy', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       vectorResults = [];
     }
   }
@@ -719,7 +738,7 @@ export function hybridSearchGlobalMemories(
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
     let sqlQuery =
-      'SELECT id, content, tags, source, project, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+      'SELECT id, content, tags, source, project, type, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
     const params: any[] = [];
     if (since) {
       sqlQuery += ' AND created_at >= ?';
@@ -756,7 +775,7 @@ export function hybridSearchGlobalMemories(
       const missingRows = database
         .prepare(
           `
-        SELECT id, content, tags, source, project, created_at
+        SELECT id, content, tags, source, project, type, created_at
         FROM memories WHERE id IN (${placeholders})
       `
         )
@@ -787,9 +806,10 @@ export function hybridSearchGlobalMemories(
     results.push({
       id: row.id,
       content: row.content,
-      tags: rowTags,
+      tags: parseTags(row.tags),
       source: row.source,
       project: row.project,
+      type: parseMemoryType(row.type),
       created_at: row.created_at,
       similarity: c.score,
       bm25Score: bm25Map.get(c.docId),

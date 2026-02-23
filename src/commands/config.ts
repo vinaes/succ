@@ -10,6 +10,7 @@ import {
   invalidateConfigCache,
 } from '../lib/config.js';
 
+import { logWarn } from '../lib/fault-logger.js';
 interface ConfigData {
   llm?: {
     api_key?: string;
@@ -62,7 +63,10 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
   if (fs.existsSync(globalConfigPath)) {
     try {
       existingConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf-8'));
-    } catch {
+    } catch (error) {
+      logWarn('config', 'Failed to parse existing global config file', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore parse errors
     }
   }
@@ -138,6 +142,7 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
             new URL(input);
             return true;
           } catch {
+            // Expected during interactive input: user may type an invalid URL.
             return 'Please enter a valid URL';
           }
         },
@@ -262,7 +267,10 @@ export async function configSet(
   if (fs.existsSync(configPath)) {
     try {
       config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
+    } catch (error) {
+      logWarn('config', 'Failed to parse config file for set operation', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Start fresh if corrupted
     }
   }

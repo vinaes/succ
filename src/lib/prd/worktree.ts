@@ -171,7 +171,10 @@ export function mergeWorktreeChanges(
         windowsHide: true,
       });
       return { success: true, commitSha: sha };
-    } catch {
+    } catch (error) {
+      logWarn('worktree', 'Git cherry-pick failed with conflict or error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Cherry-pick conflict — abort and report
       try {
         execSync('git cherry-pick --abort', {
@@ -179,7 +182,10 @@ export function mergeWorktreeChanges(
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
         });
-      } catch {
+      } catch (error) {
+        logWarn('worktree', 'Failed to abort git cherry-pick after conflict', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         /* best effort */
       }
 
@@ -213,7 +219,10 @@ export function removeWorktree(taskId: string, projectRoot: string): void {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch {
+  } catch (error) {
+    logWarn('worktree', 'Failed to remove git worktree via git command', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     /* fallback below */
   }
 
@@ -223,7 +232,10 @@ export function removeWorktree(taskId: string, projectRoot: string): void {
       try {
         fs.rmSync(worktreePath, { recursive: true, force: true });
         break;
-      } catch {
+      } catch (error) {
+        logWarn('worktree', 'Failed to force-remove worktree directory, retrying', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (attempt < 2) {
           // Brief sync delay for Windows file handle release (EBUSY)
           const start = Date.now();
@@ -242,7 +254,10 @@ export function removeWorktree(taskId: string, projectRoot: string): void {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch {
+  } catch (error) {
+    logWarn('worktree', 'Failed to run git worktree prune after removal', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     /* best effort */
   }
 }
@@ -261,7 +276,10 @@ export function cleanupAllWorktrees(projectRoot: string): void {
         removeWorktree(entry, projectRoot);
       }
     }
-  } catch {
+  } catch (error) {
+    logWarn('worktree', 'Failed to read worktrees directory for cleanup', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     /* best effort */
   }
 
@@ -272,7 +290,10 @@ export function cleanupAllWorktrees(projectRoot: string): void {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-  } catch {
+  } catch (error) {
+    logWarn('worktree', 'Failed to run git worktree prune after cleanup', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     /* best effort */
   }
 }
@@ -290,7 +311,10 @@ function getConflictingFiles(projectRoot: string): string[] {
       windowsHide: true,
     }).trim();
     return output ? output.split('\n').filter(Boolean) : [];
-  } catch {
+  } catch (error) {
+    logWarn('worktree', 'Failed to get conflicting files via git diff', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

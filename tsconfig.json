@@ -14,5 +14,11 @@
     "sourceMap": true
   },
   "include": ["src/**/*", "src/types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.integration.test.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.integration.test.ts",
+    "src/lib/storage/test-backends.ts"
+  ]
 }

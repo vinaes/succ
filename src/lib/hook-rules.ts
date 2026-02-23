@@ -13,6 +13,7 @@
  */
 
 import path from 'path';
+import { logWarn } from './fault-logger.js';
 import type { Memory } from './storage/types.js';
 
 export interface HookRule {
@@ -95,7 +96,10 @@ export function matchRules(
             anyRegexMatches = true;
             break;
           }
-        } catch {
+        } catch (error) {
+          logWarn('hook-rules', 'Failed to compile regex pattern from memory tag', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Invalid regex — skip this pattern
           continue;
         }

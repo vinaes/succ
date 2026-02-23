@@ -1,5 +1,9 @@
 /**
  * Benchmark comparing brute-force vector search vs sqlite-vec indexed search
+ *
+ * NOTE: This command intentionally uses direct sqlite-vec SQL on an in-memory DB
+ * to benchmark low-level engine performance. It is an allowed exception to the
+ * storage-dispatcher abstraction rule.
  */
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';

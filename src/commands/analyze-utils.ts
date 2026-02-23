@@ -4,6 +4,7 @@ import { withLock } from '../lib/lock.js';
 import type { Agent } from './analyze-agents.js';
 import type { ProfileItem } from './analyze-profile.js';
 
+import { logWarn } from '../lib/fault-logger.js';
 export interface AgentTiming {
   name: string;
   durationMs: number;
@@ -211,7 +212,10 @@ export function gatherItemContext(
       try {
         const content = fs.readFileSync(keyFilePath, 'utf-8').slice(0, 8000);
         parts.push(`## Key File: ${item.keyFile}\n\`\`\`\n${content}\n\`\`\`\n`);
-      } catch {
+      } catch (error) {
+        logWarn('analyze-utils', 'Failed to read key file for item context', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         /* skip unreadable */
       }
     }
@@ -234,11 +238,17 @@ export function gatherItemContext(
             const content = fs.readFileSync(siblingPath, 'utf-8').slice(0, 3000);
             const relPath = path.relative(projectRoot, siblingPath).replace(/\\/g, '/');
             parts.push(`## ${relPath}\n\`\`\`\n${content}\n\`\`\`\n`);
-          } catch {
+          } catch (error) {
+            logWarn('analyze-utils', 'Failed to read sibling file for item context', {
+              error: error instanceof Error ? error.message : String(error),
+            });
             /* skip */
           }
         }
-      } catch {
+      } catch (error) {
+        logWarn('analyze-utils', 'Failed to read sibling directory listing', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         /* skip */
       }
     }
@@ -435,7 +445,10 @@ export function cleanAgentSubfiles(outputDir: string, overviewPath: string): voi
       if (head.startsWith('---') && /^project:\s/m.test(head) && /^type:\s/m.test(head)) {
         fs.unlinkSync(filePath);
       }
-    } catch {
+    } catch (error) {
+      logWarn('analyze-utils', 'Failed to read analyze output file for cleanup check', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Skip files that can't be read
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.4.2",
+  "version": "1.4.12",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -27,8 +27,9 @@
     "succ-mcp": "./dist/mcp-server.js"
   },
   "scripts": {
-    "build": "prettier --check src/ && eslint src/ && tsc",
-    "build:compile": "tsc",
+    "clean:dist": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && prettier --check src/ && eslint src/ && tsc",
+    "build:compile": "npm run clean:dist && tsc",
     "dev": "tsx src/cli.ts",
     "test": "vitest",
     "test:storage": "vitest --run src/lib/storage/",
@@ -78,7 +79,6 @@
     "commander": "^14.0.3",
     "cross-spawn": "^7.0.6",
     "glob": "^13.0.3",
-    "gray-matter": "^4.0.3",
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
     "onnxruntime-node": "1.24.1",
@@ -95,7 +95,6 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
-    "@types/inquirer": "^9.0.9",
     "@types/node": "^25.2.3",
     "@types/pg": "^8.11.0",
     "@types/ws": "^8.18.1",

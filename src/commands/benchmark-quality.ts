@@ -14,6 +14,7 @@ import {
   cleanupQualityScoring,
   QualityScore,
 } from '../lib/quality.js';
+import { logWarn } from '../lib/fault-logger.js';
 import { hasApiKey, getLLMTaskConfig } from '../lib/config.js';
 
 // Default Ollama models to benchmark (small, fast models good for classification)
@@ -194,7 +195,10 @@ async function isOllamaRunning(url: string = 'http://localhost:11434'): Promise<
   try {
     const response = await fetch(`${url}/api/tags`, { method: 'GET' });
     return response.ok;
-  } catch {
+  } catch (error) {
+    logWarn('benchmark-quality', 'Ollama availability check request failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
@@ -208,7 +212,10 @@ async function getOllamaModels(url: string = 'http://localhost:11434'): Promise<
     if (!response.ok) return [];
     const data = await response.json();
     return (data.models || []).map((m: any) => m.name);
-  } catch {
+  } catch (error) {
+    logWarn('benchmark-quality', 'Failed to fetch Ollama model list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

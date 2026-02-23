@@ -14,6 +14,7 @@ import {
   updateMemoryTags,
 } from '../storage/index.js';
 
+import { logWarn } from '../fault-logger.js';
 // ============================================================================
 // Adjacency List
 // ============================================================================
@@ -216,7 +217,14 @@ export async function detectCommunities(
         ? (() => {
             try {
               return JSON.parse(mem.tags);
-            } catch {
+            } catch (error) {
+              logWarn(
+                'community-detection',
+                'Failed to parse memory tags JSON string for community assignment',
+                {
+                  error: error instanceof Error ? error.message : String(error),
+                }
+              );
               return [];
             }
           })()
@@ -262,7 +270,14 @@ export async function getMemoryCommunity(
       ? (() => {
           try {
             return JSON.parse(mem.tags as string);
-          } catch {
+          } catch (error) {
+            logWarn(
+              'community-detection',
+              'Failed to parse memory tags JSON string for community lookup',
+              {
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
             return [];
           }
         })()

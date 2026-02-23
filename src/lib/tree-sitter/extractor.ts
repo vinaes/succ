@@ -8,6 +8,7 @@
 import type { Tree, Node, QueryCapture, Query } from 'web-tree-sitter';
 import type { SymbolInfo, SymbolType } from './types.js';
 import { getQueryForLanguage } from './queries.js';
+import { logWarn } from '../fault-logger.js';
 import { loadLanguage } from './parser.js';
 
 /** Cache of compiled Query objects per language */
@@ -35,7 +36,10 @@ async function getQuery(language: string): Promise<Query | null> {
     try {
       const mod = await import('web-tree-sitter');
       QueryClass = mod.Query;
-    } catch {
+    } catch (error) {
+      logWarn('extractor', 'Failed to import web-tree-sitter Query constructor', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -44,7 +48,10 @@ async function getQuery(language: string): Promise<Query | null> {
     const query = new QueryClass(lang, querySource);
     queryCache.set(language, query);
     return query;
-  } catch {
+  } catch (error) {
+    logWarn('extractor', 'Failed to compile tree-sitter query for language, likely grammar version mismatch', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Query compilation failed — likely node type mismatch with grammar version
     return null;
   }
@@ -341,7 +348,10 @@ export function resetQueryCache(): void {
   for (const query of queryCache.values()) {
     try {
       query.delete();
-    } catch {
+    } catch (error) {
+      logWarn('extractor', 'Failed to delete cached tree-sitter query object during cache reset', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // intentional
     }
   }

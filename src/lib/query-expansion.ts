@@ -9,6 +9,7 @@ import { callLLM, getLLMConfig } from './llm.js';
 import type { LLMBackend } from './llm.js';
 import { EXPANSION_SYSTEM, EXPANSION_PROMPT } from '../prompts/index.js';
 
+import { logWarn } from './fault-logger.js';
 /**
  * Expand a query into multiple search terms using LLM.
  *
@@ -45,7 +46,10 @@ export async function expandQuery(query: string, mode?: LLMBackend): Promise<str
       .slice(0, 5);
 
     return expanded;
-  } catch {
+  } catch (error) {
+    logWarn('query-expansion', 'LLM call failed for query expansion', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // LLM failure should never break search — silently fall back to no expansion
     return [];
   }

@@ -32,6 +32,7 @@ import {
   type HybridSearchMetrics,
 } from '../lib/benchmark.js';
 import * as fs from 'fs';
+import { logWarn } from '../lib/fault-logger.js';
 import * as path from 'path';
 
 interface BenchmarkResult {
@@ -640,7 +641,10 @@ export function loadBenchmarkHistory(): BenchmarkHistory {
     const content = fs.readFileSync(historyPath, 'utf-8');
     const history = JSON.parse(content) as BenchmarkHistory;
     return history;
-  } catch {
+  } catch (error) {
+    logWarn('benchmark', 'Failed to load benchmark history from disk', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.warn('  Warning: Could not load benchmark history, starting fresh');
     return { version: BENCHMARK_HISTORY_VERSION, entries: [] };
   }

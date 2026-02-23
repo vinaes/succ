@@ -16,6 +16,7 @@ import {
   updateMemoryLink,
   getMemoryLinks,
 } from '../storage/index.js';
+import { logWarn } from '../fault-logger.js';
 import {
   CLASSIFY_SYSTEM,
   CLASSIFY_PROMPT_SINGLE,
@@ -57,7 +58,10 @@ export async function classifyRelation(
       systemPrompt: CLASSIFY_SYSTEM,
     });
     return parseClassifyResponse(response);
-  } catch {
+  } catch (error) {
+    logWarn('llm-relations', 'LLM call failed for single relation classification', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { relation: 'similar_to', confidence: 0 };
   }
 }
@@ -88,7 +92,10 @@ export async function classifyRelationsBatch(
       systemPrompt: CLASSIFY_SYSTEM,
     });
     return parseBatchResponse(response, pairs);
-  } catch {
+  } catch (error) {
+    logWarn('llm-relations', 'LLM call failed for batch relation classification', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Fallback: keep all as similar_to
     return pairs.map((p) => ({
       linkId: p.linkId,
@@ -146,7 +153,14 @@ export async function enrichExistingLinks(
           ? (() => {
               try {
                 return JSON.parse(mem.tags as string);
-              } catch {
+              } catch (error) {
+                logWarn(
+                  'llm-relations',
+                  'Failed to parse memory tags JSON string for relation enrichment',
+                  {
+                    error: error instanceof Error ? error.message : String(error),
+                  }
+                );
                 return [];
               }
             })()
@@ -245,7 +259,10 @@ function parseClassifyResponse(response: string): ClassifyResult {
       typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5;
 
     return { relation, confidence };
-  } catch {
+  } catch (error) {
+    logWarn('llm-relations', 'Failed to parse classify JSON response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { relation: 'similar_to', confidence: 0 };
   }
 }
@@ -283,7 +300,10 @@ function parseBatchResponse(
           typeof result.confidence === 'number' ? Math.max(0, Math.min(1, result.confidence)) : 0.5,
       };
     });
-  } catch {
+  } catch (error) {
+    logWarn('llm-relations', 'Failed to parse batch classify JSON response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return pairs.map((p) => ({
       linkId: p.linkId,
       relation: 'similar_to' as LinkRelation,

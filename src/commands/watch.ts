@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getProjectRoot } from '../lib/config.js';
 import { createDaemonClient, ensureDaemonRunning } from '../daemon/client.js';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 interface WatchOptions {
   pattern?: string;
@@ -92,7 +92,10 @@ export async function stopWatchDaemon(): Promise<void> {
     } else {
       console.log('Watch service was not running');
     }
-  } catch {
+  } catch (error) {
+    logWarn('watch', 'Failed to send stop request to watch service', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.log('Watch service not running (daemon not responding)');
   }
 }
@@ -125,7 +128,10 @@ export async function watchDaemonStatus(): Promise<void> {
       const lastChange = new Date(status.lastChange);
       console.log(`   Last change: ${lastChange.toLocaleString()}`);
     }
-  } catch {
+  } catch (error) {
+    logWarn('watch', 'Failed to fetch watch service status from daemon', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.log('   Status: Not running (daemon not responding)');
   }
 
@@ -185,7 +191,10 @@ export async function watch(targetPath?: string, options: WatchOptions = {}): Pr
           `\rLast change: ${lastChange.toLocaleTimeString()} | Files: ${status.watchedFiles}   `
         );
       }
-    } catch {
+    } catch (error) {
+      logWarn('watch', 'Failed to fetch watch status update from daemon', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore
     }
   };

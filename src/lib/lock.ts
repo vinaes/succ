@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getClaudeDir } from './config.js';
+import { logWarn } from './fault-logger.js';
 import { StorageError } from './errors.js';
 
 const LOCK_FILE = 'succ.lock';
@@ -28,7 +29,21 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === 'ESRCH') {
+      // Expected: process already exited.
+      return false;
+    }
+    if (err?.code === 'EPERM') {
+      // Process exists but signal permission is denied.
+      return true;
+    }
+    logWarn('lock', 'Unexpected failure while checking lock owner process', {
+      pid,
+      error: err?.message ?? String(error),
+      code: err?.code,
+    });
     return false;
   }
 }
@@ -95,7 +110,10 @@ export async function acquireLock(operation: string): Promise<() => void> {
               fs.unlinkSync(lockPath);
             }
           }
-        } catch {
+        } catch (error) {
+          logWarn('lock', 'Failed to release lock file on unlock', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Ignore errors during release
         }
       };
@@ -146,7 +164,10 @@ export function getLockStatus(): { locked: boolean; info?: LockInfo } {
     }
 
     return { locked: true, info: lockInfo };
-  } catch {
+  } catch (error) {
+    logWarn('lock', 'Failed to read lock file for status check', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { locked: false };
   }
 }

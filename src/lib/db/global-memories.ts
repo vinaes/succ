@@ -3,7 +3,9 @@ import { cosineSimilarity } from '../embeddings.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { SaveMemoryResult } from './memories.js';
+import { logWarn } from '../fault-logger.js';
 import { updateGlobalMemoriesBm25Index } from './bm25-indexes.js';
+import { parseTags, parseQualityFactors, parseMemoryType } from './parse-helpers.js';
 
 // ============================================================================
 // Global Memory Types
@@ -15,23 +17,15 @@ export interface GlobalMemory {
   tags: string[];
   source: string | null;
   project: string | null;
+  type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
   created_at: string;
   isGlobal: true;
 }
 
-export interface GlobalMemorySearchResult {
-  id: number;
-  content: string;
-  tags: string[];
-  source: string | null;
-  project: string | null;
-  quality_score: number | null;
-  quality_factors: Record<string, number> | null;
-  created_at: string;
+export interface GlobalMemorySearchResult extends GlobalMemory {
   similarity: number;
-  isGlobal: true;
 }
 
 // ============================================================================
@@ -76,7 +70,10 @@ export function findSimilarGlobalMemory(
         }
       }
       return null;
-    } catch {
+    } catch (error) {
+      logWarn('global-memories', 'sqlite-vec search failed, using brute-force fallback', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Fall through to brute-force
     }
   }
@@ -167,6 +164,7 @@ export function searchGlobalMemories(
     tags: string | null;
     source: string | null;
     project: string | null;
+    type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
     embedding: Buffer;
@@ -176,7 +174,7 @@ export function searchGlobalMemories(
   const results: GlobalMemorySearchResult[] = [];
 
   for (const row of rows) {
-    const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    const rowTags: string[] = parseTags(row.tags);
 
     if (tags && tags.length > 0) {
       const hasMatchingTag = tags.some((t) =>
@@ -195,8 +193,9 @@ export function searchGlobalMemories(
         tags: rowTags,
         source: row.source,
         project: row.project,
+        type: parseMemoryType(row.type),
         quality_score: row.quality_score,
-        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+        quality_factors: parseQualityFactors(row.quality_factors),
         created_at: row.created_at,
         similarity,
         isGlobal: true,
@@ -216,7 +215,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
   const rows = database
     .prepare(
       `
-      SELECT id, content, tags, source, project, quality_score, quality_factors, created_at
+      SELECT id, content, tags, source, project, type, quality_score, quality_factors, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -228,6 +227,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
     tags: string | null;
     source: string | null;
     project: string | null;
+    type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
     created_at: string;
@@ -236,11 +236,12 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
   return rows.map((row) => ({
     id: row.id,
     content: row.content,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: parseTags(row.tags),
     source: row.source,
     project: row.project,
+    type: parseMemoryType(row.type),
     quality_score: row.quality_score,
-    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    quality_factors: parseQualityFactors(row.quality_factors),
     created_at: row.created_at,
     isGlobal: true as const,
   }));

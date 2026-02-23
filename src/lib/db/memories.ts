@@ -9,16 +9,7 @@ import { triggerAutoExport } from '../graph-scheduler.js';
 import { getSuccDir, getConfig } from '../config.js';
 import { invalidateMemoriesBm25Index } from './bm25-indexes.js';
 import { createMemoryLink } from './graph.js';
-
-/** Parse JSON tags column, returning empty array on null/invalid. */
-function parseTags(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
+import { parseTags, parseQualityFactors, parseMemoryType } from './parse-helpers.js';
 
 /**
  * Log memory deletion events to .succ/memory-audit.log for debugging.
@@ -34,7 +25,10 @@ function logDeletion(caller: string, count: number, ids: number[], reason?: stri
     const reasonStr = reason ? ` | ${reason}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count} | ids=[${idStr}]${reasonStr}\n`;
     fs.promises.appendFile(logFile, line).catch(() => {});
-  } catch {
+  } catch (error) {
+    logWarn('memories', 'Failed to write memory audit log entry', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Never let audit logging break actual operations
   }
 }
@@ -44,7 +38,7 @@ export interface Memory {
   content: string;
   tags: string[];
   source: string | null;
-  type?: string | null;
+  type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
   access_count: number;
@@ -59,18 +53,7 @@ export interface Memory {
   created_at: string;
 }
 
-export interface MemorySearchResult {
-  id: number;
-  content: string;
-  tags: string[];
-  source: string | null;
-  quality_score: number | null;
-  quality_factors: Record<string, number> | null;
-  access_count: number;
-  last_accessed: string | null;
-  valid_from: string | null;
-  valid_until: string | null;
-  created_at: string;
+export interface MemorySearchResult extends Memory {
   similarity: number;
 }
 
@@ -256,7 +239,10 @@ export function saveMemory(
             });
           });
       }
-    } catch {
+    } catch (error) {
+      logWarn('memories', 'Failed to load graph LLM relations module for auto-enrichment', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // LLM enrichment module not available — skip
     }
   }
@@ -325,7 +311,10 @@ function autoLinkNewMemory(memoryId: number, embedding: number[], threshold: num
         }
       }
       return created;
-    } catch {
+    } catch (error) {
+      logWarn('memories', 'sqlite-vec KNN auto-link query failed, falling back to brute-force', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Fall through to brute-force
     }
   }
@@ -421,12 +410,16 @@ export function searchMemories(
           content: string;
           tags: string | null;
           source: string | null;
+          type: string | null;
           quality_score: number | null;
           quality_factors: string | null;
           access_count: number | null;
           last_accessed: string | null;
           valid_from: string | null;
           valid_until: string | null;
+          correction_count: number | null;
+          is_invariant: number | null;
+          priority_score: number | null;
           created_at: string;
         }>;
 
@@ -465,12 +458,16 @@ export function searchMemories(
               content: row.content,
               tags: rowTags,
               source: row.source,
+              type: parseMemoryType(row.type),
               quality_score: row.quality_score,
-              quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+              quality_factors: parseQualityFactors(row.quality_factors),
               access_count: row.access_count ?? 0,
               last_accessed: row.last_accessed,
               valid_from: row.valid_from,
               valid_until: row.valid_until,
+              correction_count: row.correction_count ?? 0,
+              is_invariant: !!row.is_invariant,
+              priority_score: row.priority_score ?? null,
               created_at: row.created_at,
               similarity,
             });
@@ -502,12 +499,16 @@ export function searchMemories(
     content: string;
     tags: string | null;
     source: string | null;
+    type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
     access_count: number | null;
     last_accessed: string | null;
     valid_from: string | null;
     valid_until: string | null;
+    correction_count: number | null;
+    is_invariant: number | null;
+    priority_score: number | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -544,12 +545,16 @@ export function searchMemories(
         content: row.content,
         tags: rowTags,
         source: row.source,
+        type: parseMemoryType(row.type),
         quality_score: row.quality_score,
-        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+        quality_factors: parseQualityFactors(row.quality_factors),
         access_count: row.access_count ?? 0,
         last_accessed: row.last_accessed,
         valid_from: row.valid_from,
         valid_until: row.valid_until,
+        correction_count: row.correction_count ?? 0,
+        is_invariant: !!row.is_invariant,
+        priority_score: row.priority_score ?? null,
         created_at: row.created_at,
         similarity,
       });
@@ -577,9 +582,9 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
-    type: row.type ?? null,
+    type: parseMemoryType(row.type),
     quality_score: row.quality_score,
-    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    quality_factors: parseQualityFactors(row.quality_factors),
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
@@ -863,9 +868,9 @@ export function getMemoryById(id: number): Memory | null {
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
-    type: row.type ?? null,
+    type: parseMemoryType(row.type),
     quality_score: row.quality_score,
-    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    quality_factors: parseQualityFactors(row.quality_factors),
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
@@ -901,9 +906,9 @@ export function getMemoriesByTag(tag: string, limit: number = 5): Memory[] {
     content: row.content,
     tags: parseTags(row.tags),
     source: row.source,
-    type: row.type ?? null,
+    type: parseMemoryType(row.type),
     quality_score: row.quality_score,
-    quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+    quality_factors: parseQualityFactors(row.quality_factors),
     access_count: row.access_count ?? 0,
     last_accessed: row.last_accessed,
     valid_from: row.valid_from,
@@ -942,7 +947,10 @@ export function deleteMemoriesByIds(ids: number[]): number {
       database
         .prepare(`DELETE FROM vec_memories_map WHERE memory_id IN (${placeholders})`)
         .run(...ids);
-    } catch {
+    } catch (error) {
+      logWarn('memories', 'Vector cleanup failed during batch memory deletion', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore vec table errors
     }
   }
@@ -979,12 +987,16 @@ export function searchMemoriesAsOf(
     content: string;
     tags: string | null;
     source: string | null;
+    type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
     access_count: number | null;
     last_accessed: string | null;
     valid_from: string | null;
     valid_until: string | null;
+    correction_count: number | null;
+    is_invariant: number | null;
+    priority_score: number | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -1011,12 +1023,16 @@ export function searchMemoriesAsOf(
         content: row.content,
         tags: parseTags(row.tags),
         source: row.source,
+        type: parseMemoryType(row.type),
         quality_score: row.quality_score,
-        quality_factors: row.quality_factors ? JSON.parse(row.quality_factors) : null,
+        quality_factors: parseQualityFactors(row.quality_factors),
         access_count: row.access_count ?? 0,
         last_accessed: row.last_accessed,
         valid_from: row.valid_from,
         valid_until: row.valid_until,
+        correction_count: row.correction_count ?? 0,
+        is_invariant: !!row.is_invariant,
+        priority_score: row.priority_score ?? null,
         created_at: row.created_at,
         similarity,
       });

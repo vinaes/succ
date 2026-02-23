@@ -20,7 +20,10 @@ function logDocDeletion(caller: string, count: number, detail?: string): void {
     const detailStr = detail ? ` | ${detail}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count}${detailStr}\n`;
     fs.appendFileSync(logFile, line);
-  } catch {
+  } catch (error) {
+    logWarn('documents', 'Failed to write document deletion audit log entry', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Never let audit logging break actual operations
   }
 }

@@ -473,7 +473,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
         }
 
         log('Merged settings.json (preserved existing permissions and hooks)');
-      } catch {
+      } catch (error) {
+        logWarn('init', 'Failed to parse existing Claude settings.json for hook merge', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Failed to parse existing, create new
         finalSettings = { hooks: succHooks };
         log('Created settings.json (failed to parse existing)');
@@ -538,7 +541,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
         }
 
         log('Replaced succ hooks in settings.json (--force)');
-      } catch {
+      } catch (error) {
+        logWarn('init', 'Failed to parse existing Claude settings.json for hook replacement', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Failed to parse existing, create new
         finalSettings = { hooks: succHooks };
         log('Created settings.json (failed to parse existing)');
@@ -1006,7 +1012,10 @@ function getHookContent(hookFile: string): string | null {
     if (fs.existsSync(hookPath)) {
       return fs.readFileSync(hookPath, 'utf-8');
     }
-  } catch {
+  } catch (error) {
+    logWarn('init', 'Failed to read hook file from package directory', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // File read error
   }
   return null;

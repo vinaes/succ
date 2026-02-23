@@ -3,7 +3,7 @@ import path from 'path';
 import { getDbPath, getClaudeDir, getProjectRoot, getDaemonStatuses } from '../lib/config.js';
 import { getStats, getStaleFileCount, closeDb } from '../lib/storage/index.js';
 import { getStorageInfo } from '../lib/storage/index.js';
-import { logError } from '../lib/fault-logger.js';
+import { logError, logWarn } from '../lib/fault-logger.js';
 
 export async function status(): Promise<void> {
   const projectRoot = getProjectRoot();
@@ -43,7 +43,10 @@ export async function status(): Promise<void> {
         console.log(`   Finished: ${updatedAt.toLocaleString()}`);
         console.log();
       }
-    } catch {
+    } catch (error) {
+      logWarn('status', 'Failed to parse analysis progress JSON file', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Ignore JSON parse errors
     }
   } else if (fs.existsSync(logFile)) {
@@ -122,7 +125,10 @@ export async function status(): Promise<void> {
         }
         console.log('  Run `succ reindex` to refresh');
       }
-    } catch {
+    } catch (error) {
+      logWarn('status', 'Failed to retrieve stale file count for freshness display', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Skip freshness check if it fails
     }
 
@@ -136,7 +142,10 @@ export async function status(): Promise<void> {
         const pidInfo = d.running && d.pid ? ` (PID: ${d.pid})` : '';
         console.log(`  [${icon}] ${d.name}: ${d.running ? 'running' : 'stopped'}${pidInfo}`);
       }
-    } catch {
+    } catch (error) {
+      logWarn('status', 'Failed to retrieve daemon status list', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Skip daemon status if it fails
     }
   } catch (error) {

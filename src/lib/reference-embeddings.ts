@@ -8,6 +8,7 @@
 
 import { getEmbeddings, cosineSimilarity } from './embeddings.js';
 
+import { logWarn } from './fault-logger.js';
 export interface ReferenceSet {
   phrases: string[];
   embeddings: number[][] | null; // null until lazily computed
@@ -54,13 +55,27 @@ export async function maxSimilarityToReference(
       try {
         const sim = cosineSimilarity(embedding, ref);
         if (sim > maxSim) maxSim = sim;
-      } catch {
+      } catch (error) {
+        logWarn(
+          'reference-embeddings',
+          'Cosine similarity failed for max similarity reference comparison',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
         // Dimension mismatch — skip this reference
       }
     }
 
     return maxSim > 0 ? maxSim : 0;
-  } catch {
+  } catch (error) {
+    logWarn(
+      'reference-embeddings',
+      'Failed to retrieve reference embeddings for max similarity computation',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     return 0;
   }
 }
@@ -82,13 +97,27 @@ export async function avgSimilarityToReference(
       try {
         sum += cosineSimilarity(embedding, ref);
         count++;
-      } catch {
+      } catch (error) {
+        logWarn(
+          'reference-embeddings',
+          'Cosine similarity failed for average similarity reference comparison',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
         // Dimension mismatch — skip
       }
     }
 
     return count > 0 ? sum / count : 0;
-  } catch {
+  } catch (error) {
+    logWarn(
+      'reference-embeddings',
+      'Failed to retrieve reference embeddings for average similarity computation',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     return 0;
   }
 }

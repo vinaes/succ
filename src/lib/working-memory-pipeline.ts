@@ -164,7 +164,14 @@ export async function detectInvariantWithEmbedding(
 
     const maxSim = await maxSimilarityToReference(embedding, INVARIANT_REF_SET);
     return maxSim >= INVARIANT_SIMILARITY_THRESHOLD;
-  } catch {
+  } catch (error) {
+    logWarn(
+      'working-memory-pipeline',
+      'Failed to compute invariant similarity for memory retention scoring',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     return false;
   }
 }
@@ -248,7 +255,14 @@ function parseTags(tags: string[] | string | null | undefined): string[] {
   if (Array.isArray(tags)) return tags;
   try {
     return JSON.parse(tags);
-  } catch {
+  } catch (error) {
+    logWarn(
+      'working-memory-pipeline',
+      'Failed to parse JSON tags string for memory retention scoring',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     return [];
   }
 }
@@ -385,7 +399,14 @@ export function applyWorkingMemoryPipeline<T extends WorkingMemoryCandidate>(
     try {
       const result = calculateEffectiveScore(retentionInput);
       return { memory: m, score: result.effectiveScore };
-    } catch {
+    } catch (error) {
+      logWarn(
+        'working-memory-pipeline',
+        'Failed to calculate effective retention score for memory',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
       return { memory: m, score: 0 };
     }
   });

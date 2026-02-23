@@ -94,7 +94,10 @@ function getSuccMcpCommand(): { command: string; args: string[] } {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     execFileSync(cmd, ['succ-mcp'], { stdio: 'pipe' });
     return { command: 'succ-mcp', args: [] };
-  } catch {
+  } catch (error) {
+    logWarn('setup', 'succ-mcp binary not found on PATH, falling back to npx', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Fall back to npx
     // Windows: npx is a .cmd script, needs cmd /c wrapper for spawn
     if (process.platform === 'win32') {
@@ -125,7 +128,10 @@ function hasExistingSuccConfig(configPath: string, format: 'object' | 'array' | 
     const servers = content?.mcpServers;
     if (!Array.isArray(servers)) return false;
     return servers.some((s: any) => s.name === 'succ');
-  } catch {
+  } catch (error) {
+    logWarn('setup', 'Failed to parse editor config file to check for existing succ entry', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

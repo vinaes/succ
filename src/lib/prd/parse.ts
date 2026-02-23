@@ -107,7 +107,10 @@ Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, n
         response = await callLLM(prompt, llmOpts, { backend });
         rawTasks = extractJson(response);
         if (rawTasks) break;
-      } catch {
+      } catch (error) {
+        logWarn('parse', 'LLM escalation backend call failed during PRD task parse', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Backend unavailable — try next
       }
     }
@@ -170,10 +173,12 @@ function tryParse(text: string): unknown | null {
   try {
     return JSON.parse(text);
   } catch {
+    // Expected: LLM output may be invalid JSON on first parse.
     // Try with malformation fixes
     try {
       return JSON.parse(fixMalformedJson(text));
     } catch {
+      // Expected: malformed JSON can remain invalid after best-effort fix.
       return null;
     }
   }

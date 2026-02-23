@@ -38,6 +38,10 @@ function formatQualityBrief(score: number): string {
   return `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)} ${percent}%`;
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 interface MemoriesOptions {
   recent?: number;
   search?: string;
@@ -188,10 +192,11 @@ export async function memories(options: MemoriesOptions = {}): Promise<void> {
         console.log();
       }
     }
-  } catch (error: any) {
-    logError('memories', `Error:: ${error.message}`, error instanceof Error ? error : undefined);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logError('memories', `Error:: ${message}`, error instanceof Error ? error : undefined);
 
-    console.error('Error:', error.message);
+    console.error('Error:', message);
     closeDb();
     closeGlobalDb();
     process.exit(1);
@@ -269,13 +274,14 @@ export async function remember(content: string, options: RememberOptions = {}): 
     if (validFrom) {
       try {
         validFromDate = parseDuration(validFrom);
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const message = getErrorMessage(e);
         logError(
           'memories',
-          `Invalid --valid-from: ${e.message}`,
+          `Invalid --valid-from: ${message}`,
           e instanceof Error ? e : undefined
         );
-        console.error(`Invalid --valid-from: ${e.message}`);
+        console.error(`Invalid --valid-from: ${message}`);
         process.exit(1);
       }
     }
@@ -283,13 +289,14 @@ export async function remember(content: string, options: RememberOptions = {}): 
     if (validUntil) {
       try {
         validUntilDate = parseDuration(validUntil);
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const message = getErrorMessage(e);
         logError(
           'memories',
-          `Invalid --valid-until: ${e.message}`,
+          `Invalid --valid-until: ${message}`,
           e instanceof Error ? e : undefined
         );
-        console.error(`Invalid --valid-until: ${e.message}`);
+        console.error(`Invalid --valid-until: ${message}`);
         process.exit(1);
       }
     }
@@ -387,15 +394,18 @@ export async function remember(content: string, options: RememberOptions = {}): 
         console.log(`  "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
     logError(
       'memories',
-      `Error saving memory:: ${error.message}`,
+      `Error saving memory:: ${message}`,
       error instanceof Error ? error : undefined
     );
 
-    console.error('Error saving memory:', error.message);
-    console.error(error.stack);
+    console.error('Error saving memory:', message);
+    if (error instanceof Error && error.stack) {
+      console.error(error.stack);
+    }
     closeDb();
     closeGlobalDb();
     process.exit(1);
@@ -559,8 +569,8 @@ async function rememberWithExtraction(
           saved++;
         }
       }
-    } catch (error: any) {
-      console.error(`  ✗ [${fact.type}] Error: ${error.message}`);
+    } catch (error: unknown) {
+      console.error(`  ✗ [${fact.type}] Error: ${getErrorMessage(error)}`);
       skipped++;
     }
   }
@@ -665,14 +675,15 @@ export async function memoryStats(): Promise<void> {
     if (stats.newest_memory) {
       console.log(`  Newest: ${new Date(stats.newest_memory).toLocaleDateString()}`);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
     logError(
       'memories',
-      `Error getting stats:: ${error.message}`,
+      `Error getting stats:: ${message}`,
       error instanceof Error ? error : undefined
     );
 
-    console.error('Error getting stats:', error.message);
+    console.error('Error getting stats:', message);
     closeDb();
     process.exit(1);
   }
@@ -768,10 +779,11 @@ export async function forget(options: ForgetOptions): Promise<void> {
     console.log('  --tag <tag>       Delete memories with tag');
     console.log('  --all             Delete ALL memories');
     closeDb();
-  } catch (error: any) {
-    logError('memories', `Error:: ${error.message}`, error instanceof Error ? error : undefined);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logError('memories', `Error:: ${message}`, error instanceof Error ? error : undefined);
 
-    console.error('Error:', error.message);
+    console.error('Error:', message);
     closeDb();
     process.exit(1);
   }

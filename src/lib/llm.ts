@@ -645,7 +645,10 @@ export async function isLocalLLMAvailable(): Promise<boolean> {
       signal: AbortSignal.timeout(2000),
     });
     return response.ok;
-  } catch {
+  } catch (error) {
+    logWarn('llm', 'Local LLM availability check request failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
