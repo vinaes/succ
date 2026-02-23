@@ -470,7 +470,8 @@ async function callApiLLM(
   // Set cacheControl: true explicitly if your OpenRouter model supports it.
   const isAnthropicApi = (() => {
     try {
-      return new URL(endpoint).hostname.endsWith('anthropic.com');
+      const h = new URL(endpoint).hostname;
+      return h === 'anthropic.com' || h.endsWith('.anthropic.com');
     } catch {
       return false;
     }

@@ -41,7 +41,12 @@ const SUCC_PACKAGE_DIR = path.resolve(__dirname, '..', '..');
 function isCloudProvider(url: string): boolean {
   try {
     const hostname = new URL(url).hostname;
-    return hostname.endsWith('openrouter.ai') || hostname.endsWith('openai.com');
+    return (
+      hostname === 'openrouter.ai' ||
+      hostname.endsWith('.openrouter.ai') ||
+      hostname === 'openai.com' ||
+      hostname.endsWith('.openai.com')
+    );
   } catch {
     return false;
   }
