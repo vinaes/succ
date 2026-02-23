@@ -465,7 +465,7 @@ export function listCheckpoints(): Array<{
       const filePath = path.join(checkpointsDir, name);
       const stats = fs.statSync(filePath);
 
-      let created_at: string | null = null;
+      let created_at: string | null;
       try {
         const checkpoint = readCheckpoint(filePath);
         created_at = checkpoint.created_at;

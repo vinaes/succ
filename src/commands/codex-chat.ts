@@ -38,7 +38,8 @@ function resolveCodexBin(customBin?: string): string {
       error: error instanceof Error ? error.message : String(error),
     });
     throw new Error(
-      'Codex CLI not found on PATH. Install it (https://github.com/openai/codex) or pass --codex-bin <path>.'
+      'Codex CLI not found on PATH. Install it (https://github.com/openai/codex) or pass --codex-bin <path>.',
+      { cause: error }
     );
   }
 }

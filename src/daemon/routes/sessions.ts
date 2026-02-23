@@ -85,10 +85,10 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       } = parseRequestBody(SessionActivitySchema, body, 'session_id and type required');
       const manager = requireSessionManager(ctx);
 
-      let session = manager.activity(session_id, type);
+      const session = manager.activity(session_id, type);
       if (!session) {
         manager.register(session_id, transcript_path || '', is_service);
-        session = manager.activity(session_id, type);
+        manager.activity(session_id, type);
         ctx.log(
           `[session] Auto-registered and activity: ${session_id} (${type})${is_service ? ' (service)' : ''}`
         );

@@ -915,7 +915,6 @@ export class PostgresBackend {
     if (filters?.createdBefore) {
       query += ` AND created_at <= $${idx}`;
       params.push(filters.createdBefore.toISOString());
-      idx++;
     }
 
     const result = await pool.query(query, params);
@@ -1433,7 +1432,6 @@ export class PostgresBackend {
 
     query += ` AND (correction_count >= $${paramIndex} OR is_invariant = 1)`;
     params.push(threshold);
-    paramIndex++;
 
     query += ` ORDER BY is_invariant DESC, correction_count DESC, quality_score DESC`;
 

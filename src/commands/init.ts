@@ -645,7 +645,7 @@ async function runOnboarding(useAi: boolean): Promise<void> {
   }
 
   // Ask for onboarding style (unless --ai flag was used)
-  let onboardingStyle: 'quick' | 'interactive' = 'quick';
+  let onboardingStyle: 'quick' | 'interactive';
 
   if (useAi) {
     onboardingStyle = 'interactive';

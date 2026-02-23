@@ -249,7 +249,8 @@ async function getNativeSession(): Promise<NativeOrtSession> {
       throw new Error(
         `Failed to load embedding model '${embeddingModel}'. ` +
           `This may be due to network issues, disk space, or invalid model name. ` +
-          `Error: ${message}`
+          `Error: ${message}`,
+        { cause: error }
       );
     }
   }

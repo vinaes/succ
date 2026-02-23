@@ -77,7 +77,7 @@ async function writeReflection(
 
   const prompt = REFLECTION_PROMPT.replace('{transcript}', transcript.substring(0, 3000));
 
-  let reflectionText: string | null = null;
+  let reflectionText: string | null;
   try {
     reflectionText = await callLLM(prompt, {
       timeout: 60000,
