@@ -82,13 +82,9 @@ export function readObservations(sessionId: string): Observation[] {
       try {
         return JSON.parse(line) as Observation;
       } catch (error) {
-        logWarn(
-          'session-observations',
-          'Failed to parse observation JSONL line',
-          {
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
+        logWarn('session-observations', 'Failed to parse observation JSONL line', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return null;
       }
     })
@@ -127,13 +123,9 @@ export function removeObservations(sessionId: string): void {
       fs.unlinkSync(filePath);
     }
   } catch (error) {
-    logWarn(
-      'session-observations',
-      'Failed to delete session observations file',
-      {
-        error: error instanceof Error ? error.message : String(error),
-      }
-    );
+    logWarn('session-observations', 'Failed to delete session observations file', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Non-critical
   }
 }

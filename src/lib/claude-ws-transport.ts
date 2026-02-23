@@ -390,13 +390,9 @@ export class ClaudeWSTransport {
             proc.kill('SIGKILL');
           }
         } catch (error) {
-          logWarn(
-            'claude-ws-transport',
-            'Failed to send SIGKILL to Claude CLI process',
-            {
-              error: error instanceof Error ? error.message : String(error),
-            }
-          );
+          logWarn('claude-ws-transport', 'Failed to send SIGKILL to Claude CLI process', {
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Already dead — fine
         }
       }, 3000);
@@ -546,13 +542,9 @@ export class ClaudeWSTransport {
         return seconds * 1000;
       }
     } catch (error) {
-      logWarn(
-        'claude-ws-transport',
-        'Failed to read idle timeout from config, using default',
-        {
-          error: error instanceof Error ? error.message : String(error),
-        }
-      );
+      logWarn('claude-ws-transport', 'Failed to read idle timeout from config, using default', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Config not available — use default
     }
     return ClaudeWSTransport.DEFAULT_IDLE_TIMEOUT_MS;

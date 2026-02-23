@@ -115,9 +115,13 @@ async function gatherCodeSearch(description: string): Promise<string> {
       }
     }
   } catch (error) {
-    logWarn('codebase-context', 'Hybrid search failed for codebase context, falling back to AST/glob', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    logWarn(
+      'codebase-context',
+      'Hybrid search failed for codebase context, falling back to AST/glob',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // Index not available, fall through to AST/glob
   }
 

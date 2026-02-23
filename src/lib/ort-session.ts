@@ -202,9 +202,13 @@ function findTransformersJsCache(modelName: string): string | null {
       if (fs.existsSync(candidate)) return candidate;
     }
   } catch (error) {
-    logWarn('ort-session', 'Failed to resolve ONNX model path from @huggingface/transformers cache', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    logWarn(
+      'ort-session',
+      'Failed to resolve ONNX model path from @huggingface/transformers cache',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // @huggingface/transformers not installed or path resolution failed
   }
   return null;

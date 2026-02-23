@@ -118,13 +118,9 @@ export function exportData(): ExportData {
   try {
     globalDb = getGlobalDb();
   } catch (error) {
-    logWarn(
-      'export-import',
-      'Failed to open global DB for export, skipping global memories',
-      {
-        error: error instanceof Error ? error.message : String(error),
-      }
-    );
+    logWarn('export-import', 'Failed to open global DB for export, skipping global memories', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Global DB might not exist
     globalDb = null;
   }

@@ -49,9 +49,13 @@ async function getQuery(language: string): Promise<Query | null> {
     queryCache.set(language, query);
     return query;
   } catch (error) {
-    logWarn('extractor', 'Failed to compile tree-sitter query for language, likely grammar version mismatch', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    logWarn(
+      'extractor',
+      'Failed to compile tree-sitter query for language, likely grammar version mismatch',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
     // Query compilation failed — likely node type mismatch with grammar version
     return null;
   }

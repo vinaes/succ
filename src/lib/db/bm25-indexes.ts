@@ -311,9 +311,13 @@ function getGlobalMemoriesBm25Index(): bm25.BM25Index {
       globalMemoriesBm25Index = bm25.deserializeIndex(stored.value);
       return globalMemoriesBm25Index;
     } catch (error) {
-      logWarn('bm25-indexes', 'Failed to deserialize stored global memories BM25 index, rebuilding', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logWarn(
+        'bm25-indexes',
+        'Failed to deserialize stored global memories BM25 index, rebuilding',
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
       // Invalid stored index, rebuild
     }
   }

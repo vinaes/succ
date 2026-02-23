@@ -346,7 +346,8 @@ export async function performReflection(
           );
 
           try {
-            const { createProximityLinks } = await import('../../lib/graph/contextual-proximity.js');
+            const { createProximityLinks } =
+              await import('../../lib/graph/contextual-proximity.js');
             const result = await createProximityLinks({ minCooccurrence: 2 });
             ctx.log(`[reflection] Created ${result.created} proximity links`);
           } catch (err) {

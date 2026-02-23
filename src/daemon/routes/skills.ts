@@ -10,11 +10,7 @@ import {
 export function skillRoutes(ctx: RouteContext): RouteMap {
   return {
     'POST /api/skills/suggest': async (body) => {
-      const { prompt, limit = 2 } = parseRequestBody(
-        SkillsSuggestSchema,
-        body,
-        'prompt required'
-      );
+      const { prompt, limit = 2 } = parseRequestBody(SkillsSuggestSchema, body, 'prompt required');
 
       const { suggestSkills, getSkillsConfig } = await import('../../lib/skills.js');
       const config = getSkillsConfig();
