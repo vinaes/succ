@@ -5,6 +5,9 @@ on:
     types: [closed]
     branches: [main, master]
 
+permissions:
+  contents: write
+
 jobs:
   bump:
     if: github.event.pull_request.merged == true

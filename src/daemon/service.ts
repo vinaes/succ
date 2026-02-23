@@ -247,7 +247,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: message }));
+    res.end(JSON.stringify({ error: 'Internal server error' }));
   }
 }
 

@@ -11,6 +11,7 @@ import {
 } from '../lib/config.js';
 
 import { logWarn } from '../lib/fault-logger.js';
+import { maskSensitive } from '../lib/config-display.js';
 interface ConfigData {
   llm?: {
     api_key?: string;
@@ -281,8 +282,16 @@ export async function configSet(
   else if (value === 'false') parsedValue = false;
   else if (!isNaN(Number(value)) && value.trim() !== '') parsedValue = Number(value);
 
-  // Handle nested keys (e.g., "llm.embeddings.mode")
+  // Guard against prototype pollution
+  const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
   const keys = key.split('.');
+  if (keys.some((k) => FORBIDDEN_KEYS.has(k))) {
+    console.error(`Invalid config key: "${key}" contains a reserved property name.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  // Handle nested keys (e.g., "llm.embeddings.mode")
   if (keys.length === 1) {
     config[key] = parsedValue;
   } else {
@@ -308,6 +317,18 @@ export async function configSet(
   invalidateConfigCache();
 
   const scope = options.project ? 'project' : 'global';
-  console.log(`Config updated (${scope}): ${key} = ${JSON.stringify(parsedValue)}`);
+  const SENSITIVE_PATTERNS = [
+    'api_key',
+    'apikey',
+    'secret',
+    'password',
+    'token',
+    'connection_string',
+  ];
+  const isSensitive = SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s));
+  const displayValue = isSensitive
+    ? maskSensitive(String(parsedValue))
+    : JSON.stringify(parsedValue);
+  console.log(`Config updated (${scope}): ${key} = ${displayValue}`);
   console.log(`Saved to: ${configPath}`);
 }

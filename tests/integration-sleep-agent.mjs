@@ -16,7 +16,10 @@ async function main() {
 
   const sleepAgentConfig = getSleepAgentConfig();
   if (sleepAgentConfig) {
-    console.log(`Sleep agent config: ${JSON.stringify(sleepAgentConfig, null, 2)}`);
+    const safeConfig = { ...sleepAgentConfig };
+    if (safeConfig.api_key) safeConfig.api_key = '***';
+    if (safeConfig.apiKey) safeConfig.apiKey = '***';
+    console.log(`Sleep agent config: ${JSON.stringify(safeConfig, null, 2)}`);
     console.log('✓ Sleep agent is configured and enabled\n');
   } else {
     console.log('Sleep agent config: null (disabled)');
@@ -26,7 +29,10 @@ async function main() {
   // Test 2: Check LLM config
   console.log('--- Test 2: Main LLM Config ---');
   const llmConfig = getLLMConfig();
-  console.log('LLM config:', JSON.stringify(llmConfig, null, 2));
+  const safeLlmConfig = { ...llmConfig };
+  if (safeLlmConfig.api_key) safeLlmConfig.api_key = '***';
+  if (safeLlmConfig.apiKey) safeLlmConfig.apiKey = '***';
+  console.log('LLM config:', JSON.stringify(safeLlmConfig, null, 2));
   console.log('✓ LLM config loaded\n');
 
   // Test 3: Call LLM with useSleepAgent=true

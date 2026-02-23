@@ -588,5 +588,5 @@ export function sanitizeMermaid(text: string): string {
 }
 
 function escapeFrontmatter(text: string): string {
-  return text.replace(/"/g, '\\"');
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
 }

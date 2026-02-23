@@ -37,6 +37,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SUCC_PACKAGE_DIR = path.resolve(__dirname, '..', '..');
 
+/** Check if a URL points to a known cloud LLM provider */
+function isCloudProvider(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.endsWith('openrouter.ai') || hostname.endsWith('openai.com');
+  } catch {
+    return false;
+  }
+}
+
 interface InitOptions {
   force?: boolean;
   yes?: boolean; // Non-interactive mode
@@ -763,7 +773,7 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       targetConfig.llm.embeddings.dimensions = embeddingDimensions;
 
       // Prompt for API key if the URL looks like a cloud provider
-      if (embeddingApiUrl.includes('openrouter.ai') || embeddingApiUrl.includes('openai.com')) {
+      if (isCloudProvider(embeddingApiUrl)) {
         const apiKey = await password({
           message: 'API key:',
           mask: '*',
@@ -830,10 +840,7 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       targetConfig.llm.analyze.model = analyzeModel;
 
       // Prompt for API key if cloud provider and not already set
-      if (
-        !targetConfig.llm.api_key &&
-        (analyzeApiUrl.includes('openrouter.ai') || analyzeApiUrl.includes('openai.com'))
-      ) {
+      if (!targetConfig.llm.api_key && isCloudProvider(analyzeApiUrl)) {
         const apiKey = await password({
           message: 'API key:',
           mask: '*',

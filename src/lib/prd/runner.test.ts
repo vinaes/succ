@@ -113,10 +113,12 @@ vi.mock('./types.js', () => ({
   }),
 }));
 
-// Mock child_process (git commands)
-const mockExecSync = vi.fn();
-vi.mock('child_process', () => ({
-  execSync: (cmd: string, opts?: unknown) => mockExecSync(cmd, opts),
+// Mock cross-spawn (git commands) — must use vi.hoisted() for mock factories
+const { mockSpawnSync } = vi.hoisted(() => ({
+  mockSpawnSync: vi.fn().mockReturnValue({ status: 0, stdout: '', stderr: '' }),
+}));
+vi.mock('cross-spawn', () => ({
+  default: Object.assign(vi.fn(), { sync: mockSpawnSync }),
 }));
 
 import { runPrd } from './runner.js';
@@ -194,12 +196,12 @@ describe('runPrd resume', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: git commands succeed, current branch = master
-    mockExecSync.mockImplementation((cmd: string) => {
-      if (typeof cmd === 'string' && cmd.includes('branch --show-current')) return 'master';
-      if (typeof cmd === 'string' && cmd.includes('rev-parse')) return 'ok';
-      if (typeof cmd === 'string' && cmd.includes('status --porcelain')) return '';
-      if (typeof cmd === 'string' && cmd.includes('diff --name-only')) return '';
-      return '';
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('--show-current')) return { status: 0, stdout: 'master', stderr: '' };
+      if (args.includes('rev-parse')) return { status: 0, stdout: 'ok', stderr: '' };
+      if (args.includes('--porcelain')) return { status: 0, stdout: '', stderr: '' };
+      if (args.includes('--name-only')) return { status: 0, stdout: '', stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
     });
   });
 
@@ -237,10 +239,10 @@ describe('runPrd resume', () => {
     mockLoadPrd.mockReturnValue(makePrd());
     mockLoadTasks.mockReturnValue([makeTask()]);
     mockLoadExecution.mockReturnValue(makeExecution());
-    mockExecSync.mockImplementation((cmd: string) => {
-      if (typeof cmd === 'string' && cmd.includes('rev-parse')) throw new Error('not found');
-      if (typeof cmd === 'string' && cmd.includes('branch --show-current')) return 'master';
-      return '';
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('rev-parse')) return { status: 1, stdout: '', stderr: 'not found' };
+      if (args.includes('--show-current')) return { status: 0, stdout: 'master', stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
     });
 
     await expect(runPrd('prd_test1234', { resume: true })).rejects.toThrow(

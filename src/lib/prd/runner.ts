@@ -7,11 +7,16 @@
  * 3. For each task: gather context -> build prompt -> execute -> run gates -> commit
  * 4. Branch teardown (return to original branch)
  *
- * NOTE: execSync is used for git commands with internally-generated arguments
- * (prd IDs are hex-only from crypto.randomBytes, branch names are controlled).
+ * Git commands use cross-spawn with array args to prevent shell injection.
  */
 
-import { execSync } from 'child_process';
+import spawn from 'cross-spawn';
+// cross-spawn exposes .sync at runtime but the type declarations don't include it
+const spawnSync = (spawn as any).sync as (
+  cmd: string,
+  args: string[],
+  opts: Record<string, unknown>
+) => { status: number | null; stdout: string | null; stderr: string; error?: Error };
 import { getProjectRoot } from '../config.js';
 import { LoopExecutor, WSExecutor } from './executor.js';
 import { logWarn } from '../fault-logger.js';
@@ -64,32 +69,31 @@ export interface RunResult {
 // Git helpers
 // ============================================================================
 
-function git(cmd: string, cwd: string): string {
-  try {
-    return execSync(`git ${cmd}`, {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    }).trim();
-  } catch (error: unknown) {
-    const err = error as { stderr?: string; message?: string };
-    throw new Error(`git ${cmd} failed: ${err.stderr || err.message}`);
+function git(args: string[], cwd: string): string {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  if (result.status !== 0) {
+    throw new Error(`git ${args[0]} failed: ${result.stderr || result.error?.message}`);
   }
+  return ((result.stdout as string) ?? '').trim();
 }
 
 function getCurrentBranch(cwd: string): string {
-  return git('branch --show-current', cwd);
+  return git(['branch', '--show-current'], cwd);
 }
 
 function hasUncommittedChanges(cwd: string): boolean {
-  const status = git('status --porcelain', cwd);
+  const status = git(['status', '--porcelain'], cwd);
   return status.length > 0;
 }
 
 function getModifiedFiles(cwd: string): string[] {
   try {
-    const output = git('diff --name-only HEAD~1', cwd);
+    const output = git(['diff', '--name-only', 'HEAD~1'], cwd);
     return output ? output.split('\n').filter(Boolean) : [];
   } catch (error) {
     logWarn('runner', 'Failed to get modified files via git diff HEAD~1', {
@@ -120,8 +124,8 @@ export function isProcessRunning(pid: number): boolean {
  */
 function resetWorkingTree(cwd: string): void {
   try {
-    git('checkout -- .', cwd);
-    git('clean -fd -e .succ', cwd);
+    git(['checkout', '--', '.'], cwd);
+    git(['clean', '-fd', '-e', '.succ'], cwd);
   } catch (err) {
     logWarn('prd', 'Failed to reset worktree', {
       error: err instanceof Error ? err.message : String(err),
@@ -216,7 +220,7 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
     // Check branch exists
     if (!options.noBranch) {
       try {
-        git(`rev-parse --verify ${existing.branch}`, root);
+        git(['rev-parse', '--verify', existing.branch], root);
       } catch (error) {
         logWarn('runner', 'Failed to verify PRD resume branch exists', {
           error: error instanceof Error ? error.message : String(error),
@@ -243,7 +247,7 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
     const currentBranch = getCurrentBranch(root);
     if (currentBranch !== execution.branch) {
       if (!options.noBranch) {
-        git(`checkout ${execution.branch}`, root);
+        git(['checkout', execution.branch], root);
       }
     }
 
@@ -285,13 +289,13 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
       // Stash uncommitted changes
       if (hasUncommittedChanges(root)) {
         console.log('Stashing uncommitted changes...');
-        git(`stash push -m "prd: auto-stash before ${prdId}"`, root);
+        git(['stash', 'push', '-m', `prd: auto-stash before ${prdId}`], root);
         stashed = true;
       }
 
       // Create and checkout prd branch
       console.log(`Creating branch: ${branch}`);
-      git(`checkout -b ${branch}`, root);
+      git(['checkout', '-b', branch], root);
     }
 
     execution = createExecution({
@@ -399,13 +403,13 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
       try {
         const currentBranch = getCurrentBranch(root);
         if (currentBranch !== execution.original_branch) {
-          git(`checkout ${execution.original_branch}`, root);
+          git(['checkout', execution.original_branch], root);
         }
         if (stashed) {
           try {
             // Ensure clean working tree before stash pop to avoid conflicts
             resetWorkingTree(root);
-            git('stash pop', root);
+            git(['stash', 'pop'], root);
           } catch (error) {
             logWarn('runner', 'Failed to pop git stash after PRD branch teardown', {
               error: error instanceof Error ? error.message : String(error),
@@ -574,9 +578,9 @@ async function executeTask(
     // Git commit
     try {
       if (hasUncommittedChanges(root)) {
-        git('add -A', root);
+        git(['add', '-A'], root);
         const commitMsg = `prd(${prdId}): ${task.id} — ${task.title}`;
-        git(`commit -m "${commitMsg}"`, root);
+        git(['commit', '-m', commitMsg], root);
         console.log(`  [git] Committed: ${commitMsg}`);
 
         // Track actually modified files

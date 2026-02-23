@@ -9,7 +9,18 @@ import fs from 'fs';
 import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
+import { maskSensitive } from '../../lib/config-display.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
+
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const SENSITIVE_PATTERNS = [
+  'api_key',
+  'apikey',
+  'secret',
+  'password',
+  'token',
+  'connection_string',
+];
 
 export function registerConfigTools(server: McpServer) {
   server.registerTool(
@@ -151,8 +162,21 @@ export function registerConfigTools(server: McpServer) {
             else if (value === 'false') parsedValue = false;
             else if (!isNaN(Number(value)) && value.trim() !== '') parsedValue = Number(value);
 
-            // Handle nested keys (e.g., "idle_reflection.enabled")
+            // Guard against prototype pollution
             const keys = key.split('.');
+            if (keys.some((k) => FORBIDDEN_KEYS.has(k))) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Invalid config key: "${key}" contains a reserved property name.`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+
+            // Handle nested keys (e.g., "idle_reflection.enabled")
             if (keys.length === 1) {
               config[key] = parsedValue;
             } else {
@@ -179,7 +203,7 @@ export function registerConfigTools(server: McpServer) {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Config updated (${scope}): ${key} = ${JSON.stringify(parsedValue)}\nSaved to: ${configPath}`,
+                  text: `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`,
                 },
               ],
             };

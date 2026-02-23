@@ -5,15 +5,37 @@
  * Each task gets its own worktree checked out from the PRD branch,
  * preventing concurrent Claude processes from interfering with each other.
  *
- * Note: Uses execSync for git commands (same pattern as runner.ts).
- * All inputs are internally generated (task IDs, branch names) — not user-supplied.
+ * Git commands use cross-spawn with array args to prevent shell injection.
  */
 
-import { execSync } from 'child_process';
+import spawn from 'cross-spawn';
+// cross-spawn exposes .sync at runtime but the type declarations don't include it
+const spawnSync = (spawn as any).sync as (
+  cmd: string,
+  args: string[],
+  opts: Record<string, unknown>
+) => { status: number | null; stdout: string | null; stderr: string; error?: Error };
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+
+// ============================================================================
+// Git helper
+// ============================================================================
+
+function gitSync(args: string[], cwd: string): string {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  if (result.status !== 0) {
+    throw new Error(`git ${args[0]} failed: ${result.stderr || result.error?.message}`);
+  }
+  return ((result.stdout as string) ?? '').trim();
+}
 
 // ============================================================================
 // Types
@@ -72,11 +94,7 @@ export function createWorktree(
   }
 
   // Create detached worktree at the current HEAD of the PRD branch
-  execSync(`git worktree add --detach "${worktreePath}" ${prdBranch}`, {
-    cwd: projectRoot,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
+  gitSync(['worktree', 'add', '--detach', worktreePath, prdBranch], projectRoot);
 
   // Symlink node_modules so tools like tsc/vitest work in the worktree
   symlinkDependencies(projectRoot, worktreePath);
@@ -129,47 +147,24 @@ export function mergeWorktreeChanges(
 ): MergeResult {
   try {
     // Stage all changes in worktree
-    execSync('git add -A', {
-      cwd: worktreePath,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    gitSync(['add', '-A'], worktreePath);
 
     // Check if there's anything to commit
-    const status = execSync('git status --porcelain', {
-      cwd: worktreePath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    }).trim();
+    const status = gitSync(['status', '--porcelain'], worktreePath);
 
     if (!status) {
       return { success: true }; // No changes to merge
     }
 
     // Create a temporary commit in the worktree
-    const safeMsg = commitMessage.replace(/"/g, '\\"');
-    execSync(`git commit -m "${safeMsg}"`, {
-      cwd: worktreePath,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    gitSync(['commit', '-m', commitMessage], worktreePath);
 
     // Get the commit SHA
-    const sha = execSync('git rev-parse HEAD', {
-      cwd: worktreePath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    }).trim();
+    const sha = gitSync(['rev-parse', 'HEAD'], worktreePath);
 
     // Cherry-pick onto the main PRD branch
     try {
-      execSync(`git cherry-pick ${sha}`, {
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
+      gitSync(['cherry-pick', sha], projectRoot);
       return { success: true, commitSha: sha };
     } catch (error) {
       logWarn('worktree', 'Git cherry-pick failed with conflict or error', {
@@ -177,14 +172,10 @@ export function mergeWorktreeChanges(
       });
       // Cherry-pick conflict — abort and report
       try {
-        execSync('git cherry-pick --abort', {
-          cwd: projectRoot,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          windowsHide: true,
-        });
-      } catch (error) {
+        gitSync(['cherry-pick', '--abort'], projectRoot);
+      } catch (abortError) {
         logWarn('worktree', 'Failed to abort git cherry-pick after conflict', {
-          error: error instanceof Error ? error.message : String(error),
+          error: abortError instanceof Error ? abortError.message : String(abortError),
         });
         /* best effort */
       }
@@ -214,11 +205,7 @@ export function removeWorktree(taskId: string, projectRoot: string): void {
 
   // 1. Try git worktree remove
   try {
-    execSync(`git worktree remove --force "${worktreePath}"`, {
-      cwd: projectRoot,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    gitSync(['worktree', 'remove', '--force', worktreePath], projectRoot);
   } catch (error) {
     logWarn('worktree', 'Failed to remove git worktree via git command', {
       error: error instanceof Error ? error.message : String(error),
@@ -249,11 +236,7 @@ export function removeWorktree(taskId: string, projectRoot: string): void {
 
   // 3. Always prune git's worktree registry
   try {
-    execSync('git worktree prune', {
-      cwd: projectRoot,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    gitSync(['worktree', 'prune'], projectRoot);
   } catch (error) {
     logWarn('worktree', 'Failed to run git worktree prune after removal', {
       error: error instanceof Error ? error.message : String(error),
@@ -285,11 +268,7 @@ export function cleanupAllWorktrees(projectRoot: string): void {
 
   // Final prune to clean git's worktree registry
   try {
-    execSync('git worktree prune', {
-      cwd: projectRoot,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    gitSync(['worktree', 'prune'], projectRoot);
   } catch (error) {
     logWarn('worktree', 'Failed to run git worktree prune after cleanup', {
       error: error instanceof Error ? error.message : String(error),
@@ -304,12 +283,7 @@ export function cleanupAllWorktrees(projectRoot: string): void {
 
 function getConflictingFiles(projectRoot: string): string[] {
   try {
-    const output = execSync('git diff --name-only --diff-filter=U', {
-      cwd: projectRoot,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    }).trim();
+    const output = gitSync(['diff', '--name-only', '--diff-filter=U'], projectRoot);
     return output ? output.split('\n').filter(Boolean) : [];
   } catch (error) {
     logWarn('worktree', 'Failed to get conflicting files via git diff', {

@@ -22,7 +22,10 @@ async function main() {
 
   // Check availability
   const config = getLLMConfig();
-  console.log('Current config:', JSON.stringify(config, null, 2));
+  const safeConfig = { ...config };
+  if (safeConfig.api_key) safeConfig.api_key = '***';
+  if (safeConfig.apiKey) safeConfig.apiKey = '***';
+  console.log('Current config:', JSON.stringify(safeConfig, null, 2));
 
   console.log('\n--- Availability Checks ---');
   console.log('Local LLM available:', await isLocalLLMAvailable());

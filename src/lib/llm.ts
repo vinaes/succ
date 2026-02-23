@@ -468,7 +468,14 @@ async function callApiLLM(
   // Auto-enable cache_control for Anthropic direct API only.
   // OpenRouter uses OpenAI-compatible format — cache_control content blocks may be rejected.
   // Set cacheControl: true explicitly if your OpenRouter model supports it.
-  const useCache = cacheControl ?? endpoint.includes('anthropic.com');
+  const isAnthropicApi = (() => {
+    try {
+      return new URL(endpoint).hostname.endsWith('anthropic.com');
+    } catch {
+      return false;
+    }
+  })();
+  const useCache = cacheControl ?? isAnthropicApi;
 
   const messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }> = [];
   if (systemPrompt) {

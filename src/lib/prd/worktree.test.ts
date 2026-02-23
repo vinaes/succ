@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Hoisted mocks — these are evaluated before vi.mock factories
-const { mockExecSync, mockFs } = vi.hoisted(() => ({
-  mockExecSync: vi.fn(),
+const { mockSpawnSync, mockFs } = vi.hoisted(() => ({
+  mockSpawnSync: vi.fn().mockReturnValue({ status: 0, stdout: '', stderr: '' }),
   mockFs: {
     existsSync: vi.fn(),
     mkdirSync: vi.fn(),
@@ -12,8 +12,8 @@ const { mockExecSync, mockFs } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('child_process', () => ({
-  execSync: (cmd: string, opts?: unknown) => mockExecSync(cmd, opts),
+vi.mock('cross-spawn', () => ({
+  default: Object.assign(vi.fn(), { sync: mockSpawnSync }),
 }));
 
 vi.mock('fs', () => ({ default: mockFs, ...mockFs }));
@@ -30,9 +30,17 @@ import {
   cleanupAllWorktrees,
 } from './worktree.js';
 
+/** Helper: find calls to spawnSync where args contain a substring */
+function findCalls(substring: string) {
+  return mockSpawnSync.mock.calls.filter(
+    (c: any[]) => c[0] === 'git' && (c[1] as string[]).some((a) => a.includes(substring))
+  );
+}
+
 describe('worktree', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: '', stderr: '' });
     mockFs.existsSync.mockReturnValue(false);
   });
 
@@ -68,8 +76,9 @@ describe('worktree', () => {
 
       const wt = createWorktree('task_001', 'prd/prd_abc', '/project');
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('git worktree add --detach'),
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['worktree', 'add', '--detach']),
         expect.objectContaining({ cwd: '/project' })
       );
       expect(wt.taskId).toBe('task_001');
@@ -110,10 +119,7 @@ describe('worktree', () => {
       createWorktree('task_001', 'prd/prd_abc', '/project');
 
       // Should have called git worktree remove for cleanup
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('worktree remove'),
-        expect.anything()
-      );
+      expect(findCalls('remove').length).toBeGreaterThan(0);
     });
   });
 
@@ -124,9 +130,9 @@ describe('worktree', () => {
   describe('mergeWorktreeChanges', () => {
     it('should return success when no changes', () => {
       // git status --porcelain returns empty
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('status --porcelain')) return '';
-        return '';
+      mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args.includes('--porcelain')) return { status: 0, stdout: '', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
       });
 
       const result = mergeWorktreeChanges('/wt', '/project', 'test commit');
@@ -135,10 +141,10 @@ describe('worktree', () => {
     });
 
     it('should stage, commit, and cherry-pick changes', () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('status --porcelain')) return 'M src/foo.ts';
-        if (cmd.includes('rev-parse HEAD')) return 'abc123';
-        return '';
+      mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args.includes('--porcelain')) return { status: 0, stdout: 'M src/foo.ts', stderr: '' };
+        if (args.includes('rev-parse')) return { status: 0, stdout: 'abc123', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
       });
 
       const result = mergeWorktreeChanges('/wt', '/project', 'test commit');
@@ -147,24 +153,24 @@ describe('worktree', () => {
       expect(result.commitSha).toBe('abc123');
 
       // Verify the sequence: add → status → commit → rev-parse → cherry-pick
-      const calls = mockExecSync.mock.calls.map((c) => c[0] as string);
-      expect(calls.some((c) => c.includes('git add -A'))).toBe(true);
-      expect(calls.some((c) => c.includes('git commit'))).toBe(true);
+      const calls = mockSpawnSync.mock.calls.map((c: any[]) => (c[1] as string[]).join(' '));
+      expect(calls.some((c) => c.includes('add -A'))).toBe(true);
+      expect(calls.some((c) => c.includes('commit'))).toBe(true);
       expect(calls.some((c) => c.includes('cherry-pick abc123'))).toBe(true);
     });
 
     it('should abort cherry-pick on conflict', () => {
       let cherryPickCalled = false;
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('status --porcelain')) return 'M src/foo.ts';
-        if (cmd.includes('rev-parse HEAD')) return 'abc123';
-        if (cmd.includes('cherry-pick abc123')) {
+      mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args.includes('--porcelain')) return { status: 0, stdout: 'M src/foo.ts', stderr: '' };
+        if (args.includes('rev-parse')) return { status: 0, stdout: 'abc123', stderr: '' };
+        if (args.includes('cherry-pick') && args.includes('abc123')) {
           cherryPickCalled = true;
-          throw new Error('conflict');
+          return { status: 1, stdout: '', stderr: 'conflict' };
         }
-        if (cmd.includes('cherry-pick --abort')) return '';
-        if (cmd.includes('diff --name-only')) return 'src/foo.ts';
-        return '';
+        if (args.includes('--diff-filter=U'))
+          return { status: 0, stdout: 'src/foo.ts', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
       });
 
       const result = mergeWorktreeChanges('/wt', '/project', 'test commit');
@@ -173,20 +179,21 @@ describe('worktree', () => {
       expect(result.success).toBe(false);
     });
 
-    it('should escape quotes in commit message', () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('status --porcelain')) return 'M src/foo.ts';
-        if (cmd.includes('rev-parse HEAD')) return 'abc123';
-        return '';
+    it('should pass commit message directly (no shell escaping needed)', () => {
+      mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args.includes('--porcelain')) return { status: 0, stdout: 'M src/foo.ts', stderr: '' };
+        if (args.includes('rev-parse')) return { status: 0, stdout: 'abc123', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
       });
 
       mergeWorktreeChanges('/wt', '/project', 'fix "bug" in parser');
 
-      const commitCall = mockExecSync.mock.calls.find((c) =>
-        (c[0] as string).includes('git commit')
+      const commitCall = mockSpawnSync.mock.calls.find(
+        (c: any[]) => c[0] === 'git' && (c[1] as string[]).includes('commit')
       );
       expect(commitCall).toBeDefined();
-      expect(commitCall![0]).toContain('\\"bug\\"');
+      // With cross-spawn, the message is passed directly — no escaping needed
+      expect(commitCall![1]).toContain('fix "bug" in parser');
     });
   });
 
@@ -198,23 +205,24 @@ describe('worktree', () => {
     it('should run git worktree remove --force', () => {
       removeWorktree('task_001', '/project');
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('worktree remove --force'),
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['worktree', 'remove', '--force']),
         expect.objectContaining({ cwd: '/project' })
       );
     });
 
     it('should fallback to manual cleanup on error', () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('worktree remove')) throw new Error('locked');
-        return '';
+      mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+        if (args.includes('remove')) return { status: 1, stdout: '', stderr: 'locked' };
+        return { status: 0, stdout: '', stderr: '' };
       });
       mockFs.existsSync.mockReturnValue(true);
 
       removeWorktree('task_001', '/project');
 
       expect(mockFs.rmSync).toHaveBeenCalled();
-      expect(mockExecSync).toHaveBeenCalledWith('git worktree prune', expect.anything());
+      expect(mockSpawnSync).toHaveBeenCalledWith('git', ['worktree', 'prune'], expect.anything());
     });
   });
 
@@ -241,9 +249,7 @@ describe('worktree', () => {
       cleanupAllWorktrees('/project');
 
       // Should have called remove for task_001 and task_002, but not .gitkeep
-      const removeCalls = mockExecSync.mock.calls.filter((c) =>
-        (c[0] as string).includes('worktree remove')
-      );
+      const removeCalls = findCalls('remove');
       expect(removeCalls.length).toBe(2);
     });
 
@@ -253,7 +259,7 @@ describe('worktree', () => {
 
       cleanupAllWorktrees('/project');
 
-      expect(mockExecSync).toHaveBeenCalledWith('git worktree prune', expect.anything());
+      expect(mockSpawnSync).toHaveBeenCalledWith('git', ['worktree', 'prune'], expect.anything());
     });
   });
 });

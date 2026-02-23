@@ -23,7 +23,7 @@ import {
 /**
  * Mask sensitive values (API keys, etc.)
  */
-function maskSensitive(value: string | undefined): string {
+export function maskSensitive(value: string | undefined): string {
   if (!value) return '(not set)';
   if (value.length <= 8) return '****';
   return value.slice(0, 4) + '****' + value.slice(-4);
