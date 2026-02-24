@@ -454,31 +454,50 @@ Co-Authored-By order (succ always LAST):
 
     const startDaemon = () => {
       const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
-      if (fs.existsSync(servicePath)) {
-        const daemon = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
-          cwd: projectDir,
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-          env: { ...process.env, NODE_OPTIONS: '' },
-        });
-        daemon.unref();
-        return true;
+      if (!fs.existsSync(servicePath)) {
+        log(succDir, '[daemon] service.js not found: ' + servicePath);
+        return false;
       }
-      return false;
+      const daemon = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
+        cwd: projectDir,
+        detached: true,
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true,
+        env: { ...process.env, NODE_OPTIONS: '' },
+      });
+      // Capture stderr for crash diagnostics
+      let stderrBuf = '';
+      daemon.stderr.on('data', (chunk) => {
+        if (stderrBuf.length < 2000) {
+          stderrBuf += chunk.toString().slice(0, 500);
+        }
+      });
+      daemon.on('exit', (code) => {
+        if (code && code !== 0) {
+          log(succDir, `[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`);
+        }
+      });
+      daemon.unref();
+      daemon.stderr.unref();
+      return true;
     };
 
     // Ensure daemon is running and get port
     let daemonPort = getDaemonPort();
     if (!daemonPort || !(await checkDaemon(daemonPort))) {
+      log(succDir, '[daemon] Not running, attempting start...');
       startDaemon();
       // Wait for daemon to start (max 3 seconds)
       for (let i = 0; i < 30; i++) {
         await new Promise(r => setTimeout(r, 100));
         daemonPort = getDaemonPort();
         if (daemonPort && await checkDaemon(daemonPort)) {
+          log(succDir, `[daemon] Started on port ${daemonPort}`);
           break;
         }
+      }
+      if (!daemonPort || !(await checkDaemon(daemonPort))) {
+        log(succDir, '[daemon] Failed to start within 3s — continuing without daemon');
       }
     }
 
