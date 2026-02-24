@@ -24,7 +24,7 @@ function log(succDir, message) {
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logFile, `[${timestamp}] [user-prompt] ${message}\n`);
   } catch {
-    // Logging failed, not critical
+    // intentionally empty — logging failed, not critical
   }
 }
 
@@ -65,7 +65,9 @@ process.stdin.on('end', async () => {
       if (fs.existsSync(portFile)) {
         daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
       }
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
 
     // Check if this is a service session (e.g., reflection subagent)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
@@ -113,7 +115,9 @@ process.stdin.on('end', async () => {
           }),
           signal: AbortSignal.timeout(2000),
         });
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
     }
 
     // --- Skill Suggestions ---
@@ -138,7 +142,7 @@ process.stdin.on('end', async () => {
               break;
             }
           } catch {
-            // Ignore parse errors
+            // intentionally empty — ignore parse errors
           }
         }
       }
@@ -159,7 +163,9 @@ process.stdin.on('end', async () => {
           if (fs.existsSync(cooldownFile)) {
             promptsSinceLastSuggestion = parseInt(fs.readFileSync(cooldownFile, 'utf8').trim(), 10) || 0;
           }
-        } catch {}
+        } catch {
+          // intentionally empty
+        }
 
         // Only suggest if cooldown has passed
         if (promptsSinceLastSuggestion >= cooldownPrompts || promptsSinceLastSuggestion === 0) {
@@ -208,13 +214,16 @@ process.stdin.on('end', async () => {
           // Cooldown not passed, increment counter
           try {
             fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');
-          } catch {}
+          } catch {
+            // intentionally empty
+          }
         }
       }
     }
 
     process.exit(0);
-  } catch (err) {
+  } catch {
+    // intentionally empty
     process.exit(0);
   }
 });

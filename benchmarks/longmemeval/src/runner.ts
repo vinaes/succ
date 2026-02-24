@@ -19,7 +19,9 @@ if (!process.env.OPENROUTER_API_KEY) {
     const cfgPath = join(import.meta.dirname, '..', '..', '..', '.succ', 'config.json');
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     if (cfg.openrouter_api_key) process.env.OPENROUTER_API_KEY = cfg.openrouter_api_key;
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 // Force local embeddings (global config may default to ollama/nomic-embed-text)
@@ -315,7 +317,7 @@ export async function run(options: RunOptions): Promise<BenchmarkMetrics> {
       // Retry the entire question pipeline (ingestion + retrieval + answer + eval)
       const result = await retryWithBackoff(
         async () => {
-          try { closeDb(); resetStorageDispatcher(); } catch {} // Clean slate for retries
+          try { closeDb(); resetStorageDispatcher(); } catch { /* intentionally empty */ } // Clean slate for retries
           return processQuestion(question, options);
         },
         `question:${question.question_id}`,
@@ -338,7 +340,7 @@ export async function run(options: RunOptions): Promise<BenchmarkMetrics> {
       }
     } catch (err: any) {
       console.error(`  SKIP ${question.question_id} after ${MAX_RETRIES} retries:`, err?.message || err);
-      try { closeDb(); resetStorageDispatcher(); } catch {}
+      try { closeDb(); resetStorageDispatcher(); } catch { /* intentionally empty */ }
     }
   }
 

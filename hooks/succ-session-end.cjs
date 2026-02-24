@@ -43,7 +43,9 @@ process.stdin.on('end', async () => {
       if (fs.existsSync(portFile)) {
         daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
       }
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
 
     if (!daemonPort) {
       process.exit(0);
@@ -79,7 +81,8 @@ process.stdin.on('end', async () => {
     }
 
     process.exit(0);
-  } catch (err) {
+  } catch {
+    // intentionally empty
     process.exit(0);
   }
 });

@@ -1,6 +1,6 @@
 import { getConfig, getConfigWithOverride, getLLMTaskConfig, LOCAL_MODEL } from './config.js';
 import { createHash } from 'crypto';
-import { logWarn } from './fault-logger.js';
+import { logInfo, logWarn } from './fault-logger.js';
 import { NativeOrtSession } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
 import { NetworkError, ValidationError } from './errors.js';
@@ -229,9 +229,9 @@ async function getNativeSession(): Promise<NativeOrtSession> {
     }
 
     gpuBackend = providerResult.provider;
-    console.log(
-      `Loading native ORT session: ${embeddingModel} ` +
-        `(${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})...`
+    logInfo(
+      'embeddings',
+      `Loading native ORT session: ${embeddingModel} (${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})`
     );
 
     nativeSession = new NativeOrtSession({
@@ -242,7 +242,7 @@ async function getNativeSession(): Promise<NativeOrtSession> {
     try {
       await nativeSession.init();
       gpuBackend = nativeSession.provider;
-      console.log(`Model loaded (${nativeSession.provider}).`);
+      logInfo('embeddings', `Model loaded (${nativeSession.provider})`);
     } catch (error: unknown) {
       nativeSession = null;
       const message = error instanceof Error ? error.message : String(error);
@@ -279,9 +279,9 @@ async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[]
       const poolSize = config.embedding_worker_pool_size ?? undefined;
       const maxWorkers = config.embedding_worker_pool_max ?? 8;
       embeddingPool = new EmbeddingPool({ poolSize, maxWorkers, model: getEmbeddingModel() });
-      console.log(`Initializing embedding worker pool (${embeddingPool.size} workers)...`);
+      logInfo('embeddings', `Initializing embedding worker pool (${embeddingPool.size} workers)`);
       await embeddingPool.init();
-      console.log('Worker pool ready.');
+      logInfo('embeddings', 'Worker pool ready');
     }
 
     return await embeddingPool.getEmbeddings(texts);

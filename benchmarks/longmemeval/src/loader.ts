@@ -64,7 +64,6 @@ export async function loadDataset(variant: DatasetVariant): Promise<LongMemEvalQ
   console.log(`Loaded ${data.length} questions from ${variant} dataset`);
 
   // Validate
-  const types = new Set(data.map(q => q.question_type));
   const typeCounts: Record<string, number> = {};
   for (const q of data) {
     typeCounts[q.question_type] = (typeCounts[q.question_type] || 0) + 1;

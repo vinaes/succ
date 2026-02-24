@@ -221,6 +221,3 @@ export const TASK_EXECUTION_USER_PROMPT = `## Your Task
 ## Quality Gates
 
 {quality_gates}`;
-
-/** @deprecated Use TASK_EXECUTION_SYSTEM + TASK_EXECUTION_USER_PROMPT separately for caching. */
-export const TASK_EXECUTION_PROMPT = TASK_EXECUTION_SYSTEM + '\n\n' + TASK_EXECUTION_USER_PROMPT;

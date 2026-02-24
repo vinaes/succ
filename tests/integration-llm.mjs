@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // Integration test: test migrated components work with LLM library
 
-import path from 'path';
-
 // Test 1: compact-briefing
 async function testCompactBriefing() {
   console.log('\n=== Testing compact-briefing ===');

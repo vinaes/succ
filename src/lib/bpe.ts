@@ -15,6 +15,7 @@
  */
 
 import { getTopTokens, getTokenFrequencyStats, isPostgresBackend } from './storage/index.js';
+import { logInfo } from './fault-logger.js';
 import {
   initBPESchema as initBPESchemaDb,
   saveBPEVocabToDb,
@@ -150,7 +151,7 @@ export function trainBPE(
 
     // Progress logging every 500 merges
     if ((i + 1) % 500 === 0) {
-      console.log(`  BPE training: ${i + 1}/${targetMerges} merges`);
+      logInfo('bpe', `Training: ${i + 1}/${targetMerges} merges`);
     }
   }
 
@@ -295,19 +296,19 @@ export async function trainBPEFromDatabase(
   const stats = await getTokenFrequencyStats();
 
   if (stats.unique_tokens === 0) {
-    console.log('No tokens indexed, skipping BPE training');
-    console.log('Run `succ index-code` first to collect token frequencies.');
+    logInfo('bpe', 'No tokens indexed, skipping BPE training. Run `succ index-code` first.');
     return null;
   }
 
   if (stats.unique_tokens < 100) {
-    console.log(`Only ${stats.unique_tokens} unique tokens, need at least 100 for BPE training`);
+    logInfo('bpe', `Only ${stats.unique_tokens} unique tokens, need at least 100 for BPE training`);
     return null;
   }
 
-  console.log(`Training BPE from token_frequencies table...`);
-  console.log(`  Unique tokens: ${stats.unique_tokens.toLocaleString()}`);
-  console.log(`  Total occurrences: ${stats.total_occurrences.toLocaleString()}`);
+  logInfo(
+    'bpe',
+    `Training from token_frequencies: ${stats.unique_tokens.toLocaleString()} unique tokens, ${stats.total_occurrences.toLocaleString()} total occurrences`
+  );
 
   // Get top tokens (limit to reasonable amount for BPE training)
   // More tokens = better coverage, but slower training
@@ -329,11 +330,11 @@ export async function trainBPEFromDatabase(
   }
 
   if (allTokens.length < 100) {
-    console.log('Not enough valid tokens for BPE training');
+    logInfo('bpe', 'Not enough valid tokens for BPE training');
     return null;
   }
 
-  console.log(`  Training corpus: ${allTokens.length.toLocaleString()} token occurrences`);
+  logInfo('bpe', `Training corpus: ${allTokens.length.toLocaleString()} token occurrences`);
 
   // Train BPE
   const vocab = trainBPE(allTokens, vocabSize, minFrequency);
@@ -341,7 +342,7 @@ export async function trainBPEFromDatabase(
   // Save to database
   saveBPEVocab(vocab);
 
-  console.log(`BPE trained: ${vocab.vocabSize} vocab size, ${vocab.merges.length} merges`);
+  logInfo('bpe', `BPE trained: ${vocab.vocabSize} vocab size, ${vocab.merges.length} merges`);
 
   return vocab;
 }

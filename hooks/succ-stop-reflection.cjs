@@ -49,7 +49,9 @@ process.stdin.on('end', async () => {
       if (fs.existsSync(portFile)) {
         daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
       }
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
 
     // Check if this is a service session (e.g., reflection subagent)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
@@ -70,13 +72,16 @@ process.stdin.on('end', async () => {
           }),
           signal: AbortSignal.timeout(2000),
         });
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
     };
 
     // Wait for daemon notification before exit
     await notifyDaemon();
     process.exit(0);
-  } catch (err) {
+  } catch {
+    // intentionally empty
     process.exit(0);
   }
 });

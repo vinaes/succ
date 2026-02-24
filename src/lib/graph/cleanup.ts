@@ -14,6 +14,7 @@ import {
 import { enrichExistingLinks } from './llm-relations.js';
 import { detectCommunities, type CommunityResult } from './community-detection.js';
 import { updateCentralityCache } from './centrality.js';
+import { getIdleReflectionConfig } from '../config.js';
 
 export interface CleanupOptions {
   /** Prune similar_to links below this weight (default 0.75) */
@@ -46,7 +47,7 @@ export interface CleanupResult {
 
 export async function graphCleanup(options: CleanupOptions = {}): Promise<CleanupResult> {
   const {
-    pruneThreshold = 0.75,
+    pruneThreshold = getIdleReflectionConfig().thresholds.auto_link_threshold ?? 0.75,
     orphanThreshold = 0.6,
     orphanMaxLinks = 3,
     skipEnrich = false,

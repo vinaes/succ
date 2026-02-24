@@ -452,6 +452,9 @@ export interface IdleReflectionConfig {
   // Thresholds for operations
   thresholds?: {
     similarity_for_merge?: number; // Cosine similarity to consider memories duplicates (default: 0.92)
+    exact_duplicate?: number; // Very high similarity = exact duplicate (default: 0.95)
+    merge_candidate?: number; // High similarity = merge candidate (default: 0.85)
+    dead_end_dedup?: number; // Dead-end dedup threshold (default: 0.85)
     auto_link_threshold?: number; // Similarity threshold for graph auto-linking (default: 0.75)
     min_quality_for_summary?: number; // Min quality score for facts extracted from session (default: 0.5)
   };
@@ -584,6 +587,11 @@ export interface ConfigDisplay {
     };
     thresholds: {
       similarity_for_merge: number;
+      exact_duplicate: number;
+      merge_candidate: number;
+      dead_end_dedup: number;
+      auto_link_threshold: number;
+      min_quality_for_summary: number;
     };
     consolidation_guards: {
       min_memory_age_days: number;

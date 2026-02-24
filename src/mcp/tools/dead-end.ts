@@ -8,7 +8,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { saveMemory, searchMemories, closeDb } from '../../lib/storage/index.js';
-import { getConfig, isGlobalOnlyMode } from '../../lib/config.js';
+import { getConfig, getIdleReflectionConfig, isGlobalOnlyMode } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
@@ -85,7 +85,8 @@ export function registerDeadEndTools(server: McpServer) {
         const embedding = await getEmbedding(content);
 
         // Dedup: check if a similar dead-end already exists
-        const existing = await searchMemories(embedding, 1, 0.85);
+        const dedupThreshold = getIdleReflectionConfig().thresholds.dead_end_dedup ?? 0.85;
+        const existing = await searchMemories(embedding, 1, dedupThreshold);
         if (existing.length > 0 && existing[0].content.startsWith('DEAD END:')) {
           return {
             content: [

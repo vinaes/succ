@@ -592,6 +592,15 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
       similarity_for_merge:
         userConfig.thresholds?.similarity_for_merge ??
         DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.similarity_for_merge,
+      exact_duplicate:
+        userConfig.thresholds?.exact_duplicate ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.exact_duplicate,
+      merge_candidate:
+        userConfig.thresholds?.merge_candidate ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.merge_candidate,
+      dead_end_dedup:
+        userConfig.thresholds?.dead_end_dedup ??
+        DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.dead_end_dedup,
       auto_link_threshold:
         userConfig.thresholds?.auto_link_threshold ??
         DEFAULT_IDLE_REFLECTION_CONFIG.thresholds.auto_link_threshold,

@@ -184,6 +184,11 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
       },
       thresholds: {
         similarity_for_merge: idleReflection.thresholds.similarity_for_merge ?? 0.92,
+        exact_duplicate: idleReflection.thresholds.exact_duplicate ?? 0.95,
+        merge_candidate: idleReflection.thresholds.merge_candidate ?? 0.85,
+        dead_end_dedup: idleReflection.thresholds.dead_end_dedup ?? 0.85,
+        auto_link_threshold: idleReflection.thresholds.auto_link_threshold ?? 0.75,
+        min_quality_for_summary: idleReflection.thresholds.min_quality_for_summary ?? 0.5,
       },
       consolidation_guards: {
         min_memory_age_days: idleReflection.consolidation_guards.min_memory_age_days ?? 7,

@@ -12,6 +12,9 @@ vi.mock('../../lib/config.js', () => ({
     sensitive_auto_redact: false,
     quality_scoring_enabled: true,
   })),
+  getIdleReflectionConfig: vi.fn(() => ({
+    thresholds: { dead_end_dedup: 0.85 },
+  })),
   isGlobalOnlyMode: vi.fn(() => false),
 }));
 

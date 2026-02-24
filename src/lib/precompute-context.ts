@@ -13,7 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getProjectRoot } from './config.js';
 import { callLLM, type LLMBackend } from './llm.js';
 import { SESSION_BRIEFING_SYSTEM, SESSION_BRIEFING_PROMPT } from '../prompts/index.js';
-import { logWarn } from './fault-logger.js';
+import { logInfo, logWarn } from './fault-logger.js';
 import { formatTranscriptLines, type TranscriptMessage } from './transcript-utils.js';
 import fs from 'fs';
 import path from 'path';
@@ -199,14 +199,14 @@ export async function precomputeContext(
   try {
     // Find relevant memories
     if (verbose) {
-      console.log('Finding relevant memories...');
+      logInfo('precompute-context', 'Finding relevant memories...');
     }
 
     const memories = await findRelevantMemories(transcript, 5);
     result.memoriesIncluded = memories.length;
 
     if (verbose) {
-      console.log(`Found ${memories.length} relevant memories`);
+      logInfo('precompute-context', `Found ${memories.length} relevant memories`);
     }
 
     let backendOverride: LLMBackend | undefined;
@@ -215,12 +215,15 @@ export async function precomputeContext(
     }
 
     if (verbose) {
-      console.log(`Using ${backendOverride || 'configured'} backend for briefing generation`);
+      logInfo(
+        'precompute-context',
+        `Using ${backendOverride || 'configured'} backend for briefing generation`
+      );
     }
 
     // Generate briefing
     if (verbose) {
-      console.log('Generating session briefing...');
+      logInfo('precompute-context', 'Generating session briefing...');
     }
 
     const briefing = await generateBriefingWithLLM(transcript, memories, backendOverride);
@@ -232,7 +235,7 @@ export async function precomputeContext(
     }
 
     if (verbose) {
-      console.log('Briefing generated successfully');
+      logInfo('precompute-context', 'Briefing generated successfully');
     }
 
     // Save to file
@@ -266,10 +269,8 @@ ${memoriesSection}
 
     if (dryRun) {
       if (verbose) {
-        console.log('\nDry run - would write to: ' + contextFile);
-        console.log('\n--- Content ---');
-        console.log(contextContent);
-        console.log('--- End ---');
+        logInfo('precompute-context', `Dry run - would write to: ${contextFile}`);
+        logInfo('precompute-context', `Content:\n${contextContent}`);
       }
     } else {
       fs.writeFileSync(contextFile, contextContent);

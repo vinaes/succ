@@ -8,7 +8,7 @@
  */
 
 import { Worker } from 'worker_threads';
-import { logWarn } from './fault-logger.js';
+import { logInfo, logWarn } from './fault-logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -309,8 +309,9 @@ function determineAction(
   m2: Memory & { embedding: number[] },
   similarity: number
 ): { action: 'merge' | 'delete_duplicate' | 'keep_both'; reason: string } {
-  // Very high similarity (>0.95) = likely exact duplicate
-  if (similarity > 0.95) {
+  const thresholds = getIdleReflectionConfig().thresholds;
+  // Very high similarity = likely exact duplicate
+  if (similarity > (thresholds.exact_duplicate ?? 0.95)) {
     // Keep the one with higher quality score, or newer if scores equal
     const q1 = m1.quality_score ?? 0.5;
     const q2 = m2.quality_score ?? 0.5;
@@ -334,8 +335,8 @@ function determineAction(
     };
   }
 
-  // High similarity (0.85-0.95) = candidates for merge
-  if (similarity > 0.85) {
+  // High similarity = candidates for merge
+  if (similarity > (thresholds.merge_candidate ?? 0.85)) {
     // Check if one is a subset of the other
     const content1Lower = m1.content.toLowerCase();
     const content2Lower = m2.content.toLowerCase();
@@ -765,11 +766,12 @@ export async function consolidateMemories(options: {
   } = options;
 
   if (verbose) {
-    console.log('Finding consolidation candidates...');
+    logInfo('consolidate', 'Finding consolidation candidates...');
     if (!skipGuards) {
       const config = getIdleReflectionConfig();
       const guards = config.consolidation_guards;
-      console.log(
+      logInfo(
+        'consolidate',
         `Safety guards: min age ${guards?.min_memory_age_days ?? 7}d, min corpus ${guards?.min_corpus_size ?? 20}, require LLM: ${guards?.require_llm_merge ?? true}`
       );
     }
@@ -778,21 +780,24 @@ export async function consolidateMemories(options: {
   const candidates = await findConsolidationCandidates(threshold, maxCandidates, { skipGuards });
 
   if (verbose) {
-    console.log(`Found ${candidates.length} candidate pairs`);
+    logInfo('consolidate', `Found ${candidates.length} candidate pairs`);
 
     if (candidates.length > 0) {
-      console.log('\nTop candidates:');
+      logInfo('consolidate', 'Top candidates:');
       for (const c of candidates.slice(0, 5)) {
-        console.log(
-          `  [${c.action}] #${c.memory1.id} ↔ #${c.memory2.id} (similarity: ${c.similarity.toFixed(3)})`
+        logInfo(
+          'consolidate',
+          `  [${c.action}] #${c.memory1.id} ↔ #${c.memory2.id} (similarity: ${c.similarity.toFixed(3)}) — ${c.reason}`
         );
-        console.log(`    ${c.reason}`);
       }
     }
 
     if (useLLM) {
       const mergeOpts = llmOptions || getLLMMergeOptionsFromConfig();
-      console.log(`\nLLM merge enabled: ${mergeOpts.mode} (${mergeOpts.model || 'default'})`);
+      logInfo(
+        'consolidate',
+        `LLM merge enabled: ${mergeOpts.mode} (${mergeOpts.model || 'default'})`
+      );
     }
   }
 
@@ -808,14 +813,10 @@ export async function consolidateMemories(options: {
   });
 
   if (verbose) {
-    console.log('\n\nConsolidation complete:');
-    console.log(`  Candidates found: ${result.candidatesFound}`);
-    console.log(`  Merged: ${result.merged}${useLLM ? ' (LLM)' : ''}`);
-    console.log(`  Deleted: ${result.deleted}`);
-    console.log(`  Kept (linked): ${result.kept}`);
-    if (result.errors.length > 0) {
-      console.log(`  Errors: ${result.errors.length}`);
-    }
+    logInfo(
+      'consolidate',
+      `Complete: ${result.candidatesFound} candidates, ${result.merged} merged${useLLM ? ' (LLM)' : ''}, ${result.deleted} deleted, ${result.kept} kept${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`
+    );
   }
 
   return result;

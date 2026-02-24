@@ -308,7 +308,8 @@ async function saveFactsAsMemories(
   log(
     `[session-processor] Batch saving ${batch.length} memories (skipped ${skippedSensitive} sensitive, ${skippedQuality} low-quality)`
   );
-  const result = await saveMemoriesBatch(batch, 0.92); // 0.92 = duplicate threshold
+  const dupThreshold = getIdleReflectionConfig().thresholds.similarity_for_merge;
+  const result = await saveMemoriesBatch(batch, dupThreshold);
 
   log(
     `[session-processor] Batch save complete: ${result.saved} saved, ${result.skipped} duplicates`

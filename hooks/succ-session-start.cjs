@@ -17,10 +17,9 @@
  * - Knowledge base stats
  */
 
-const { execFileSync, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 // Logging helper - writes to .succ/.tmp/hooks.log
 function log(succDir, message) {
@@ -33,7 +32,7 @@ function log(succDir, message) {
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logFile, `[${timestamp}] [session-start] ${message}\n`);
   } catch {
-    // Logging failed, not critical
+    // intentionally empty — logging failed, not critical
   }
 }
 
@@ -95,7 +94,7 @@ process.stdin.on('end', async () => {
           }
           // No break — merge both configs (global defaults, project overrides)
         } catch {
-          // Ignore parse errors
+          // intentionally empty — ignore parse errors
         }
       }
     }
@@ -379,7 +378,7 @@ Co-Authored-By order (succ always LAST):
           contextParts.push(`<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`);
         }
       } catch {
-        // Brain vault scan failed, not critical
+        // intentionally empty — brain vault scan failed, not critical
       }
     }
 
@@ -416,11 +415,11 @@ Co-Authored-By order (succ always LAST):
                 fs.unlinkSync(path.join(archiveDir, oldArchive));
               }
             } catch {
-              // Cleanup failed, not critical
+              // intentionally empty — cleanup failed, not critical
             }
           }
         } catch {
-          // Ignore errors
+          // intentionally empty — ignore errors
         }
       }
     }
@@ -434,7 +433,9 @@ Co-Authored-By order (succ always LAST):
         if (fs.existsSync(portFile)) {
           return parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
         }
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       return null;
     };
 
@@ -446,6 +447,7 @@ Co-Authored-By order (succ always LAST):
         const data = await response.json();
         return data?.status === 'ok';
       } catch {
+        // intentionally empty
         return false;
       }
     };
@@ -560,7 +562,7 @@ Co-Authored-By order (succ always LAST):
           }
         }
       } catch {
-        // pinned memories not available
+        // intentionally empty — pinned memories not available
       }
 
       // Phase 2: Recent memories (excluding pinned to avoid duplication)
@@ -584,7 +586,7 @@ Co-Authored-By order (succ always LAST):
           }
         }
       } catch {
-        // memories not available
+        // intentionally empty — memories not available
       }
     }
 
@@ -604,7 +606,7 @@ Co-Authored-By order (succ always LAST):
           }
         }
       } catch {
-        // status not available
+        // intentionally empty — status not available
       }
     }
 
@@ -637,13 +639,14 @@ Co-Authored-By order (succ always LAST):
           signal: AbortSignal.timeout(3000),
         });
       } catch {
-        // Registration failed, continue anyway
+        // intentionally empty — registration failed, continue anyway
       }
     }
 
     process.exit(0);
 
-  } catch (err) {
+  } catch {
+    // intentionally empty
     process.exit(0);
   }
 });

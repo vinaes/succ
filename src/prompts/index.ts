@@ -93,7 +93,6 @@ export {
   PRD_PARSE_PROMPT,
   TASK_EXECUTION_SYSTEM,
   TASK_EXECUTION_USER_PROMPT,
-  TASK_EXECUTION_PROMPT,
 } from './prd.js';
 
 // Soul generation prompts

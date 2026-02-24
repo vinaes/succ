@@ -7,7 +7,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { setDb, closeDb, applySqliteTuning } from '../../../src/lib/db/connection.js';
+import { setDb, applySqliteTuning } from '../../../src/lib/db/connection.js';
 import { initDb, loadSqliteVec } from '../../../src/lib/db/schema.js';
 import { saveMemory, resetStorageDispatcher } from '../../../src/lib/storage/index.js';
 import { getEmbedding, getEmbeddings } from '../../../src/lib/embeddings.js';

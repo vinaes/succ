@@ -9,7 +9,7 @@
 
 import { getConfig, getLLMTaskConfig, type SuccConfig } from './config.js';
 import { QUALITY_SCORER_SYSTEM } from '../prompts/index.js';
-import { logWarn } from './fault-logger.js';
+import { logInfo, logWarn } from './fault-logger.js';
 import { NetworkError, ValidationError } from './errors.js';
 
 // Lazy-loaded zero-shot classification pipeline for local scoring
@@ -307,11 +307,11 @@ function calculateClarity(content: string): number {
 async function getClassifierPipeline() {
   if (!classifierPipeline) {
     const { pipeline } = await import('@huggingface/transformers');
-    console.log(`Loading quality scoring model: ${CLASSIFIER_MODEL}...`);
+    logInfo('quality', `Loading quality scoring model: ${CLASSIFIER_MODEL}`);
     classifierPipeline = await pipeline('zero-shot-classification', CLASSIFIER_MODEL, {
       device: 'cpu',
     });
-    console.log('Quality scoring model loaded.');
+    logInfo('quality', 'Quality scoring model loaded');
   }
   return classifierPipeline;
 }

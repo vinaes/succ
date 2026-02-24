@@ -90,6 +90,9 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG: Required<IdleReflectionConfig> = {
   },
   thresholds: {
     similarity_for_merge: 0.92,
+    exact_duplicate: 0.95,
+    merge_candidate: 0.85,
+    dead_end_dedup: 0.85,
     auto_link_threshold: 0.75,
     min_quality_for_summary: 0.5,
   },

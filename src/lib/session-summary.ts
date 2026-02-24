@@ -13,7 +13,7 @@ import { getEmbedding } from './embeddings.js';
 import { getIdleReflectionConfig, getConfig } from './config.js';
 import { scoreMemory } from './quality.js';
 import { scanSensitive } from './sensitive-filter.js';
-import { logWarn } from './fault-logger.js';
+import { logInfo, logWarn } from './fault-logger.js';
 import { countTokens } from './token-counter.js';
 import { estimateSavings, getCurrentModel } from './pricing.js';
 import { callLLM, type LLMBackend } from './llm.js';
@@ -290,7 +290,8 @@ export async function extractSessionSummary(
   }
 
   if (verbose) {
-    console.log(
+    logInfo(
+      'session-summary',
       `Using ${llmOptions.mode} mode for extraction (model: ${llmOptions.model || 'default'})`
     );
   }
@@ -299,7 +300,7 @@ export async function extractSessionSummary(
   onProgress?.(1, 3, 'extracting facts');
 
   if (verbose) {
-    console.log('Extracting facts from transcript...');
+    logInfo('session-summary', 'Extracting facts from transcript...');
   }
 
   const facts = await extractFactsWithLLM(transcript, llmOptions);
@@ -309,7 +310,7 @@ export async function extractSessionSummary(
   result.summaryTokens = facts.reduce((sum, f) => sum + countTokens(f.content), 0);
 
   if (verbose) {
-    console.log(`Found ${facts.length} potential facts`);
+    logInfo('session-summary', `Found ${facts.length} potential facts`);
   }
 
   if (facts.length === 0) {
@@ -321,11 +322,11 @@ export async function extractSessionSummary(
 
   if (dryRun) {
     if (verbose) {
-      console.log('\nDry run - facts that would be saved:');
+      logInfo('session-summary', 'Dry run - facts that would be saved:');
       for (const fact of facts) {
-        console.log(`  [${fact.type}] ${fact.content.substring(0, 100)}...`);
-        console.log(
-          `    Tags: ${fact.tags.join(', ')} | Confidence: ${(fact.confidence * 100).toFixed(0)}%`
+        logInfo(
+          'session-summary',
+          `  [${fact.type}] ${fact.content.substring(0, 100)}... Tags: ${fact.tags.join(', ')} | Confidence: ${(fact.confidence * 100).toFixed(0)}%`
         );
       }
     }
@@ -348,7 +349,7 @@ export async function extractSessionSummary(
     result.errors = saveResult.errors;
 
     if (verbose) {
-      console.log('\n');
+      logInfo('session-summary', 'Fact saving complete');
     }
   }
 
