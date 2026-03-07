@@ -39,7 +39,8 @@ export function generatePluginManifest(packageRoot?: string): PluginManifest {
     pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   } catch (err) {
     throw new Error(
-      `Failed to read package.json at ${pkgPath}: ${err instanceof Error ? err.message : err}`
+      `Failed to read package.json at ${pkgPath}: ${err instanceof Error ? err.message : err}`,
+      { cause: err }
     );
   }
 
@@ -77,6 +78,5 @@ export function writePluginManifest(packageRoot?: string): void {
 
   fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(manifest, null, 2) + '\n');
 
-  // eslint-disable-next-line no-console
   console.log(`Generated .claude-plugin/plugin.json (v${manifest.version})`);
 }
