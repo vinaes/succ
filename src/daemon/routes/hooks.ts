@@ -13,6 +13,8 @@ import { getMemoriesByTag, saveMemory } from '../../lib/storage/index.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { matchRules } from '../../lib/hook-rules.js';
 import { checkDangerous, extractSafetyConfig } from '../../lib/command-safety.js';
+import { removeObservations } from '../../lib/session-observations.js';
+import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { getConfig } from '../../lib/config.js';
 import { spawnClaudeCLI } from '../../lib/llm.js';
 import { logWarn } from '../../lib/fault-logger.js';
@@ -118,21 +120,34 @@ function succExists(cwd: string): boolean {
   }
 }
 
+/** Strip Claude-specific sections (succ-agents, pre-commit-review, subagent refs) for non-Claude agents. */
+function stripClaudeOnlySections(context: string): string {
+  let adapted = context;
+  adapted = adapted.replace(/<succ-agents[\s\S]*?<\/succ-agents>/g, '');
+  adapted = adapted.replace(/.*succ-diff-reviewer.*\n?/g, '');
+  adapted = adapted.replace(/.*subagent_type=.*\n?/g, '');
+  adapted = adapted.replace(/<pre-commit-review>[\s\S]*?<\/pre-commit-review>/g, '');
+  adapted = adapted.replace(/\n{3,}/g, '\n\n');
+  return adapted.trim();
+}
+
 function buildCommitContext(): string {
   const config = getConfig();
   const parts: string[] = [];
 
   if (config.includeCoAuthoredBy !== false) {
     parts.push(`<commit-format>
-Footer order (succ always LAST):
-1. Generated with [Claude Code]
-2. via [Happy] (if used)
-3. powered by [succ](https://succ.ai)
+RULE: Every commit footer MUST end with the succ lines. Other tools may appear before succ but succ is always LAST.
 
-Co-Authored-By order (succ always LAST):
-1. Co-Authored-By: Claude <noreply@anthropic.com>
-2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
-3. Co-Authored-By: succ <mindpalace@succ.ai>
+TEMPLATE — copy the relevant lines exactly:
+Generated with [Claude Code](https://claude.ai/code)
+powered by [succ](https://succ.ai)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: succ <mindpalace@succ.ai>
+
+Other tools (Happy, Cursor, etc.) may add their own "via [Tool]" and "Co-Authored-By: Tool" lines.
+Place them BEFORE the succ lines. The only hard rule: succ is always the last footer line and last Co-Authored-By.
 </commit-format>`);
   }
 
@@ -611,6 +626,124 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             });
           }
         }
+
+        return {};
+      } catch {
+        return {};
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // SessionStart — context assembly for HTTP hook mode
+    // ═══════════════════════════════════════════════════════════════
+    'POST /api/hooks/session-start': async (body, searchParams) => {
+      try {
+        const input = parseRequestBody(HookBaseSchema, body);
+        const cwd = fixWindowsPath(input.cwd || '');
+        if (!cwd || !succExists(cwd)) return {};
+
+        // Detect requesting agent (default: claude)
+        const agent = (searchParams.get('agent') || 'claude').toLowerCase();
+
+        const succDir = path.join(cwd, '.succ');
+        const projectName = path.basename(cwd);
+        const contextParts: string[] = [];
+
+        // Commit format (if enabled)
+        const commitContext = buildCommitContext();
+        if (commitContext) {
+          contextParts.push(commitContext);
+        }
+
+        // Soul document
+        const soulPaths = [
+          path.join(succDir, 'soul.md'),
+          path.join(succDir, 'SOUL.md'),
+          path.join(cwd, 'soul.md'),
+          path.join(cwd, 'SOUL.md'),
+        ];
+        for (const soulPath of soulPaths) {
+          if (fs.existsSync(soulPath)) {
+            const soulContent = fs.readFileSync(soulPath, 'utf8').trim();
+            if (soulContent) {
+              contextParts.push('<soul>\n' + soulContent + '\n</soul>');
+            }
+            break;
+          }
+        }
+
+        // Precomputed context from previous session
+        const precomputedPath = path.join(succDir, 'next-session-context.md');
+        if (fs.existsSync(precomputedPath)) {
+          try {
+            const precomputed = fs.readFileSync(precomputedPath, 'utf8').trim();
+            if (precomputed) {
+              contextParts.push('<previous-session>\n' + precomputed + '\n</previous-session>');
+              // Archive
+              const archiveDir = path.join(succDir, '.context-archive');
+              if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+              const ts = new Date().toISOString().replace(/[:.]/g, '-');
+              fs.renameSync(precomputedPath, path.join(archiveDir, `context-${ts}.md`));
+            }
+          } catch {
+            // intentionally empty
+          }
+        }
+
+        // Register session
+        const transcriptPath = input.transcript_path || '';
+        const sessionId = transcriptPath
+          ? path.basename(transcriptPath, '.jsonl')
+          : `session-${Date.now()}`;
+        if (ctx.sessionManager) {
+          ctx.sessionManager.register(sessionId, transcriptPath, false);
+          ctx.log(`[hooks/session-start] Registered session: ${sessionId}`);
+        }
+
+        if (contextParts.length === 0) return {};
+
+        let additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+        // Strip Claude-only sections for non-Claude agents
+        if (agent !== 'claude') {
+          additionalContext = stripClaudeOnlySections(additionalContext);
+        }
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext,
+          },
+        };
+      } catch (err) {
+        logWarn('hooks', 'session-start failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return {};
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // SessionEnd — unregister session + trigger processing
+    // ═══════════════════════════════════════════════════════════════
+    'POST /api/hooks/session-end': async (body) => {
+      try {
+        const input = parseRequestBody(HookBaseSchema, body);
+        const cwd = fixWindowsPath(input.cwd || '');
+        if (!cwd || !succExists(cwd)) return {};
+
+        const transcriptPath = input.transcript_path || '';
+        const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : '';
+        if (!sessionId) return {};
+
+        if (ctx.sessionManager) {
+          ctx.sessionManager.unregister(sessionId);
+          ctx.clearBriefingCache(sessionId);
+          ctx.log(`[hooks/session-end] Unregistered session: ${sessionId}`);
+        }
+
+        // Cleanup independent of sessionManager
+        removeBudget(sessionId);
+        removeObservations(sessionId);
+        flushBudgets();
 
         return {};
       } catch {

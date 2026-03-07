@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const adapter = require('./core/adapter.cjs');
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -20,7 +21,9 @@ process.stdin.on('readable', () => {
 
 process.stdin.on('end', async () => {
   try {
-    const hookInput = JSON.parse(input);
+    const rawInput = JSON.parse(input);
+    const agent = adapter.detectAgent(rawInput);
+    const hookInput = adapter.normalizeInput(agent, rawInput);
     let projectDir = hookInput.cwd || process.cwd();
 
     // Convert /c/... to C:/... on Windows if needed

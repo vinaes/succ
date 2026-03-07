@@ -88,6 +88,213 @@ const EDITOR_CONFIGS: Record<string, EditorConfig> = {
   },
 };
 
+// ─── Hook Installation ───────────────────────────────────────────────
+
+interface HookEditorConfig {
+  /** Hook config file path per platform (relative to project root) */
+  configPath: string;
+  /** Config format */
+  format: 'cursor' | 'copilot' | 'gemini';
+  /** Mapping: succ hook name → editor event name */
+  events: Record<string, string>;
+  /** SUCC_AGENT value */
+  agentName: string;
+}
+
+const HOOK_EDITOR_CONFIGS: Record<string, HookEditorConfig> = {
+  cursor: {
+    configPath: '.cursor/hooks.json',
+    format: 'cursor',
+    events: {
+      'session-start': 'sessionStart',
+      'session-end': 'sessionEnd',
+      'pre-tool': 'preToolUse',
+      'post-tool': 'postToolUse',
+      'user-prompt': 'userPromptSubmitted',
+      stop: 'afterAgentResponse',
+    },
+    agentName: 'cursor',
+  },
+  copilot: {
+    configPath: '.github/hooks/hooks.json',
+    format: 'copilot',
+    events: {
+      'session-start': 'sessionStart',
+      'session-end': 'sessionEnd',
+      'pre-tool': 'preToolUse',
+      'post-tool': 'postToolUse',
+      'user-prompt': 'userPromptSubmitted',
+    },
+    agentName: 'copilot',
+  },
+  gemini: {
+    configPath: '.gemini/settings.json',
+    format: 'gemini',
+    events: {
+      'session-start': 'SessionStart',
+      'session-end': 'SessionEnd',
+      'pre-tool': 'PreToolUse',
+      'post-tool': 'PostToolUse',
+      'user-prompt': 'UserPromptSubmit',
+      stop: 'AfterAgent',
+    },
+    agentName: 'gemini',
+  },
+};
+
+/** Map succ hook name to .cjs script filename */
+const HOOK_SCRIPTS: Record<string, string> = {
+  'session-start': 'succ-session-start.cjs',
+  'session-end': 'succ-session-end.cjs',
+  'pre-tool': 'succ-pre-tool.cjs',
+  'post-tool': 'succ-post-tool.cjs',
+  'user-prompt': 'succ-user-prompt.cjs',
+  stop: 'succ-stop-reflection.cjs',
+};
+
+function getHooksDir(): string {
+  // Resolve hooks dir relative to this file's package location
+  // In installed package: dist/commands/setup.js → ../../hooks/
+  // In dev: src/commands/setup.ts → ../../hooks/
+  const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+  let hooksDir = path.resolve(moduleDir, '..', '..', 'hooks');
+  // Windows path fix: /C:/... → C:/...
+  if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(hooksDir)) {
+    hooksDir = hooksDir.slice(1);
+  }
+  return hooksDir;
+}
+
+function buildHookCommand(agentName: string, scriptPath: string): string {
+  const escaped = scriptPath.replace(/\\/g, '/');
+  if (process.platform === 'win32') {
+    // Windows: use cmd /c with set for env var (inner quotes escaped)
+    return `cmd /c "set SUCC_AGENT=${agentName} && node \\"${escaped}\\""`;
+  }
+  return `SUCC_AGENT=${agentName} node '${escaped}'`;
+}
+
+/** Check if a hook entry is a succ hook */
+function isSuccHookEntry(entry: any): boolean {
+  if (typeof entry === 'string') return entry.includes('succ-');
+  if (typeof entry?.command === 'string') return entry.command.includes('succ-');
+  if (typeof entry?.bash === 'string') return entry.bash.includes('succ-');
+  return false;
+}
+
+function installHooksForEditor(
+  editorKey: string,
+  hookConfig: HookEditorConfig,
+  projectDir: string
+): { configPath: string; installed: number } {
+  const configPath = path.join(projectDir, hookConfig.configPath);
+  const hooksDir = getHooksDir();
+
+  // Ensure directory exists
+  const dir = path.dirname(configPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Load existing config
+  let config: any = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (err) {
+      logWarn('setup', `Failed to parse hook config at ${configPath}: ${(err as Error).message}`);
+      config = {};
+    }
+  }
+
+  let installed = 0;
+
+  if (hookConfig.format === 'cursor') {
+    // Cursor format: { version: 1, hooks: { eventName: [{ command, matcher? }] } }
+    if (!config.hooks) config.hooks = {};
+
+    for (const [succHook, eventName] of Object.entries(hookConfig.events)) {
+      const scriptFile = HOOK_SCRIPTS[succHook];
+      if (!scriptFile) continue;
+      const scriptPath = path.join(hooksDir, scriptFile);
+      const command = buildHookCommand(hookConfig.agentName, scriptPath);
+
+      if (!Array.isArray(config.hooks[eventName])) {
+        config.hooks[eventName] = [];
+      }
+
+      // Remove existing succ entries
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
+
+      const entry: any = { command };
+      // preToolUse needs a matcher to match all tools
+      if (succHook === 'pre-tool') entry.matcher = '*';
+
+      config.hooks[eventName].push(entry);
+      installed++;
+    }
+
+    if (!config.version) config.version = 1;
+  } else if (hookConfig.format === 'copilot') {
+    // Copilot format: { version: 1, hooks: { eventName: [{ type: "command", bash, powershell? }] } }
+    if (!config.hooks) config.hooks = {};
+
+    for (const [succHook, eventName] of Object.entries(hookConfig.events)) {
+      const scriptFile = HOOK_SCRIPTS[succHook];
+      if (!scriptFile) continue;
+      const scriptPath = path.join(hooksDir, scriptFile);
+      const bashCmd = buildHookCommand(hookConfig.agentName, scriptPath);
+      const psPath = scriptPath.replace(/\\/g, '/').replace(/`/g, '``').replace(/\$/g, '`$');
+      const psCmd = `$env:SUCC_AGENT='copilot'; node "${psPath}"`;
+
+      if (!Array.isArray(config.hooks[eventName])) {
+        config.hooks[eventName] = [];
+      }
+
+      // Remove existing succ entries
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
+
+      config.hooks[eventName].push({
+        type: 'command',
+        bash: bashCmd,
+        powershell: psCmd,
+      });
+      installed++;
+    }
+
+    if (!config.version) config.version = 1;
+  } else if (hookConfig.format === 'gemini') {
+    // Gemini format: { hooks: { EventName: [{ command, name?, description?, timeout? }] } }
+    // Gemini settings.json may have other keys — preserve them
+    if (!config.hooks) config.hooks = {};
+
+    for (const [succHook, eventName] of Object.entries(hookConfig.events)) {
+      const scriptFile = HOOK_SCRIPTS[succHook];
+      if (!scriptFile) continue;
+      const scriptPath = path.join(hooksDir, scriptFile);
+      const command = buildHookCommand(hookConfig.agentName, scriptPath);
+
+      if (!Array.isArray(config.hooks[eventName])) {
+        config.hooks[eventName] = [];
+      }
+
+      // Remove existing succ entries
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
+
+      config.hooks[eventName].push({
+        command,
+        name: `succ-${succHook}`,
+        description: `succ ${succHook} hook`,
+        timeout: succHook === 'session-start' ? 15000 : 10000,
+      });
+      installed++;
+    }
+  }
+
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+  return { configPath, installed };
+}
+
 function getSuccMcpCommand(): { command: string; args: string[] } {
   // Check if succ-mcp is available globally
   try {
@@ -250,6 +457,13 @@ export async function setup(options: SetupOptions): Promise<void> {
         configureEditor(key, editor, process.cwd());
         console.log(`  ${editor.name}: configured (${configPath})`);
       }
+
+      // Install hooks if supported
+      const hookCfg = HOOK_EDITOR_CONFIGS[key];
+      if (hookCfg) {
+        const { installed } = installHooksForEditor(key, hookCfg, process.cwd());
+        console.log(`    + ${installed} session hooks installed`);
+      }
     }
     console.log('\nRestart your editor(s) to activate succ MCP tools.');
     return;
@@ -289,5 +503,16 @@ export async function setup(options: SetupOptions): Promise<void> {
     console.log(`${editor.name} configured successfully!`);
     console.log(`Config: ${configPath}`);
   }
+  // Install hooks for editors that support them
+  const hookConfig = HOOK_EDITOR_CONFIGS[editorKey];
+  if (hookConfig) {
+    const { configPath: hookConfigPath, installed } = installHooksForEditor(
+      editorKey,
+      hookConfig,
+      process.cwd()
+    );
+    console.log(`Installed ${installed} session hooks (${hookConfigPath})`);
+  }
+
   console.log('\nRestart your editor to activate succ MCP tools.');
 }
