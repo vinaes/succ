@@ -1,5 +1,6 @@
 import { StorageDispatcherBase } from './base.js';
 import { logWarn } from '../../fault-logger.js';
+import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
 import type {
   GlobalMemorySearchResult,
   HybridGlobalMemoryResult,
@@ -10,26 +11,31 @@ import type {
 
 export class SearchDispatcherMixin extends StorageDispatcherBase {
   async invalidateCodeBm25Index(): Promise<void> {
+    if (this.backend === 'postgresql') return; // tsvector maintained on insert
     const s = await this.getSqliteFns();
     s.invalidateCodeBm25Index();
   }
 
   async invalidateDocsBm25Index(): Promise<void> {
+    if (this.backend === 'postgresql') return; // tsvector maintained on insert
     const s = await this.getSqliteFns();
     s.invalidateDocsBm25Index();
   }
 
   async invalidateMemoriesBm25Index(): Promise<void> {
+    if (this.backend === 'postgresql') return; // tsvector maintained on insert
     const s = await this.getSqliteFns();
     s.invalidateMemoriesBm25Index();
   }
 
   async invalidateGlobalMemoriesBm25Index(): Promise<void> {
+    if (this.backend === 'postgresql') return; // tsvector maintained on insert
     const s = await this.getSqliteFns();
     s.invalidateGlobalMemoriesBm25Index();
   }
 
   async invalidateBM25Index(): Promise<void> {
+    if (this.backend === 'postgresql') return; // tsvector maintained on insert
     const s = await this.getSqliteFns();
     s.invalidateBM25Index();
   }
@@ -40,16 +46,32 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     symbolName?: string,
     signature?: string
   ): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const sigTokens = signature ? tokenizeCode(signature) : [];
+      const tokens = tokenizeCodeWithAST(content, sigTokens, symbolName).join(' ');
+      await this.postgres.updateDocumentSearchVector(docId, tokens);
+      return;
+    }
     const s = await this.getSqliteFns();
     s.updateCodeBm25Index(docId, content, symbolName, signature);
   }
 
   async updateMemoriesBm25Index(memoryId: number, content: string): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const tokens = tokenizeDocs(content).join(' ');
+      await this.postgres.updateMemorySearchVector(memoryId, tokens);
+      return;
+    }
     const s = await this.getSqliteFns();
     s.updateMemoriesBm25Index(memoryId, content);
   }
 
   async updateGlobalMemoriesBm25Index(memoryId: number, content: string): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      const tokens = tokenizeDocs(content).join(' ');
+      await this.postgres.updateMemorySearchVector(memoryId, tokens);
+      return;
+    }
     const s = await this.getSqliteFns();
     s.updateGlobalMemoriesBm25Index(memoryId, content);
   }
@@ -88,12 +110,16 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      const results = (
-        await this.postgres.searchDocuments(queryEmbedding, fetchLimit, thresh, {
+      const results = await this.postgres.hybridSearchDocuments(
+        query,
+        queryEmbedding,
+        fetchLimit,
+        thresh,
+        {
           codeOnly: true,
           symbolType: filters?.symbolType,
-        })
-      ).map((r) => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+        }
+      );
       return this.applyCodeFilters(results, regexFilter, lim);
     }
     const sqlite = await this.getSqliteFns();
@@ -125,9 +151,9 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return (
-        await this.postgres.searchDocuments(queryEmbedding, lim, thresh, { docsOnly: true })
-      ).map((r) => ({ ...r, bm25Score: 0, vectorScore: r.similarity }));
+      return this.postgres.hybridSearchDocuments(query, queryEmbedding, lim, thresh, {
+        docsOnly: true,
+      });
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
@@ -158,7 +184,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.searchMemories(queryEmbedding, lim, thresh);
+      return this.postgres.hybridSearchMemories(query, queryEmbedding, lim, thresh);
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
   }
@@ -189,7 +215,14 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.searchGlobalMemories(queryEmbedding, lim, thresh, tags);
+      return this.postgres.hybridSearchGlobalMemories(
+        query,
+        queryEmbedding,
+        lim,
+        thresh,
+        tags,
+        since
+      );
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchGlobalMemories(
       query,
@@ -231,6 +264,18 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       if (filtered.length >= limit) break;
     }
     return filtered;
+  }
+
+  /**
+   * Rebuild all tsvector search_vectors on PostgreSQL.
+   * No-op on SQLite (BM25 indexes are rebuilt lazily on next search).
+   * Use after tokenizer logic changes or manual DB edits.
+   */
+  async rebuildSearchVectors(): Promise<{ documents: number; memories: number } | null> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.rebuildAllSearchVectors();
+    }
+    return null;
   }
 
   // ===========================================================================
