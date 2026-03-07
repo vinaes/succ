@@ -122,7 +122,7 @@ describe('.claude-plugin/marketplace.json', () => {
 
   it('should have required fields', () => {
     const mp = JSON.parse(fs.readFileSync(marketplacePath, 'utf-8'));
-    expect(mp.name).toBe('succ');
+    expect(mp.name).toBe('vinaes');
     expect(mp.owner).toBeDefined();
     expect(mp.owner.name).toBe('vinaes');
     expect(mp.plugins).toHaveLength(1);

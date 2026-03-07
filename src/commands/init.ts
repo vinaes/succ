@@ -281,7 +281,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     console.log('\nPlugin mode: hooks, MCP server, and agents are provided by the succ plugin.');
     console.log('Install the plugin in Claude Code:');
     console.log('  /plugin marketplace add vinaes/succ');
-    console.log('  /plugin install succ@succ');
+    console.log('  /plugin install vinaes@succ');
     console.log('\nOr test locally:');
     console.log('  claude --plugin-dir /path/to/succ');
 

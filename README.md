@@ -25,7 +25,7 @@
 
 | Editor | Setup |
 |--------|-------|
-| **Claude Code** | Plugin: `/plugin install succ@succ` or CLI: `succ init` |
+| **Claude Code** | Plugin: `/plugin install vinaes@succ` or CLI: `succ init` |
 | **Cursor** | `succ setup cursor` |
 | **Windsurf** | `succ setup windsurf` |
 | **Continue.dev** | `succ setup continue` |
@@ -58,7 +58,7 @@ If you're using Claude Code v1.0.33+, you can install succ as a plugin — no gl
 /plugin marketplace add vinaes/succ
 
 # Install the plugin
-/plugin install succ@succ
+/plugin install vinaes@succ
 ```
 
 Or test locally from a cloned repo:
