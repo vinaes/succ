@@ -33,7 +33,7 @@ afterAll(() => {
 // Helper: spawn MCP server, collect stderr, close stdin after startup
 function spawnMcpServer(
   env: Record<string, string> = {},
-  args: string[] = [],
+  args: string[] = []
 ): Promise<{ stderr: string; exitCode: number | null }> {
   return new Promise((resolve) => {
     const proc = spawn(NODE, [...NODE_ARGS, MCP_SERVER, ...args], {
@@ -66,7 +66,7 @@ function spawnMcpServer(
 function runHook(
   scriptName: string,
   stdinJson: object,
-  cwd?: string,
+  cwd?: string
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return new Promise((resolve) => {
     const scriptPath = path.join(ROOT, 'hooks', scriptName);
@@ -117,10 +117,7 @@ describe('MCP server E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.succ'), { recursive: true });
 
     // Clear env so only --project is used
-    const { stderr } = await spawnMcpServer(
-      { SUCC_PROJECT_ROOT: '' },
-      ['--project', projectDir],
-    );
+    const { stderr } = await spawnMcpServer({ SUCC_PROJECT_ROOT: '' }, ['--project', projectDir]);
 
     expect(stderr).toContain(`Project: ${projectDir}`);
     expect(stderr).not.toContain('WARNING: No .succ/ found');
@@ -148,10 +145,7 @@ describe('MCP server E2E', () => {
 
     // --project sets SUCC_PROJECT_ROOT at parse time (server.ts:135),
     // overriding the env value
-    const { stderr } = await spawnMcpServer(
-      { SUCC_PROJECT_ROOT: envDir },
-      ['--project', argDir],
-    );
+    const { stderr } = await spawnMcpServer({ SUCC_PROJECT_ROOT: envDir }, ['--project', argDir]);
 
     expect(stderr).toContain(`Project: ${argDir}`);
   }, 20_000);
@@ -180,26 +174,17 @@ describe('Hook scripts E2E', () => {
   });
 
   it('session-start should exit 0 when .succ/ not found (no-op)', async () => {
-    const { exitCode } = await runHook(
-      'succ-session-start.cjs',
-      claudeHookInput(tmpDir),
-    );
+    const { exitCode } = await runHook('succ-session-start.cjs', claudeHookInput(tmpDir));
     expect(exitCode).toBe(0);
   }, 15_000);
 
   it('session-end should exit 0 when .succ/ not found (no-op)', async () => {
-    const { exitCode } = await runHook(
-      'succ-session-end.cjs',
-      claudeHookInput(tmpDir),
-    );
+    const { exitCode } = await runHook('succ-session-end.cjs', claudeHookInput(tmpDir));
     expect(exitCode).toBe(0);
   }, 15_000);
 
   it('stop-reflection should exit 0 when .succ/ not found (no-op)', async () => {
-    const { exitCode } = await runHook(
-      'succ-stop-reflection.cjs',
-      claudeHookInput(tmpDir),
-    );
+    const { exitCode } = await runHook('succ-stop-reflection.cjs', claudeHookInput(tmpDir));
     expect(exitCode).toBe(0);
   }, 15_000);
 
@@ -230,29 +215,26 @@ describe('Hook scripts E2E', () => {
     expect(exitCode).toBe(0);
   }, 15_000);
 
-  it('session-start should output JSON with additionalContext when .succ/ exists', async () => {
+  it('session-start should emit a JSON payload when .succ/ exists', async () => {
     // Create a minimal .succ dir with config
     const projectDir = path.join(tmpDir, 'hook-project');
     const succDir = path.join(projectDir, '.succ');
     fs.mkdirSync(succDir, { recursive: true });
     fs.writeFileSync(
       path.join(succDir, 'config.json'),
-      JSON.stringify({ storage: { backend: 'sqlite', vector: 'builtin' } }),
+      JSON.stringify({ storage: { backend: 'sqlite', vector: 'builtin' } })
     );
 
     const { stdout, exitCode } = await runHook(
       'succ-session-start.cjs',
       claudeHookInput(projectDir),
-      projectDir,
+      projectDir
     );
 
     expect(exitCode).toBe(0);
-    // If stdout is non-empty, it should be valid JSON
-    if (stdout.trim()) {
-      const output = JSON.parse(stdout.trim());
-      // Claude Code hook output should have additionalContext or be empty object
-      expect(typeof output).toBe('object');
-    }
+    expect(stdout.trim()).toBeTruthy();
+    const output = JSON.parse(stdout.trim());
+    expect(typeof output).toBe('object');
   }, 15_000);
 
   it('pre-tool should block dangerous git commands', async () => {
@@ -265,7 +247,7 @@ describe('Hook scripts E2E', () => {
       JSON.stringify({
         storage: { backend: 'sqlite', vector: 'builtin' },
         commandSafetyGuard: { mode: 'deny' },
-      }),
+      })
     );
 
     const { stdout, exitCode } = await runHook(
@@ -275,16 +257,14 @@ describe('Hook scripts E2E', () => {
         tool_name: 'Bash',
         tool_input: { command: 'git reset --hard HEAD' },
       },
-      projectDir,
+      projectDir
     );
 
     // Claude Code format: { hookSpecificOutput: { permissionDecision: "deny" } }
     expect(stdout.trim()).toBeTruthy();
     const output = JSON.parse(stdout.trim());
     expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
-    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
-      'succ guard',
-    );
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('succ guard');
     expect(exitCode).toBe(0);
   }, 15_000);
 });
@@ -299,18 +279,15 @@ describe('succ init --plugin E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.git'), { recursive: true });
 
     const cli = path.join(ROOT, 'dist', 'cli.js');
-    const { stdout } = await execFileAsync(
-      NODE,
-      [...NODE_ARGS, cli, 'init', '--plugin', '--yes'],
-      { cwd: projectDir, timeout: 30_000 },
-    );
+    const { stdout } = await execFileAsync(NODE, [...NODE_ARGS, cli, 'init', '--plugin', '--yes'], {
+      cwd: projectDir,
+      timeout: 30_000,
+    });
 
     // .succ/ should be created
     expect(fs.existsSync(path.join(projectDir, '.succ'))).toBe(true);
     // .claude/settings.json should NOT be created (plugin handles hooks)
-    expect(
-      fs.existsSync(path.join(projectDir, '.claude', 'settings.json')),
-    ).toBe(false);
+    expect(fs.existsSync(path.join(projectDir, '.claude', 'settings.json'))).toBe(false);
     // Output should mention plugin mode
     expect(stdout).toContain('Plugin mode');
   }, 30_000);
@@ -321,11 +298,10 @@ describe('succ init --plugin E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.git'), { recursive: true });
 
     const cli = path.join(ROOT, 'dist', 'cli.js');
-    await execFileAsync(
-      NODE,
-      [...NODE_ARGS, cli, 'init', '--plugin', '--yes'],
-      { cwd: projectDir, timeout: 30_000 },
-    );
+    await execFileAsync(NODE, [...NODE_ARGS, cli, 'init', '--plugin', '--yes'], {
+      cwd: projectDir,
+      timeout: 30_000,
+    });
 
     // .succ/hooks/ should not exist or be empty
     const hooksDir = path.join(projectDir, '.succ', 'hooks');
@@ -341,18 +317,15 @@ describe('succ init --plugin E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.git'), { recursive: true });
 
     const cli = path.join(ROOT, 'dist', 'cli.js');
-    await execFileAsync(
-      NODE,
-      [...NODE_ARGS, cli, 'init', '--yes'],
-      { cwd: projectDir, timeout: 30_000 },
-    );
+    await execFileAsync(NODE, [...NODE_ARGS, cli, 'init', '--yes'], {
+      cwd: projectDir,
+      timeout: 30_000,
+    });
 
     // .succ/ should be created
     expect(fs.existsSync(path.join(projectDir, '.succ'))).toBe(true);
     // .claude/settings.json SHOULD be created in regular mode
-    expect(
-      fs.existsSync(path.join(projectDir, '.claude', 'settings.json')),
-    ).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, '.claude', 'settings.json'))).toBe(true);
   }, 30_000);
 });
 
@@ -364,9 +337,7 @@ describe('Plugin structure integrity', () => {
   });
 
   it('all hook scripts referenced in hooks.json should be executable', () => {
-    const hooksJson = JSON.parse(
-      fs.readFileSync(path.join(ROOT, 'hooks', 'hooks.json'), 'utf-8'),
-    );
+    const hooksJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'hooks', 'hooks.json'), 'utf-8'));
     for (const event of Object.keys(hooksJson.hooks)) {
       const command: string = hooksJson.hooks[event][0].hooks[0].command;
       const match = command.match(/hooks\/(succ-[\w-]+\.cjs)/);
@@ -375,25 +346,17 @@ describe('Plugin structure integrity', () => {
       expect(fs.existsSync(scriptPath)).toBe(true);
       // Verify it starts with a shebang or valid JS
       const content = fs.readFileSync(scriptPath, 'utf-8');
-      expect(
-        content.startsWith('#!/') || content.startsWith("'use strict'"),
-      ).toBe(true);
+      expect(content.startsWith('#!/') || content.startsWith("'use strict'")).toBe(true);
     }
   });
 
   it('hooks/core/adapter.cjs and daemon-boot.cjs should exist', () => {
-    expect(
-      fs.existsSync(path.join(ROOT, 'hooks', 'core', 'adapter.cjs')),
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(ROOT, 'hooks', 'core', 'daemon-boot.cjs')),
-    ).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'hooks', 'core', 'adapter.cjs'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'hooks', 'core', 'daemon-boot.cjs'))).toBe(true);
   });
 
   it('.mcp.json should reference --project ${cwd}', () => {
-    const config = JSON.parse(
-      fs.readFileSync(path.join(ROOT, '.mcp.json'), 'utf-8'),
-    );
+    const config = JSON.parse(fs.readFileSync(path.join(ROOT, '.mcp.json'), 'utf-8'));
     const args: string[] = config.mcpServers.succ.args;
     expect(args).toContain('--project');
     const projectIdx = args.indexOf('--project');

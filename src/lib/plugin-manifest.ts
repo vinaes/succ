@@ -39,7 +39,7 @@ export function generatePluginManifest(packageRoot?: string): PluginManifest {
     pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   } catch (err) {
     throw new Error(
-      `Failed to read package.json at ${pkgPath}: ${err instanceof Error ? err.message : err}`,
+      `Failed to read package.json at ${pkgPath}: ${err instanceof Error ? err.message : err}`
     );
   }
 
@@ -56,9 +56,13 @@ export function generatePluginManifest(packageRoot?: string): PluginManifest {
     homepage: 'https://succ.ai',
     repository: 'https://github.com/vinaes/succ',
     license: (pkg.license as string) ?? 'FSL-1.1-Apache-2.0',
-    keywords:
-      (pkg.keywords as string[]) ??
-      ['memory', 'rag', 'semantic-search', 'mcp', 'knowledge-graph'],
+    keywords: (pkg.keywords as string[]) ?? [
+      'memory',
+      'rag',
+      'semantic-search',
+      'mcp',
+      'knowledge-graph',
+    ],
   };
 }
 

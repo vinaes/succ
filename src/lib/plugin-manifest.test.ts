@@ -59,7 +59,7 @@ describe('hooks/hooks.json', () => {
         'UserPromptSubmit',
         'PostToolUse',
         'PreToolUse',
-      ]),
+      ])
     );
 
     for (const event of events) {
