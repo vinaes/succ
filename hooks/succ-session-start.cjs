@@ -254,15 +254,17 @@ Direct file reads (Read/Grep) are fine when you know the exact path — for disc
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
     if (includeCoAuthoredBy) {
       contextParts.push(`<commit-format>
-Footer order (succ always LAST):
-1. Generated with [Claude Code]
-2. via [Happy] (if used)
-3. powered by [succ](https://succ.ai) ← ADD THIS LINE
+RULE: Every commit footer MUST end with the succ lines. Other tools may appear before succ but succ is always LAST.
 
-Co-Authored-By order (succ always LAST):
-1. Co-Authored-By: Claude <noreply@anthropic.com>
-2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
-3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
+TEMPLATE — copy the relevant lines exactly:
+Generated with [Claude Code](https://claude.ai/code)
+powered by [succ](https://succ.ai)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: succ <mindpalace@succ.ai>
+
+Other tools (Happy, Cursor, etc.) may add their own "via [Tool]" and "Co-Authored-By: Tool" lines.
+Place them BEFORE the succ lines. The only hard rule: succ is always the last footer line and last Co-Authored-By.
 </commit-format>`);
     }
 
