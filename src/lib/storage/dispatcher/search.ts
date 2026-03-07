@@ -253,6 +253,18 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     return filtered;
   }
 
+  /**
+   * Rebuild all tsvector search_vectors on PostgreSQL.
+   * No-op on SQLite (BM25 indexes are rebuilt lazily on next search).
+   * Use after tokenizer logic changes or manual DB edits.
+   */
+  async rebuildSearchVectors(): Promise<{ documents: number; memories: number } | null> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.rebuildAllSearchVectors();
+    }
+    return null;
+  }
+
   // ===========================================================================
   // Global Memory Operations
   // ===========================================================================

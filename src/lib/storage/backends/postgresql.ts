@@ -1086,6 +1086,85 @@ export class PostgresBackend {
     );
   }
 
+  /**
+   * Rebuild all search_vector values from content.
+   * Use after tokenizer logic changes or manual DB edits.
+   * Processes in batches to avoid memory issues on large datasets.
+   */
+  async rebuildAllSearchVectors(batchSize = 500): Promise<{ documents: number; memories: number }> {
+    const pool = await this.getPool();
+    let docCount = 0;
+    let memCount = 0;
+
+    // Rebuild documents
+    let offset = 0;
+    while (true) {
+      const batch = await pool.query<{
+        id: number;
+        file_path: string;
+        content: string;
+        symbol_name: string | null;
+        signature: string | null;
+      }>(
+        `SELECT id, file_path, content, symbol_name, signature FROM documents
+         WHERE LOWER(project_id) = $1 ORDER BY id LIMIT $2 OFFSET $3`,
+        [this.projectId, batchSize, offset]
+      );
+      if (batch.rows.length === 0) break;
+      for (const row of batch.rows) {
+        const tokens = row.file_path.startsWith('code:')
+          ? tokenizeCodeWithAST(
+              row.content,
+              row.signature ? tokenizeCode(row.signature) : [],
+              row.symbol_name ?? undefined
+            )
+          : tokenizeDocs(row.content);
+        const tokenStr = tokens.join(' ');
+        if (tokenStr.length > 0) {
+          await pool.query(
+            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+            [tokenStr, row.id]
+          );
+        }
+        docCount++;
+      }
+      offset += batch.rows.length;
+    }
+
+    // Rebuild memories (project + global)
+    offset = 0;
+    while (true) {
+      const memParams: unknown[] = [];
+      let memWhere: string;
+      if (this.projectId) {
+        memParams.push(this.projectId);
+        memWhere = `(LOWER(project_id) = $1 OR project_id IS NULL)`;
+      } else {
+        memWhere = `project_id IS NULL`;
+      }
+      memParams.push(batchSize, offset);
+      const batch = await pool.query<{ id: number; content: string }>(
+        `SELECT id, content FROM memories WHERE ${memWhere} ORDER BY id LIMIT $${memParams.length - 1} OFFSET $${memParams.length}`,
+        memParams
+      );
+      if (batch.rows.length === 0) break;
+      for (const row of batch.rows) {
+        const tokens = tokenizeDocs(row.content);
+        const tokenStr = tokens.join(' ');
+        if (tokenStr.length > 0) {
+          await pool.query(
+            `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+            [tokenStr, row.id]
+          );
+        }
+        memCount++;
+      }
+      offset += batch.rows.length;
+    }
+
+    return { documents: docCount, memories: memCount };
+  }
+
   // ============================================================================
   // Hybrid Search (tsvector + pgvector + RRF)
   // ============================================================================

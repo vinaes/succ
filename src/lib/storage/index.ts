@@ -668,6 +668,11 @@ export async function updateGlobalMemoriesBm25Index(
   return d.updateGlobalMemoriesBm25Index(memoryId, content);
 }
 
+export async function rebuildSearchVectors(): Promise<{ documents: number; memories: number } | null> {
+  const d = await getStorageDispatcher();
+  return d.rebuildSearchVectors();
+}
+
 // ===========================================================================
 // Hybrid Search
 // ===========================================================================
