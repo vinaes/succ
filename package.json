@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.4.34",
+  "version": "1.4.36",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -44,8 +44,9 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "prepare": "npm run build:compile",
-    "prepublishOnly": "npm run build && npm run lint"
+    "generate:plugin-manifest": "node --input-type=module -e \"import('./dist/lib/plugin-manifest.js').then(m => m.writePluginManifest())\"",
+    "prepare": "npm run build:compile && npm run generate:plugin-manifest",
+    "prepublishOnly": "npm run build && npm run lint && npm run generate:plugin-manifest"
   },
   "keywords": [
     "claude",
@@ -120,7 +121,10 @@
     "!dist/**/*.integration.*",
     "!dist/**/test-backends.*",
     "hooks",
-    "agents"
+    "agents",
+    ".claude-plugin",
+    ".mcp.json",
+    "skills"
   ],
   "engines": {
     "node": ">=20.0.0"

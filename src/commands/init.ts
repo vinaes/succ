@@ -108,6 +108,7 @@ interface InitOptions {
   verbose?: boolean; // Show detailed output
   global?: boolean; // Force global mode (use hooks from package dir)
   ai?: boolean; // Use AI-powered onboarding instead of static wizard
+  plugin?: boolean; // Skip hooks/MCP/agents setup (plugin handles those)
 }
 
 interface ConfigData {
@@ -271,6 +272,24 @@ export async function init(options: InitOptions = {}): Promise<void> {
   if (!fs.existsSync(soulPath)) {
     fs.writeFileSync(soulPath, getSoulTemplate());
     log('Created soul.md');
+  }
+
+  // In plugin mode, skip hooks/MCP/agents — the plugin handles auto-discovery.
+  // Only project structure (.succ/) is created above.
+  if (options.plugin) {
+    spinner.succeed('succ initialized (plugin mode)');
+    console.log('\nPlugin mode: hooks, MCP server, and agents are provided by the succ plugin.');
+    console.log('Install the plugin in Claude Code:');
+    console.log('  /plugin marketplace add vinaes/succ');
+    console.log('  /plugin install succ@succ');
+    console.log('\nOr test locally:');
+    console.log('  claude --plugin-dir /path/to/succ');
+
+    if (isInteractive) {
+      await runOnboarding(options.ai || false);
+      await runInteractiveSetup(projectRoot, verbose);
+    }
+    return;
   }
 
   // Create hooks in project only for local development

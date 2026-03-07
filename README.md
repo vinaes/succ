@@ -25,7 +25,7 @@
 
 | Editor | Setup |
 |--------|-------|
-| **Claude Code** | `succ init` (auto-configured) |
+| **Claude Code** | Plugin: `/plugin install succ@succ` or CLI: `succ init` |
 | **Cursor** | `succ setup cursor` |
 | **Windsurf** | `succ setup windsurf` |
 | **Continue.dev** | `succ setup continue` |
@@ -48,6 +48,30 @@ succ analyze
 ```
 
 > **That's it.** Claude Code now has persistent memory for your project.
+
+### Install as Claude Code Plugin
+
+If you're using Claude Code v1.0.33+, you can install succ as a plugin — no global install needed:
+
+```bash
+# Add the succ marketplace (one-time)
+/plugin marketplace add vinaes/succ
+
+# Install the plugin
+/plugin install succ@succ
+```
+
+Or test locally from a cloned repo:
+
+```bash
+claude --plugin-dir /path/to/succ
+```
+
+The plugin provides hooks, MCP tools, and skills automatically. You still need to run `succ init` once per project to create the `.succ/` directory and brain vault:
+
+```bash
+succ init --plugin
+```
 
 ## Features
 

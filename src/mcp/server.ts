@@ -20,6 +20,8 @@
  * Auto-profile: Claude clients → full, other clients → standard
  */
 
+import fs from 'fs';
+import path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createRequire } from 'module';
@@ -232,8 +234,15 @@ async function main() {
   await initStorageDispatcher();
   mcpLog('Storage ready');
 
-  setCurrentProject(getProjectRoot());
-  mcpLog(`Project: ${getProjectRoot()}`);
+  const projectRoot = getProjectRoot();
+  setCurrentProject(projectRoot);
+  mcpLog(`Project: ${projectRoot}`);
+
+  // Warn if project root has no .succ/ — likely plugin cache, not user's project
+  if (!fs.existsSync(path.join(projectRoot, '.succ'))) {
+    mcpLog(`WARNING: No .succ/ found at ${projectRoot} — project path may be incorrect.`);
+    mcpLog('Pass project_path to every succ_* tool call, or run "succ init" in your project.');
+  }
   if (profile !== 'full') {
     mcpLog(`Tool profile: ${profile}`);
   }

@@ -35,6 +35,7 @@ program
   .option('-v, --verbose', 'Show detailed output (created files, etc.)')
   .option('-g, --global', 'Use global hooks (from succ package dir, not local copies)')
   .option('--ai', 'Use AI-powered interactive onboarding instead of static wizard')
+  .option('--plugin', 'Plugin mode: skip hooks/MCP/agents setup (plugin handles those)')
   .action(async (...args) => {
     const { init } = await import('./commands/init.js');
     return init(...args);
