@@ -608,6 +608,24 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at)'
     );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name)');
+
+    // One-time backfill: populate search_vector for rows that existed before tsvector migration
+    const migrationKey = 'search_vector_backfill_done';
+    const migCheck = await pool.query<{ value: string }>(
+      'SELECT value FROM metadata WHERE key = $1',
+      [migrationKey]
+    );
+    if (migCheck.rows.length === 0) {
+      try {
+        await this.rebuildAllSearchVectors();
+      } catch {
+        // Non-fatal: backfill can be retried via rebuildSearchVectors() command
+      }
+      await pool.query(
+        `INSERT INTO metadata (key, value) VALUES ($1, '1') ON CONFLICT(key) DO NOTHING`,
+        [migrationKey]
+      );
+    }
   }
 
   /**
@@ -666,7 +684,19 @@ export class PostgresBackend {
         signature ?? null,
       ]
     );
-    return result.rows[0].id;
+    const docId = result.rows[0].id;
+
+    // Compute and store search_vector for full-text search
+    const tokens = filePath.startsWith('code:')
+      ? tokenizeCodeWithAST(content, signature ? tokenizeCode(signature) : [], symbolName)
+      : tokenizeDocs(content);
+    const tokenStr = tokens.join(' ');
+    await pool.query(
+      `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+      [tokenStr, docId]
+    );
+
+    return docId;
   }
 
   async upsertDocumentsBatch(documents: DocumentBatch[]): Promise<number[]> {
@@ -721,12 +751,10 @@ export class PostgresBackend {
             )
           : tokenizeDocs(doc.content);
         const tokenStr = tokens.join(' ');
-        if (tokenStr.length > 0) {
-          await client.query(
-            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-            [tokenStr, docId]
-          );
-        }
+        await client.query(
+          `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+          [tokenStr, docId]
+        );
       }
 
       await client.query('COMMIT');
@@ -794,12 +822,10 @@ export class PostgresBackend {
             )
           : tokenizeDocs(doc.content);
         const tokenStr = tokens.join(' ');
-        if (tokenStr.length > 0) {
-          await client.query(
-            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-            [tokenStr, docId]
-          );
-        }
+        await client.query(
+          `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+          [tokenStr, docId]
+        );
 
         if (!processedFiles.has(doc.filePath)) {
           await client.query(
@@ -1067,11 +1093,11 @@ export class PostgresBackend {
    * tokens: pre-tokenized string joined with spaces, e.g. "auth user login".
    */
   async updateDocumentSearchVector(docId: number, tokens: string): Promise<void> {
-    if (!tokens || tokens.trim().length === 0) return;
     const pool = await this.getPool();
+    const trimmed = (tokens ?? '').trim();
     await pool.query(
-      `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-      [tokens, docId]
+      `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+      [trimmed, docId]
     );
   }
 
@@ -1079,11 +1105,11 @@ export class PostgresBackend {
    * Update the search_vector for a single memory (called from BM25 dispatcher).
    */
   async updateMemorySearchVector(memoryId: number, tokens: string): Promise<void> {
-    if (!tokens || tokens.trim().length === 0) return;
     const pool = await this.getPool();
+    const trimmed = (tokens ?? '').trim();
     await pool.query(
-      `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-      [tokens, memoryId]
+      `UPDATE memories SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+      [trimmed, memoryId]
     );
   }
 
@@ -1123,16 +1149,13 @@ export class PostgresBackend {
               row.symbol_name ?? undefined
             )
           : tokenizeDocs(row.content);
-        const tokenStr = tokens.join(' ');
-        if (tokenStr.length > 0) {
-          ids.push(row.id);
-          tokenStrs.push(tokenStr);
-        }
+        ids.push(row.id);
+        tokenStrs.push(tokens.join(' '));
         docCount++;
       }
       if (ids.length > 0) {
         await pool.query(
-          `UPDATE documents SET search_vector = to_tsvector('simple', v.tokens)
+          `UPDATE documents SET search_vector = CASE WHEN v.tokens = '' THEN NULL ELSE to_tsvector('simple', v.tokens) END
            FROM unnest($1::int[], $2::text[]) AS v(id, tokens)
            WHERE documents.id = v.id`,
           [ids, tokenStrs]
@@ -1164,16 +1187,13 @@ export class PostgresBackend {
       const tokenStrs: string[] = [];
       for (const row of batch.rows) {
         const tokens = tokenizeDocs(row.content);
-        const tokenStr = tokens.join(' ');
-        if (tokenStr.length > 0) {
-          ids.push(row.id);
-          tokenStrs.push(tokenStr);
-        }
+        ids.push(row.id);
+        tokenStrs.push(tokens.join(' '));
         memCount++;
       }
       if (ids.length > 0) {
         await pool.query(
-          `UPDATE memories SET search_vector = to_tsvector('simple', v.tokens)
+          `UPDATE memories SET search_vector = CASE WHEN v.tokens = '' THEN NULL ELSE to_tsvector('simple', v.tokens) END
            FROM unnest($1::int[], $2::text[]) AS v(id, tokens)
            WHERE memories.id = v.id`,
           [ids, tokenStrs]
@@ -1703,12 +1723,10 @@ export class PostgresBackend {
     // Compute and store search_vector for full-text search
     const tokens = tokenizeDocs(content);
     const tokenStr = tokens.join(' ');
-    if (tokenStr.length > 0) {
-      await pool.query(
-        `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-        [tokenStr, memoryId]
-      );
-    }
+    await pool.query(
+      `UPDATE memories SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+      [tokenStr, memoryId]
+    );
 
     return memoryId;
   }
@@ -3477,12 +3495,10 @@ export class PostgresBackend {
         // Compute and store search_vector for full-text search
         const memTokens = tokenizeDocs(memory.content);
         const memTokenStr = memTokens.join(' ');
-        if (memTokenStr.length > 0) {
-          await client.query(
-            `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-            [memTokenStr, memId]
-          );
-        }
+        await client.query(
+          `UPDATE memories SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+          [memTokenStr, memId]
+        );
 
         results.push({
           index: i,
