@@ -35,6 +35,14 @@ const PreToolSchema = HookBaseSchema.extend({
   tool_input: z.unknown().optional(),
 });
 
+const PostToolSchema = HookBaseSchema.extend({
+  tool_name: z.string().optional(),
+  tool_input: z.unknown().optional(),
+  tool_output: z.unknown().optional(),
+  tool_response: z.unknown().optional(),
+  tool_error: z.unknown().optional(),
+});
+
 const PermissionSchema = HookBaseSchema.extend({
   tool_name: z.string().optional(),
   tool_input: z.unknown().optional(),
@@ -58,6 +66,41 @@ async function getHookRuleMemories(): Promise<Memory[]> {
   const memories = await getMemoriesByTag('hook-rule', 50);
   hookRulesCache = { memories, timestamp: now };
   return memories;
+}
+
+/**
+ * Parse MEMORY.md bullets, classify by section header.
+ * Returns [{ text, tags }] for each bullet worth saving.
+ */
+function parseMemoryMdBullets(content: string): { text: string; tags: string[] }[] {
+  const results: { text: string; tags: string[] }[] = [];
+  let currentSection = '';
+
+  for (const line of content.split('\n')) {
+    const headerMatch = line.match(/^##\s+(.+)/);
+    if (headerMatch) {
+      currentSection = headerMatch[1].trim().toLowerCase();
+      continue;
+    }
+
+    const bulletMatch = line.match(/^-\s+(.+)/);
+    if (!bulletMatch) continue;
+
+    const text = bulletMatch[1].trim();
+    if (text.length < 10) continue;
+
+    const tags = ['memory-md'];
+    if (/gotcha/i.test(currentSection)) tags.push('gotcha');
+    else if (/learning|lesson/i.test(currentSection)) tags.push('learning');
+    else if (/decision|chose/i.test(currentSection)) tags.push('decision');
+    else if (/pattern/i.test(currentSection)) tags.push('pattern');
+    else if (/change|phase/i.test(currentSection)) tags.push('changelog');
+    else tags.push('observation');
+
+    results.push({ text, tags });
+  }
+
+  return results;
 }
 
 function fixWindowsPath(cwd: string): string {
@@ -232,31 +275,139 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
     // ═══════════════════════════════════════════════════════════════
     'POST /api/hooks/post-tool': async (body) => {
       try {
-        const input = parseRequestBody(HookBaseSchema, body);
+        const input = parseRequestBody(PostToolSchema, body);
         const cwd = fixWindowsPath(input.cwd || '');
         if (!cwd || !succExists(cwd)) return {};
+        if (input.tool_error) return {}; // skip failed tool calls
 
-        // PostToolUse logic is complex and tightly coupled to .cjs hook.
-        // For now, forward key fields to existing daemon remember API.
-        // Full port will happen incrementally.
-        const toolName = ((body as Record<string, unknown>).tool_name as string) || '';
-        const toolInput =
-          ((body as Record<string, unknown>).tool_input as Record<string, unknown>) || {};
-        const toolOutput = ((body as Record<string, unknown>).tool_output as string) || '';
+        const toolName = input.tool_name || '';
+        const toolInput = (input.tool_input as Record<string, unknown>) || {};
+        const toolOutput =
+          typeof input.tool_output === 'string'
+            ? input.tool_output
+            : typeof input.tool_response === 'string'
+              ? input.tool_response
+              : '';
 
-        // Track activity (PostToolUse doesn't map to an ActivityType — skip)
-
-        // Auto-capture git commits
-        if (
-          toolName === 'Bash' &&
-          toolOutput &&
-          /\bgit\s+commit\b/.test((toolInput.command as string) || '')
-        ) {
-          const commitMatch = toolOutput.match(/\[[\w/.-]+\s+([a-f0-9]+)\]\s+(.+)/);
-          if (commitMatch) {
-            const content = `Git commit ${commitMatch[1]}: ${commitMatch[2]}`;
+        const remember = async (content: string, tags: string[]) => {
+          try {
             const embedding = await getEmbedding(content);
-            await saveMemory(content, embedding, ['git', 'commit', 'auto-capture'], 'observation');
+            await saveMemory(content, embedding, [...tags, 'auto-capture'], 'auto-capture', {
+              type: 'observation',
+            });
+          } catch {
+            // fail-open
+          }
+        };
+
+        // 1. Git commits
+        if (toolName === 'Bash' && toolInput.command) {
+          const cmd = toolInput.command as string;
+
+          if (/\bgit\s+commit\b/i.test(cmd)) {
+            // Try to extract from git output first, fallback to -m flag
+            const outputMatch = toolOutput.match(/\[[\w/.-]+\s+([a-f0-9]+)]\s+(.+)/);
+            if (outputMatch) {
+              await remember(`Committed: ${outputMatch[2]} (${outputMatch[1]})`, [
+                'git',
+                'commit',
+                'milestone',
+              ]);
+            } else {
+              const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
+              if (msgMatch) {
+                await remember(`Committed: ${msgMatch[1]}`, ['git', 'commit', 'milestone']);
+              }
+            }
+          }
+
+          // 2. Dependency install
+          const pkgMatch = cmd.match(/(?:npm|yarn|pnpm)\s+(?:install|add)\s+(\S+)/i);
+          if (pkgMatch && pkgMatch[1] && !pkgMatch[1].startsWith('-')) {
+            await remember(`Added dependency: ${pkgMatch[1]}`, ['dependency', 'package']);
+          }
+
+          // 3. Test run detection
+          if (/(?:npm\s+test|yarn\s+test|pytest|jest|vitest)/i.test(cmd)) {
+            const passed = /pass|success|ok|✓/i.test(toolOutput);
+            const failed = /fail|error|✗|✘/i.test(toolOutput);
+            if (passed && !failed) {
+              await remember('Tests passed after changes', ['test', 'success']);
+            }
+          }
+        }
+
+        // 4. File creation
+        if (toolName === 'Write' && toolInput.file_path) {
+          const filePath = toolInput.file_path as string;
+          const relativePath = path.relative(cwd, filePath);
+          if (
+            !relativePath.includes('node_modules') &&
+            !relativePath.includes('.tmp') &&
+            !relativePath.startsWith('.') &&
+            /\.(ts|tsx|js|jsx|py|go|rs|md)$/.test(relativePath)
+          ) {
+            const content = (toolInput.content as string) || '';
+            if (content.length < 5000) {
+              await remember(`Created file: ${relativePath}`, ['file', 'created']);
+            }
+          }
+        }
+
+        // 5. Task/subagent results → save findings to long-term memory
+        if (toolName === 'Task' && toolInput.subagent_type) {
+          const agentType = toolInput.subagent_type as string;
+          if (/^(Explore|Plan|feature-dev|succ-)/.test(agentType)) {
+            let text = '';
+            try {
+              const parsed = typeof toolOutput === 'string' ? JSON.parse(toolOutput) : toolOutput;
+              if (parsed && Array.isArray(parsed.content)) {
+                text = parsed.content
+                  .filter((c: { type?: string; text?: string }) => c.type === 'text' && c.text)
+                  .map((c: { text: string }) => c.text)
+                  .join('\n\n');
+              } else if (typeof parsed === 'string') {
+                text = parsed;
+              }
+            } catch {
+              text = toolOutput;
+            }
+
+            if (text.length > 50 && text.length < 20000) {
+              const agentAlreadySaved =
+                /^succ-/.test(agentType) &&
+                /succ_remember|saved to memory|memory \(id:/i.test(text);
+              if (!agentAlreadySaved) {
+                const desc = ((toolInput.description as string) || '').slice(0, 100);
+                const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
+                await remember(content, ['subagent', agentType.toLowerCase()]);
+              }
+            }
+          }
+        }
+
+        // 6. MEMORY.md sync — parse bullets, save each to long-term memory
+        if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
+          const filePath = toolInput.file_path as string;
+          if (path.basename(filePath) === 'MEMORY.md') {
+            try {
+              const memContent = fs.readFileSync(filePath, 'utf8');
+              const bullets = parseMemoryMdBullets(memContent);
+              await Promise.allSettled(
+                bullets.map(async (bullet) => {
+                  try {
+                    const embedding = await getEmbedding(bullet.text);
+                    await saveMemory(bullet.text, embedding, bullet.tags, 'memory-md-sync', {
+                      type: 'observation',
+                    });
+                  } catch {
+                    // fail-open per bullet
+                  }
+                })
+              );
+            } catch {
+              // fail-open — file may not exist
+            }
           }
         }
 
