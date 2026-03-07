@@ -618,13 +618,15 @@ export class PostgresBackend {
     if (migCheck.rows.length === 0) {
       try {
         await this.rebuildAllSearchVectors();
-      } catch {
-        // Non-fatal: backfill can be retried via rebuildSearchVectors() command
+        await pool.query(
+          `INSERT INTO metadata (key, value) VALUES ($1, '1') ON CONFLICT(key) DO NOTHING`,
+          [migrationKey]
+        );
+      } catch (error) {
+        logWarn('postgresql', 'search_vector backfill failed, will retry on next init', {
+          error,
+        });
       }
-      await pool.query(
-        `INSERT INTO metadata (key, value) VALUES ($1, '1') ON CONFLICT(key) DO NOTHING`,
-        [migrationKey]
-      );
     }
   }
 
