@@ -17,9 +17,10 @@
  * - Knowledge base stats
  */
 
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const adapter = require('./core/adapter.cjs');
+const { ensureDaemon } = require('./core/daemon-boot.cjs');
 
 // Logging helper - writes to .succ/.tmp/hooks.log
 function log(succDir, message) {
@@ -47,7 +48,9 @@ process.stdin.on('readable', () => {
 
 process.stdin.on('end', async () => {
   try {
-    const hookInput = JSON.parse(input);
+    const rawInput = JSON.parse(input);
+    const agent = adapter.detectAgent(rawInput);
+    const hookInput = adapter.normalizeInput(agent, rawInput);
     let projectDir = hookInput.cwd || process.cwd();
 
     // Windows path fix
@@ -251,15 +254,17 @@ Direct file reads (Read/Grep) are fine when you know the exact path — for disc
     // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
     if (includeCoAuthoredBy) {
       contextParts.push(`<commit-format>
-Footer order (succ always LAST):
-1. Generated with [Claude Code]
-2. via [Happy] (if used)
-3. powered by [succ](https://succ.ai) ← ADD THIS LINE
+RULE: Every commit footer MUST end with the succ lines. Other tools may appear before succ but succ is always LAST.
 
-Co-Authored-By order (succ always LAST):
-1. Co-Authored-By: Claude <noreply@anthropic.com>
-2. Co-Authored-By: Happy <yesreply@happy.engineering> (if used)
-3. Co-Authored-By: succ <mindpalace@succ.ai> ← ADD THIS LINE
+TEMPLATE — copy the relevant lines exactly:
+Generated with [Claude Code](https://claude.ai/code)
+powered by [succ](https://succ.ai)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: succ <mindpalace@succ.ai>
+
+Other tools (Happy, Cursor, etc.) may add their own "via [Tool]" and "Co-Authored-By: Tool" lines.
+Place them BEFORE the succ lines. The only hard rule: succ is always the last footer line and last Co-Authored-By.
 </commit-format>`);
     }
 
@@ -424,86 +429,13 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
-    // Helper to get daemon port
-    const tmpDir = path.join(succDir, '.tmp');
-    const portFile = path.join(tmpDir, 'daemon.port');
-
-    const getDaemonPort = () => {
-      try {
-        if (fs.existsSync(portFile)) {
-          return parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-        }
-      } catch {
-        // intentionally empty
-      }
-      return null;
-    };
-
-    const checkDaemon = async (port) => {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/health`, {
-          signal: AbortSignal.timeout(2000),
-        });
-        const data = await response.json();
-        return data?.status === 'ok';
-      } catch {
-        // intentionally empty
-        return false;
-      }
-    };
-
-    const startDaemon = () => {
-      const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
-      if (!fs.existsSync(servicePath)) {
-        log(succDir, '[daemon] service.js not found: ' + servicePath);
-        return false;
-      }
-      const daemon = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
-        cwd: projectDir,
-        detached: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
-        windowsHide: true,
-        env: { ...process.env, NODE_OPTIONS: '' },
-      });
-      // Capture stderr for crash diagnostics
-      let stderrBuf = '';
-      daemon.stderr.on('data', (chunk) => {
-        if (stderrBuf.length < 2000) {
-          stderrBuf += chunk.toString().slice(0, 500);
-        }
-      });
-      daemon.on('exit', (code) => {
-        if (code && code !== 0) {
-          log(succDir, `[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`);
-        }
-      });
-      daemon.unref();
-      daemon.stderr.unref();
-      return true;
-    };
-
-    // Ensure daemon is running and get port
-    let daemonPort = getDaemonPort();
-    if (!daemonPort || !(await checkDaemon(daemonPort))) {
-      log(succDir, '[daemon] Not running, attempting start...');
-      startDaemon();
-      // Wait for daemon to start (max 3 seconds)
-      for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 100));
-        daemonPort = getDaemonPort();
-        if (daemonPort && await checkDaemon(daemonPort)) {
-          log(succDir, `[daemon] Started on port ${daemonPort}`);
-          break;
-        }
-      }
-      if (!daemonPort || !(await checkDaemon(daemonPort))) {
-        log(succDir, '[daemon] Failed to start within 3s — continuing without daemon');
-      }
-    }
+    // Ensure daemon is running and get port (shared module)
+    const logFn = (msg) => log(succDir, msg);
+    const { port: daemonPort } = await ensureDaemon(projectDir, logFn);
 
     // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
-    // Only write if daemon is actually alive (avoid stale port from old .tmp/daemon.port)
-    if (daemonPort && process.env.CLAUDE_ENV_FILE && (await checkDaemon(daemonPort))) {
+    // ensureDaemon already verified the port is alive, so no need to re-check
+    if (daemonPort && process.env.CLAUDE_ENV_FILE) {
       try {
         fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
           `export SUCC_DAEMON_PORT=${daemonPort}\n`);
@@ -643,15 +575,15 @@ Co-Authored-By order (succ always LAST):
 
     // Output context
     if (contextParts.length > 0) {
-      const additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'SessionStart',
-          additionalContext
-        }
-      };
-      console.log(JSON.stringify(output));
-      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}`);
+      let additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+      // Strip Claude-only sections for non-Claude agents
+      additionalContext = adapter.adaptContext(agent, additionalContext);
+      const { json, exitCode } = adapter.formatOutput(agent, 'SessionStart', { additionalContext });
+      if (json && Object.keys(json).length > 0) {
+        console.log(JSON.stringify(json));
+      }
+      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
+      if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
     } else {
       log(succDir, `No context parts to output`);
     }

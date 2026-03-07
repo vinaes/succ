@@ -12,6 +12,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const adapter = require('./core/adapter.cjs');
 
 // Logging helper - writes to .succ/.tmp/hooks.log
 function log(succDir, message) {
@@ -39,7 +40,9 @@ process.stdin.on('readable', () => {
 
 process.stdin.on('end', async () => {
   try {
-    const hookInput = JSON.parse(input);
+    const rawInput = JSON.parse(input);
+    const agent = adapter.detectAgent(rawInput);
+    const hookInput = adapter.normalizeInput(agent, rawInput);
     let projectDir = hookInput.cwd || process.cwd();
 
     // Windows path fix
@@ -87,14 +90,14 @@ process.stdin.on('end', async () => {
         if (pendingContext.trim()) {
           log(succDir, `Injecting compact-pending fallback context (${pendingContext.length} chars)`);
 
-          // Output as additionalContext - this will be injected into Claude's context
-          const output = {
-            hookSpecificOutput: {
-              hookEventName: 'UserPromptSubmit',
-              additionalContext: `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`
-            }
-          };
-          console.log(JSON.stringify(output));
+          // Output as additionalContext - this will be injected into the agent's context
+          const { json, exitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
+            additionalContext: `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`
+          });
+          if (json && Object.keys(json).length > 0) {
+            console.log(JSON.stringify(json));
+          }
+          if (exitCode) process.exit(exitCode);
         }
       } catch (err) {
         log(succDir, `Error processing compact-pending: ${err.message || err}`);
@@ -102,9 +105,10 @@ process.stdin.on('end', async () => {
     }
 
     // Notify daemon of user activity
+    let daemonAlive = false;
     if (daemonPort && sessionId) {
       try {
-        await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
+        const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -115,8 +119,9 @@ process.stdin.on('end', async () => {
           }),
           signal: AbortSignal.timeout(2000),
         });
+        if (res.ok) daemonAlive = true;
       } catch {
-        // intentionally empty
+        // intentionally empty — daemon not reachable
       }
     }
 
@@ -124,7 +129,7 @@ process.stdin.on('end', async () => {
     // LLM-powered skill suggestions based on user prompt.
     // Uses extractKeywords → BM25 search → LLM ranking.
     // Respects cooldown to avoid suggesting on every prompt.
-    if (daemonPort && !isServiceSession) {
+    if (daemonAlive && !isServiceSession) {
       const prompt = hookInput.prompt || hookInput.message || '';
 
       // Load config to check if auto_suggest is enabled
@@ -179,7 +184,7 @@ process.stdin.on('end', async () => {
 
             if (response.ok) {
               const data = await response.json();
-              const suggestions = data.suggestions || [];
+              const suggestions = data.skills || [];
 
               if (suggestions.length > 0) {
                 // Reset cooldown counter
@@ -195,13 +200,13 @@ process.stdin.on('end', async () => {
                 log(succDir, `Suggesting ${suggestions.length} skill(s): ${suggestions.map(s => s.name).join(', ')}`);
 
                 // Output as additionalContext
-                const output = {
-                  hookSpecificOutput: {
-                    hookEventName: 'UserPromptSubmit',
-                    additionalContext: suggestionContext
-                  }
-                };
-                console.log(JSON.stringify(output));
+                const { json: sugJson, exitCode: sugExitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
+                  additionalContext: suggestionContext
+                });
+                if (sugJson && Object.keys(sugJson).length > 0) {
+                  console.log(JSON.stringify(sugJson));
+                }
+                if (sugExitCode) process.exit(sugExitCode);
               } else {
                 // No suggestions, increment cooldown
                 fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');

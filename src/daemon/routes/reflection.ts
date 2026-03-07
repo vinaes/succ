@@ -44,6 +44,9 @@ interface BriefingCache {
 
 const briefingCache = new Map<string, BriefingCache>();
 const briefingGenerationInProgress = new Set<string>();
+const briefingFailures = new Map<string, { count: number; lastAttempt: number }>();
+const BRIEFING_MAX_RETRIES = 3;
+const BRIEFING_RETRY_BACKOFF_MS = 5 * 60 * 1000; // 5 min backoff after max retries
 
 const BRIEFING_CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000; // Re-generate after 5KB growth
@@ -51,11 +54,13 @@ const BRIEFING_MIN_TRANSCRIPT_GROWTH = 5000; // Re-generate after 5KB growth
 export function resetReflectionRoutesState(): void {
   briefingCache.clear();
   briefingGenerationInProgress.clear();
+  briefingFailures.clear();
 }
 
 export function clearBriefingCache(sessionId: string): void {
   briefingCache.delete(sessionId);
   briefingGenerationInProgress.delete(sessionId);
+  briefingFailures.delete(sessionId);
 }
 
 async function writeReflection(
@@ -126,6 +131,13 @@ export async function preGenerateBriefing(
     return;
   }
 
+  const failure = briefingFailures.get(sessionId);
+  if (failure && failure.count >= BRIEFING_MAX_RETRIES) {
+    if (Date.now() - failure.lastAttempt < BRIEFING_RETRY_BACKOFF_MS) {
+      return;
+    }
+  }
+
   if (!fs.existsSync(transcriptPath)) {
     return;
   }
@@ -155,14 +167,19 @@ export async function preGenerateBriefing(
         generatedAt: Date.now(),
         transcriptSize: currentSize,
       });
+      briefingFailures.delete(sessionId);
       ctx.log(
         `[briefing] Pre-generated for session ${sessionId.slice(0, 8)} (${result.briefing.length} chars)`
       );
     } else {
       ctx.log(`[briefing] Pre-generation failed: ${result.error}`);
+      const prev = briefingFailures.get(sessionId);
+      briefingFailures.set(sessionId, { count: (prev?.count ?? 0) + 1, lastAttempt: Date.now() });
     }
   } catch (error) {
     ctx.log(`[briefing] Pre-generation error: ${error}`);
+    const prev = briefingFailures.get(sessionId);
+    briefingFailures.set(sessionId, { count: (prev?.count ?? 0) + 1, lastAttempt: Date.now() });
   } finally {
     briefingGenerationInProgress.delete(sessionId);
   }
