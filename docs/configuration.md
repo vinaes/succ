@@ -710,7 +710,7 @@ Blocks dangerous git, filesystem, database, and Docker commands before they exec
 {
   "commandSafetyGuard": {
     "mode": "deny",
-    "allowlist": ["rm -rf node_modules"],
+    "allowlist": ["^rm -rf node_modules$"],
     "customPatterns": [
       { "pattern": "\\bkubectl\\s+delete\\s+namespace\\b", "reason": "Deletes entire Kubernetes namespace" },
       { "pattern": "\\bredis-cli\\s+FLUSHALL\\b", "reason": "Wipes all Redis databases", "flags": "i" }
@@ -722,7 +722,7 @@ Blocks dangerous git, filesystem, database, and Docker commands before they exec
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `commandSafetyGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | `deny` blocks the command, `ask` prompts the user for confirmation, `off` disables the guard |
-| `commandSafetyGuard.allowlist` | string[] | `[]` | Commands to always allow even if they match dangerous patterns |
+| `commandSafetyGuard.allowlist` | string[] | `[]` | Regex patterns to always allow (tested against the full command). Use `^npm test$` for exact match, `^git push` for prefix match. Max 200 chars per pattern |
 | `commandSafetyGuard.customPatterns` | object[] | `[]` | User-defined regex patterns to block (see below) |
 | `customPatterns[].pattern` | string | — | Regex pattern string to match against the command |
 | `customPatterns[].reason` | string | — | Why this command is blocked (shown to Claude) |

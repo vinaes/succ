@@ -186,7 +186,7 @@ export const SAFE_RM_PATHS = [
   'coverage',
 ];
 
-/** Prefixes that indicate the command is data, not execution */
+/** Prefixes that indicate the command is data, not execution (ONLY for single commands) */
 const DATA_PREFIXES = [
   /^\s*(?:#|\/\/)/, // comments
   /^\s*echo\b/, // echo
@@ -198,9 +198,65 @@ const DATA_PREFIXES = [
   /^\s*(?:"|').*(?:"|')\s*$/, // quoted string
 ];
 
-/** Check if command is in a data context (grep, echo, comment, etc.) */
+/** Max regex pattern length to prevent ReDoS from user-authored patterns */
+const MAX_REGEX_LENGTH = 200;
+
+/**
+ * Split a shell command line into individual commands separated by ;, &&, ||, |.
+ * Respects quoted strings (single and double quotes).
+ */
+function splitShellCommands(command: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let inSingle = false;
+  let inDouble = false;
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      current += ch;
+      i++;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      current += ch;
+      i++;
+    } else if (!inSingle && !inDouble) {
+      // Check for && || ; |
+      if (command[i] === '&' && command[i + 1] === '&') {
+        parts.push(current);
+        current = '';
+        i += 2;
+      } else if (command[i] === '|' && command[i + 1] === '|') {
+        parts.push(current);
+        current = '';
+        i += 2;
+      } else if (command[i] === ';' || command[i] === '|') {
+        parts.push(current);
+        current = '';
+        i++;
+      } else {
+        current += ch;
+        i++;
+      }
+    } else {
+      current += ch;
+      i++;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/**
+ * Check if command is in a data context (grep, echo, comment, etc.)
+ * Only returns true if ALL sub-commands in the line are data context.
+ * This prevents bypass via `echo ok && rm -rf .succ`.
+ */
 export function isDataContext(command: string): boolean {
-  return DATA_PREFIXES.some((prefix) => prefix.test(command.trim()));
+  const parts = splitShellCommands(command);
+  if (parts.length === 0) return true;
+  return parts.every((part) => DATA_PREFIXES.some((prefix) => prefix.test(part.trim())));
 }
 
 /** Check if rm -rf target is a safe path */
@@ -246,9 +302,17 @@ export function checkDangerous(
 ): DangerResult | null {
   if (config.mode === 'off') return null;
 
-  // Check allowlist first
+  // Check allowlist — each entry is tested as an anchored regex against the full command.
+  // Examples: "^git push$" (exact), "^npm test" (prefix), "^git push(?! .*(--force|-f))" (push but not force)
+  const trimmed = command.trim();
   for (const allowed of config.allowlist) {
-    if (command.includes(allowed)) return null;
+    if (allowed.length > MAX_REGEX_LENGTH) continue; // ReDoS guard
+    try {
+      if (new RegExp(allowed).test(trimmed)) return null;
+    } catch {
+      // Invalid regex — try as literal exact match fallback
+      if (trimmed === allowed) return null;
+    }
   }
 
   // Skip if command is in a data context
@@ -264,6 +328,7 @@ export function checkDangerous(
 
   // Check user-defined custom patterns
   for (const custom of config.customPatterns) {
+    if (custom.pattern.length > MAX_REGEX_LENGTH) continue; // ReDoS guard
     try {
       const regex = new RegExp(custom.pattern, custom.flags || '');
       if (regex.test(command)) {

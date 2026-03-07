@@ -457,7 +457,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
       ],
       PreToolUse: [
         {
-          ...(useHttp ? {} : { matcher: 'Bash' }),
           hooks: [
             useHttp
               ? httpHook('pre-tool', 10, 'succ: checking rules...')
