@@ -501,6 +501,18 @@ Co-Authored-By order (succ always LAST):
       }
     }
 
+    // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
+    // Only write if daemon is actually alive (avoid stale port from old .tmp/daemon.port)
+    if (daemonPort && process.env.CLAUDE_ENV_FILE && (await checkDaemon(daemonPort))) {
+      try {
+        fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
+          `export SUCC_DAEMON_PORT=${daemonPort}\n`);
+        log(succDir, `Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
+      } catch (err) {
+        log(succDir, `Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
+      }
+    }
+
     // Skip for service sessions (reflection subagents)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
 

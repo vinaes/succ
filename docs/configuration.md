@@ -704,11 +704,13 @@ Disable auto-adaptation entirely:
 
 Blocks dangerous git, filesystem, database, and Docker commands before they execute. Runs as a `PreToolUse` hook on every Bash tool call.
 
+> **Note:** With Claude Code v2.1.63+, dangerous patterns also trigger PermissionRequest auto-deny — the tool call is blocked before the permission dialog even appears.
+
 ```json
 {
   "commandSafetyGuard": {
     "mode": "deny",
-    "allowlist": ["rm -rf node_modules"],
+    "allowlist": ["^rm -rf node_modules$"],
     "customPatterns": [
       { "pattern": "\\bkubectl\\s+delete\\s+namespace\\b", "reason": "Deletes entire Kubernetes namespace" },
       { "pattern": "\\bredis-cli\\s+FLUSHALL\\b", "reason": "Wipes all Redis databases", "flags": "i" }
@@ -720,7 +722,7 @@ Blocks dangerous git, filesystem, database, and Docker commands before they exec
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `commandSafetyGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | `deny` blocks the command, `ask` prompts the user for confirmation, `off` disables the guard |
-| `commandSafetyGuard.allowlist` | string[] | `[]` | Commands to always allow even if they match dangerous patterns |
+| `commandSafetyGuard.allowlist` | string[] | `[]` | Regex patterns to always allow (tested against the full command). Use `^npm test$` for exact match, `^git push` for prefix match. Max 200 chars per pattern |
 | `commandSafetyGuard.customPatterns` | object[] | `[]` | User-defined regex patterns to block (see below) |
 | `customPatterns[].pattern` | string | — | Regex pattern string to match against the command |
 | `customPatterns[].reason` | string | — | Why this command is blocked (shown to Claude) |
@@ -815,9 +817,25 @@ The memory `type` determines what happens when the rule matches:
 
 | Memory type | Action | Behavior |
 |-------------|--------|----------|
-| `error` | **deny** | Tool call is blocked |
-| `pattern` | **ask** | User is prompted for confirmation |
-| Any other (`decision`, `observation`, `learning`, etc.) | **inject** | Content added as `additionalContext` (guides the agent) |
+| `error` | **deny** | Tool call is blocked (PreToolUse) / Auto-denied (PermissionRequest) |
+| `pattern` | **ask** | User is prompted for confirmation (PreToolUse) / Normal permission dialog (PermissionRequest) |
+| `allow` | **allow** | Content injected as context (PreToolUse) / **Auto-approved — permission dialog skipped** (PermissionRequest) |
+| Any other (`decision`, `observation`, `learning`, etc.) | **inject** | Content added as `additionalContext` |
+
+> **PermissionRequest integration** (Claude Code v2.1.63+): Hook rules also power the PermissionRequest hook, which fires _before_ the permission dialog. Rules with `type="allow"` auto-approve matching tool calls without showing a dialog. Rules with `type="error"` auto-deny. This is separate from the PreToolUse hook — PreToolUse fires after permission is granted and controls execution; PermissionRequest controls whether the dialog appears at all.
+
+### Auto-approve rules (PermissionRequest)
+
+Create rules that skip the permission dialog for trusted operations:
+
+```bash
+succ_remember content="Allow running npm test" tags=["hook-rule","tool:Bash","match:^npm\\s+test"] type="allow"
+succ_remember content="Allow reading any file" tags=["hook-rule","tool:Read"] type="allow"
+succ_remember content="Allow editing test files" tags=["hook-rule","tool:Edit","match:\\.test\\."] type="allow"
+succ_remember content="Allow vitest" tags=["hook-rule","tool:Bash","match:^npx\\s+vitest"] type="allow"
+```
+
+These rules require Claude Code v2.1.63+ (HTTP hooks). On older versions, `allow` rules are treated as `inject` (context only).
 
 Rules are cached for 60 seconds in the daemon. Cache is invalidated when a new `hook-rule` memory is saved via `/api/remember`. Regex patterns are capped at 200 characters for ReDoS protection.
 
@@ -1093,6 +1111,7 @@ Controls the background daemon service.
 {
   "daemon": {
     "enabled": true,
+    "port": 18500,
     "port_range_start": 37842,
     "watch": {
       "auto_start": false,
@@ -1113,7 +1132,8 @@ Controls the background daemon service.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `daemon.enabled` | boolean | true | Enable daemon |
-| `daemon.port_range_start` | number | 37842 | Starting port |
+| `daemon.port` | number | (auto) | Fixed daemon port. Default: deterministic hash of project path (range 18000-27999). Set explicitly if firewall or port conflicts require a specific port |
+| `daemon.port_range_start` | number | 37842 | Starting port for fallback scan if stable port is unavailable |
 | `daemon.watch.auto_start` | boolean | false | Auto-start file watcher |
 | `daemon.watch.patterns` | string[] | `["**/*.md"]` | Watch patterns |
 | `daemon.watch.include_code` | boolean | false | Watch code files |

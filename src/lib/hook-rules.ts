@@ -21,10 +21,10 @@ export interface HookRule {
   content: string;
   type: string;
   tags: string[];
-  action: 'inject' | 'deny' | 'ask';
+  action: 'inject' | 'deny' | 'ask' | 'allow';
 }
 
-const ACTION_ORDER: Record<string, number> = { deny: 0, ask: 1, inject: 2 };
+const ACTION_ORDER: Record<string, number> = { deny: 0, ask: 1, allow: 2, inject: 3 };
 /** Max regex pattern length to prevent ReDoS from user-authored patterns */
 const MAX_REGEX_LENGTH = 200;
 
@@ -51,9 +51,10 @@ function getMatchTarget(toolName: string, toolInput: Record<string, unknown>): s
 /**
  * Map memory type to hook action.
  */
-function typeToAction(type: string | null | undefined): 'inject' | 'deny' | 'ask' {
+function typeToAction(type: string | null | undefined): 'inject' | 'deny' | 'ask' | 'allow' {
   if (type === 'error') return 'deny';
   if (type === 'pattern') return 'ask';
+  if (type === 'allow') return 'allow';
   return 'inject';
 }
 

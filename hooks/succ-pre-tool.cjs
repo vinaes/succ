@@ -254,9 +254,58 @@ function loadConfig(projectDir) {
   return defaults;
 }
 
+/**
+ * Split a shell command line into individual commands separated by ;, &&, ||, |.
+ * Respects quoted strings (single and double quotes).
+ */
+function splitShellCommands(command) {
+  const parts = [];
+  let current = '';
+  let inSingle = false;
+  let inDouble = false;
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      current += ch;
+      i++;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      current += ch;
+      i++;
+    } else if (!inSingle && !inDouble) {
+      if (command[i] === '&' && command[i + 1] === '&') {
+        parts.push(current);
+        current = '';
+        i += 2;
+      } else if (command[i] === '|' && command[i + 1] === '|') {
+        parts.push(current);
+        current = '';
+        i += 2;
+      } else if (command[i] === ';' || command[i] === '|') {
+        parts.push(current);
+        current = '';
+        i++;
+      } else {
+        current += ch;
+        i++;
+      }
+    } else {
+      current += ch;
+      i++;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+const MAX_REGEX_LENGTH = 200;
+
 function isDataContext(command) {
-  const trimmed = command.trim();
-  return DATA_PREFIXES.some((prefix) => prefix.test(trimmed));
+  const parts = splitShellCommands(command);
+  if (parts.length === 0) return true;
+  return parts.every((part) => DATA_PREFIXES.some((prefix) => prefix.test(part.trim())));
 }
 
 function isRmPathSafe(command) {
@@ -277,10 +326,16 @@ function isRmPathSafe(command) {
 function checkDangerous(command, config) {
   if (config.commandSafetyGuard.mode === 'off') return null;
 
-  // Check allowlist first
+  // Check allowlist — each entry is tested as an anchored regex against the full command
+  const trimmed = command.trim();
   const allowlist = config.commandSafetyGuard.allowlist || [];
   for (const allowed of allowlist) {
-    if (command.includes(allowed)) return null;
+    if (allowed.length > MAX_REGEX_LENGTH) continue;
+    try {
+      if (new RegExp(allowed).test(trimmed)) return null;
+    } catch {
+      if (trimmed === allowed) return null;
+    }
   }
 
   // Skip if command is in a data context
@@ -301,6 +356,7 @@ function checkDangerous(command, config) {
   // Check user-defined custom patterns (blacklist)
   const customPatterns = config.commandSafetyGuard.customPatterns || [];
   for (const custom of customPatterns) {
+    if (custom.pattern.length > MAX_REGEX_LENGTH) continue;
     try {
       const regex = new RegExp(custom.pattern, custom.flags || '');
       if (regex.test(command)) {

@@ -2,12 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
 import {
   getProjectRoot,
   getSuccDir,
+  getConfig,
   isOnboardingCompleted,
   markOnboardingCompleted,
 } from '../lib/config.js';
@@ -31,6 +33,7 @@ import {
   getPrdMocTemplate,
   getCommunicationMocTemplate,
 } from './init-templates.js';
+import { getStablePort } from '../lib/daemon-port.js';
 
 // Get the directory where succ is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +53,53 @@ function isCloudProvider(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Detect Claude Code CLI version. Returns null if not installed. */
+function getClaudeCodeVersion(): string | null {
+  try {
+    const stdout = execFileSync('claude', ['--version'], {
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    });
+    const match = stdout.match(/(\d+\.\d+\.\d+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if version supports HTTP hooks (v2.1.63+) */
+function supportsHttpHooks(version: string | null): boolean {
+  if (!version) return false;
+  const parts = version.split('.').map(Number);
+  if (parts.length < 3) return false;
+  const [major, minor, patch] = parts;
+  if (major > 2) return true;
+  if (major === 2 && minor > 1) return true;
+  if (major === 2 && minor === 1 && patch >= 63) return true;
+  return false;
+}
+
+/** Check if a hook entry belongs to succ (command or HTTP) */
+function isSuccHook(h: Record<string, unknown>): boolean {
+  const hooks = h.hooks as Array<Record<string, unknown>> | undefined;
+  if (!hooks || hooks.length === 0) return false;
+  const hook = hooks[0];
+  const cmd = (hook.command as string) || '';
+  const url = (hook.url as string) || '';
+  // Command hooks
+  if (
+    cmd.includes('.succ/hooks/') ||
+    cmd.includes('/hooks/succ-') ||
+    cmd.includes('\\hooks\\succ-')
+  )
+    return true;
+  if (/succ-(session|stop|user|post|pre)-/.test(cmd)) return true;
+  // HTTP hooks
+  if (url.includes('/api/hooks/')) return true;
+  return false;
 }
 
 interface InitOptions {
@@ -325,247 +375,169 @@ export async function init(options: InitOptions = {}): Promise<void> {
 
   if (!settingsExisted || options.force) {
     // Determine hooks path based on installation mode
-    // Global install: hooks are in the succ package directory
-    // Local dev: hooks are copied to .succ/hooks/ in the project
+    // Use $CLAUDE_PROJECT_DIR for portability (works regardless of cwd)
     const hooksPath = useGlobalHooks
       ? path.join(SUCC_PACKAGE_DIR, 'hooks').replace(/\\/g, '/')
-      : '.succ/hooks';
+      : '$CLAUDE_PROJECT_DIR/.succ/hooks';
+
+    // Detect Claude Code version for HTTP hooks support
+    const claudeVersion = getClaudeCodeVersion();
+    const useHttp = supportsHttpHooks(claudeVersion);
+
+    // Compute stable port for HTTP hook URLs (getConfig merges global + project config)
+    const mergedConfig = getConfig();
+    const hookPort = mergedConfig.daemon?.port ?? getStablePort(projectRoot);
+    const baseUrl = `http://127.0.0.1:${hookPort}/api/hooks`;
 
     if (verbose) {
       console.log(`  Installation mode: ${useGlobalHooks ? 'global' : 'local development'}`);
       console.log(`  Hooks path: ${hooksPath}`);
+      console.log(`  Claude Code version: ${claudeVersion || 'not detected'}`);
+      console.log(`  HTTP hooks: ${useHttp ? 'yes' : 'no (command fallback)'}`);
+      console.log(`  Hook port: ${hookPort}`);
     }
 
-    // Define succ hooks
-    // Hook files prefixed with "succ-" to avoid conflicts with other hooks
-    const succHooks = {
+    // Helper to build a command hook entry
+    const cmdHook = (script: string, timeout: number, statusMsg: string) => ({
+      type: 'command' as const,
+      command: `node --no-warnings --no-deprecation "${hooksPath}/${script}"`,
+      timeout,
+      statusMessage: statusMsg,
+    });
+
+    // Helper to build an HTTP hook entry
+    const httpHook = (route: string, timeout: number, statusMsg: string) => ({
+      type: 'http' as const,
+      url: `${baseUrl}/${route}`,
+      timeout,
+      statusMessage: statusMsg,
+    });
+
+    // Define succ hooks — HTTP when supported, command fallback
+    const succHooks: Record<string, Array<Record<string, unknown>>> = {
+      // Command-only events (Claude Code limitation)
       SessionStart: [
         {
-          hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-session-start.cjs"`,
-              timeout: 10,
-            },
-          ],
-        },
-      ],
-      Stop: [
-        {
-          hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-stop-reflection.cjs"`,
-              timeout: 60,
-            },
-          ],
+          hooks: [cmdHook('succ-session-start.cjs', 10, 'succ: loading context...')],
         },
       ],
       SessionEnd: [
         {
+          hooks: [cmdHook('succ-session-end.cjs', 60, 'succ: saving session...')],
+        },
+      ],
+
+      // HTTP when supported, command fallback
+      Stop: [
+        {
           hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-session-end.cjs"`,
-              timeout: 60,
-            },
+            useHttp
+              ? httpHook('stop', 60, 'succ: recording activity...')
+              : cmdHook('succ-stop-reflection.cjs', 60, 'succ: recording activity...'),
           ],
         },
       ],
       UserPromptSubmit: [
         {
           hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-user-prompt.cjs"`,
-              timeout: 10,
-            },
+            useHttp
+              ? httpHook('user-prompt', 10, 'succ: checking context...')
+              : cmdHook('succ-user-prompt.cjs', 10, 'succ: checking context...'),
           ],
         },
       ],
       PostToolUse: [
         {
           hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-post-tool.cjs"`,
-              timeout: 5,
-            },
+            useHttp
+              ? httpHook('post-tool', 5, 'succ: capturing...')
+              : cmdHook('succ-post-tool.cjs', 5, 'succ: capturing...'),
           ],
         },
       ],
       PreToolUse: [
         {
-          matcher: 'Bash',
           hooks: [
-            {
-              type: 'command',
-              command: `node --no-warnings --no-deprecation "${hooksPath}/succ-pre-tool.cjs"`,
-              timeout: 10,
-            },
+            useHttp
+              ? httpHook('pre-tool', 10, 'succ: checking rules...')
+              : cmdHook('succ-pre-tool.cjs', 10, 'succ: checking rules...'),
           ],
         },
       ],
+
+      // New hooks (HTTP only, no command fallback needed)
+      ...(useHttp
+        ? {
+            PermissionRequest: [
+              {
+                hooks: [httpHook('permission', 5, 'succ: checking permission rules...')],
+              },
+            ],
+            SubagentStop: [
+              {
+                hooks: [httpHook('subagent-stop', 5, 'succ: saving agent results...')],
+              },
+            ],
+            TaskCompleted: [
+              {
+                hooks: [httpHook('task-completed', 5, 'succ: consolidating...')],
+              },
+            ],
+          }
+        : {}),
     };
 
     let finalSettings: Record<string, any>;
 
-    if (settingsExisted && !options.force) {
-      // Merge with existing settings (non-force mode)
+    // Unified merge logic: strip old succ hooks (command + HTTP), add fresh ones.
+    // Works for both merge and force modes — always upgrades hook transport.
+    const stripAndAddSuccHooks = (existingSettings: Record<string, any>): Record<string, any> => {
+      const settings = { ...existingSettings };
+      if (!settings.hooks) settings.hooks = {};
+
+      // Strip all existing succ hooks from every event type
+      for (const [hookType, hookConfig] of Object.entries(settings.hooks)) {
+        if (!Array.isArray(hookConfig)) continue;
+        const nonSucc = hookConfig.filter((h: Record<string, unknown>) => !isSuccHook(h));
+        if (nonSucc.length > 0) {
+          settings.hooks[hookType] = nonSucc;
+        } else {
+          delete settings.hooks[hookType];
+        }
+      }
+
+      // Add fresh succ hooks
+      for (const [hookType, hookConfig] of Object.entries(succHooks)) {
+        const entries = hookConfig as Array<Record<string, unknown>>;
+        if (entries.length === 0) continue;
+        if (!settings.hooks[hookType]) {
+          settings.hooks[hookType] = entries;
+        } else {
+          settings.hooks[hookType] = [...settings.hooks[hookType], ...entries];
+        }
+      }
+
+      return settings;
+    };
+
+    if (settingsExisted) {
       try {
         const existingContent = fs.readFileSync(settingsPath, 'utf-8');
         const existingSettings = JSON.parse(existingContent);
-
-        // Preserve all existing settings
-        finalSettings = { ...existingSettings };
-
-        // Ensure hooks object exists
-        if (!finalSettings.hooks) {
-          finalSettings.hooks = {};
-        }
-
-        // Merge hooks: add succ hooks without duplicating
-        for (const [hookType, hookConfig] of Object.entries(succHooks)) {
-          if (!finalSettings.hooks[hookType]) {
-            // No existing hooks of this type, just add ours
-            finalSettings.hooks[hookType] = hookConfig;
-          } else {
-            // Check if succ hook already exists in this type
-            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
-            const existingHooks = finalSettings.hooks[hookType] as HookEntry[];
-            const succHookEntries = hookConfig as HookEntry[];
-
-            for (const succEntry of succHookEntries) {
-              // Check if this exact succ hook is already present
-              const succCommand = succEntry.hooks?.[0]?.command || '';
-              const succMatcher = succEntry.matcher || '';
-
-              const alreadyExists = existingHooks.some((existing: any) => {
-                const existingCommand = existing.hooks?.[0]?.command || '';
-
-                // Check for succ hook files (prefixed with "succ-")
-                if (
-                  succCommand.includes('succ-session-start.cjs') &&
-                  existingCommand.includes('succ-session-start.cjs')
-                )
-                  return true;
-                if (
-                  succCommand.includes('succ-session-end.cjs') &&
-                  existingCommand.includes('succ-session-end.cjs')
-                )
-                  return true;
-                if (
-                  succCommand.includes('succ-stop-reflection.cjs') &&
-                  existingCommand.includes('succ-stop-reflection.cjs')
-                )
-                  return true;
-                if (
-                  succCommand.includes('succ-user-prompt.cjs') &&
-                  existingCommand.includes('succ-user-prompt.cjs')
-                )
-                  return true;
-                if (
-                  succCommand.includes('succ-post-tool.cjs') &&
-                  existingCommand.includes('succ-post-tool.cjs')
-                )
-                  return true;
-                if (
-                  succCommand.includes('succ-pre-tool.cjs') &&
-                  existingCommand.includes('succ-pre-tool.cjs')
-                )
-                  return true;
-                // For Notification hooks, check matcher
-                if (succMatcher && existing.matcher === succMatcher) return true;
-
-                return false;
-              });
-
-              if (!alreadyExists) {
-                existingHooks.push(succEntry);
-              }
-            }
-          }
-        }
-
-        log('Merged settings.json (preserved existing permissions and hooks)');
+        finalSettings = stripAndAddSuccHooks(existingSettings);
+        log(
+          options.force
+            ? 'Replaced succ hooks in settings.json (--force)'
+            : 'Merged settings.json (preserved existing permissions and hooks)'
+        );
       } catch (error) {
         logWarn('init', 'Failed to parse existing Claude settings.json for hook merge', {
           error: error instanceof Error ? error.message : String(error),
         });
-        // Failed to parse existing, create new
-        finalSettings = { hooks: succHooks };
-        log('Created settings.json (failed to parse existing)');
-      }
-    } else if (settingsExisted && options.force) {
-      // Force mode: replace succ hooks but preserve other settings
-      try {
-        const existingContent = fs.readFileSync(settingsPath, 'utf-8');
-        const existingSettings = JSON.parse(existingContent);
-
-        // Preserve non-hook settings (permissions, etc.)
-        finalSettings = { ...existingSettings };
-
-        // Replace hooks entirely with new succ hooks
-        // but preserve any non-succ hooks
-        if (finalSettings.hooks) {
-          for (const [hookType, hookConfig] of Object.entries(finalSettings.hooks)) {
-            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
-            const existingHooks = hookConfig as HookEntry[];
-            // Filter out old succ hooks (both old names and new "succ-" prefixed names)
-            const nonSuccHooks = existingHooks.filter((h: any) => {
-              const cmd = h.hooks?.[0]?.command || '';
-              // Remove hooks in .succ/hooks/ directory (local dev)
-              if (cmd.includes('.succ/hooks/')) return false;
-              // Remove hooks from global succ install (contains /hooks/succ- pattern)
-              if (cmd.includes('/hooks/succ-') || cmd.includes('\\hooks\\succ-')) return false;
-              // Also remove any legacy hooks with succ hook names
-              if (
-                cmd.includes('session-start.cjs') ||
-                cmd.includes('session-end.cjs') ||
-                cmd.includes('stop-reflection.cjs') ||
-                cmd.includes('user-prompt.cjs') ||
-                cmd.includes('post-tool.cjs') ||
-                cmd.includes('pre-tool.cjs') ||
-                cmd.includes('idle-reflection.cjs')
-              )
-                return false;
-              return true;
-            });
-            if (nonSuccHooks.length > 0) {
-              finalSettings.hooks[hookType] = nonSuccHooks;
-            } else {
-              delete finalSettings.hooks[hookType];
-            }
-          }
-        }
-
-        // Now add fresh succ hooks
-        if (!finalSettings.hooks) {
-          finalSettings.hooks = {};
-        }
-        for (const [hookType, hookConfig] of Object.entries(succHooks)) {
-          if (!finalSettings.hooks[hookType]) {
-            finalSettings.hooks[hookType] = hookConfig;
-          } else {
-            type HookEntry = { hooks?: Array<{ command?: string }>; matcher?: string };
-            finalSettings.hooks[hookType] = [
-              ...finalSettings.hooks[hookType],
-              ...(hookConfig as HookEntry[]),
-            ];
-          }
-        }
-
-        log('Replaced succ hooks in settings.json (--force)');
-      } catch (error) {
-        logWarn('init', 'Failed to parse existing Claude settings.json for hook replacement', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // Failed to parse existing, create new
         finalSettings = { hooks: succHooks };
         log('Created settings.json (failed to parse existing)');
       }
     } else {
-      // Create new settings
       finalSettings = { hooks: succHooks };
       log('Created settings.json');
     }

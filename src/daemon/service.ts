@@ -31,6 +31,7 @@ import {
   getProjectRoot,
   getSuccDir,
 } from '../lib/config.js';
+import { getStablePort } from '../lib/daemon-port.js';
 import {
   closeDb,
   closeGlobalDb,
@@ -63,6 +64,7 @@ import { statusRoutes } from './routes/status.js';
 import { watcherRoutes } from './routes/watcher.js';
 import { analyzerRoutes } from './routes/analyzer.js';
 import { skillRoutes } from './routes/skills.js';
+import { hookRoutes } from './routes/hooks.js';
 
 export type { DaemonConfig, DaemonState };
 
@@ -192,6 +194,7 @@ function buildRoutes(ctx: RouteContext): RouteMap {
     ...watcherRoutes(ctx),
     ...analyzerRoutes(ctx),
     ...skillRoutes(ctx),
+    ...hookRoutes(ctx),
   };
 }
 
@@ -370,14 +373,26 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     });
   });
 
-  const portStart = DEFAULT_PORT_RANGE_START;
-  let port = portStart;
+  // Try stable port first (config or hash-based), then fall back to scan
+  const config = getConfig();
+  const stablePort = config.daemon?.port ?? getStablePort(cwd);
+  const fallbackStart = config.daemon?.port_range_start ?? DEFAULT_PORT_RANGE_START;
 
-  for (let i = 0; i < MAX_PORT_ATTEMPTS; i++) {
+  let port = stablePort;
+  let portAttempts = 0;
+  const maxAttempts = 1 + MAX_PORT_ATTEMPTS; // 1 stable + 100 fallback
+
+  for (let i = 0; i < maxAttempts; i++) {
     await new Promise<void>((resolve, reject) => {
       server.once('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {
-          port++;
+          portAttempts++;
+          if (portAttempts === 1) {
+            // Stable port busy — switch to fallback range
+            port = fallbackStart;
+          } else {
+            port++;
+          }
           resolve();
         } else {
           reject(err);
@@ -395,7 +410,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   if (!server.listening) {
     throw new NetworkError(
-      `Could not find available port in range ${portStart}-${portStart + MAX_PORT_ATTEMPTS}`
+      `Could not find available port (tried ${stablePort}, then ${fallbackStart}-${fallbackStart + MAX_PORT_ATTEMPTS})`
     );
   }
 
@@ -424,7 +439,6 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   log(`[daemon] Started on port ${port} (pid=${process.pid})`);
 
-  const config = getConfig();
   if (config.daemon?.watch?.auto_start) {
     const watchConfig = config.daemon.watch;
     await startWatcher(

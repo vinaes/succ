@@ -64,7 +64,7 @@ succ analyze
 | **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
 | **Working Memory** | Priority scoring, validity filtering, diversity, pinned memories |
-| **Dynamic Hook Rules** | Save memories that auto-fire as pre-tool rules — inject context, block, or ask confirmation |
+| **Dynamic Hook Rules** | Save memories that auto-fire as pre-tool rules — inject context, block, ask confirmation, or auto-approve permissions |
 | **File-Linked Memories** | Link memories to files; auto-recalled when editing those files |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 13-language instrumentation |
@@ -89,7 +89,9 @@ succ analyze
 - **Skill Discovery** — Auto-suggest relevant skills based on user prompt (opt-in, disabled by default)
 - **Skyll Integration** — Access community skills from [Skyll registry](https://skyll.app) (requires skills.enabled = true)
 - **Soul Document** — Define AI personality and values
-- **Dynamic Hook Rules** — Memories tagged `hook-rule` auto-fire before matching tool calls; filter by `tool:{Name}` and `match:{regex}` tags; `error` type blocks, `pattern` asks confirmation, others inject as context
+- **Dynamic Hook Rules** — Memories tagged `hook-rule` auto-fire before matching tool calls; filter by `tool:{Name}` and `match:{regex}` tags; `error` type blocks, `pattern` asks confirmation, `allow` type auto-approves permission dialogs (v2.1.63+), others inject as context
+- **PermissionRequest** — Auto-approve or deny Claude Code permission dialogs based on memory rules (requires Claude Code v2.1.63+)
+- **HTTP Hooks** — Direct HTTP hooks to daemon (no process spawn) for faster, more reliable hook execution (requires Claude Code v2.1.63+, auto-detected at `succ init`)
 - **File-Linked Memories** — Attach memories to files via `files` parameter; pre-tool hook auto-recalls related memories when editing those files
 - **Auto-Hooks** — Context injection at session start/end
 - **Idle Reflections** — AI generates insights during idle time
