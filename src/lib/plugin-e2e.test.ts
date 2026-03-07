@@ -343,7 +343,9 @@ describe('Plugin structure integrity', () => {
   it('all hook scripts referenced in hooks.json should be executable', () => {
     const hooksJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'hooks', 'hooks.json'), 'utf-8'));
     for (const event of Object.keys(hooksJson.hooks)) {
-      const command: string = hooksJson.hooks[event][0].hooks[0].command;
+      const eventConfig = hooksJson.hooks[event]?.[0]?.hooks?.[0];
+      expect(eventConfig).toBeDefined();
+      const command: string = eventConfig.command;
       const match = command.match(/hooks\/(succ-[\w-]+\.cjs)/);
       expect(match).not.toBeNull();
       const scriptPath = path.join(ROOT, 'hooks', match![1]);
