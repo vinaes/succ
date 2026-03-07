@@ -110,10 +110,16 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      const results = await this.postgres.hybridSearchDocuments(query, queryEmbedding, fetchLimit, thresh, {
-        codeOnly: true,
-        symbolType: filters?.symbolType,
-      });
+      const results = await this.postgres.hybridSearchDocuments(
+        query,
+        queryEmbedding,
+        fetchLimit,
+        thresh,
+        {
+          codeOnly: true,
+          symbolType: filters?.symbolType,
+        }
+      );
       return this.applyCodeFilters(results, regexFilter, lim);
     }
     const sqlite = await this.getSqliteFns();
@@ -209,7 +215,14 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.hybridSearchGlobalMemories(query, queryEmbedding, lim, thresh, tags, since);
+      return this.postgres.hybridSearchGlobalMemories(
+        query,
+        queryEmbedding,
+        lim,
+        thresh,
+        tags,
+        since
+      );
     const sqlite = await this.getSqliteFns();
     return sqlite.hybridSearchGlobalMemories(
       query,

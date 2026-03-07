@@ -32,7 +32,12 @@ import type {
   HybridGlobalMemoryResult,
 } from '../types.js';
 import { StorageError, ConfigError } from '../../errors.js';
-import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs, reciprocalRankFusion } from '../../bm25.js';
+import {
+  tokenizeCode,
+  tokenizeCodeWithAST,
+  tokenizeDocs,
+  reciprocalRankFusion,
+} from '../../bm25.js';
 
 import { logWarn } from '../../fault-logger.js';
 // Lazy-load pg to make it optional
@@ -259,9 +264,7 @@ export class PostgresBackend {
     );
 
     // Migration: add search_vector column for full-text search (tsvector)
-    await pool.query(
-      'ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector'
-    );
+    await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector');
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_search_vector ON documents USING GIN(search_vector)'
     );
@@ -346,9 +349,7 @@ export class PostgresBackend {
     );
 
     // Migration: add search_vector column for full-text search (tsvector)
-    await pool.query(
-      'ALTER TABLE memories ADD COLUMN IF NOT EXISTS search_vector tsvector'
-    );
+    await pool.query('ALTER TABLE memories ADD COLUMN IF NOT EXISTS search_vector tsvector');
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_memories_search_vector ON memories USING GIN(search_vector)'
     );
@@ -1502,13 +1503,9 @@ export class PostgresBackend {
           textResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
         }
       } catch (error) {
-        logWarn(
-          'postgresql',
-          'hybridSearchGlobalMemories text search failed, using vector-only',
-          {
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
+        logWarn('postgresql', 'hybridSearchGlobalMemories text search failed, using vector-only', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
