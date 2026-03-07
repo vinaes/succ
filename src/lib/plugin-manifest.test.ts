@@ -35,7 +35,6 @@ describe('plugin-manifest', () => {
 describe('hooks/hooks.json', () => {
   const hooksJsonPath = path.join(ROOT, 'hooks', 'hooks.json');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getHookEntry = (config: any, event: string) => {
     const entry = config.hooks?.[event]?.[0]?.hooks?.[0];
     if (!entry) throw new Error(`Missing hook entry for event: ${event}`);
