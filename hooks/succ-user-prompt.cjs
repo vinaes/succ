@@ -105,7 +105,7 @@ process.stdin.on('end', async () => {
     let daemonAlive = false;
     if (daemonPort && sessionId) {
       try {
-        await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
+        const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -116,7 +116,7 @@ process.stdin.on('end', async () => {
           }),
           signal: AbortSignal.timeout(2000),
         });
-        daemonAlive = true;
+        if (res.ok) daemonAlive = true;
       } catch {
         // intentionally empty — daemon not reachable
       }
