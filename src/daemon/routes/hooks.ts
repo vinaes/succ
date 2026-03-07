@@ -619,6 +619,115 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
     },
 
     // ═══════════════════════════════════════════════════════════════
+    // SessionStart — context assembly for HTTP hook mode
+    // ═══════════════════════════════════════════════════════════════
+    'POST /api/hooks/session-start': async (body) => {
+      try {
+        const input = parseRequestBody(HookBaseSchema, body);
+        const cwd = fixWindowsPath(input.cwd || '');
+        if (!cwd || !succExists(cwd)) return {};
+
+        const succDir = path.join(cwd, '.succ');
+        const projectName = path.basename(cwd);
+        const contextParts: string[] = [];
+
+        // Load config
+        const config = getConfig();
+
+        // Commit format (if enabled)
+        if (config.includeCoAuthoredBy !== false) {
+          contextParts.push(buildCommitContext());
+        }
+
+        // Soul document
+        const soulPaths = [
+          path.join(succDir, 'soul.md'),
+          path.join(succDir, 'SOUL.md'),
+          path.join(cwd, 'soul.md'),
+          path.join(cwd, 'SOUL.md'),
+        ];
+        for (const soulPath of soulPaths) {
+          if (fs.existsSync(soulPath)) {
+            const soulContent = fs.readFileSync(soulPath, 'utf8').trim();
+            if (soulContent) {
+              contextParts.push('<soul>\n' + soulContent + '\n</soul>');
+            }
+            break;
+          }
+        }
+
+        // Precomputed context from previous session
+        const precomputedPath = path.join(succDir, 'next-session-context.md');
+        if (fs.existsSync(precomputedPath)) {
+          try {
+            const precomputed = fs.readFileSync(precomputedPath, 'utf8').trim();
+            if (precomputed) {
+              contextParts.push('<previous-session>\n' + precomputed + '\n</previous-session>');
+              // Archive
+              const archiveDir = path.join(succDir, '.context-archive');
+              if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+              const ts = new Date().toISOString().replace(/[:.]/g, '-');
+              fs.renameSync(precomputedPath, path.join(archiveDir, `context-${ts}.md`));
+            }
+          } catch {
+            // intentionally empty
+          }
+        }
+
+        // Register session
+        const transcriptPath = input.transcript_path || '';
+        const sessionId = transcriptPath
+          ? path.basename(transcriptPath, '.jsonl')
+          : `session-${Date.now()}`;
+        if (ctx.sessionManager) {
+          ctx.sessionManager.register(sessionId, transcriptPath, false);
+          ctx.log(`[hooks/session-start] Registered session: ${sessionId}`);
+        }
+
+        if (contextParts.length === 0) return {};
+
+        const additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext,
+          },
+        };
+      } catch (err) {
+        logWarn('hooks', 'session-start failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return {};
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // SessionEnd — unregister session + trigger processing
+    // ═══════════════════════════════════════════════════════════════
+    'POST /api/hooks/session-end': async (body) => {
+      try {
+        const input = parseRequestBody(HookBaseSchema, body);
+        const cwd = fixWindowsPath(input.cwd || '');
+        if (!cwd || !succExists(cwd)) return {};
+
+        const transcriptPath = input.transcript_path || '';
+        const sessionId = transcriptPath
+          ? path.basename(transcriptPath, '.jsonl')
+          : '';
+        if (!sessionId) return {};
+
+        if (ctx.sessionManager) {
+          ctx.sessionManager.unregister(sessionId);
+          ctx.log(`[hooks/session-end] Unregistered session: ${sessionId}`);
+        }
+
+        return {};
+      } catch {
+        return {};
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════
     // TaskCompleted — save event + trigger memory curator
     // ═══════════════════════════════════════════════════════════════
     'POST /api/hooks/task-completed': async (body) => {

@@ -22,6 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const adapter = require('./core/adapter.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
 
@@ -470,7 +471,9 @@ process.stdin.on('readable', () => {
 
 process.stdin.on('end', async () => {
   try {
-    const hookInput = JSON.parse(input);
+    const rawInput = JSON.parse(input);
+    const agent = adapter.detectAgent(rawInput);
+    const hookInput = adapter.normalizeInput(agent, rawInput);
     let projectDir = hookInput.cwd || process.cwd();
 
     // Windows path fix
@@ -501,15 +504,12 @@ process.stdin.on('end', async () => {
     const rules = await fetchHookRules(projectDir, toolName, toolInput);
     for (const rule of rules) {
       if (rule.action === 'deny') {
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: 'deny',
-            permissionDecisionReason: `[succ rule] ${rule.content}`,
-          },
-        };
-        console.log(JSON.stringify(output));
-        process.exit(0);
+        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+          deny: true,
+          denyReason: `[succ rule] ${rule.content}`,
+        });
+        console.log(JSON.stringify(json));
+        process.exit(exitCode);
       }
       if (rule.action === 'ask' && !askReason) {
         askReason = rule.content;
@@ -533,28 +533,22 @@ process.stdin.on('end', async () => {
       const config = loadConfig(projectDir);
       const dangerousResult = checkDangerous(command, config);
       if (dangerousResult) {
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: dangerousResult.mode === 'ask' ? 'ask' : 'deny',
-            permissionDecisionReason: `[succ guard] ${dangerousResult.reason}`,
-          },
-        };
-        console.log(JSON.stringify(output));
-        process.exit(0);
+        const result = dangerousResult.mode === 'ask'
+          ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
+          : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
+        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+        console.log(JSON.stringify(json));
+        process.exit(exitCode);
       }
 
       // 4. Hook rule ask (after safety guard, so deny takes priority)
       if (askReason) {
-        const output = {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: 'ask',
-            permissionDecisionReason: `[succ rule] ${askReason}`,
-          },
-        };
-        console.log(JSON.stringify(output));
-        process.exit(0);
+        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+          ask: true,
+          askReason: `[succ rule] ${askReason}`,
+        });
+        console.log(JSON.stringify(json));
+        process.exit(exitCode);
       }
 
       // 5. Git commit — inject guidelines + diff review reminder
@@ -566,26 +560,23 @@ process.stdin.on('end', async () => {
       }
     } else if (askReason) {
       // Non-Bash ask rule
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'ask',
-          permissionDecisionReason: `[succ rule] ${askReason}`,
-        },
-      };
-      console.log(JSON.stringify(output));
-      process.exit(0);
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+        ask: true,
+        askReason: `[succ rule] ${askReason}`,
+      });
+      console.log(JSON.stringify(json));
+      process.exit(exitCode);
     }
 
     // 6. Emit combined context
     if (contextParts.length > 0) {
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          additionalContext: contextParts.join('\n'),
-        },
-      };
-      console.log(JSON.stringify(output));
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+        additionalContext: contextParts.join('\n'),
+      });
+      if (json && Object.keys(json).length > 0) {
+        console.log(JSON.stringify(json));
+      }
+      if (exitCode) process.exit(exitCode);
     }
 
     process.exit(0);
