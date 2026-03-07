@@ -282,12 +282,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
 
         const toolName = input.tool_name || '';
         const toolInput = (input.tool_input as Record<string, unknown>) || {};
-        const toolOutput =
-          typeof input.tool_output === 'string'
-            ? input.tool_output
-            : typeof input.tool_response === 'string'
-              ? input.tool_response
-              : '';
+        // Keep raw value for Task subagent parsing (may be object), stringify for text matching
+        const rawToolOutput = input.tool_output ?? input.tool_response ?? '';
+        const toolOutput = typeof rawToolOutput === 'string' ? rawToolOutput : '';
 
         const remember = async (content: string, tags: string[]) => {
           try {
@@ -321,10 +318,16 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             }
           }
 
-          // 2. Dependency install
-          const pkgMatch = cmd.match(/(?:npm|yarn|pnpm)\s+(?:install|add)\s+(\S+)/i);
-          if (pkgMatch && pkgMatch[1] && !pkgMatch[1].startsWith('-')) {
-            await remember(`Added dependency: ${pkgMatch[1]}`, ['dependency', 'package']);
+          // 2. Dependency install (skip flags like -D, --save-dev)
+          const installMatch = cmd.match(
+            /(?:npm|yarn|pnpm)\s+(?:install|add)\s+(.+?)(?:\s*[;&|]|$)/i
+          );
+          if (installMatch) {
+            const tokens = installMatch[1].split(/\s+/).filter((t) => !t.startsWith('-'));
+            const pkgName = tokens[0];
+            if (pkgName) {
+              await remember(`Added dependency: ${pkgName}`, ['dependency', 'package']);
+            }
           }
 
           // 3. Test run detection
@@ -360,8 +363,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           if (/^(Explore|Plan|feature-dev|succ-)/.test(agentType)) {
             let text = '';
             try {
-              const parsed = typeof toolOutput === 'string' ? JSON.parse(toolOutput) : toolOutput;
-              if (parsed && Array.isArray(parsed.content)) {
+              const parsed =
+                typeof rawToolOutput === 'string' ? JSON.parse(rawToolOutput) : rawToolOutput;
+              if (parsed && typeof parsed === 'object' && Array.isArray(parsed.content)) {
                 text = parsed.content
                   .filter((c: { type?: string; text?: string }) => c.type === 'text' && c.text)
                   .map((c: { text: string }) => c.text)
@@ -370,7 +374,7 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 text = parsed;
               }
             } catch {
-              text = toolOutput;
+              text = typeof rawToolOutput === 'string' ? rawToolOutput : '';
             }
 
             if (text.length > 50 && text.length < 20000) {
@@ -509,6 +513,26 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             ? (input.tool_input as Record<string, unknown>)
             : {};
 
+        // Run command safety guard FIRST (deny always wins over allow rules)
+        const command = (toolInput.command as string) || '';
+        if (command) {
+          const config = getConfig();
+          const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
+          const dangerResult = checkDangerous(command, safetyConfig);
+          if (dangerResult && dangerResult.mode === 'deny') {
+            ctx.log(`[hooks/permission] Safety guard denied: ${dangerResult.reason}`);
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                decision: {
+                  behavior: 'deny',
+                  message: `[succ guard] ${dangerResult.reason}`,
+                },
+              },
+            };
+          }
+        }
+
         // Query hook-rules
         const memories = await getHookRuleMemories();
         const rules = matchRules(memories, toolName, toolInput);
@@ -539,26 +563,6 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               decision: { behavior: 'allow' },
             },
           };
-        }
-
-        // Also check command safety for Bash permission requests
-        const command = (toolInput.command as string) || '';
-        if (command) {
-          const config = getConfig();
-          const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
-          const dangerResult = checkDangerous(command, safetyConfig);
-          if (dangerResult && dangerResult.mode === 'deny') {
-            ctx.log(`[hooks/permission] Safety guard denied: ${dangerResult.reason}`);
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PermissionRequest',
-                decision: {
-                  behavior: 'deny',
-                  message: `[succ guard] ${dangerResult.reason}`,
-                },
-              },
-            };
-          }
         }
 
         // 'ask' and 'inject' — pass-through to user dialog
@@ -597,7 +601,8 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               content,
               embedding,
               ['subagent', `agent:${agentType}`, 'auto-capture'],
-              'observation'
+              'auto-capture',
+              { type: 'observation' }
             );
             ctx.log(`[hooks/subagent-stop] Saved ${agentType} result (${toolOutput.length} chars)`);
           } catch (err) {
