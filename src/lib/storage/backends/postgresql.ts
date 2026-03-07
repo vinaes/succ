@@ -1096,7 +1096,7 @@ export class PostgresBackend {
     let docCount = 0;
     let memCount = 0;
 
-    // Rebuild documents
+    // Rebuild documents in batches with batch UPDATE
     let offset = 0;
     while (true) {
       const batch = await pool.query<{
@@ -1111,6 +1111,9 @@ export class PostgresBackend {
         [this.projectId, batchSize, offset]
       );
       if (batch.rows.length === 0) break;
+
+      const ids: number[] = [];
+      const tokenStrs: string[] = [];
       for (const row of batch.rows) {
         const tokens = row.file_path.startsWith('code:')
           ? tokenizeCodeWithAST(
@@ -1121,43 +1124,59 @@ export class PostgresBackend {
           : tokenizeDocs(row.content);
         const tokenStr = tokens.join(' ');
         if (tokenStr.length > 0) {
-          await pool.query(
-            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-            [tokenStr, row.id]
-          );
+          ids.push(row.id);
+          tokenStrs.push(tokenStr);
         }
         docCount++;
+      }
+      if (ids.length > 0) {
+        await pool.query(
+          `UPDATE documents SET search_vector = to_tsvector('simple', v.tokens)
+           FROM unnest($1::int[], $2::text[]) AS v(id, tokens)
+           WHERE documents.id = v.id`,
+          [ids, tokenStrs]
+        );
       }
       offset += batch.rows.length;
     }
 
-    // Rebuild memories (project + global)
+    // Rebuild memories in batches with batch UPDATE
+    const memBaseParams: unknown[] = [];
+    let memWhere: string;
+    if (this.projectId) {
+      memBaseParams.push(this.projectId);
+      memWhere = `(LOWER(project_id) = $1 OR project_id IS NULL)`;
+    } else {
+      memWhere = `project_id IS NULL`;
+    }
+    const limitIdx = memBaseParams.length + 1;
+    const offsetIdx = memBaseParams.length + 2;
     offset = 0;
     while (true) {
-      const memParams: unknown[] = [];
-      let memWhere: string;
-      if (this.projectId) {
-        memParams.push(this.projectId);
-        memWhere = `(LOWER(project_id) = $1 OR project_id IS NULL)`;
-      } else {
-        memWhere = `project_id IS NULL`;
-      }
-      memParams.push(batchSize, offset);
       const batch = await pool.query<{ id: number; content: string }>(
-        `SELECT id, content FROM memories WHERE ${memWhere} ORDER BY id LIMIT $${memParams.length - 1} OFFSET $${memParams.length}`,
-        memParams
+        `SELECT id, content FROM memories WHERE ${memWhere} ORDER BY id LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        [...memBaseParams, batchSize, offset]
       );
       if (batch.rows.length === 0) break;
+
+      const ids: number[] = [];
+      const tokenStrs: string[] = [];
       for (const row of batch.rows) {
         const tokens = tokenizeDocs(row.content);
         const tokenStr = tokens.join(' ');
         if (tokenStr.length > 0) {
-          await pool.query(
-            `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
-            [tokenStr, row.id]
-          );
+          ids.push(row.id);
+          tokenStrs.push(tokenStr);
         }
         memCount++;
+      }
+      if (ids.length > 0) {
+        await pool.query(
+          `UPDATE memories SET search_vector = to_tsvector('simple', v.tokens)
+           FROM unnest($1::int[], $2::text[]) AS v(id, tokens)
+           WHERE memories.id = v.id`,
+          [ids, tokenStrs]
+        );
       }
       offset += batch.rows.length;
     }
@@ -1317,11 +1336,6 @@ export class PostgresBackend {
     const pool = await this.getPool();
     const tsq = this.buildTsquery(query, false);
     const now = new Date().toISOString();
-
-    // Scope condition (project memories + global)
-    const scopeCond = this.projectId
-      ? `(LOWER(project_id) = $PID OR project_id IS NULL)`
-      : `project_id IS NULL`;
 
     // --- Text search ---
     const textResults: Array<{ docId: number; score: number }> = [];
