@@ -45,9 +45,9 @@ function detectAgent(stdinJson) {
     // Copilot: has separate bash/powershell fields in config, uses toolInput (camelCase)
     if ('toolInput' in stdinJson && 'hookEvent' in stdinJson) return 'copilot';
     // Cursor: uses event (camelCase), no hookSpecificOutput convention
-    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event[0] === stdinJson.event[0].toLowerCase()) return 'cursor';
+    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event.length > 0 && stdinJson.event[0] === stdinJson.event[0].toLowerCase()) return 'cursor';
     // Gemini: uses event (PascalCase)
-    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event[0] === stdinJson.event[0].toUpperCase()) return 'gemini';
+    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event.length > 0 && stdinJson.event[0] === stdinJson.event[0].toUpperCase()) return 'gemini';
   }
 
   return 'claude';

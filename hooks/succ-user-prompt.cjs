@@ -200,12 +200,13 @@ process.stdin.on('end', async () => {
                 log(succDir, `Suggesting ${suggestions.length} skill(s): ${suggestions.map(s => s.name).join(', ')}`);
 
                 // Output as additionalContext
-                const { json: sugJson } = adapter.formatOutput(agent, 'UserPromptSubmit', {
+                const { json: sugJson, exitCode: sugExitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
                   additionalContext: suggestionContext
                 });
                 if (sugJson && Object.keys(sugJson).length > 0) {
                   console.log(JSON.stringify(sugJson));
                 }
+                if (sugExitCode) process.exit(sugExitCode);
               } else {
                 // No suggestions, increment cooldown
                 fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');

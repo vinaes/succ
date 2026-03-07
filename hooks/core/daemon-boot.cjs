@@ -103,7 +103,8 @@ async function ensureDaemon(projectDir, logFn) {
   }
 
   if (logFn) logFn('[daemon] Not running, attempting start...');
-  startDaemon(projectDir, logFn);
+  const started = startDaemon(projectDir, logFn);
+  if (!started) return { port: null };
 
   // Poll for daemon to become ready (max 3 seconds = 30 × 100ms)
   for (let i = 0; i < 30; i++) {

@@ -13,6 +13,8 @@ import { getMemoriesByTag, saveMemory } from '../../lib/storage/index.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { matchRules } from '../../lib/hook-rules.js';
 import { checkDangerous, extractSafetyConfig } from '../../lib/command-safety.js';
+import { removeObservations } from '../../lib/session-observations.js';
+import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { getConfig } from '../../lib/config.js';
 import { spawnClaudeCLI } from '../../lib/llm.js';
 import { logWarn } from '../../lib/fault-logger.js';
@@ -716,6 +718,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
 
         if (ctx.sessionManager) {
           ctx.sessionManager.unregister(sessionId);
+          ctx.clearBriefingCache(sessionId);
+          removeBudget(sessionId);
+          removeObservations(sessionId);
+          flushBudgets();
           ctx.log(`[hooks/session-end] Unregistered session: ${sessionId}`);
         }
 

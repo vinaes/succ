@@ -67,6 +67,11 @@ test('detects gemini from stdin heuristic (PascalCase event)', () => {
   assert.strictEqual(adapter.detectAgent({ event: 'PreToolUse' }), 'gemini');
 });
 
+test('handles empty string event without throwing', () => {
+  delete process.env.SUCC_AGENT;
+  assert.strictEqual(adapter.detectAgent({ event: '' }), 'claude');
+});
+
 // ─── mapToolName ───
 
 console.log('\nmapToolName:');
