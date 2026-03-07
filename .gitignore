@@ -8,6 +8,9 @@ dist/
 .claude/
 .succ/
 
+# Generated at build time by writePluginManifest()
+.claude-plugin/plugin.json
+
 # MCP config (local — but tracked for Claude Code plugin support)
 # .mcp.json is required by the plugin system for MCP server auto-discovery
 !.mcp.json

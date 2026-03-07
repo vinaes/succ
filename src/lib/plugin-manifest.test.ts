@@ -35,6 +35,13 @@ describe('plugin-manifest', () => {
 describe('hooks/hooks.json', () => {
   const hooksJsonPath = path.join(ROOT, 'hooks', 'hooks.json');
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getHookEntry = (config: any, event: string) => {
+    const entry = config.hooks?.[event]?.[0]?.hooks?.[0];
+    if (!entry) throw new Error(`Missing hook entry for event: ${event}`);
+    return entry as { command: string; timeout: number };
+  };
+
   it('should be valid JSON', () => {
     const content = fs.readFileSync(hooksJsonPath, 'utf-8');
     expect(() => JSON.parse(content)).not.toThrow();
@@ -52,12 +59,11 @@ describe('hooks/hooks.json', () => {
         'UserPromptSubmit',
         'PostToolUse',
         'PreToolUse',
-      ])
+      ]),
     );
 
     for (const event of events) {
-      const command: string = config.hooks[event][0].hooks[0].command;
-      // Extract script filename from command
+      const { command } = getHookEntry(config, event);
       const match = command.match(/hooks\/(succ-[\w-]+\.cjs)/);
       expect(match).not.toBeNull();
       const scriptPath = path.join(ROOT, 'hooks', match![1]);
@@ -68,7 +74,7 @@ describe('hooks/hooks.json', () => {
   it('should use ${CLAUDE_PLUGIN_ROOT} in all command paths', () => {
     const config = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf-8'));
     for (const event of Object.keys(config.hooks)) {
-      const command: string = config.hooks[event][0].hooks[0].command;
+      const { command } = getHookEntry(config, event);
       expect(command).toContain('${CLAUDE_PLUGIN_ROOT}');
     }
   });
@@ -76,7 +82,7 @@ describe('hooks/hooks.json', () => {
   it('should have valid timeout values', () => {
     const config = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf-8'));
     for (const event of Object.keys(config.hooks)) {
-      const timeout: number = config.hooks[event][0].hooks[0].timeout;
+      const { timeout } = getHookEntry(config, event);
       expect(timeout).toBeGreaterThan(0);
       expect(timeout).toBeLessThanOrEqual(120);
     }

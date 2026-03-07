@@ -34,20 +34,31 @@ export interface PluginManifest {
 export function generatePluginManifest(packageRoot?: string): PluginManifest {
   const root = packageRoot ?? getPackageRoot();
   const pkgPath = path.join(root, 'package.json');
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch (err) {
+    throw new Error(
+      `Failed to read package.json at ${pkgPath}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
 
   return {
     name: 'succ',
-    version: pkg.version,
-    description: 'Persistent memory, semantic search, knowledge graph for AI coding assistants',
+    version: pkg.version as string,
+    description:
+      (pkg.description as string) ??
+      'Persistent memory, semantic search, knowledge graph for AI coding assistants',
     author: {
       name: 'vinaes',
       url: 'https://github.com/vinaes',
     },
     homepage: 'https://succ.ai',
     repository: 'https://github.com/vinaes/succ',
-    license: pkg.license ?? 'FSL-1.1-Apache-2.0',
-    keywords: ['memory', 'rag', 'semantic-search', 'mcp', 'knowledge-graph'],
+    license: (pkg.license as string) ?? 'FSL-1.1-Apache-2.0',
+    keywords:
+      (pkg.keywords as string[]) ??
+      ['memory', 'rag', 'semantic-search', 'mcp', 'knowledge-graph'],
   };
 }
 
