@@ -711,9 +711,7 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (!cwd || !succExists(cwd)) return {};
 
         const transcriptPath = input.transcript_path || '';
-        const sessionId = transcriptPath
-          ? path.basename(transcriptPath, '.jsonl')
-          : '';
+        const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : '';
         if (!sessionId) return {};
 
         if (ctx.sessionManager) {

@@ -111,7 +111,7 @@ const HOOK_EDITOR_CONFIGS: Record<string, HookEditorConfig> = {
       'pre-tool': 'preToolUse',
       'post-tool': 'postToolUse',
       'user-prompt': 'userPromptSubmitted',
-      'stop': 'afterAgentResponse',
+      stop: 'afterAgentResponse',
     },
     agentName: 'cursor',
   },
@@ -136,7 +136,7 @@ const HOOK_EDITOR_CONFIGS: Record<string, HookEditorConfig> = {
       'pre-tool': 'PreToolUse',
       'post-tool': 'PostToolUse',
       'user-prompt': 'UserPromptSubmit',
-      'stop': 'AfterAgent',
+      stop: 'AfterAgent',
     },
     agentName: 'gemini',
   },
@@ -149,7 +149,7 @@ const HOOK_SCRIPTS: Record<string, string> = {
   'pre-tool': 'succ-pre-tool.cjs',
   'post-tool': 'succ-post-tool.cjs',
   'user-prompt': 'succ-user-prompt.cjs',
-  'stop': 'succ-stop-reflection.cjs',
+  stop: 'succ-stop-reflection.cjs',
 };
 
 function getHooksDir(): string {
@@ -224,9 +224,7 @@ function installHooksForEditor(
       }
 
       // Remove existing succ entries
-      config.hooks[eventName] = config.hooks[eventName].filter(
-        (e: any) => !isSuccHookEntry(e)
-      );
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
 
       const entry: any = { command };
       // preToolUse needs a matcher to match all tools
@@ -253,9 +251,7 @@ function installHooksForEditor(
       }
 
       // Remove existing succ entries
-      config.hooks[eventName] = config.hooks[eventName].filter(
-        (e: any) => !isSuccHookEntry(e)
-      );
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
 
       config.hooks[eventName].push({
         type: 'command',
@@ -282,9 +278,7 @@ function installHooksForEditor(
       }
 
       // Remove existing succ entries
-      config.hooks[eventName] = config.hooks[eventName].filter(
-        (e: any) => !isSuccHookEntry(e)
-      );
+      config.hooks[eventName] = config.hooks[eventName].filter((e: any) => !isSuccHookEntry(e));
 
       config.hooks[eventName].push({
         command,
