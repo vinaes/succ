@@ -16,6 +16,7 @@
 
 import { getTopTokens, getTokenFrequencyStats, isPostgresBackend } from './storage/index.js';
 import { logInfo } from './fault-logger.js';
+// Intentionally SQLite-only — BPE has no PG implementation (guarded by isPostgresBackend())
 import {
   initBPESchema as initBPESchemaDb,
   saveBPEVocabToDb,

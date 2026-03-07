@@ -102,6 +102,20 @@ Benchmarks run on a typical development machine with ~400 memories and ~1000 doc
 
 ---
 
+## Search Capabilities
+
+All backends support hybrid search (text + vector), but the text search engine differs:
+
+| Backend | Text Search Engine | Vector Search | Hybrid Fusion |
+|---------|-------------------|---------------|---------------|
+| SQLite | In-memory BM25 (custom tokenizers) | sqlite-vec KNN | App-side RRF |
+| PostgreSQL | tsvector + GIN indexes | pgvector IVFFlat | App-side RRF |
+| Qdrant | Server-side BM25 (sparse vectors) | HNSW dense | Server-side RRF |
+
+All backends use the same code tokenizer (camelCase/snake_case splitting, AST symbol boost) and docs tokenizer (markdown stripping, Porter stemming). The tokenization happens application-side and is stored in PostgreSQL's `tsvector` columns via the `simple` text search configuration.
+
+---
+
 ## Qdrant Optimization
 
 succ automatically configures Qdrant with optimized settings:
@@ -202,6 +216,7 @@ succ migrate --import backup.json --dry-run
 
 **Pros:**
 - Production-ready with proper ACID guarantees
+- Full hybrid search via tsvector + GIN indexes
 - Horizontal scaling with read replicas
 - Better concurrent write performance
 - Rich SQL ecosystem (backups, monitoring, etc.)

@@ -3,13 +3,18 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 const SOURCE_ROOT = path.join(process.cwd(), 'src');
-const ALLOWED_RAW_SQL_FILES = new Set(['src/commands/benchmark-sqlite-vec.ts']);
+const ALLOWED_RAW_SQL_FILES = new Set([
+  'src/commands/benchmark-sqlite-vec.ts',
+  'src/lib/bpe.ts', // Intentionally SQLite-only — BPE has no PG implementation (guarded by isPostgresBackend())
+]);
 
 const PREPARE_SQL_RE =
   /\.prepare\(\s*(?:`[\s\S]*?\b(?:SELECT|INSERT|UPDATE|DELETE|PRAGMA|CREATE|ALTER)\b|['"][^'"`]*\b(?:SELECT|INSERT|UPDATE|DELETE|PRAGMA|CREATE|ALTER)\b)/m;
 const DB_CONNECTION_IMPORT_RE = /from\s+['"][^'"]*db\/connection\.js['"]/;
 const SQLITE_IMPORT_RE = /from\s+['"]better-sqlite3['"]/;
 const GET_DB_CALL_RE = /\bget(?:Global)?Db\s*\(/;
+// Catch imports from db/* submodules (e.g. ./db/bpe.js) that bypass the storage abstraction
+const DB_SUBMODULE_IMPORT_RE = /from\s+['"][^'"]*\/db\/(?!index\.js)[^'"]+['"]/;
 
 function collectSourceFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -58,6 +63,7 @@ describe('raw SQL audit outside storage abstraction', () => {
       if (DB_CONNECTION_IMPORT_RE.test(content)) reasons.push('imports db/connection.js directly');
       if (GET_DB_CALL_RE.test(content)) reasons.push('calls getDb/getGlobalDb directly');
       if (PREPARE_SQL_RE.test(content)) reasons.push('executes SQL via .prepare(...)');
+      if (DB_SUBMODULE_IMPORT_RE.test(content)) reasons.push('imports db/* submodule directly');
 
       if (reasons.length > 0) {
         violations.push(`${relPath}: ${reasons.join(', ')}`);

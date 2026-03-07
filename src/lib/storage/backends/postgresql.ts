@@ -27,8 +27,12 @@ import type {
   WebSearchHistoryRecord,
   WebSearchHistoryFilter,
   WebSearchHistorySummary,
+  HybridSearchResult,
+  HybridMemoryResult,
+  HybridGlobalMemoryResult,
 } from '../types.js';
 import { StorageError, ConfigError } from '../../errors.js';
+import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs, reciprocalRankFusion } from '../../bm25.js';
 
 import { logWarn } from '../../fault-logger.js';
 // Lazy-load pg to make it optional
@@ -254,6 +258,14 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
     );
 
+    // Migration: add search_vector column for full-text search (tsvector)
+    await pool.query(
+      'ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_search_vector ON documents USING GIN(search_vector)'
+    );
+
     // Metadata table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS metadata (
@@ -331,6 +343,14 @@ export class PostgresBackend {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id)');
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
+    );
+
+    // Migration: add search_vector column for full-text search (tsvector)
+    await pool.query(
+      'ALTER TABLE memories ADD COLUMN IF NOT EXISTS search_vector tsvector'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_search_vector ON memories USING GIN(search_vector)'
     );
 
     // Memory links table
@@ -688,7 +708,24 @@ export class PostgresBackend {
             doc.signature ?? null,
           ]
         );
-        ids.push(result.rows[0].id);
+        const docId = result.rows[0].id;
+        ids.push(docId);
+
+        // Compute and store search_vector for full-text search
+        const tokens = doc.filePath.startsWith('code:')
+          ? tokenizeCodeWithAST(
+              doc.content,
+              doc.signature ? tokenizeCode(doc.signature) : [],
+              doc.symbolName
+            )
+          : tokenizeDocs(doc.content);
+        const tokenStr = tokens.join(' ');
+        if (tokenStr.length > 0) {
+          await client.query(
+            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+            [tokenStr, docId]
+          );
+        }
       }
 
       await client.query('COMMIT');
@@ -744,7 +781,24 @@ export class PostgresBackend {
             doc.signature ?? null,
           ]
         );
-        ids.push(result.rows[0].id);
+        const docId = result.rows[0].id;
+        ids.push(docId);
+
+        // Compute and store search_vector for full-text search
+        const tokens = doc.filePath.startsWith('code:')
+          ? tokenizeCodeWithAST(
+              doc.content,
+              doc.signature ? tokenizeCode(doc.signature) : [],
+              doc.symbolName
+            )
+          : tokenizeDocs(doc.content);
+        const tokenStr = tokens.join(' ');
+        if (tokenStr.length > 0) {
+          await client.query(
+            `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+            [tokenStr, docId]
+          );
+        }
 
         if (!processedFiles.has(doc.filePath)) {
           await client.query(
@@ -1004,6 +1058,448 @@ export class PostgresBackend {
   }
 
   // ============================================================================
+  // Full-Text Search Vector Updates
+  // ============================================================================
+
+  /**
+   * Update the search_vector for a single document (called from BM25 dispatcher).
+   * tokens: pre-tokenized string joined with spaces, e.g. "auth user login".
+   */
+  async updateDocumentSearchVector(docId: number, tokens: string): Promise<void> {
+    if (!tokens || tokens.trim().length === 0) return;
+    const pool = await this.getPool();
+    await pool.query(
+      `UPDATE documents SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+      [tokens, docId]
+    );
+  }
+
+  /**
+   * Update the search_vector for a single memory (called from BM25 dispatcher).
+   */
+  async updateMemorySearchVector(memoryId: number, tokens: string): Promise<void> {
+    if (!tokens || tokens.trim().length === 0) return;
+    const pool = await this.getPool();
+    await pool.query(
+      `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+      [tokens, memoryId]
+    );
+  }
+
+  // ============================================================================
+  // Hybrid Search (tsvector + pgvector + RRF)
+  // ============================================================================
+
+  /**
+   * Build a tsquery string from tokenized query terms using OR semantics.
+   * Returns null if no valid tokens (caller should skip text search).
+   */
+  private buildTsquery(query: string, isCode: boolean): string | null {
+    const tokens = isCode ? tokenizeCode(query) : tokenizeDocs(query);
+    const valid = tokens.filter((t) => t.length > 0);
+    if (valid.length === 0) return null;
+    // De-duplicate and join with OR operator
+    return [...new Set(valid)].join(' | ');
+  }
+
+  /**
+   * Hybrid search over documents (code + brain docs).
+   * Combines tsvector full-text search with pgvector cosine similarity via RRF.
+   */
+  async hybridSearchDocuments(
+    query: string,
+    queryEmbedding: number[],
+    limit: number,
+    threshold: number,
+    options?: { codeOnly?: boolean; docsOnly?: boolean; symbolType?: string }
+  ): Promise<HybridSearchResult[]> {
+    if (!this.projectId) {
+      throw new StorageError('Project ID must be set before searching documents');
+    }
+    const pool = await this.getPool();
+    const isCode = !!options?.codeOnly;
+
+    // Build tsquery for text search
+    const tsq = this.buildTsquery(query, isCode);
+
+    // --- Text search ---
+    const textResults: Array<{ docId: number; score: number }> = [];
+    if (tsq) {
+      let textWhere = `WHERE LOWER(project_id) = $2 AND search_vector @@ to_tsquery('simple', $1)`;
+      const textParams: unknown[] = [tsq, this.projectId];
+      if (options?.codeOnly) textWhere += ` AND file_path LIKE 'code:%'`;
+      else if (options?.docsOnly) textWhere += ` AND file_path NOT LIKE 'code:%'`;
+      if (options?.symbolType) {
+        textParams.push(options.symbolType);
+        textWhere += ` AND symbol_type = $${textParams.length}`;
+      }
+      textParams.push(limit * 3); // overfetch for RRF
+      const textQ = `
+        SELECT id, ts_rank_cd(search_vector, to_tsquery('simple', $1)) as score
+        FROM documents
+        ${textWhere}
+        ORDER BY score DESC
+        LIMIT $${textParams.length}
+      `;
+      try {
+        const r = await pool.query<{ id: number; score: string }>(textQ, textParams);
+        for (const row of r.rows) {
+          textResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+        }
+      } catch (error) {
+        logWarn('postgresql', 'hybridSearchDocuments text search failed, using vector-only', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // --- Vector search ---
+    const vectorResults: Array<{ docId: number; score: number }> = [];
+    {
+      let vecWhere = `WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3`;
+      const vecParams: unknown[] = [toPgVector(queryEmbedding), this.projectId, threshold];
+      if (options?.codeOnly) vecWhere += ` AND file_path LIKE 'code:%'`;
+      else if (options?.docsOnly) vecWhere += ` AND file_path NOT LIKE 'code:%'`;
+      if (options?.symbolType) {
+        vecParams.push(options.symbolType);
+        vecWhere += ` AND symbol_type = $${vecParams.length}`;
+      }
+      vecParams.push(limit * 3); // overfetch for RRF
+      const vecQ = `
+        SELECT id, 1 - (embedding <=> $1) as score
+        FROM documents
+        ${vecWhere}
+        ORDER BY embedding <=> $1
+        LIMIT $${vecParams.length}
+      `;
+      const r = await pool.query<{ id: number; score: string }>(vecQ, vecParams);
+      for (const row of r.rows) {
+        vectorResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+      }
+    }
+
+    // --- RRF fusion ---
+    const fused = reciprocalRankFusion(textResults, vectorResults, 0.5, limit);
+    if (fused.length === 0) return [];
+
+    const fusedIds = fused.map((r) => r.docId);
+    const fusedScoreMap = new Map(fused.map((r) => [r.docId, r.score]));
+    const textScoreMap = new Map(textResults.map((r) => [r.docId, r.score]));
+    const vecScoreMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+    // Fetch full rows for fused IDs
+    const rows = await pool.query<{
+      id: number;
+      file_path: string;
+      content: string;
+      start_line: number;
+      end_line: number;
+      symbol_name: string | null;
+      symbol_type: string | null;
+      signature: string | null;
+    }>(
+      `SELECT id, file_path, content, start_line, end_line, symbol_name, symbol_type, signature
+       FROM documents WHERE id = ANY($1)`,
+      [fusedIds]
+    );
+
+    // Map rows by id for ordering
+    const rowMap = new Map(rows.rows.map((r) => [r.id, r]));
+
+    const results: HybridSearchResult[] = [];
+    for (const { docId } of fused) {
+      const row = rowMap.get(docId);
+      if (!row) continue;
+      results.push({
+        file_path: row.file_path,
+        content: row.content,
+        start_line: row.start_line,
+        end_line: row.end_line,
+        similarity: fusedScoreMap.get(docId) ?? 0,
+        bm25Score: textScoreMap.get(docId) ?? 0,
+        vectorScore: vecScoreMap.get(docId) ?? 0,
+        symbol_name: row.symbol_name,
+        symbol_type: row.symbol_type,
+        signature: row.signature,
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Hybrid search over project memories.
+   */
+  async hybridSearchMemories(
+    query: string,
+    queryEmbedding: number[],
+    limit: number,
+    threshold: number
+  ): Promise<HybridMemoryResult[]> {
+    const pool = await this.getPool();
+    const tsq = this.buildTsquery(query, false);
+    const now = new Date().toISOString();
+
+    // Scope condition (project memories + global)
+    const scopeCond = this.projectId
+      ? `(LOWER(project_id) = $PID OR project_id IS NULL)`
+      : `project_id IS NULL`;
+
+    // --- Text search ---
+    const textResults: Array<{ docId: number; score: number }> = [];
+    if (tsq) {
+      const textParams: unknown[] = [tsq];
+      let paramIdx = 2;
+      let whereCond = `WHERE search_vector @@ to_tsquery('simple', $1) AND invalidated_by IS NULL`;
+      whereCond += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
+      textParams.push(now);
+      paramIdx++;
+      whereCond += ` AND (valid_until IS NULL OR valid_until > $${paramIdx})`;
+      textParams.push(now);
+      paramIdx++;
+      if (this.projectId) {
+        whereCond += ` AND (LOWER(project_id) = $${paramIdx} OR project_id IS NULL)`;
+        textParams.push(this.projectId);
+        paramIdx++;
+      } else {
+        whereCond += ` AND project_id IS NULL`;
+      }
+      textParams.push(limit * 3);
+      const textQ = `
+        SELECT id, ts_rank_cd(search_vector, to_tsquery('simple', $1)) as score
+        FROM memories
+        ${whereCond}
+        ORDER BY score DESC
+        LIMIT $${textParams.length}
+      `;
+      try {
+        const r = await pool.query<{ id: number; score: string }>(textQ, textParams);
+        for (const row of r.rows) {
+          textResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+        }
+      } catch (error) {
+        logWarn('postgresql', 'hybridSearchMemories text search failed, using vector-only', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // --- Vector search ---
+    const vectorResults: Array<{ docId: number; score: number }> = [];
+    {
+      const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
+      let paramIdx = 3;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND invalidated_by IS NULL`;
+      whereVec += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
+      vecParams.push(now);
+      paramIdx++;
+      whereVec += ` AND (valid_until IS NULL OR valid_until > $${paramIdx})`;
+      vecParams.push(now);
+      paramIdx++;
+      if (this.projectId) {
+        whereVec += ` AND (LOWER(project_id) = $${paramIdx} OR project_id IS NULL)`;
+        vecParams.push(this.projectId);
+        paramIdx++;
+      } else {
+        whereVec += ` AND project_id IS NULL`;
+      }
+      vecParams.push(limit * 3);
+      const vecQ = `
+        SELECT id, 1 - (embedding <=> $1) as score
+        FROM memories
+        ${whereVec}
+        ORDER BY embedding <=> $1
+        LIMIT $${vecParams.length}
+      `;
+      const r = await pool.query<{ id: number; score: string }>(vecQ, vecParams);
+      for (const row of r.rows) {
+        vectorResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+      }
+    }
+
+    // --- RRF fusion ---
+    const fused = reciprocalRankFusion(textResults, vectorResults, 0.5, limit);
+    if (fused.length === 0) return [];
+
+    const fusedIds = fused.map((r) => r.docId);
+    const fusedScoreMap = new Map(fused.map((r) => [r.docId, r.score]));
+    const textScoreMap = new Map(textResults.map((r) => [r.docId, r.score]));
+    const vecScoreMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+    // Fetch full rows
+    const rows = await pool.query(
+      `SELECT id, content, tags, source, type, created_at,
+              access_count, last_accessed, valid_from, valid_until
+       FROM memories WHERE id = ANY($1)`,
+      [fusedIds]
+    );
+    const rowMap = new Map(rows.rows.map((r: { id: number }) => [r.id, r]));
+
+    const results: HybridMemoryResult[] = [];
+    for (const { docId } of fused) {
+      const row = rowMap.get(docId) as
+        | {
+            id: number;
+            content: string;
+            tags: string[] | string | null;
+            source: string | null;
+            type: string | null;
+            created_at: string;
+            access_count: number | null;
+            last_accessed: string | null;
+            valid_from: string | null;
+            valid_until: string | null;
+          }
+        | undefined;
+      if (!row) continue;
+      results.push({
+        id: row.id,
+        content: row.content,
+        tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+        source: row.source,
+        type: (row.type ?? null) as import('../types.js').MemoryType | null,
+        created_at: row.created_at,
+        similarity: fusedScoreMap.get(docId) ?? 0,
+        bm25Score: textScoreMap.get(docId) ?? 0,
+        vectorScore: vecScoreMap.get(docId) ?? 0,
+        access_count: row.access_count ?? 0,
+        last_accessed: row.last_accessed,
+        valid_from: row.valid_from,
+        valid_until: row.valid_until,
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Hybrid search over global memories (project_id IS NULL).
+   */
+  async hybridSearchGlobalMemories(
+    query: string,
+    queryEmbedding: number[],
+    limit: number,
+    threshold: number,
+    tags?: string[],
+    since?: Date
+  ): Promise<HybridGlobalMemoryResult[]> {
+    const pool = await this.getPool();
+    const tsq = this.buildTsquery(query, false);
+
+    // --- Text search ---
+    const textResults: Array<{ docId: number; score: number }> = [];
+    if (tsq) {
+      const textParams: unknown[] = [tsq];
+      let paramIdx = 2;
+      let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL`;
+      if (since) {
+        whereText += ` AND created_at >= $${paramIdx}`;
+        textParams.push(since.toISOString());
+        paramIdx++;
+      }
+      textParams.push(limit * 3);
+      const textQ = `
+        SELECT id, ts_rank_cd(search_vector, to_tsquery('simple', $1)) as score
+        FROM memories
+        ${whereText}
+        ORDER BY score DESC
+        LIMIT $${textParams.length}
+      `;
+      try {
+        const r = await pool.query<{ id: number; score: string }>(textQ, textParams);
+        for (const row of r.rows) {
+          textResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+        }
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          'hybridSearchGlobalMemories text search failed, using vector-only',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+    }
+
+    // --- Vector search ---
+    const vectorResults: Array<{ docId: number; score: number }> = [];
+    {
+      const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
+      let paramIdx = 3;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL`;
+      if (since) {
+        whereVec += ` AND created_at >= $${paramIdx}`;
+        vecParams.push(since.toISOString());
+        paramIdx++;
+      }
+      vecParams.push(limit * 3);
+      const vecQ = `
+        SELECT id, 1 - (embedding <=> $1) as score
+        FROM memories
+        ${whereVec}
+        ORDER BY embedding <=> $1
+        LIMIT $${vecParams.length}
+      `;
+      const r = await pool.query<{ id: number; score: string }>(vecQ, vecParams);
+      for (const row of r.rows) {
+        vectorResults.push({ docId: row.id, score: parseFloat(String(row.score)) });
+      }
+    }
+
+    // --- RRF fusion ---
+    const fused = reciprocalRankFusion(textResults, vectorResults, 0.5, limit);
+    if (fused.length === 0) return [];
+
+    const fusedIds = fused.map((r) => r.docId);
+    const fusedScoreMap = new Map(fused.map((r) => [r.docId, r.score]));
+    const textScoreMap = new Map(textResults.map((r) => [r.docId, r.score]));
+    const vecScoreMap = new Map(vectorResults.map((r) => [r.docId, r.score]));
+
+    // Fetch full rows
+    const rows = await pool.query(
+      `SELECT id, project_id, content, tags, source, type, created_at
+       FROM memories WHERE id = ANY($1)`,
+      [fusedIds]
+    );
+    const rowMap = new Map(rows.rows.map((r: { id: number }) => [r.id, r]));
+
+    let results: HybridGlobalMemoryResult[] = [];
+    for (const { docId } of fused) {
+      const row = rowMap.get(docId) as
+        | {
+            id: number;
+            project_id: string | null;
+            content: string;
+            tags: string[] | string | null;
+            source: string | null;
+            type: string | null;
+            created_at: string;
+          }
+        | undefined;
+      if (!row) continue;
+      results.push({
+        id: row.id,
+        content: row.content,
+        tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
+        source: row.source,
+        project: row.project_id,
+        type: (row.type ?? null) as import('../types.js').MemoryType | null,
+        created_at: row.created_at,
+        similarity: fusedScoreMap.get(docId) ?? 0,
+        bm25Score: textScoreMap.get(docId) ?? 0,
+        vectorScore: vecScoreMap.get(docId) ?? 0,
+      });
+    }
+
+    // Tag filter (post-filter in JS, consistent with searchGlobalMemories)
+    if (tags && tags.length > 0) {
+      results = results.filter((m) =>
+        tags.some((t) => m.tags.some((rt: string) => rt.toLowerCase().includes(t.toLowerCase())))
+      );
+    }
+
+    return results;
+  }
+
+  // ============================================================================
   // File Hashes
   // ============================================================================
 
@@ -1112,7 +1608,19 @@ export class PostgresBackend {
       ]
     );
 
-    return result.rows[0].id;
+    const memoryId = result.rows[0].id;
+
+    // Compute and store search_vector for full-text search
+    const tokens = tokenizeDocs(content);
+    const tokenStr = tokens.join(' ');
+    if (tokenStr.length > 0) {
+      await pool.query(
+        `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+        [tokenStr, memoryId]
+      );
+    }
+
+    return memoryId;
   }
 
   async searchMemories(
@@ -2874,10 +3382,22 @@ export class PostgresBackend {
           ]
         );
 
+        const memId = insertResult.rows[0].id;
+
+        // Compute and store search_vector for full-text search
+        const memTokens = tokenizeDocs(memory.content);
+        const memTokenStr = memTokens.join(' ');
+        if (memTokenStr.length > 0) {
+          await client.query(
+            `UPDATE memories SET search_vector = to_tsvector('simple', $1) WHERE id = $2`,
+            [memTokenStr, memId]
+          );
+        }
+
         results.push({
           index: i,
           isDuplicate: false,
-          id: insertResult.rows[0].id,
+          id: memId,
           reason: 'saved',
         });
         saved++;
