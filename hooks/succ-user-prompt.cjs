@@ -102,9 +102,10 @@ process.stdin.on('end', async () => {
     }
 
     // Notify daemon of user activity
+    let daemonAlive = false;
     if (daemonPort && sessionId) {
       try {
-        await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
+        const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -115,8 +116,9 @@ process.stdin.on('end', async () => {
           }),
           signal: AbortSignal.timeout(2000),
         });
+        if (res.ok) daemonAlive = true;
       } catch {
-        // intentionally empty
+        // intentionally empty — daemon not reachable
       }
     }
 
@@ -124,7 +126,7 @@ process.stdin.on('end', async () => {
     // LLM-powered skill suggestions based on user prompt.
     // Uses extractKeywords → BM25 search → LLM ranking.
     // Respects cooldown to avoid suggesting on every prompt.
-    if (daemonPort && !isServiceSession) {
+    if (daemonAlive && !isServiceSession) {
       const prompt = hookInput.prompt || hookInput.message || '';
 
       // Load config to check if auto_suggest is enabled
@@ -179,7 +181,7 @@ process.stdin.on('end', async () => {
 
             if (response.ok) {
               const data = await response.json();
-              const suggestions = data.suggestions || [];
+              const suggestions = data.skills || [];
 
               if (suggestions.length > 0) {
                 // Reset cooldown counter
