@@ -1126,6 +1126,16 @@ export class PostgresBackend {
     let memCount = 0;
 
     // Rebuild documents in batches with batch UPDATE
+    const docBaseParams: unknown[] = [];
+    let docWhere: string;
+    if (this.projectId) {
+      docBaseParams.push(this.projectId);
+      docWhere = `LOWER(project_id) = $1`;
+    } else {
+      docWhere = `TRUE`;
+    }
+    const docLimitIdx = docBaseParams.length + 1;
+    const docOffsetIdx = docBaseParams.length + 2;
     let offset = 0;
     while (true) {
       const batch = await pool.query<{
@@ -1136,8 +1146,8 @@ export class PostgresBackend {
         signature: string | null;
       }>(
         `SELECT id, file_path, content, symbol_name, signature FROM documents
-         WHERE LOWER(project_id) = $1 ORDER BY id LIMIT $2 OFFSET $3`,
-        [this.projectId, batchSize, offset]
+         WHERE ${docWhere} ORDER BY id LIMIT $${docLimitIdx} OFFSET $${docOffsetIdx}`,
+        [...docBaseParams, batchSize, offset]
       );
       if (batch.rows.length === 0) break;
 
