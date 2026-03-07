@@ -16,7 +16,10 @@ const PORT_RANGE_SIZE = 10000;
  * Same project always gets the same port (unless config overrides it).
  */
 export function getStablePort(projectDir: string): number {
-  const normalized = projectDir.toLowerCase().replace(/\\/g, '/');
+  const normalized = (process.platform === 'win32' ? projectDir.toLowerCase() : projectDir).replace(
+    /\\/g,
+    '/'
+  );
   const hash = createHash('sha256').update(normalized).digest();
   return PORT_RANGE_START + (hash.readUInt16BE(0) % PORT_RANGE_SIZE);
 }

@@ -9,6 +9,7 @@ import isInstalledGlobally from 'is-installed-globally';
 import {
   getProjectRoot,
   getSuccDir,
+  getConfig,
   isOnboardingCompleted,
   markOnboardingCompleted,
 } from '../lib/config.js';
@@ -383,19 +384,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
     const claudeVersion = getClaudeCodeVersion();
     const useHttp = supportsHttpHooks(claudeVersion);
 
-    // Compute stable port for HTTP hook URLs
-    const configData: ConfigData = {};
-    try {
-      const configPath = path.join(succDir, 'config.json');
-      if (fs.existsSync(configPath)) {
-        Object.assign(configData, JSON.parse(fs.readFileSync(configPath, 'utf8')));
-      }
-    } catch {
-      /* ignore */
-    }
-    const hookPort =
-      ((configData.daemon as Record<string, unknown> | undefined)?.port as number | undefined) ??
-      getStablePort(projectRoot);
+    // Compute stable port for HTTP hook URLs (getConfig merges global + project config)
+    const mergedConfig = getConfig();
+    const hookPort = mergedConfig.daemon?.port ?? getStablePort(projectRoot);
     const baseUrl = `http://127.0.0.1:${hookPort}/api/hooks`;
 
     if (verbose) {

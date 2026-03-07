@@ -828,7 +828,7 @@ The memory `type` determines what happens when the rule matches:
 
 Create rules that skip the permission dialog for trusted operations:
 
-```
+```bash
 succ_remember content="Allow running npm test" tags=["hook-rule","tool:Bash","match:^npm\\s+test"] type="allow"
 succ_remember content="Allow reading any file" tags=["hook-rule","tool:Read"] type="allow"
 succ_remember content="Allow editing test files" tags=["hook-rule","tool:Edit","match:\\.test\\."] type="allow"

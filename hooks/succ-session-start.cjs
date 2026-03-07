@@ -502,7 +502,8 @@ Co-Authored-By order (succ always LAST):
     }
 
     // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
-    if (daemonPort && process.env.CLAUDE_ENV_FILE) {
+    // Only write if daemon is actually alive (avoid stale port from old .tmp/daemon.port)
+    if (daemonPort && process.env.CLAUDE_ENV_FILE && (await checkDaemon(daemonPort))) {
       try {
         fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
           `export SUCC_DAEMON_PORT=${daemonPort}\n`);

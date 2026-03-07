@@ -99,7 +99,7 @@ Both use the same `succ_remember` convention:
 | Other | Inject as context | Show permission dialog |
 
 **Examples:**
-```
+```bash
 # Auto-approve npm test (PermissionRequest skips dialog)
 succ_remember content="Allow npm test" tags=["hook-rule","tool:Bash","match:^npm\\s+test"] type="allow"
 
