@@ -633,12 +633,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const projectName = path.basename(cwd);
         const contextParts: string[] = [];
 
-        // Load config
-        const config = getConfig();
-
         // Commit format (if enabled)
-        if (config.includeCoAuthoredBy !== false) {
-          contextParts.push(buildCommitContext());
+        const commitContext = buildCommitContext();
+        if (commitContext) {
+          contextParts.push(commitContext);
         }
 
         // Soul document

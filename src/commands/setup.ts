@@ -168,10 +168,10 @@ function getHooksDir(): string {
 function buildHookCommand(agentName: string, scriptPath: string): string {
   const escaped = scriptPath.replace(/\\/g, '/');
   if (process.platform === 'win32') {
-    // Windows: use cmd /c with set for env var
-    return `cmd /c "set SUCC_AGENT=${agentName} && node "${escaped}""`;
+    // Windows: use cmd /c with set for env var (inner quotes escaped)
+    return `cmd /c "set SUCC_AGENT=${agentName} && node \\"${escaped}\\""`;
   }
-  return `SUCC_AGENT=${agentName} node "${escaped}"`;
+  return `SUCC_AGENT=${agentName} node '${escaped}'`;
 }
 
 /** Check if a hook entry is a succ hook */
@@ -244,7 +244,8 @@ function installHooksForEditor(
       if (!scriptFile) continue;
       const scriptPath = path.join(hooksDir, scriptFile);
       const bashCmd = buildHookCommand(hookConfig.agentName, scriptPath);
-      const psCmd = `$env:SUCC_AGENT='copilot'; node "${scriptPath.replace(/\\/g, '/')}"`;
+      const psPath = scriptPath.replace(/\\/g, '/').replace(/`/g, '``').replace(/\$/g, '`$');
+      const psCmd = `$env:SUCC_AGENT='copilot'; node "${psPath}"`;
 
       if (!Array.isArray(config.hooks[eventName])) {
         config.hooks[eventName] = [];

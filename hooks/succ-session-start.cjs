@@ -581,7 +581,7 @@ Co-Authored-By order (succ always LAST):
         console.log(JSON.stringify(json));
       }
       log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
-      if (exitCode) process.exit(exitCode);
+      if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
     } else {
       log(succDir, `No context parts to output`);
     }
