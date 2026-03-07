@@ -120,6 +120,17 @@ function succExists(cwd: string): boolean {
   }
 }
 
+/** Strip Claude-specific sections (succ-agents, pre-commit-review, subagent refs) for non-Claude agents. */
+function stripClaudeOnlySections(context: string): string {
+  let adapted = context;
+  adapted = adapted.replace(/<succ-agents[\s\S]*?<\/succ-agents>/g, '');
+  adapted = adapted.replace(/.*succ-diff-reviewer.*\n?/g, '');
+  adapted = adapted.replace(/.*subagent_type=.*\n?/g, '');
+  adapted = adapted.replace(/<pre-commit-review>[\s\S]*?<\/pre-commit-review>/g, '');
+  adapted = adapted.replace(/\n{3,}/g, '\n\n');
+  return adapted.trim();
+}
+
 function buildCommitContext(): string {
   const config = getConfig();
   const parts: string[] = [];
@@ -625,11 +636,14 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
     // ═══════════════════════════════════════════════════════════════
     // SessionStart — context assembly for HTTP hook mode
     // ═══════════════════════════════════════════════════════════════
-    'POST /api/hooks/session-start': async (body) => {
+    'POST /api/hooks/session-start': async (body, searchParams) => {
       try {
         const input = parseRequestBody(HookBaseSchema, body);
         const cwd = fixWindowsPath(input.cwd || '');
         if (!cwd || !succExists(cwd)) return {};
+
+        // Detect requesting agent (default: claude)
+        const agent = (searchParams.get('agent') || 'claude').toLowerCase();
 
         const succDir = path.join(cwd, '.succ');
         const projectName = path.basename(cwd);
@@ -688,7 +702,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
 
         if (contextParts.length === 0) return {};
 
-        const additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+        let additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+        // Strip Claude-only sections for non-Claude agents
+        if (agent !== 'claude') {
+          additionalContext = stripClaudeOnlySections(additionalContext);
+        }
         return {
           hookSpecificOutput: {
             hookEventName: 'SessionStart',
@@ -719,11 +737,13 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (ctx.sessionManager) {
           ctx.sessionManager.unregister(sessionId);
           ctx.clearBriefingCache(sessionId);
-          removeBudget(sessionId);
-          removeObservations(sessionId);
-          flushBudgets();
           ctx.log(`[hooks/session-end] Unregistered session: ${sessionId}`);
         }
+
+        // Cleanup independent of sessionManager
+        removeBudget(sessionId);
+        removeObservations(sessionId);
+        flushBudgets();
 
         return {};
       } catch {
