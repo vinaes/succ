@@ -67,8 +67,11 @@ export type { VectorStore } from './vector/interface.js';
 
 export function getStorageConfig() {
   const config = getConfig();
+  // Normalize 'postgres' → 'postgresql' for backward compatibility
+  let backend = config.storage?.backend ?? 'sqlite';
+  if (backend === 'postgres') backend = 'postgresql';
   return {
-    backend: config.storage?.backend ?? 'sqlite',
+    backend,
     vector: config.storage?.vector ?? 'builtin',
     sqlite: config.storage?.sqlite ?? {},
     postgresql: config.storage?.postgresql ?? {},

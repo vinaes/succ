@@ -301,7 +301,8 @@ export interface CompactBriefingConfig {
 
 export interface DaemonConfig {
   enabled?: boolean; // Enable daemon (default: true)
-  port_range_start?: number; // Starting port to try (default: 37842)
+  port?: number; // Fixed daemon port. Default: deterministic hash of project path (range 18000-27999)
+  port_range_start?: number; // Starting port for fallback scan (default: 37842)
   watch?: {
     auto_start?: boolean; // Auto-start watch service (default: false)
     patterns?: string[]; // Patterns to watch (default: ['**/*.md'])
