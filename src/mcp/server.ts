@@ -276,7 +276,7 @@ async function main() {
   process.stdin.on('data', () => resetIdleTimer());
   resetIdleTimer();
 
-  logInfo('mcp', `Server started (project: ${getProjectRoot()}, cwd: ${process.cwd()})`);
+  logInfo('mcp', `Server started (project: ${projectRoot}, cwd: ${process.cwd()})`);
 }
 
 main().catch(async (error) => {

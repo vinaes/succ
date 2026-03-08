@@ -75,7 +75,7 @@ To auto-initialize `.succ/` in new projects on first session, create `~/.succ/co
 { "auto_init": true }
 ```
 
-Otherwise, run `succ init` manually per project.
+Otherwise, run `succ init --plugin` manually per project (the `--plugin` flag skips writing `.claude/settings.json` since the plugin handles hooks automatically).
 
 ## Features
 

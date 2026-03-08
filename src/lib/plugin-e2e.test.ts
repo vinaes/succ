@@ -229,7 +229,7 @@ describe('Hook scripts E2E', () => {
     expect(exitCode).toBe(0);
   }, 15_000);
 
-  it('session-start should emit a JSON payload when .succ/ exists', async () => {
+  it('session-start should exit 0 without crashing when .succ/ exists', async () => {
     // Create a minimal .succ dir with config
     const projectDir = path.join(tmpDir, 'hook-project');
     const succDir = path.join(projectDir, '.succ');
