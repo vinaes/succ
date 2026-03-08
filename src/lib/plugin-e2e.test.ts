@@ -14,7 +14,11 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
-const ROOT = path.resolve(import.meta.dirname, '../..');
+// import.meta.dirname requires Node 20.11+; fileURLToPath fallback for earlier 20.x
+const ROOT = path.resolve(
+  import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
+  '../..'
+);
 const MCP_SERVER = path.join(ROOT, 'dist', 'mcp-server.js');
 const NODE = process.execPath;
 const NODE_ARGS = ['--no-warnings', '--no-deprecation'];
@@ -221,12 +225,26 @@ describe('Hook scripts E2E', () => {
   }, 15_000);
 
   it('pre-tool should exit 0 for safe commands', async () => {
-    const { exitCode } = await runHook('succ-pre-tool.cjs', {
-      ...claudeHookInput(tmpDir),
+    const projectDir = path.join(tmpDir, 'hook-safe');
+    const succDir = path.join(projectDir, '.succ');
+    fs.mkdirSync(succDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(succDir, 'config.json'),
+      JSON.stringify({ storage: { backend: 'sqlite', vector: 'builtin' } })
+    );
+
+    const { stdout, exitCode } = await runHook('succ-pre-tool.cjs', {
+      ...claudeHookInput(projectDir),
       tool_name: 'Bash',
       tool_input: { command: 'echo hello' },
     });
     expect(exitCode).toBe(0);
+    // Should not emit a deny/permission decision for safe commands
+    const trimmed = stdout.trim();
+    if (trimmed && trimmed.endsWith('}')) {
+      const output = JSON.parse(trimmed);
+      expect(output.permissionDecision).toBeUndefined();
+    }
   }, 15_000);
 
   it('session-start should exit 0 without crashing when .succ/ exists', async () => {

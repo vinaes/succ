@@ -3,7 +3,7 @@ name: succ-memory
 description: Persistent memory operations — save decisions, recall past context, search project knowledge. Use when asked to remember something, recall past work, or search project knowledge base.
 ---
 
-You have access to succ's persistent memory system via MCP tools. ALWAYS pass `project_path` to every succ_* tool call.
+You have access to succ's persistent memory system via MCP tools. ALWAYS pass `project_path` to every succ_* tool call — it must be the project root that contains `.succ/` (not a subdirectory).
 
 ## Save to memory
 
