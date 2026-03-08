@@ -334,6 +334,27 @@ export async function init(options: InitOptions = {}): Promise<void> {
         }
       }
     }
+
+    // Copy hooks/core/ shared modules (adapter, daemon-boot)
+    const coreSrcDir = path.join(SUCC_PACKAGE_DIR, 'hooks', 'core');
+    const coreDestDir = path.join(succDir, 'hooks', 'core');
+    if (fs.existsSync(coreSrcDir)) {
+      if (!fs.existsSync(coreDestDir)) {
+        fs.mkdirSync(coreDestDir, { recursive: true });
+      }
+      const coreFiles = fs.readdirSync(coreSrcDir).filter((f) => f.endsWith('.cjs'));
+      for (const coreFile of coreFiles) {
+        const dest = path.join(coreDestDir, coreFile);
+        if (!fs.existsSync(dest) || options.force) {
+          fs.copyFileSync(path.join(coreSrcDir, coreFile), dest);
+          log(
+            options.force && fs.existsSync(dest)
+              ? `Updated hooks/core/${coreFile}`
+              : `Created hooks/core/${coreFile}`
+          );
+        }
+      }
+    }
   }
 
   // Create or merge settings.json in .claude/ (Claude Code looks for it there)

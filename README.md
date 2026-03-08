@@ -120,6 +120,8 @@ succ init --plugin
 - **Auto-Hooks** — Context injection at session start/end
 - **Idle Reflections** — AI generates insights during idle time
 - **Session Context** — Auto-generated briefings for next session
+- **Security Hardening** — 3-tier prompt injection detection (structural + multilingual regex + embedding semantic), content sanitization for 13 entry points, Bell-LaPadula IFC with compartments, file operation guards, exfiltration detection, post-tool secret scanning
+- **LLM Guardrails** — Optional Tier 3 LLM classification (Llama Guard, safeguard-20b) for sensitivity, code policy (OWASP SC2-SC7), and injection detection with LRU caching
 - **Sensitive Filter** — Detect and redact PII, API keys, secrets
 - **Quality Scoring** — Local ONNX classification to filter noise
 - **Token Savings** — Track RAG efficiency vs full files
@@ -612,6 +614,7 @@ your-project/
 - [Ollama Setup](docs/ollama.md) — Recommended local LLM setup
 - [llama.cpp GPU](docs/llama-cpp.md) — GPU-accelerated embeddings
 - [MCP Integration](docs/mcp.md) — Claude Code tools and resources
+- [Security Hardening](docs/security.md) — Injection detection, IFC, guardrails, content sanitization
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and fixes
 - [Development](docs/development.md) — Contributing and testing
 

@@ -15,10 +15,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logError, logWarn, logInfo } from './fault-logger.js';
 import { getAllSkills as getAllSkillsDb, upsertSkill, trackSkillUsageDb } from './storage/index.js';
-import { getConfig } from './config.js';
+import { getConfig, getLLMTaskConfig } from './config.js';
 import * as bm25 from './bm25.js';
 import { searchSkyll } from './skyll-client.js';
-import { callLLM as sharedCallLLM, getLLMConfig, type LLMBackend } from './llm.js';
+import { callLLM as sharedCallLLM, type LLMBackend } from './llm.js';
 import {
   KEYWORD_EXTRACTION_SYSTEM,
   KEYWORD_EXTRACTION_PROMPT as KEYWORD_PROMPT,
@@ -373,20 +373,20 @@ export async function suggestSkills(
     return cached;
   }
 
-  // Get unified LLM config for skills
-  const llmConfig = getLLMConfig();
+  // Get skills-specific LLM config (resolves llm.skills.* → llm.* → defaults)
+  const taskCfg = getLLMTaskConfig('skills');
+  const backend: LLMBackend = taskCfg.mode === 'claude' ? 'claude' : 'api';
 
-  // Build LLM config from unified llm.* settings
   const baseLlmConfig: LLMConfig = {
-    backend: llmConfig.backend,
-    model: llmConfig.model,
-    endpoint: llmConfig.endpoint,
-    apiKey: llmConfig.apiKey,
+    backend,
+    model: taskCfg.model,
+    endpoint: taskCfg.api_url + '/chat/completions',
+    apiKey: taskCfg.api_key,
   };
 
-  // Fallback chain - api first, then claude
+  // Fallback chain
   const backends: LLMBackend[] = ['api', 'claude'];
-  const orderedBackends = [llmConfig.backend, ...backends.filter((b) => b !== llmConfig.backend)];
+  const orderedBackends = [backend, ...backends.filter((b) => b !== backend)];
 
   for (const backend of orderedBackends) {
     try {

@@ -77,6 +77,18 @@ const DANGEROUS_PATTERNS = [
     pattern: /\bgit\s+reflog\s+expire\s+--expire=now\b/,
     reason: 'git reflog expire --expire=now permanently removes recovery points.',
   },
+  {
+    pattern: /\bgit\s+filter-branch\b/,
+    reason: 'git filter-branch rewrites history and can destroy data.',
+  },
+  {
+    pattern: /\bgit\s+.*--no-verify\b/,
+    reason: 'git --no-verify skips pre-commit hooks (safety checks bypassed).',
+  },
+  {
+    pattern: /\bgit\s+restore\s+\.\s*($|[;&|])/,
+    reason: 'git restore . discards all modifications.',
+  },
 
   // ── Filesystem — data loss ──
   {
@@ -94,6 +106,14 @@ const DANGEROUS_PATTERNS = [
     reason: 'rm -fr can permanently delete files. Verify the target path.',
     checkPath: true,
   },
+  { pattern: /\brm\s+-r\s+\/\s/, reason: 'rm -r / would destroy the entire filesystem.' },
+  {
+    pattern: /\brm\s+-r\s+~(?:\s|\/|$)/,
+    reason: 'rm -r ~ would destroy the entire home directory.',
+  },
+  { pattern: /\bshred\b/, reason: 'shred permanently overwrites file data beyond recovery.' },
+  { pattern: /\bdd\s+.*\bof=\/dev\//, reason: 'dd writing to /dev/ can destroy disk data.' },
+  { pattern: /\bmkfs\b/, reason: 'mkfs formats a filesystem, destroying all data.' },
 
   // ── Docker — container/image/volume destruction ──
   {
@@ -173,13 +193,93 @@ const DANGEROUS_PATTERNS = [
     pattern: /\bcurl\b.*\b:6334\b.*\bDELETE\b/i,
     reason: 'DELETE on Qdrant gRPC port can remove data permanently.',
   },
+
+  // ── Infrastructure ──
+  {
+    pattern: /\bterraform\s+destroy\b/,
+    reason: 'terraform destroy tears down all managed infrastructure.',
+  },
+  {
+    pattern: /\bkubectl\s+delete\s+(?:ns|namespace)\b/,
+    reason: 'kubectl delete namespace removes all resources.',
+  },
+  {
+    pattern: /\bkubectl\s+delete\s+.*--all\b/,
+    reason: 'kubectl delete --all removes all resources of type.',
+  },
+  { pattern: /\bhelm\s+uninstall\b/, reason: 'helm uninstall removes a Helm release.' },
+
+  // ── Redis ──
+  { pattern: /\bredis-cli\b.*\bFLUSHALL\b/i, reason: 'FLUSHALL removes all Redis data.' },
+  { pattern: /\bredis-cli\b.*\bFLUSHDB\b/i, reason: 'FLUSHDB removes current Redis DB data.' },
+
+  // ── MongoDB ──
+  {
+    pattern: /\bmongo(?:sh)?\b.*\bdropDatabase\b/,
+    reason: 'dropDatabase deletes a MongoDB database.',
+  },
+  { pattern: /\bmongo(?:sh)?\b.*\.drop\s*\(/, reason: '.drop() deletes a MongoDB collection.' },
+
+  // ── Permissions ──
+  { pattern: /\bchmod\s+-R\s+777\b/, reason: 'chmod -R 777 makes everything world-writable.' },
+  { pattern: /\bchmod\s+-R\s+666\b/, reason: 'chmod -R 666 makes all files world-writable.' },
+  { pattern: /\bchown\s+-R\s+root\b/, reason: 'chown -R root changes ownership recursively.' },
+
+  // ── Disk ──
+  { pattern: /\bfdisk\b/, reason: 'fdisk modifies disk partitions.' },
+  { pattern: /\bparted\b/, reason: 'parted modifies disk partitions.' },
+  { pattern: /\bwipefs\b/, reason: 'wipefs erases filesystem signatures.' },
+
+  // ── Process ──
+  { pattern: /\bkillall\b/, reason: 'killall terminates all matching processes.' },
+  { pattern: /\bkill\s+-9\b/, reason: 'kill -9 forcefully terminates (SIGKILL).' },
+  { pattern: /\bkill\s+-(?:KILL|SIGKILL)\b/, reason: 'kill -KILL forcefully terminates.' },
+
+  // ── Lockfiles ──
+  {
+    pattern: /\brm\s+.*package-lock\.json\b/,
+    reason: 'Deleting package-lock.json causes dep issues.',
+  },
+  { pattern: /\brm\s+.*yarn\.lock\b/, reason: 'Deleting yarn.lock causes dep issues.' },
+  { pattern: /\brm\s+.*pnpm-lock\.yaml\b/, reason: 'Deleting pnpm-lock.yaml causes dep issues.' },
+
+  // ── Exfiltration ──
+  {
+    pattern: /\bcurl\b.*(?:-d\b|--data\b|--form\b)/,
+    reason: 'curl with data flags can exfiltrate information.',
+    exemptLocalhost: true,
+  },
+  { pattern: /\bwget\s+--post-data\b/, reason: 'wget --post-data can exfiltrate information.' },
+  { pattern: /\bnc\s+-[a-zA-Z]*\s/, reason: 'netcat can exfiltrate data or open reverse shells.' },
+  {
+    pattern: /\bbase64\b.*\|\s*\bcurl\b/,
+    reason: 'Piping base64 to curl is exfiltration pattern.',
+  },
+  { pattern: /\bcat\b.*\|\s*\bcurl\b/, reason: 'Piping file to curl can exfiltrate data.' },
+
+  // ── Supply chain ──
+  {
+    pattern: /\bcurl\b.*\|\s*(?:bash|sh|zsh)\b/,
+    reason: 'Piping curl to shell runs untrusted code.',
+  },
+  {
+    pattern: /\bwget\b.*\|\s*(?:bash|sh|zsh)\b/,
+    reason: 'Piping wget to shell runs untrusted code.',
+  },
+  {
+    pattern: /\bpip\s+install\s+-i\s/,
+    reason: 'pip install -i uses custom index (supply chain risk).',
+  },
+  {
+    pattern: /\bnpm\s+install\s+--registry\s/,
+    reason: 'npm --registry uses custom registry (supply chain risk).',
+  },
 ];
 
 // Paths where rm -rf is considered safe (normalized, lowercase)
 const SAFE_RM_PATHS = [
   '/tmp',
   '/var/tmp',
-  'node_modules',
   'dist',
   'build',
   '.cache',
@@ -205,6 +305,217 @@ const DATA_PREFIXES = [
   /^\s*ag\b/, // silver searcher
   /^\s*(?:"|').*(?:"|')\s*$/, // quoted string
 ];
+
+// ─── Content Sanitization (inline — no imports in .cjs) ─────────────
+
+function escapeXml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function stripControlChars(text) {
+  return text.replace(/[\u200B\u200C\u200D\uFEFF\u00AD\u2060\u202A-\u202E\u2066-\u2069]/g, '');
+}
+
+function sanitize(text, maxLen) {
+  maxLen = maxLen || 5000;
+  let cleaned = stripControlChars(text);
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen) + '... [truncated]';
+  return escapeXml(cleaned);
+}
+
+function sanitizeFileName(name) {
+  let cleaned = name.replace(/\0/g, ''); // Strip null bytes
+  cleaned = stripControlChars(cleaned);
+  cleaned = cleaned.replace(/[/\\]/g, '');
+  return escapeXml(cleaned);
+}
+
+// ─── Tier 1 Injection Detection (inline — structural patterns) ──────
+
+const TIER1_PATTERNS = [
+  // Delimiter injection
+  { re: /<\|im_start\|>/i, desc: 'ChatML delimiter' },
+  { re: /<\|im_end\|>/i, desc: 'ChatML delimiter' },
+  { re: /\[INST\]/i, desc: 'Llama delimiter' },
+  { re: /\[\/INST\]/i, desc: 'Llama delimiter' },
+  { re: /<<SYS>>/i, desc: 'Llama system delimiter' },
+  { re: /<\|endoftext\|>/i, desc: 'GPT endoftext token' },
+  { re: /<\|system\|>/i, desc: 'System role token' },
+  {
+    re: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|succ-agents)>/i,
+    desc: 'Closing succ XML tag',
+  },
+  { re: /<\/?system>/i, desc: 'XML system tag' },
+  { re: /<\/?assistant>/i, desc: 'XML assistant tag' },
+  { re: /<\/?user>/i, desc: 'XML user tag' },
+  { re: /\[system\]/i, desc: 'Bracketed system role' },
+  { re: /\[assistant\]/i, desc: 'Bracketed assistant role' },
+  // End-of-sequence token (avoid false positive on HTML <s>text</s>)
+  { re: /(?<!<s[^>]*>.*)<\/s>/i, desc: 'End-of-sequence token' },
+  // Hidden content / obfuscation
+  { re: /[\u200B\u200C\u200D\uFEFF\u00AD\u2060]{3,}/, desc: 'Zero-width char cluster' },
+  { re: /[\u202A-\u202E\u2066-\u2069]{2,}/, desc: 'RTL/LTR override abuse' },
+  {
+    re: /<(?:span|div|p)\s+[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden|hidden)[^>]*>/i,
+    desc: 'Hidden HTML element',
+  },
+  {
+    re: /<!--\s*(?:AI|AGENT|LLM|ASSISTANT|IGNORE|INSTRUCTION|SYSTEM|OVERRIDE)/i,
+    desc: 'HTML comment targeting AI',
+  },
+  // Encoded injection
+  {
+    re: /&(?:lt|gt|amp|quot);.*(?:system|assistant|ignore|instruction)/i,
+    desc: 'HTML-entity encoded injection',
+  },
+  {
+    re: /(?:base64|atob|decode)\s*[:(]\s*['"]?[A-Za-z0-9+/]{20,}={0,2}/i,
+    desc: 'Explicitly decoded base64',
+  },
+];
+
+function detectTier1(text) {
+  for (const { re, desc } of TIER1_PATTERNS) {
+    if (re.test(text)) return desc;
+  }
+  return null;
+}
+
+// ─── File Operation Guards (inline) ─────────────────────────────────
+
+const SENSITIVE_EXTENSIONS = ['.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'];
+
+const PROTECTED_DELETE_PATTERNS = [
+  {
+    pattern: /\.gitignore$/i,
+    reason: '.gitignore controls tracked files — deletion can expose secrets.',
+  },
+  {
+    pattern: /Dockerfile$/i,
+    reason: 'Dockerfile is critical infrastructure — verify before deleting.',
+  },
+  {
+    pattern: /\.github\/workflows\//i,
+    reason: 'CI/CD workflow — deletion can break deployment pipeline.',
+  },
+  {
+    pattern: /\.gitlab-ci\.yml$/i,
+    reason: 'CI/CD config — deletion can break deployment pipeline.',
+  },
+  {
+    pattern: /CODEOWNERS$/i,
+    reason: 'CODEOWNERS controls review policy — verify before deleting.',
+  },
+  {
+    pattern: /migrations?\//i,
+    reason: 'Migration files are sequential — deletion can corrupt database schema.',
+  },
+  {
+    pattern: /package-lock\.json$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion causes dep issues.',
+  },
+  {
+    pattern: /yarn\.lock$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion causes dep issues.',
+  },
+  {
+    pattern: /pnpm-lock\.yaml$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion causes dep issues.',
+  },
+];
+
+function checkFileGuard(operation, filePath) {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  // Extract all extensions for compound extension check (e.g. file.pem.bak → .pem, .bak)
+  const basename = normalized.split('/').pop() || '';
+  const parts = basename.split('.');
+  if (normalized.includes('/node_modules/') || normalized.includes('/.git/')) return null;
+  // Sensitive file extensions — deny read/write (check all extensions, not just last)
+  if (operation === 'read' || operation === 'write') {
+    for (let i = 1; i < parts.length; i++) {
+      const ext = '.' + parts[i];
+      if (SENSITIVE_EXTENSIONS.includes(ext)) {
+        return {
+          reason: `${ext} files contain private keys/certificates — ${operation} blocked.`,
+          mode: 'deny',
+        };
+      }
+    }
+  }
+  // Protected files — deny delete (Bash rm commands handled separately, this is for the delete flag)
+  if (operation === 'delete') {
+    for (const { pattern, reason } of PROTECTED_DELETE_PATTERNS) {
+      if (pattern.test(normalized)) {
+        return { reason, mode: 'deny' };
+      }
+    }
+  }
+  if (operation === 'write' && /\.env(?:\.|$)/i.test(normalized)) {
+    return { reason: '.env files may contain secrets — verify content.', mode: 'ask' };
+  }
+  return null;
+}
+
+// ─── Lightweight IFC labels (inline — proactive file label for context) ──
+
+const IFC_EXTENSION_LABELS = {
+  '.pem': { level: 3, label: 'highly_confidential {credentials}' },
+  '.key': { level: 3, label: 'highly_confidential {credentials}' },
+  '.p12': { level: 3, label: 'highly_confidential {credentials}' },
+  '.pfx': { level: 3, label: 'highly_confidential {credentials}' },
+  '.jks': { level: 3, label: 'highly_confidential {credentials}' },
+  '.keystore': { level: 3, label: 'highly_confidential {credentials}' },
+};
+
+const IFC_PATH_PATTERNS = [
+  { re: /[/\\]secrets?[/\\]/i, level: 3, label: 'highly_confidential {secrets}' },
+  { re: /[/\\]\.ssh[/\\]/i, level: 3, label: 'highly_confidential {credentials}' },
+  { re: /[/\\]deploy[/\\]/i, level: 2, label: 'confidential {internal_infra}' },
+  { re: /[/\\]terraform[/\\]/i, level: 2, label: 'confidential {internal_infra}' },
+  { re: /[/\\]k8s[/\\]/i, level: 2, label: 'confidential {internal_infra}' },
+];
+
+/**
+ * Quick file label for .cjs hook (no state, just classification).
+ * Returns { level, label } or null for public files.
+ */
+function quickFileLabel(filePath) {
+  const lower = filePath.toLowerCase().replace(/\\/g, '/');
+  const basename = lower.split('/').pop() || '';
+
+  // .env files (but not env.sh, env.py, etc.)
+  if (basename === '.env' || basename.startsWith('.env.')) {
+    return { level: 2, label: 'confidential {secrets, credentials}' };
+  }
+  if (basename.startsWith('env.')) {
+    const afterDot = basename.slice(4);
+    if (!/^(?:sh|py|ts|js|rb|go|rs|pl|bat|cmd|ps1|php|java|c|h|cpp)$/i.test(afterDot)) {
+      return { level: 2, label: 'confidential {secrets, credentials}' };
+    }
+  }
+
+  // Extension check
+  const lastDot = basename.lastIndexOf('.');
+  if (lastDot >= 0) {
+    const ext = basename.slice(lastDot);
+    if (IFC_EXTENSION_LABELS[ext]) return IFC_EXTENSION_LABELS[ext];
+  }
+
+  // Path check (take highest)
+  let best = null;
+  for (const { re, level, label } of IFC_PATH_PATTERNS) {
+    if (re.test(lower) && (!best || level > best.level)) {
+      best = { level, label };
+    }
+  }
+
+  return best;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -343,9 +654,14 @@ function checkDangerous(command, config) {
   if (isDataContext(command)) return null;
 
   // Check built-in patterns
-  for (const { pattern, reason, checkPath } of DANGEROUS_PATTERNS) {
+  for (const { pattern, reason, checkPath, exemptLocalhost } of DANGEROUS_PATTERNS) {
     if (pattern.test(command)) {
       if (checkPath && isRmPathSafe(command)) continue;
+      if (
+        exemptLocalhost &&
+        /(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?=[:/'")\s]|$)/.test(command)
+      )
+        continue;
 
       return {
         reason,
@@ -456,8 +772,8 @@ async function fetchHookRules(projectDir, toolName, toolInput) {
 }
 
 function formatFileContext(memories, fileName) {
-  const lines = memories.map((m) => `- [${m.type || 'observation'}] ${m.content.slice(0, 200)}`);
-  return `<file-context file="${fileName}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
+  const lines = memories.map((m) => `- [${escapeXml(m.type || 'observation')}] ${sanitize(m.content, 200)}`);
+  return `<file-context file="${sanitizeFileName(fileName)}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
 }
 
 // ─── Main ────────────────────────────────────────────────────────────
@@ -500,24 +816,67 @@ process.stdin.on('end', async () => {
     const contextParts = [];
     let askReason = null;
 
+    // 0. Injection scan on tool input
+    const inputToScan = filePath || command || toolInput.url || '';
+    if (inputToScan) {
+      const injectionDesc = detectTier1(inputToScan);
+      if (injectionDesc) {
+        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+          deny: true,
+          denyReason: `[succ security] Prompt injection detected in tool input: ${injectionDesc}`,
+        });
+        console.log(JSON.stringify(json));
+        process.exit(exitCode);
+      }
+    }
+
+    // 0b. File operation guard
+    if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
+      const operation = toolName === 'Read' ? 'read' : 'write';
+      const fileGuardResult = checkFileGuard(operation, filePath);
+      if (fileGuardResult) {
+        const result =
+          fileGuardResult.mode === 'ask'
+            ? { ask: true, askReason: `[succ file guard] ${fileGuardResult.reason}` }
+            : { deny: true, denyReason: `[succ file guard] ${fileGuardResult.reason}` };
+        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+        console.log(JSON.stringify(json));
+        process.exit(exitCode);
+      }
+    }
+
+    // 0c. IFC: Proactive file label classification (warn in context)
+    if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
+      const fileLabel = quickFileLabel(filePath);
+      if (fileLabel && fileLabel.level >= 2) {
+        contextParts.push(
+          `<security-warning type="ifc">[succ IFC] File ${sanitizeFileName(path.basename(filePath))} classified as ${escapeXml(fileLabel.label)}. ` +
+            `Subsequent outbound operations (curl, WebFetch, git push) may be restricted.</security-warning>`
+        );
+      }
+    }
+
     // 1. Dynamic hook rules from memory (ALL tools)
     // Note: deny/ask exit immediately — any accumulated contextParts are intentionally
     // discarded because the tool call is being blocked or requires confirmation.
     const rules = await fetchHookRules(projectDir, toolName, toolInput);
     for (const rule of rules) {
+      // Scan rule content for injection (prevents poisoned memory escalation)
+      if (detectTier1(rule.content)) continue;
+
       if (rule.action === 'deny') {
         const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
           deny: true,
-          denyReason: `[succ rule] ${rule.content}`,
+          denyReason: `[succ rule] ${sanitize(rule.content, 500)}`,
         });
         console.log(JSON.stringify(json));
         process.exit(exitCode);
       }
       if (rule.action === 'ask' && !askReason) {
-        askReason = rule.content;
+        askReason = sanitize(rule.content, 500);
       }
       if (rule.action === 'inject') {
-        contextParts.push(`<hook-rule>${rule.content}</hook-rule>`);
+        contextParts.push(`<hook-rule>${sanitize(rule.content)}</hook-rule>`);
       }
     }
 
@@ -526,7 +885,7 @@ process.stdin.on('end', async () => {
       const fileName = path.basename(filePath);
       const memories = await recallFileMemories(projectDir, fileName);
       if (memories.length > 0) {
-        contextParts.push(formatFileContext(memories, fileName));
+        contextParts.push(formatFileContext(memories, sanitizeFileName(fileName)));
       }
     }
 
@@ -535,9 +894,10 @@ process.stdin.on('end', async () => {
       const config = loadConfig(projectDir);
       const dangerousResult = checkDangerous(command, config);
       if (dangerousResult) {
-        const result = dangerousResult.mode === 'ask'
-          ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
-          : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
+        const result =
+          dangerousResult.mode === 'ask'
+            ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
+            : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
         const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
         console.log(JSON.stringify(json));
         process.exit(exitCode);

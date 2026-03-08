@@ -513,14 +513,16 @@ async function callApiLLM(
   }
 
   const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
+    choices: Array<{ message: { content: string | null; reasoning?: string } }>;
   };
 
   if (!data.choices || data.choices.length === 0) {
     throw new NetworkError('LLM API returned no choices');
   }
 
-  return data.choices[0].message.content;
+  const msg = data.choices[0].message;
+  // For reasoning models (e.g. gpt-oss-safeguard), content may be empty with reasoning field
+  return msg.content || msg.reasoning || '';
 }
 
 /**
@@ -557,14 +559,15 @@ async function callApiLLMChat(
   }
 
   const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
+    choices: Array<{ message: { content: string | null; reasoning?: string } }>;
   };
 
   if (!data.choices || data.choices.length === 0) {
     throw new NetworkError('LLM API returned no choices');
   }
 
-  return data.choices[0].message.content;
+  const msg2 = data.choices[0].message;
+  return msg2.content || msg2.reasoning || '';
 }
 
 /**

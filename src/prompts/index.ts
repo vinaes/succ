@@ -97,3 +97,13 @@ export {
 
 // Soul generation prompts
 export { SOUL_GENERATION_SYSTEM } from './soul.js';
+
+// Guardrails prompts (security classification, code policy, injection detection)
+export {
+  SENSITIVITY_SYSTEM,
+  CODE_POLICY_SYSTEM,
+  INJECTION_DETECTION_SYSTEM,
+  SENSITIVITY_LG_CATEGORIES,
+  CODE_POLICY_LG_CATEGORIES,
+  INJECTION_LG_CATEGORIES,
+} from './guardrails.js';
