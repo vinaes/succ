@@ -121,7 +121,10 @@ describe('MCP server E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.succ'), { recursive: true });
 
     // Clear env so only --project is used
-    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: '' }, ['--project', projectDir]);
+    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: '' }, [
+      '--project',
+      projectDir,
+    ]);
 
     expect(timedOut).toBe(false);
     expect(stderr).toContain(`Project: ${projectDir}`);
@@ -151,7 +154,10 @@ describe('MCP server E2E', () => {
 
     // --project sets SUCC_PROJECT_ROOT at parse time (server.ts:135),
     // overriding the env value
-    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: envDir }, ['--project', argDir]);
+    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: envDir }, [
+      '--project',
+      argDir,
+    ]);
 
     expect(timedOut).toBe(false);
     expect(stderr).toContain(`Project: ${argDir}`);

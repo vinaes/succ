@@ -60,9 +60,49 @@ process.stdin.on('end', async () => {
 
     const succDir = path.join(projectDir, '.succ');
 
-    // Skip if succ is not initialized in this project
+    // Auto-init: if .succ/ doesn't exist, check global config for auto_init
     if (!fs.existsSync(succDir)) {
-      process.exit(0);
+      let autoInit = false;
+      try {
+        const globalConfigPath = path.join(require('os').homedir(), '.succ', 'config.json');
+        if (fs.existsSync(globalConfigPath)) {
+          const globalConfig = JSON.parse(fs.readFileSync(globalConfigPath, 'utf8'));
+          autoInit = globalConfig.auto_init === true;
+        }
+      } catch {
+        // ignore config read errors
+      }
+
+      if (!autoInit) {
+        process.exit(0);
+      }
+
+      // Run existing init command (reuse all init logic, no duplication)
+      try {
+        const { execFileSync } = require('child_process');
+        const packageRoot = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
+        const cliPath = path.join(packageRoot, 'dist', 'cli.js');
+
+        if (!fs.existsSync(cliPath)) {
+          process.exit(0);
+        }
+
+        execFileSync('node', [cliPath, 'init', '--yes', '--plugin'], {
+          cwd: projectDir,
+          timeout: 5000, // Must fit within 10s hook timeout, leave room for rest of hook
+          stdio: 'pipe',
+          env: { ...process.env, SUCC_PROJECT_ROOT: projectDir },
+        });
+      } catch {
+        // Auto-init failed — skip, user can run succ init manually
+      }
+
+      // Verify init actually created .succ/
+      if (!fs.existsSync(succDir)) {
+        process.exit(0);
+      }
+
+      log(succDir, `Auto-initialized via succ init --yes --plugin`);
     }
 
     // Load config settings (project config overrides global, but both are checked)
