@@ -93,6 +93,8 @@ export interface SuccConfig {
   communicationTrackHistory?: boolean; // Log communication style changes to brain vault for Obsidian graph (default: false)
   // Command safety guard (PreToolUse hook) — blocks dangerous git/filesystem operations
   commandSafetyGuard?: CommandSafetyGuardConfig;
+  // Security hardening — IFC, injection detection, file guards, guardrails
+  security?: SecurityConfig;
   // Skills discovery and suggestion settings
   skills?: SkillsConfig;
   // Unified LLM settings — ALL LLM/embedding/analyze config lives here
@@ -684,4 +686,89 @@ export interface OperationAssignment {
   operation: IdleOperation;
   agent: 'claude' | 'sleep';
   enabled: boolean;
+}
+
+// ─── Security Hardening Config ──────────────────────────────────────
+
+/**
+ * Security configuration — IFC, injection detection, file guards, guardrails.
+ * All sub-configs default to sensible values; omit to use defaults.
+ */
+export interface SecurityConfig {
+  /** Master toggle for all security features (default: true) */
+  enabled?: boolean;
+  /** File operation guard mode (default: 'deny') */
+  fileGuard?: {
+    mode?: 'deny' | 'ask' | 'off';
+  };
+  /** Bell-LaPadula Information Flow Control */
+  ifc?: IFCConfig;
+  /** URL blocklist for exfiltration detection (appended to built-in list) */
+  urlBlocklist?: string[];
+  /** Exfiltration detection mode for curl/wget data flags (default: 'ask') */
+  exfiltrationMode?: 'ask' | 'deny' | 'off';
+  /** Post-tool output scanning */
+  postToolScanning?: {
+    /** Scan Bash output for secrets (default: true) */
+    secretScanning?: boolean;
+    /** Scan tool output for injection (default: true) */
+    injectionScanning?: boolean;
+  };
+  /** Prompt injection detection settings */
+  injectionDetection?: {
+    /** Enable Tier 1 structural patterns (default: true) */
+    tier1?: boolean;
+    /** Enable Tier 2 multilingual regex (default: true) */
+    tier2?: boolean;
+    /** Enable Tier 3 LLM classification (default: false — Phase 3) */
+    tier3?: boolean;
+  };
+  /** LLM guardrails (Phase 3) */
+  guardrails?: GuardrailsConfig;
+}
+
+/**
+ * Bell-LaPadula IFC configuration
+ */
+export interface IFCConfig {
+  /** Enable IFC enforcement (default: true when security.enabled) */
+  enabled?: boolean;
+  /** Active compartments (default: all 4) */
+  compartments?: Array<'secrets' | 'credentials' | 'pii' | 'internal_infra'>;
+  /** Outbound step limits before deny/ask kicks in */
+  stepLimits?: {
+    /** Steps allowed at highly_confidential before deny (default: 25) */
+    highly_confidential?: number;
+    /** Steps allowed at confidential before ask (default: 100) */
+    confidential?: number;
+  };
+}
+
+/**
+ * LLM Guardrails configuration (Phase 3)
+ */
+export interface GuardrailsConfig {
+  /** Guardrails mode — only 'api' supported (default: 'api') */
+  mode?: 'api';
+  /** Model for guardrails classification */
+  model?: string;
+  /** API endpoint (default: from llm.api_url) */
+  api_url?: string;
+  /** API key (default: from llm.api_key) */
+  api_key?: string;
+  /** Request timeout in ms (default: 3000) */
+  timeout_ms?: number;
+  /** Enable LLM-based sensitivity classification (default: false) */
+  classify_sensitivity?: boolean;
+  /** Enable LLM-based code policy evaluation (default: false) */
+  classify_code_policy?: boolean;
+  /** Enable LLM-based injection detection — Tier 3 (default: false) */
+  detect_injection?: boolean;
+  /**
+   * Use Ollama native /api/chat endpoint instead of OpenAI-compatible /v1/chat/completions.
+   * Enables `think: true` parameter for reasoning models (e.g. gpt-oss-safeguard on Ollama).
+   * Only effective when api_url points to a local Ollama instance.
+   * Default: false
+   */
+  ollama_native_chat?: boolean;
 }

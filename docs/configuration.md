@@ -1878,8 +1878,84 @@ succ_config action="set" key="error_reporting.level" value="error"
 
 ---
 
+## Security Hardening
+
+Multi-layered security system with injection detection, information flow control, and LLM guardrails.
+
+> For full details on the security architecture, see [Security Hardening](./security.md).
+
+```json
+{
+  "security": {
+    "enabled": true,
+    "fileGuard": { "mode": "deny" },
+    "ifc": {
+      "enabled": true,
+      "compartments": ["secrets", "credentials", "pii", "internal_infra"],
+      "stepLimits": { "highly_confidential": 25, "confidential": 100 }
+    },
+    "exfiltrationMode": "ask",
+    "postToolScanning": { "secretScanning": true, "injectionScanning": true },
+    "injectionDetection": { "tier1": true, "tier2": true, "tier3": false },
+    "guardrails": {
+      "model": "openai/gpt-oss-safeguard-20b",
+      "api_url": "https://openrouter.ai/api/v1/chat/completions",
+      "api_key": "sk-or-...",
+      "timeout_ms": 5000,
+      "classify_sensitivity": true,
+      "classify_code_policy": true,
+      "detect_injection": true,
+      "ollama_native_chat": false
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `security.enabled` | boolean | `true` | Master toggle for all security features |
+| `security.fileGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | File operation guard mode for sensitive files (.pem, .key, .env) |
+| `security.ifc.enabled` | boolean | `true` | Enable Bell-LaPadula information flow control |
+| `security.ifc.compartments` | string[] | all 4 | Active compartments: secrets, credentials, pii, internal_infra |
+| `security.ifc.stepLimits.highly_confidential` | number | 25 | Max outbound steps before deny at level 3 |
+| `security.ifc.stepLimits.confidential` | number | 100 | Max outbound steps before ask at level 2 |
+| `security.exfiltrationMode` | `"ask"` \| `"deny"` \| `"off"` | `"ask"` | Exfiltration detection (curl -d, scp, nc, etc.) |
+| `security.postToolScanning.secretScanning` | boolean | `true` | Scan Bash output for secrets |
+| `security.postToolScanning.injectionScanning` | boolean | `true` | Scan tool output for injection |
+| `security.injectionDetection.tier1` | boolean | `true` | Structural pattern detection (delimiter, XML, hidden content) |
+| `security.injectionDetection.tier2` | boolean | `true` | Multilingual regex + embedding semantic detection |
+| `security.injectionDetection.tier3` | boolean | `false` | LLM classification (requires guardrails config) |
+| `security.guardrails.model` | string | — | Model for guardrails (e.g. `openai/gpt-oss-safeguard-20b`) |
+| `security.guardrails.api_url` | string | — | API endpoint URL |
+| `security.guardrails.api_key` | string | — | API key |
+| `security.guardrails.timeout_ms` | number | 3000/15000 | Timeout (auto-adjusted for safety classifiers) |
+| `security.guardrails.classify_sensitivity` | boolean | `false` | Enable LLM sensitivity classification |
+| `security.guardrails.classify_code_policy` | boolean | `false` | Enable OWASP code policy evaluation |
+| `security.guardrails.detect_injection` | boolean | `false` | Enable Tier 3 LLM injection detection |
+| `security.guardrails.ollama_native_chat` | boolean | `false` | Use Ollama native /api/chat for reasoning models |
+
+### Local Ollama guardrails
+
+For local Ollama with reasoning models (safeguard), enable `ollama_native_chat` to pass `think: true`:
+
+```json
+{
+  "security": {
+    "guardrails": {
+      "model": "gpt-oss-safeguard",
+      "api_url": "http://localhost:11434/v1/chat/completions",
+      "ollama_native_chat": true,
+      "timeout_ms": 15000
+    }
+  }
+}
+```
+
+---
+
 ## See Also
 
+- [Security Hardening](./security.md) — Full security architecture documentation
 - [Ollama Integration](./ollama.md)
 - [llama.cpp Integration](./llama-cpp.md)
 - [Troubleshooting](./troubleshooting.md)
