@@ -34,7 +34,7 @@ afterAll(() => {
 function spawnMcpServer(
   env: Record<string, string> = {},
   args: string[] = []
-): Promise<{ stderr: string; exitCode: number | null }> {
+): Promise<{ stderr: string; exitCode: number | null; timedOut: boolean }> {
   return new Promise((resolve) => {
     const proc = spawn(NODE, [...NODE_ARGS, MCP_SERVER, ...args], {
       cwd: tmpDir,
@@ -43,6 +43,8 @@ function spawnMcpServer(
     });
 
     let stderr = '';
+    let timedOut = false;
+
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
       // Close stdin once transport is ready (triggers clean shutdown)
@@ -52,12 +54,13 @@ function spawnMcpServer(
     });
 
     const timeout = setTimeout(() => {
+      timedOut = true;
       proc.kill();
     }, 15_000);
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
-      resolve({ stderr, exitCode: code });
+      resolve({ stderr, exitCode: code, timedOut });
     });
   });
 }
@@ -102,10 +105,11 @@ describe('MCP server E2E', () => {
     const projectDir = path.join(tmpDir, 'project-env');
     fs.mkdirSync(path.join(projectDir, '.succ'), { recursive: true });
 
-    const { stderr } = await spawnMcpServer({
+    const { stderr, timedOut } = await spawnMcpServer({
       SUCC_PROJECT_ROOT: projectDir,
     });
 
+    expect(timedOut).toBe(false);
     expect(stderr).toContain('[succ-mcp] Starting...');
     expect(stderr).toContain('[succ-mcp] Storage ready');
     expect(stderr).toContain(`Project: ${projectDir}`);
@@ -117,8 +121,9 @@ describe('MCP server E2E', () => {
     fs.mkdirSync(path.join(projectDir, '.succ'), { recursive: true });
 
     // Clear env so only --project is used
-    const { stderr } = await spawnMcpServer({ SUCC_PROJECT_ROOT: '' }, ['--project', projectDir]);
+    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: '' }, ['--project', projectDir]);
 
+    expect(timedOut).toBe(false);
     expect(stderr).toContain(`Project: ${projectDir}`);
     expect(stderr).not.toContain('WARNING: No .succ/ found');
   }, 20_000);
@@ -128,10 +133,11 @@ describe('MCP server E2E', () => {
     const noSuccDir = path.join(tmpDir, 'no-succ');
     fs.mkdirSync(path.join(noSuccDir, '.git'), { recursive: true });
 
-    const { stderr } = await spawnMcpServer({
+    const { stderr, timedOut } = await spawnMcpServer({
       SUCC_PROJECT_ROOT: noSuccDir,
     });
 
+    expect(timedOut).toBe(false);
     expect(stderr).toContain(`Project: ${noSuccDir}`);
     expect(stderr).toContain('WARNING: No .succ/ found');
     expect(stderr).toContain('Pass project_path to every succ_* tool call');
@@ -145,8 +151,9 @@ describe('MCP server E2E', () => {
 
     // --project sets SUCC_PROJECT_ROOT at parse time (server.ts:135),
     // overriding the env value
-    const { stderr } = await spawnMcpServer({ SUCC_PROJECT_ROOT: envDir }, ['--project', argDir]);
+    const { stderr, timedOut } = await spawnMcpServer({ SUCC_PROJECT_ROOT: envDir }, ['--project', argDir]);
 
+    expect(timedOut).toBe(false);
     expect(stderr).toContain(`Project: ${argDir}`);
   }, 20_000);
 
@@ -154,10 +161,11 @@ describe('MCP server E2E', () => {
     const projectDir = path.join(tmpDir, 'project-exit');
     fs.mkdirSync(path.join(projectDir, '.succ'), { recursive: true });
 
-    const { stderr, exitCode } = await spawnMcpServer({
+    const { stderr, exitCode, timedOut } = await spawnMcpServer({
       SUCC_PROJECT_ROOT: projectDir,
     });
 
+    expect(timedOut).toBe(false);
     expect(stderr).toContain('stdin closed, shutting down');
     expect(exitCode).toBe(0);
   }, 20_000);

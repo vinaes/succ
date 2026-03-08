@@ -51,7 +51,7 @@ succ analyze
 
 ### Install as Claude Code Plugin
 
-If you're using Claude Code v1.0.33+, you can install succ as a plugin — no global install needed:
+If you're using Claude Code v2.0.12+, you can install succ as a plugin:
 
 ```bash
 # Add the succ marketplace (one-time)
@@ -67,11 +67,21 @@ Or test locally from a cloned repo:
 claude --plugin-dir /path/to/succ
 ```
 
-The plugin provides hooks, MCP tools, and skills automatically. You still need to run `succ init` once per project to create the `.succ/` directory and brain vault:
+The plugin provides hooks, MCP tools, and skills automatically. You still need to run `succ init` once per project to create the `.succ/` directory and brain vault.
+
+**If you also have succ installed globally** (`npm install -g @vinaes/succ`), run:
 
 ```bash
 succ init --plugin
 ```
+
+**If you only have the plugin** (no global `succ` CLI), you can bootstrap the project directory from inside Claude Code by asking Claude to run:
+
+```bash
+node $(claude --print-plugin-path vinaes@succ)/dist/cli.js init --plugin --yes
+```
+
+Or simply run `succ init` after installing globally — the `--plugin` flag skips writing `.claude/settings.json` since the plugin handles hooks automatically.
 
 ## Features
 
