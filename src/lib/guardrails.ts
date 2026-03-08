@@ -393,20 +393,18 @@ async function classifySensitivityLlamaGuard(
     }
     const uniqueCompartments = [...new Set(allCompartments)] as Compartment[];
 
-    // Warn if response was "unsafe" but no categories mapped (malformed response)
-    if (categories.length > 0 && bestLevel === 0 && uniqueCompartments.length === 0) {
+    // If model said "unsafe" but no categories mapped → indeterminate (fail-open → null)
+    // Consistent with evaluateCodePolicyLlamaGuard which returns null for unmapped categories
+    if (bestLevel === 0 && uniqueCompartments.length === 0) {
       logWarn(
         'guardrails',
-        `Llama Guard sensitivity: unsafe but no mapped categories [${categories.join(', ')}] — treating as internal`
+        `Llama Guard sensitivity: unsafe but no mapped categories [${categories.join(', ')}] — returning indeterminate`
       );
-      bestLevel = 1;
+      return null;
     }
 
     const result: SensitivityResult = {
-      label:
-        bestLevel === 0 && uniqueCompartments.length === 0
-          ? BOTTOM
-          : makeLabel(bestLevel, uniqueCompartments),
+      label: makeLabel(bestLevel, uniqueCompartments),
       confidence: 0.85,
       reasoning: `Llama Guard: unsafe [${categories.join(', ')}]`,
     };
