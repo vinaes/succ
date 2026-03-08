@@ -523,7 +523,7 @@ async function evaluateCodePolicyLlamaGuard(
       return null;
     }
 
-    const result: CodePolicyResult = { violations, safe: violations.length === 0 };
+    const result: CodePolicyResult = { violations, safe: false };
     codePolicyCache.set(hash, result);
     return result;
   } catch {
