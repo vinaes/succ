@@ -10,13 +10,14 @@ import { execFile, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
 // import.meta.dirname requires Node 20.11+; fileURLToPath fallback for earlier 20.x
 const ROOT = path.resolve(
-  import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
+  import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url)),
   '../..'
 );
 const MCP_SERVER = path.join(ROOT, 'dist', 'mcp-server.js');

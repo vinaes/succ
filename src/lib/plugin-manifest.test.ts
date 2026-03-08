@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { generatePluginManifest } from './plugin-manifest.js';
 
-// import.meta.dirname requires Node 20.11+; fallback for earlier 20.x
+// import.meta.dirname requires Node 20.11+; fileURLToPath fallback for earlier 20.x
 const ROOT = path.resolve(
-  import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
+  import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url)),
   '../..'
 );
 
