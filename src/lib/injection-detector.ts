@@ -464,13 +464,16 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
 
   // Check for base64-encoded injection (decode and re-scan, max 2 levels deep)
   if (_depth < 2) {
-    const b64Match = text.match(/[A-Za-z0-9+/]{40,}={0,2}/);
-    if (b64Match) {
+    const b64Regex = /[A-Za-z0-9+/]{40,}={0,2}/g;
+    for (const b64Match of text.matchAll(b64Regex)) {
       try {
         const decoded = Buffer.from(b64Match[0], 'base64').toString('utf8');
-        // Only recurse if decoded text looks like actual text (mostly printable)
-        const printableRatio = (decoded.match(/[\x20-\x7E]/g) || []).length / decoded.length;
-        if (printableRatio > 0.8) {
+        // Only recurse if decoded text looks like actual text (mostly printable).
+        // Allow non-ASCII printable chars (multilingual text) — reject only control chars.
+        // eslint-disable-next-line no-control-regex -- Intentional: detecting binary/control chars in decoded base64
+        const controlChars = (decoded.match(/[\x00-\x08\x0E-\x1F\x7F]/g) || []).length;
+        const controlRatio = decoded.length > 0 ? controlChars / decoded.length : 1;
+        if (controlRatio < 0.2) {
           const innerResult = detectTier1(decoded, _depth + 1);
           if (innerResult) {
             best = pickStronger(best, {
@@ -491,6 +494,8 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
       } catch {
         // Not valid base64 — skip
       }
+      // Short-circuit if we already have definite severity
+      if (best?.severity === 'definite') break;
     }
   }
 
@@ -595,10 +600,15 @@ export async function detectInjectionAsync(
       }
     } catch (err) {
       // Fail-open: embedding module unavailable or threw — continue with deterministic results
-      const { logWarn } = await import('./fault-logger.js');
-      logWarn('injection', 'Tier 2.C semantic detection unavailable or failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      try {
+        const { logWarn } = await import('./fault-logger.js');
+        logWarn('injection', 'Tier 2.C semantic detection unavailable or failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch {
+        // logWarn import itself failed — no logging facility available, fail-open
+        console.error('[injection] Tier 2.C: both semantic detection and fault-logger unavailable');
+      }
     }
   }
 

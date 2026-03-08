@@ -80,18 +80,23 @@ function labelByExtension(filePath: string): SecurityLabel {
     }
   }
 
-  // Check by file extension (last dot segment)
-  const lastDot = basename.lastIndexOf('.');
-  if (lastDot >= 0) {
-    const ext = basename.slice(lastDot);
+  // Check all extensions in compound filenames (e.g., "backup.pem.bak" → check ".bak", ".pem")
+  // This ensures security-sensitive inner extensions aren't missed when outer extension differs
+  let compoundLabel = BOTTOM;
+  let remaining = basename;
+  while (true) {
+    const dotIdx = remaining.lastIndexOf('.');
+    if (dotIdx < 0) break;
+    const ext = remaining.slice(dotIdx);
     for (const rule of EXTENSION_RULES) {
       if (rule.extensions.includes(ext)) {
-        return rule.label;
+        compoundLabel = join(compoundLabel, rule.label);
       }
     }
+    remaining = remaining.slice(0, dotIdx);
   }
 
-  return BOTTOM;
+  return compoundLabel;
 }
 
 // ─── Layer 2: Path-based labels ─────────────────────────────────────
@@ -127,7 +132,11 @@ const PATH_RULES: PathRule[] = [
 ];
 
 function labelByPath(filePath: string): SecurityLabel {
-  const normalized = filePath.replace(/\\/g, '/');
+  let normalized = filePath.replace(/\\/g, '/');
+  // Ensure repo-relative paths (e.g., "secrets/key.pem") match PATH_RULES that require /dir/ delimiters
+  if (!normalized.startsWith('/')) {
+    normalized = '/' + normalized;
+  }
   let result = BOTTOM;
 
   for (const rule of PATH_RULES) {

@@ -516,7 +516,8 @@ async function evaluateCodePolicyLlamaGuard(
       }));
 
     // If model said "unsafe" but no categories mapped, treat as indeterminate (fail-open → null)
-    if (!safe && violations.length === 0) {
+    // Note: `safe` is always false here (early return above), so check violations only
+    if (violations.length === 0) {
       logWarn(
         'guardrails',
         `Llama Guard code policy: unsafe but no mapped categories [${categories.join(', ')}]`
