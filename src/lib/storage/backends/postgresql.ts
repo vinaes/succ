@@ -1385,7 +1385,6 @@ export class PostgresBackend {
       if (this.projectId) {
         whereCond += ` AND (LOWER(project_id) = $${paramIdx} OR project_id IS NULL)`;
         textParams.push(this.projectId);
-        paramIdx++;
       } else {
         whereCond += ` AND project_id IS NULL`;
       }
@@ -1424,7 +1423,6 @@ export class PostgresBackend {
       if (this.projectId) {
         whereVec += ` AND (LOWER(project_id) = $${paramIdx} OR project_id IS NULL)`;
         vecParams.push(this.projectId);
-        paramIdx++;
       } else {
         whereVec += ` AND project_id IS NULL`;
       }
@@ -1514,12 +1512,11 @@ export class PostgresBackend {
     const textResults: Array<{ docId: number; score: number }> = [];
     if (tsq) {
       const textParams: unknown[] = [tsq];
-      let paramIdx = 2;
+      const paramIdx = 2;
       let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL`;
       if (since) {
         whereText += ` AND created_at >= $${paramIdx}`;
         textParams.push(since.toISOString());
-        paramIdx++;
       }
       textParams.push(limit * 3);
       const textQ = `
@@ -1545,12 +1542,11 @@ export class PostgresBackend {
     const vectorResults: Array<{ docId: number; score: number }> = [];
     {
       const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
-      let paramIdx = 3;
+      const paramIdx = 3;
       let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL`;
       if (since) {
         whereVec += ` AND created_at >= $${paramIdx}`;
         vecParams.push(since.toISOString());
-        paramIdx++;
       }
       vecParams.push(limit * 3);
       const vecQ = `
