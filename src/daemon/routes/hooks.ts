@@ -357,11 +357,8 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             }
             if (wdResult.action === 'ask') {
               if (!askReason) askReason = `[IFC] ${wdResult.reason}`;
-              // Don't count step — user may deny; PostToolUse will count if it proceeds
-            } else {
-              // Only count outbound step for allow/warn (deny already returned above)
-              recordOutboundStep(ifcState);
             }
+            // Step counting moved to PostToolUse — counted only when tool actually runs
             if (wdResult.action === 'warn') {
               contextParts.push(
                 `<security-warning type="ifc">${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
@@ -579,6 +576,17 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         // IFC: Get session state for taint propagation
         const postSessionId = input.session_id;
         const postIfcState = getIFCState(postSessionId);
+
+        // IFC: Record outbound step for completed tool use
+        // Step counting is done here (not PreToolUse) so ask-approved and
+        // allow/warn actions are both counted exactly once, and denied/
+        // ask-rejected actions (which never reach PostToolUse) are not counted.
+        if (postIfcState) {
+          const postChannel = classifyOutboundChannel(toolName, toolInput);
+          if (postChannel && !isBottom(postIfcState.label)) {
+            recordOutboundStep(postIfcState);
+          }
+        }
 
         // Post-tool secret scanning on Bash output
         if (toolName === 'Bash' && toolOutput && toolOutput.length > 0) {

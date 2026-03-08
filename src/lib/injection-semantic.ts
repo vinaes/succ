@@ -168,9 +168,11 @@ function chunkText(text: string, chunkSize = 120, overlap = 40): string[] {
     if (i + chunkSize >= trimmed.length) break;
   }
 
-  // Cap chunks to prevent excessive embedding calls on very long text
+  // Cap chunks to prevent excessive embedding calls on very long text.
+  // Use strided sampling to cover the full text evenly (not just the start).
   if (chunks.length > 50) {
-    return chunks.slice(0, 50);
+    const stride = chunks.length / 50;
+    return Array.from({ length: 50 }, (_, i) => chunks[Math.floor(i * stride)]);
   }
 
   return chunks;

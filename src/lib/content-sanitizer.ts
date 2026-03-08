@@ -54,13 +54,16 @@ export function sanitizeFileName(name: string): string {
 
 /**
  * Wrap content in an XML-like tag with sanitized content.
- * The tag name is NOT sanitized (caller controls it).
+ * Tag name is validated to prevent tag injection.
  */
 export function wrapSanitized(
   tag: string,
   content: string,
   attrs?: Record<string, string>
 ): string {
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(tag)) {
+    tag = 'div';
+  }
   const sanitized = sanitizeForContext(content);
   const attrStr = attrs
     ? ' ' +
