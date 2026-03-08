@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { resolveFileLabel, quickFileLabel, labelByContent } from './file-labels.js';
-import { makeLabel, dominates, isBottom, formatLabel, BOTTOM } from './label.js';
+import { dominates, isBottom } from './label.js';
 
 describe('Extension-based labels (Layer 1)', () => {
   it('labels .pem as highly_confidential {credentials}', () => {
@@ -111,7 +111,9 @@ describe('Content-based labels (Layer 3)', () => {
   });
 
   it('detects JWT token', () => {
-    const label = labelByContent('token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U');
+    const label = labelByContent(
+      'token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
+    );
     expect(label.level).toBeGreaterThanOrEqual(2);
     expect(label.compartments.has('secrets')).toBe(true);
   });

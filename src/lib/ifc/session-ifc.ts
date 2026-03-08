@@ -139,11 +139,7 @@ export function raiseLabel(
 /**
  * Add a taint to the session (accumulative, never removed).
  */
-export function addTaint(
-  state: SessionIFCState,
-  taint: SecurityTaint,
-  source: string
-): void {
+export function addTaint(state: SessionIFCState, taint: SecurityTaint, source: string): void {
   if (state.taints.has(taint)) return;
   state.taints.add(taint);
 
@@ -212,13 +208,18 @@ export function checkWriteDown(
 
   // Check one-shot trusted action (consumed on use — delete, not has)
   if (options.actionId && state.trustedActions.delete(options.actionId)) {
-    return { allowed: true, action: 'allow', reason: 'Trusted action granted by user (one-shot, now consumed)' };
+    return {
+      allowed: true,
+      action: 'allow',
+      reason: 'Trusted action granted by user (one-shot, now consumed)',
+    };
   }
 
   // Determine destination label
-  const destLabel = channel === 'file_write' && options.destinationLabel
-    ? options.destinationLabel
-    : CHANNEL_LABELS[channel];
+  const destLabel =
+    channel === 'file_write' && options.destinationLabel
+      ? options.destinationLabel
+      : CHANNEL_LABELS[channel];
 
   // For file_write: check if destination dominates session (standard BLP)
   if (channel === 'file_write' && options.destinationLabel) {
@@ -237,14 +238,16 @@ export function checkWriteDown(
       return {
         allowed: false,
         action: 'deny',
-        reason: `Session has read highly confidential data (step limit ${limits.highly_confidential} reached). ` +
+        reason:
+          `Session has read highly confidential data (step limit ${limits.highly_confidential} reached). ` +
           `All outbound operations blocked. Session label: ${formatLabel(state.label)}`,
       };
     }
     return {
       allowed: false,
       action: 'deny',
-      reason: `Session has read highly confidential data. ` +
+      reason:
+        `Session has read highly confidential data. ` +
         `${channel} to ${formatLabel(destLabel)} blocked (no write down). ` +
         `Session label: ${formatLabel(state.label)}`,
     };
@@ -256,7 +259,8 @@ export function checkWriteDown(
       return {
         allowed: false,
         action: 'deny',
-        reason: `Session is confidential + tainted (${[...state.taints].join(', ')}). ` +
+        reason:
+          `Session is confidential + tainted (${[...state.taints].join(', ')}). ` +
           `${channel} blocked. Session label: ${formatLabel(state.label)}`,
       };
     }
@@ -265,7 +269,8 @@ export function checkWriteDown(
       return {
         allowed: false,
         action: 'ask',
-        reason: `Session has read confidential data (step limit ${limits.confidential} approaching). ` +
+        reason:
+          `Session has read confidential data (step limit ${limits.confidential} approaching). ` +
           `${channel} requires approval. Session label: ${formatLabel(state.label)}`,
       };
     }
@@ -273,7 +278,8 @@ export function checkWriteDown(
     return {
       allowed: false,
       action: 'ask',
-      reason: `Session has read confidential data. ` +
+      reason:
+        `Session has read confidential data. ` +
         `${channel} to ${formatLabel(destLabel)} requires approval (no write down). ` +
         `Session label: ${formatLabel(state.label)}`,
     };
@@ -284,7 +290,8 @@ export function checkWriteDown(
     return {
       allowed: true,
       action: 'warn',
-      reason: `Session has read internal data. ` +
+      reason:
+        `Session has read internal data. ` +
         `${channel} allowed but noted. Session label: ${formatLabel(state.label)}`,
     };
   }

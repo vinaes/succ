@@ -103,7 +103,7 @@ export const INJECTION_PROTOTYPES: readonly string[] = Object.freeze([
 
 // ─── Thresholds ──────────────────────────────────────────────────────
 
-export const DEFINITE_THRESHOLD = 0.90;
+export const DEFINITE_THRESHOLD = 0.9;
 export const PROBABLE_THRESHOLD = 0.82;
 
 // ─── State ───────────────────────────────────────────────────────────
@@ -222,7 +222,8 @@ export async function detectTier2Semantic(text: string): Promise<InjectionResult
         severity: 'definite',
         tier: 2,
         pattern: `semantic:${bestSimilarity.toFixed(3)}`,
-        description: `Semantic injection match (sim=${bestSimilarity.toFixed(3)}): ` +
+        description:
+          `Semantic injection match (sim=${bestSimilarity.toFixed(3)}): ` +
           `matched prototype "${INJECTION_PROTOTYPES[bestPrototypeIdx]}" in chunk ${bestChunkIdx}`,
       };
     }
@@ -233,7 +234,8 @@ export async function detectTier2Semantic(text: string): Promise<InjectionResult
         severity: 'probable',
         tier: 2,
         pattern: `semantic:${bestSimilarity.toFixed(3)}`,
-        description: `Probable semantic injection (sim=${bestSimilarity.toFixed(3)}): ` +
+        description:
+          `Probable semantic injection (sim=${bestSimilarity.toFixed(3)}): ` +
           `similar to "${INJECTION_PROTOTYPES[bestPrototypeIdx]}"`,
       };
     }

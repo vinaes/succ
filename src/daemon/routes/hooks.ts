@@ -12,9 +12,18 @@ import { z } from 'zod';
 import { getMemoriesByTag, saveMemory } from '../../lib/storage/index.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { matchRules } from '../../lib/hook-rules.js';
-import { checkDangerous, extractSafetyConfig, checkFileOperation, isExfilUrl } from '../../lib/command-safety.js';
-import { sanitizeForContext, sanitizeFileName, wrapSanitized } from '../../lib/content-sanitizer.js';
-import { detectInjection, detectInjectionAsync, isMemorySafe, isMemorySafeAsync } from '../../lib/injection-detector.js';
+import {
+  checkDangerous,
+  extractSafetyConfig,
+  checkFileOperation,
+  isExfilUrl,
+} from '../../lib/command-safety.js';
+import {
+  sanitizeForContext,
+  sanitizeFileName,
+  wrapSanitized,
+} from '../../lib/content-sanitizer.js';
+import { detectInjectionAsync, isMemorySafeAsync } from '../../lib/injection-detector.js';
 import { quickFileLabel, labelByContent } from '../../lib/ifc/file-labels.js';
 import {
   createSessionIFC,
@@ -28,7 +37,12 @@ import {
   type OutboundChannel,
 } from '../../lib/ifc/session-ifc.js';
 import { isBottom, formatLabel } from '../../lib/ifc/label.js';
-import { classifySensitivity, evaluateCodePolicy, detectInjectionLLM, formatViolations } from '../../lib/guardrails.js';
+import {
+  classifySensitivity,
+  evaluateCodePolicy,
+  detectInjectionLLM,
+  formatViolations,
+} from '../../lib/guardrails.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { getConfig } from '../../lib/config.js';
@@ -210,7 +224,10 @@ function getOrCreateIFCState(sessionId: string | undefined): SessionIFCState | n
  * Determine outbound channel from tool name + input.
  * Returns null if the tool is not an outbound operation.
  */
-function classifyOutboundChannel(toolName: string, toolInput: Record<string, unknown>): OutboundChannel | null {
+function classifyOutboundChannel(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): OutboundChannel | null {
   if (toolName === 'Write' || toolName === 'Edit') return 'file_write';
   if (toolName === 'WebFetch') return 'web_fetch';
   if (toolName === 'Bash') {
@@ -262,7 +279,7 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             };
           }
           if (injectionResult && injectionResult.severity === 'probable') {
-            if (!askReason) askReason = `Possible prompt injection: ${injectionResult.description}`;
+            askReason = `Possible prompt injection: ${injectionResult.description}`;
           }
         }
 
@@ -303,9 +320,15 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
             const fileLabel = quickFileLabel(filePath);
             if (!isBottom(fileLabel)) {
-              const raised = raiseLabel(ifcState, fileLabel, `${toolName} ${path.basename(filePath)}`);
+              const raised = raiseLabel(
+                ifcState,
+                fileLabel,
+                `${toolName} ${path.basename(filePath)}`
+              );
               if (raised) {
-                ctx.log(`[hooks/ifc] Session ${sessionId} label raised to ${formatLabel(ifcState.label)} by ${path.basename(filePath)}`);
+                ctx.log(
+                  `[hooks/ifc] Session ${sessionId} label raised to ${formatLabel(ifcState.label)} by ${path.basename(filePath)}`
+                );
               }
             }
           }
@@ -313,7 +336,8 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           // Write-down check on outbound channels
           const channel = classifyOutboundChannel(toolName, toolInput);
           if (channel && !isBottom(ifcState.label)) {
-            const destLabel = channel === 'file_write' && filePath ? quickFileLabel(filePath) : undefined;
+            const destLabel =
+              channel === 'file_write' && filePath ? quickFileLabel(filePath) : undefined;
             const actionId = `${channel}:step${ifcState.outboundStepCount}`;
             const secConfig = getConfig().security;
             const wdResult = checkWriteDown(ifcState, channel, {
@@ -339,7 +363,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               recordOutboundStep(ifcState);
             }
             if (wdResult.action === 'warn') {
-              contextParts.push(`<security-warning type="ifc">${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`);
+              contextParts.push(
+                `<security-warning type="ifc">${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
+              );
             }
           }
         }
@@ -349,9 +375,14 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const rules = matchRules(memories, toolName, toolInput);
         for (const rule of rules) {
           // Scan rule content for injection before using (Tier 1+2+2.C)
-          const ruleInjection = await detectInjectionAsync(rule.content, { tier2: true, tier2Semantic: true });
+          const ruleInjection = await detectInjectionAsync(rule.content, {
+            tier2: true,
+            tier2Semantic: true,
+          });
           if (ruleInjection && ruleInjection.severity === 'definite') {
-            ctx.log(`[hooks/pre-tool] Skipping poisoned hook-rule #${rule.id}: ${ruleInjection.description}`);
+            ctx.log(
+              `[hooks/pre-tool] Skipping poisoned hook-rule #${rule.id}: ${ruleInjection.description}`
+            );
             continue;
           }
 
@@ -386,7 +417,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               );
             }
           } catch (err: unknown) {
-            logWarn('hooks', `File-linked memories failed: ${err instanceof Error ? err.message : String(err)}`);
+            logWarn(
+              'hooks',
+              `File-linked memories failed: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -435,11 +469,16 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                   askReason = `[guardrails] Security issues detected:\n${sanitizeForContext(formatViolations(high), 500)}`;
                 }
                 if (policyResult.violations.length > 0) {
-                  contextParts.push(`<security-warning type="code-policy">\nCode security review:\n${sanitizeForContext(formatViolations(policyResult.violations), 800)}\n</security-warning>`);
+                  contextParts.push(
+                    `<security-warning type="code-policy">\nCode security review:\n${sanitizeForContext(formatViolations(policyResult.violations), 800)}\n</security-warning>`
+                  );
                 }
               }
             } catch (err: unknown) {
-              logWarn('hooks', `Code policy evaluation failed: ${err instanceof Error ? err.message : String(err)}`);
+              logWarn(
+                'hooks',
+                `Code policy evaluation failed: ${err instanceof Error ? err.message : String(err)}`
+              );
             }
           }
         }
@@ -463,7 +502,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               }
             }
           } catch (err: unknown) {
-            logWarn('hooks', `LLM injection detection failed: ${err instanceof Error ? err.message : String(err)}`);
+            logWarn(
+              'hooks',
+              `LLM injection detection failed: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -515,7 +557,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             // Scan for injection before persisting to memory (Tier 1+2 regex + Tier 2.C semantic)
             const memSafety = await isMemorySafeAsync(content);
             if (!memSafety.safe) {
-              ctx.log(`[hooks/post-tool] Blocked poisoned memory save: ${memSafety.result?.description}`);
+              ctx.log(
+                `[hooks/post-tool] Blocked poisoned memory save: ${memSafety.result?.description}`
+              );
               return;
             }
             const embedding = await getEmbedding(content);
@@ -525,7 +569,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               type: 'observation',
             });
           } catch (err: unknown) {
-            logWarn('hooks', `Memory auto-capture failed: ${err instanceof Error ? err.message : String(err)}`);
+            logWarn(
+              'hooks',
+              `Memory auto-capture failed: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         };
 
@@ -541,13 +588,29 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               // IFC: Taint session on secret detection
               if (postIfcState) {
                 const matchTypes = sensitiveResult.matches.map((m) => m.type);
-                if (matchTypes.some((t) => t.includes('key') || t.includes('token') || t.includes('entropy') || t === 'jwt')) {
+                if (
+                  matchTypes.some(
+                    (t) =>
+                      t.includes('key') ||
+                      t.includes('token') ||
+                      t.includes('entropy') ||
+                      t === 'jwt'
+                  )
+                ) {
                   addTaint(postIfcState, 'secrets_detected', `Bash output (${matchTypes[0]})`);
                 }
                 if (matchTypes.some((t) => t === 'private_key' || t.includes('password'))) {
                   addTaint(postIfcState, 'credentials_detected', `Bash output (${matchTypes[0]})`);
                 }
-                if (matchTypes.some((t) => t.includes('pii') || t.includes('ssn') || t.includes('phone') || t.includes('name'))) {
+                if (
+                  matchTypes.some(
+                    (t) =>
+                      t.includes('pii') ||
+                      t.includes('ssn') ||
+                      t.includes('phone') ||
+                      t.includes('name')
+                  )
+                ) {
                   addTaint(postIfcState, 'pii_detected', `Bash output (${matchTypes[0]})`);
                 }
               }
@@ -561,12 +624,21 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               };
             }
           } catch (err: unknown) {
-            logWarn('hooks', `Post-tool secret scanning failed: ${err instanceof Error ? err.message : String(err)}`);
+            logWarn(
+              'hooks',
+              `Post-tool secret scanning failed: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
         // Post-tool: IFC content-based label raising for Read output
-        if (postIfcState && toolName === 'Read' && toolOutput && toolOutput.length > 0 && toolOutput.length < 100000) {
+        if (
+          postIfcState &&
+          toolName === 'Read' &&
+          toolOutput &&
+          toolOutput.length > 0 &&
+          toolOutput.length < 100000
+        ) {
           const contentLabel = labelByContent(toolOutput);
           if (!isBottom(contentLabel)) {
             const filePath2 = (toolInput.file_path as string) || 'unknown';
@@ -575,15 +647,28 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         // Post-tool: Guardrails LLM sensitivity classification (Phase 3, Layer 4)
-        if (postIfcState && toolName === 'Read' && toolOutput && toolOutput.length > 50 && toolOutput.length < 10000) {
+        if (
+          postIfcState &&
+          toolName === 'Read' &&
+          toolOutput &&
+          toolOutput.length > 50 &&
+          toolOutput.length < 10000
+        ) {
           try {
             const sensitivity = await classifySensitivity(toolOutput);
             if (sensitivity && sensitivity.confidence > 0.7 && !isBottom(sensitivity.label)) {
               const filePath3 = (toolInput.file_path as string) || 'unknown';
-              raiseLabel(postIfcState, sensitivity.label, `LLM classification of ${path.basename(filePath3)}: ${sensitivity.reasoning}`);
+              raiseLabel(
+                postIfcState,
+                sensitivity.label,
+                `LLM classification of ${path.basename(filePath3)}: ${sensitivity.reasoning}`
+              );
             }
           } catch (err: unknown) {
-            logWarn('hooks', `LLM sensitivity classification failed: ${err instanceof Error ? err.message : String(err)}`);
+            logWarn(
+              'hooks',
+              `LLM sensitivity classification failed: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -607,7 +692,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           if (!outputInjection && toolOutput.length > 50 && toolOutput.length < 5000) {
             try {
               const llmOutputInjection = await detectInjectionLLM(toolOutput);
-              if (llmOutputInjection && llmOutputInjection.isInjection && llmOutputInjection.confidence > 0.8) {
+              if (
+                llmOutputInjection &&
+                llmOutputInjection.isInjection &&
+                llmOutputInjection.confidence > 0.8
+              ) {
                 if (postIfcState) {
                   addTaint(postIfcState, 'prompt_injection', `${toolName} output (LLM T3)`);
                 }
@@ -619,7 +708,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 };
               }
             } catch (err: unknown) {
-              logWarn('hooks', `LLM output injection detection failed: ${err instanceof Error ? err.message : String(err)}`);
+              logWarn(
+                'hooks',
+                `LLM output injection detection failed: ${err instanceof Error ? err.message : String(err)}`
+              );
             }
           }
         }
@@ -730,7 +822,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                     // Scan each bullet for injection before persisting (Tier 1+2 + Tier 2.C semantic)
                     const memSafe = await isMemorySafeAsync(bullet.text);
                     if (!memSafe.safe) {
-                      ctx.log(`[hooks/memory-sync] Skipping MEMORY.md bullet with injection: ${memSafe.result?.description}`);
+                      ctx.log(
+                        `[hooks/memory-sync] Skipping MEMORY.md bullet with injection: ${memSafe.result?.description}`
+                      );
                       return;
                     }
                     const embedding = await getEmbedding(bullet.text);
@@ -785,9 +879,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             if (pendingContext.trim()) {
               // Scan re-injected context for injection (Tier 1+2+2.C)
               const compactInjection = await detectInjectionAsync(pendingContext);
-              const sanitizedPending = compactInjection?.severity === 'definite'
-                ? `[Content removed — injection detected: ${sanitizeForContext(compactInjection.description, 200)}]`
-                : sanitizeForContext(pendingContext);
+              const sanitizedPending =
+                compactInjection?.severity === 'definite'
+                  ? `[Content removed — injection detected: ${sanitizeForContext(compactInjection.description, 200)}]`
+                  : sanitizeForContext(pendingContext);
               return {
                 hookSpecificOutput: {
                   hookEventName: 'UserPromptSubmit',
@@ -883,7 +978,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         // Scan top rule for injection before acting on it (Tier 1+2+2.C, prevents privilege escalation)
         const permRuleInjection = await detectInjectionAsync(topRule.content);
         if (permRuleInjection && permRuleInjection.severity === 'definite') {
-          ctx.log(`[hooks/permission] Poisoned hook-rule #${topRule.id} skipped: ${permRuleInjection.description}`);
+          ctx.log(
+            `[hooks/permission] Poisoned hook-rule #${topRule.id} skipped: ${permRuleInjection.description}`
+          );
           return {}; // pass-through to user instead of acting on poisoned rule
         }
 
@@ -999,7 +1096,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               // Scan soul.md for injection (cross-session vector, Tier 1+2+2.C)
               const soulInjection = await detectInjectionAsync(soulContent);
               if (soulInjection && soulInjection.severity === 'definite') {
-                contextParts.push(`<security-warning>soul.md contains possible injection: ${sanitizeForContext(soulInjection.description, 200)}</security-warning>`);
+                contextParts.push(
+                  `<security-warning>soul.md contains possible injection: ${sanitizeForContext(soulInjection.description, 200)}</security-warning>`
+                );
               } else {
                 contextParts.push(wrapSanitized('soul', soulContent, {}));
               }
@@ -1017,7 +1116,9 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               // Scan for cross-session injection (Tier 1+2+2.C)
               const ctxInjection = await detectInjectionAsync(precomputed);
               if (ctxInjection && ctxInjection.severity === 'definite') {
-                contextParts.push(`<security-warning>next-session-context.md contains possible injection: ${sanitizeForContext(ctxInjection.description, 200)}</security-warning>`);
+                contextParts.push(
+                  `<security-warning>next-session-context.md contains possible injection: ${sanitizeForContext(ctxInjection.description, 200)}</security-warning>`
+                );
               } else {
                 contextParts.push(wrapSanitized('previous-session', precomputed));
               }

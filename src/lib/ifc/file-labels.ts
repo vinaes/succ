@@ -156,24 +156,49 @@ const CONTENT_PATTERNS: ContentPattern[] = [
   { pattern: /gh[pousr]_[a-zA-Z0-9]{36}/, compartments: ['secrets'], level: 3 },
   { pattern: /github_pat_[a-zA-Z0-9]{22,}/, compartments: ['secrets'], level: 3 },
   { pattern: /glpat-[a-zA-Z0-9-]{20,}/, compartments: ['secrets'], level: 3 },
-  { pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}/, compartments: ['secrets'], level: 3 },
-  { pattern: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/, compartments: ['secrets'], level: 2 },
+  {
+    pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}/,
+    compartments: ['secrets'],
+    level: 3,
+  },
+  {
+    pattern: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/,
+    compartments: ['secrets'],
+    level: 2,
+  },
 
   // Private keys (→ credentials)
-  { pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/, compartments: ['credentials'], level: 3 },
+  {
+    pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/,
+    compartments: ['credentials'],
+    level: 3,
+  },
 
   // Password assignments (→ secrets)
-  { pattern: /(?:password|passwd|secret|api_key)\s*[:=]\s*['"][^'"]{8,}['"]/, compartments: ['secrets'], level: 2 },
+  {
+    pattern: /(?:password|passwd|secret|api_key)\s*[:=]\s*['"][^'"]{8,}['"]/,
+    compartments: ['secrets'],
+    level: 2,
+  },
 
   // Connection strings (→ credentials + internal_infra)
-  { pattern: /(?:postgres|mysql|mongodb|redis):\/\/[^:]+:[^@]+@/, compartments: ['credentials', 'internal_infra'], level: 2 },
+  {
+    pattern: /(?:postgres|mysql|mongodb|redis):\/\/[^:]+:[^@]+@/,
+    compartments: ['credentials', 'internal_infra'],
+    level: 2,
+  },
 
   // PII patterns
   { pattern: /\b\d{3}-\d{2}-\d{4}\b/, compartments: ['pii'], level: 2 }, // SSN
   { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z]{2,}\b/i, compartments: ['pii'], level: 1 }, // Email (low level — very common)
 
   // Internal infrastructure markers
-  { pattern: /(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})/, compartments: ['internal_infra'], level: 1 },
+  {
+    pattern:
+      /(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})/,
+    compartments: ['internal_infra'],
+    level: 1,
+  },
 ];
 
 /**
@@ -209,9 +234,8 @@ export interface FileLabelOptions {
  */
 export function resolveFileLabel(filePath: string, options: FileLabelOptions = {}): SecurityLabel {
   // Normalize relative paths to have path separators for path-based rules
-  const normalizedPath = filePath.includes('/') || filePath.includes('\\')
-    ? filePath
-    : './' + filePath;
+  const normalizedPath =
+    filePath.includes('/') || filePath.includes('\\') ? filePath : './' + filePath;
 
   let result = BOTTOM;
 
@@ -238,4 +262,11 @@ export function quickFileLabel(filePath: string): SecurityLabel {
 }
 
 // Re-export for convenience
-export { BOTTOM, makeLabel, join, isBottom, type SecurityLabel, type Compartment } from './label.js';
+export {
+  BOTTOM,
+  makeLabel,
+  join,
+  isBottom,
+  type SecurityLabel,
+  type Compartment,
+} from './label.js';

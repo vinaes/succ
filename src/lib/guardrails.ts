@@ -38,7 +38,7 @@ export interface SensitivityResult {
 }
 
 export interface CodePolicyViolation {
-  code: string;       // e.g. "SC2" (Command Injection), "SC3" (XSS), "SC5" (SQL Injection)
+  code: string; // e.g. "SC2" (Command Injection), "SC3" (XSS), "SC5" (SQL Injection)
   severity: 'critical' | 'high' | 'medium' | 'low';
   description: string;
   line?: number;
@@ -117,12 +117,17 @@ function getGuardrailsConfig(): GuardrailsConfig | null {
     if (!gc) return null;
     return gc;
   } catch (err) {
-    logWarn('guardrails', `Failed to load guardrails config: ${err instanceof Error ? err.message : String(err)}`);
+    logWarn(
+      'guardrails',
+      `Failed to load guardrails config: ${err instanceof Error ? err.message : String(err)}`
+    );
     return null;
   }
 }
 
-function isGuardrailsEnabled(feature: 'classify_sensitivity' | 'classify_code_policy' | 'detect_injection'): boolean {
+function isGuardrailsEnabled(
+  feature: 'classify_sensitivity' | 'classify_code_policy' | 'detect_injection'
+): boolean {
   const gc = getGuardrailsConfig();
   if (!gc) return false;
   return gc[feature] === true;
@@ -175,7 +180,7 @@ function formatLlamaGuardPrompt(content: string, categories: string): string {
     .replace(/<END UNSAFE CONTENT CATEGORIES>/gi, '<END_UNSAFE_CONTENT_CATEGORIES>')
     .replace(/<BEGIN UNSAFE CONTENT CATEGORIES>/gi, '<BEGIN_UNSAFE_CONTENT_CATEGORIES>');
   return [
-    'Task: Check if there is unsafe content in \'User\' messages in conversations',
+    "Task: Check if there is unsafe content in 'User' messages in conversations",
     'according to our safety policy with the below categories.',
     '',
     '<BEGIN UNSAFE CONTENT CATEGORIES>',
@@ -187,7 +192,7 @@ function formatLlamaGuardPrompt(content: string, categories: string): string {
     '<END CONVERSATION>',
     '',
     'Provide your safety assessment for User in the above conversation:',
-    '- First line must read \'safe\' or \'unsafe\'.',
+    "- First line must read 'safe' or 'unsafe'.",
     '- If unsafe, a second line must include a comma-separated list of violated categories.',
   ].join('\n');
 }
@@ -198,9 +203,18 @@ interface LlamaGuardParsed {
 }
 
 function parseLlamaGuardResponse(response: string): LlamaGuardParsed {
-  const lines = response.trim().split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = response
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   const safe = lines[0]?.toLowerCase() === 'safe';
-  const categories = safe ? [] : (lines[1]?.split(',').map(s => s.trim()).filter(Boolean) || []);
+  const categories = safe
+    ? []
+    : lines[1]
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) || [];
   return { safe, categories };
 }
 
@@ -216,7 +230,7 @@ async function callOllamaNativeChat(
   systemPrompt: string,
   model: string,
   timeout: number,
-  maxTokens: number,
+  maxTokens: number
 ): Promise<string | null> {
   const gc = getGuardrailsConfig();
   if (!gc?.api_url) return null;
@@ -248,7 +262,7 @@ async function callOllamaNativeChat(
     return null;
   }
 
-  const data = await response.json() as {
+  const data = (await response.json()) as {
     message?: { role: string; content: string; thinking?: string };
   };
 
@@ -270,16 +284,20 @@ async function callGuardrailsLLM(prompt: string, systemPrompt: string): Promise<
       return await callOllamaNativeChat(prompt, systemPrompt, model, timeout, maxTokens);
     }
 
-    const result = await callLLM(prompt, {
-      systemPrompt,
-      timeout,
-      maxTokens,
-    }, {
-      backend: 'api',
-      model,
-      endpoint: gc?.api_url,
-      apiKey: gc?.api_key,
-    });
+    const result = await callLLM(
+      prompt,
+      {
+        systemPrompt,
+        timeout,
+        maxTokens,
+      },
+      {
+        backend: 'api',
+        model,
+        endpoint: gc?.api_url,
+        apiKey: gc?.api_key,
+      }
+    );
     return result;
   } catch (err) {
     logWarn('guardrails', `LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -321,9 +339,11 @@ export async function classifySensitivity(content: string): Promise<SensitivityR
     const parsed = JSON.parse(response);
     const level = Math.max(0, Math.min(3, Number(parsed.level) || 0)) as SecurityLevel;
     const validCompartments = ['secrets', 'credentials', 'pii', 'internal_infra'] as const;
-    const compartments = (Array.isArray(parsed.compartments)
-      ? parsed.compartments.filter((c: string) => validCompartments.includes(c as Compartment))
-      : []) as Compartment[];
+    const compartments = (
+      Array.isArray(parsed.compartments)
+        ? parsed.compartments.filter((c: string) => validCompartments.includes(c as Compartment))
+        : []
+    ) as Compartment[];
 
     const result: SensitivityResult = {
       label: level === 0 && compartments.length === 0 ? BOTTOM : makeLabel(level, compartments),
@@ -339,7 +359,10 @@ export async function classifySensitivity(content: string): Promise<SensitivityR
   }
 }
 
-async function classifySensitivityLlamaGuard(hash: string, content: string): Promise<SensitivityResult | null> {
+async function classifySensitivityLlamaGuard(
+  hash: string,
+  content: string
+): Promise<SensitivityResult | null> {
   const prompt = formatLlamaGuardPrompt(content, SENSITIVITY_LG_CATEGORIES);
   const response = await callGuardrailsLLM(prompt, '');
   if (!response) return null;
@@ -348,7 +371,11 @@ async function classifySensitivityLlamaGuard(hash: string, content: string): Pro
     const { safe, categories } = parseLlamaGuardResponse(response);
 
     if (safe) {
-      const result: SensitivityResult = { label: BOTTOM, confidence: 0.9, reasoning: 'Llama Guard: safe' };
+      const result: SensitivityResult = {
+        label: BOTTOM,
+        confidence: 0.9,
+        reasoning: 'Llama Guard: safe',
+      };
       sensitivityCache.set(hash, result);
       return result;
     }
@@ -369,12 +396,18 @@ async function classifySensitivityLlamaGuard(hash: string, content: string): Pro
 
     // Warn if response was "unsafe" but no categories mapped (malformed response)
     if (categories.length > 0 && bestLevel === 0 && uniqueCompartments.length === 0) {
-      logWarn('guardrails', `Llama Guard sensitivity: unsafe but no mapped categories [${categories.join(', ')}] — treating as internal`);
+      logWarn(
+        'guardrails',
+        `Llama Guard sensitivity: unsafe but no mapped categories [${categories.join(', ')}] — treating as internal`
+      );
       bestLevel = 1;
     }
 
     const result: SensitivityResult = {
-      label: bestLevel === 0 && uniqueCompartments.length === 0 ? BOTTOM : makeLabel(bestLevel, uniqueCompartments),
+      label:
+        bestLevel === 0 && uniqueCompartments.length === 0
+          ? BOTTOM
+          : makeLabel(bestLevel, uniqueCompartments),
       confidence: 0.85,
       reasoning: `Llama Guard: unsafe [${categories.join(', ')}]`,
     };
@@ -389,7 +422,10 @@ async function classifySensitivityLlamaGuard(hash: string, content: string): Pro
 
 // ─── 2. Code Policy Evaluation ──────────────────────────────────────
 
-const CODE_POLICY_LG_MAP: Record<string, { code: string; severity: CodePolicyViolation['severity'] }> = {
+const CODE_POLICY_LG_MAP: Record<
+  string,
+  { code: string; severity: CodePolicyViolation['severity'] }
+> = {
   S1: { code: 'SC2', severity: 'critical' },
   S2: { code: 'SC3', severity: 'high' },
   S3: { code: 'SC5', severity: 'high' },
@@ -397,7 +433,10 @@ const CODE_POLICY_LG_MAP: Record<string, { code: string; severity: CodePolicyVio
   S5: { code: 'SC7', severity: 'high' },
 };
 
-export async function evaluateCodePolicy(content: string, filePath?: string): Promise<CodePolicyResult | null> {
+export async function evaluateCodePolicy(
+  content: string,
+  filePath?: string
+): Promise<CodePolicyResult | null> {
   if (!isGuardrailsEnabled('classify_code_policy')) return null;
 
   const hash = contentHash(content + (filePath || ''));
@@ -425,9 +464,10 @@ export async function evaluateCodePolicy(content: string, filePath?: string): Pr
 
     const violations: CodePolicyViolation[] = Array.isArray(parsed.violations)
       ? parsed.violations
-          .filter((v: Record<string, unknown>) =>
-            validCodes.includes(v.code as string) &&
-            validSeverities.includes(v.severity as string)
+          .filter(
+            (v: Record<string, unknown>) =>
+              validCodes.includes(v.code as string) &&
+              validSeverities.includes(v.severity as string)
           )
           .map((v: Record<string, unknown>) => ({
             code: v.code as string,
@@ -450,7 +490,10 @@ export async function evaluateCodePolicy(content: string, filePath?: string): Pr
   }
 }
 
-async function evaluateCodePolicyLlamaGuard(hash: string, content: string): Promise<CodePolicyResult | null> {
+async function evaluateCodePolicyLlamaGuard(
+  hash: string,
+  content: string
+): Promise<CodePolicyResult | null> {
   const prompt = formatLlamaGuardPrompt(content, CODE_POLICY_LG_CATEGORIES);
   const response = await callGuardrailsLLM(prompt, '');
   if (!response) return null;
@@ -465,9 +508,9 @@ async function evaluateCodePolicyLlamaGuard(hash: string, content: string): Prom
     }
 
     const violations: CodePolicyViolation[] = categories
-      .map(cat => CODE_POLICY_LG_MAP[cat])
+      .map((cat) => CODE_POLICY_LG_MAP[cat])
       .filter((m): m is NonNullable<typeof m> => m != null)
-      .map(mapping => ({
+      .map((mapping) => ({
         code: mapping.code,
         severity: mapping.severity,
         description: `Llama Guard flagged ${mapping.code} violation`,
@@ -514,7 +557,14 @@ export async function detectInjectionLLM(content: string): Promise<InjectionLLMR
 
   try {
     const parsed = JSON.parse(response);
-    const validCategories = ['none', 'role_manipulation', 'instruction_override', 'context_escape', 'social_engineering', 'multi_turn'];
+    const validCategories = [
+      'none',
+      'role_manipulation',
+      'instruction_override',
+      'context_escape',
+      'social_engineering',
+      'multi_turn',
+    ];
 
     const result: InjectionLLMResult = {
       isInjection: Boolean(parsed.isInjection),
@@ -531,7 +581,10 @@ export async function detectInjectionLLM(content: string): Promise<InjectionLLMR
   }
 }
 
-async function detectInjectionLlamaGuard(hash: string, content: string): Promise<InjectionLLMResult | null> {
+async function detectInjectionLlamaGuard(
+  hash: string,
+  content: string
+): Promise<InjectionLLMResult | null> {
   const prompt = formatLlamaGuardPrompt(content, INJECTION_LG_CATEGORIES);
   const response = await callGuardrailsLLM(prompt, '');
   if (!response) return null;

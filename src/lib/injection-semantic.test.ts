@@ -33,23 +33,32 @@ describe('Injection Prototype Bank', () => {
 
   it('covers 10+ languages', () => {
     // Check for known phrases in different languages
-    const hasEnglish = INJECTION_PROTOTYPES.some(p => /ignore.*instructions/i.test(p));
-    const hasChinese = INJECTION_PROTOTYPES.some(p => /忽略/.test(p));
-    const hasRussian = INJECTION_PROTOTYPES.some(p => /игнорируй/.test(p));
-    const hasArabic = INJECTION_PROTOTYPES.some(p => /تجاهل/.test(p));
-    const hasSpanish = INJECTION_PROTOTYPES.some(p => /ignora/.test(p));
-    const hasJapanese = INJECTION_PROTOTYPES.some(p => /無視/.test(p));
-    const hasKorean = INJECTION_PROTOTYPES.some(p => /무시/.test(p));
-    const hasGerman = INJECTION_PROTOTYPES.some(p => /ignoriere/.test(p));
-    const hasFrench = INJECTION_PROTOTYPES.some(p => /précédentes/.test(p));
-    const hasPortuguese = INJECTION_PROTOTYPES.some(p => /anteriores/.test(p));
-    const hasHindi = INJECTION_PROTOTYPES.some(p => /अनदेखा/.test(p));
-    const hasTurkish = INJECTION_PROTOTYPES.some(p => /görmezden/.test(p));
+    const hasEnglish = INJECTION_PROTOTYPES.some((p) => /ignore.*instructions/i.test(p));
+    const hasChinese = INJECTION_PROTOTYPES.some((p) => /忽略/.test(p));
+    const hasRussian = INJECTION_PROTOTYPES.some((p) => /игнорируй/.test(p));
+    const hasArabic = INJECTION_PROTOTYPES.some((p) => /تجاهل/.test(p));
+    const hasSpanish = INJECTION_PROTOTYPES.some((p) => /ignora/.test(p));
+    const hasJapanese = INJECTION_PROTOTYPES.some((p) => /無視/.test(p));
+    const hasKorean = INJECTION_PROTOTYPES.some((p) => /무시/.test(p));
+    const hasGerman = INJECTION_PROTOTYPES.some((p) => /ignoriere/.test(p));
+    const hasFrench = INJECTION_PROTOTYPES.some((p) => /précédentes/.test(p));
+    const hasPortuguese = INJECTION_PROTOTYPES.some((p) => /anteriores/.test(p));
+    const hasHindi = INJECTION_PROTOTYPES.some((p) => /अनदेखा/.test(p));
+    const hasTurkish = INJECTION_PROTOTYPES.some((p) => /görmezden/.test(p));
 
     const languages = [
-      hasEnglish, hasChinese, hasRussian, hasArabic, hasSpanish,
-      hasJapanese, hasKorean, hasGerman, hasFrench, hasPortuguese,
-      hasHindi, hasTurkish,
+      hasEnglish,
+      hasChinese,
+      hasRussian,
+      hasArabic,
+      hasSpanish,
+      hasJapanese,
+      hasKorean,
+      hasGerman,
+      hasFrench,
+      hasPortuguese,
+      hasHindi,
+      hasTurkish,
     ];
     const count = languages.filter(Boolean).length;
     expect(count).toBeGreaterThanOrEqual(10);
@@ -62,7 +71,7 @@ describe('Injection Prototype Bank', () => {
 
 describe('Thresholds', () => {
   it('definite threshold is 0.90', () => {
-    expect(DEFINITE_THRESHOLD).toBe(0.90);
+    expect(DEFINITE_THRESHOLD).toBe(0.9);
   });
 
   it('probable threshold is 0.82', () => {
@@ -106,8 +115,8 @@ describe('detectTier2Semantic', () => {
     const fakeVector = new Array(384).fill(0);
     const protoVectors = INJECTION_PROTOTYPES.map(() => [...fakeVector]);
     mockGetEmbeddings
-      .mockResolvedValueOnce(protoVectors)  // prototype init
-      .mockResolvedValueOnce([[...fakeVector]]);  // chunk embeddings
+      .mockResolvedValueOnce(protoVectors) // prototype init
+      .mockResolvedValueOnce([[...fakeVector]]); // chunk embeddings
 
     // Mock cosine similarity to return high value for first prototype
     mockCosineSimilarity.mockImplementation((a, b) => {
@@ -127,9 +136,7 @@ describe('detectTier2Semantic', () => {
   it('detects probable injection (0.82 <= similarity < 0.90)', async () => {
     const fakeVector = new Array(384).fill(0);
     const protoVectors = INJECTION_PROTOTYPES.map(() => [...fakeVector]);
-    mockGetEmbeddings
-      .mockResolvedValueOnce(protoVectors)
-      .mockResolvedValueOnce([[...fakeVector]]);
+    mockGetEmbeddings.mockResolvedValueOnce(protoVectors).mockResolvedValueOnce([[...fakeVector]]);
 
     mockCosineSimilarity.mockReturnValue(0.85);
 
@@ -142,9 +149,7 @@ describe('detectTier2Semantic', () => {
   it('returns null for clean text (similarity < 0.82)', async () => {
     const fakeVector = new Array(384).fill(0);
     const protoVectors = INJECTION_PROTOTYPES.map(() => [...fakeVector]);
-    mockGetEmbeddings
-      .mockResolvedValueOnce(protoVectors)
-      .mockResolvedValueOnce([[...fakeVector]]);
+    mockGetEmbeddings.mockResolvedValueOnce(protoVectors).mockResolvedValueOnce([[...fakeVector]]);
 
     mockCosineSimilarity.mockReturnValue(0.3);
 
@@ -156,8 +161,8 @@ describe('detectTier2Semantic', () => {
     const fakeVector = new Array(384).fill(0);
     const protoVectors = INJECTION_PROTOTYPES.map(() => [...fakeVector]);
     mockGetEmbeddings
-      .mockResolvedValueOnce(protoVectors)   // first: prototype init
-      .mockResolvedValueOnce([[...fakeVector]])  // first: chunk
+      .mockResolvedValueOnce(protoVectors) // first: prototype init
+      .mockResolvedValueOnce([[...fakeVector]]) // first: chunk
       .mockResolvedValueOnce([[...fakeVector]]); // second: chunk only (prototypes cached)
 
     mockCosineSimilarity.mockReturnValue(0.1);
@@ -174,9 +179,7 @@ describe('detectTier2Semantic', () => {
   it('chunks long text into overlapping windows', async () => {
     const fakeVector = new Array(384).fill(0);
     const protoVectors = INJECTION_PROTOTYPES.map(() => [...fakeVector]);
-    mockGetEmbeddings
-      .mockResolvedValueOnce(protoVectors)
-      .mockResolvedValueOnce([]); // will capture the call to see chunk count
+    mockGetEmbeddings.mockResolvedValueOnce(protoVectors).mockResolvedValueOnce([]); // will capture the call to see chunk count
 
     mockCosineSimilarity.mockReturnValue(0.1);
 

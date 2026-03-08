@@ -51,7 +51,8 @@ const DELIMITER_PATTERNS: StructuralPattern[] = [
   { pattern: /<\|system\|>/i, description: 'System role token', severity: 'definite' },
   // XML role injection (closing then opening)
   {
-    pattern: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|succ-agents)>/i,
+    pattern:
+      /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|succ-agents)>/i,
     description: 'Closing succ XML wrapper tag',
     severity: 'definite',
   },
@@ -135,7 +136,8 @@ interface SemanticPattern {
 const SEMANTIC_PATTERNS: SemanticPattern[] = [
   // English
   {
-    pattern: /ignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|rules|prompts|directives)/i,
+    pattern:
+      /ignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|rules|prompts|directives)/i,
     description: 'Instruction override attempt',
     language: 'en',
     severity: 'definite',
@@ -259,7 +261,8 @@ const SEMANTIC_PATTERNS: SemanticPattern[] = [
 
   // Russian (Русский)
   {
-    pattern: /игнорир\w*.{0,10}(?:предыдущ|прошл|выше|ранее).{0,10}(?:инструкц|правил|указан|команд)/i,
+    pattern:
+      /игнорир\w*.{0,10}(?:предыдущ|прошл|выше|ранее).{0,10}(?:инструкц|правил|указан|команд)/i,
     description: 'Ignore previous instructions (Russian)',
     language: 'ru',
     severity: 'definite',
@@ -311,7 +314,8 @@ const SEMANTIC_PATTERNS: SemanticPattern[] = [
 
   // Spanish (Español)
   {
-    pattern: /ignora\w*\s+(?:las?\s+)?(?:instrucciones|reglas|indicaciones)\s+(?:anteriores|previas)/i,
+    pattern:
+      /ignora\w*\s+(?:las?\s+)?(?:instrucciones|reglas|indicaciones)\s+(?:anteriores|previas)/i,
     description: 'Ignore previous instructions (Spanish)',
     language: 'es',
     severity: 'definite',
@@ -383,7 +387,8 @@ const SEMANTIC_PATTERNS: SemanticPattern[] = [
 
   // German (Deutsch)
   {
-    pattern: /ignorier\w*\s+(?:alle\s+)?(?:vorherigen|früheren|obigen)\s+(?:Anweisungen|Regeln|Instruktionen)/i,
+    pattern:
+      /ignorier\w*\s+(?:alle\s+)?(?:vorherigen|früheren|obigen)\s+(?:Anweisungen|Regeln|Instruktionen)/i,
     description: 'Ignore previous instructions (German)',
     language: 'de',
     severity: 'definite',
@@ -391,7 +396,8 @@ const SEMANTIC_PATTERNS: SemanticPattern[] = [
 
   // French (Français)
   {
-    pattern: /ignor\w*\s+(?:les?\s+)?(?:instructions|règles|directives)\s+(?:précédentes|antérieures)/i,
+    pattern:
+      /ignor\w*\s+(?:les?\s+)?(?:instructions|règles|directives)\s+(?:précédentes|antérieures)/i,
     description: 'Ignore previous instructions (French)',
     language: 'fr',
     severity: 'definite',
@@ -444,8 +450,7 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
       try {
         const decoded = Buffer.from(b64Match[0], 'base64').toString('utf8');
         // Only recurse if decoded text looks like actual text (mostly printable)
-        const printableRatio =
-          (decoded.match(/[\x20-\x7E]/g) || []).length / decoded.length;
+        const printableRatio = (decoded.match(/[\x20-\x7E]/g) || []).length / decoded.length;
         if (printableRatio > 0.8) {
           const innerResult = detectTier1(decoded, _depth + 1);
           if (innerResult) {

@@ -116,7 +116,9 @@ describe('dominates', () => {
   it('BOTTOM is dominated by everything', () => {
     expect(dominates(makeLabel(0), BOTTOM)).toBe(true);
     expect(dominates(makeLabel(1, ['secrets']), BOTTOM)).toBe(true);
-    expect(dominates(makeLabel(3, ['secrets', 'credentials', 'pii', 'internal_infra']), BOTTOM)).toBe(true);
+    expect(
+      dominates(makeLabel(3, ['secrets', 'credentials', 'pii', 'internal_infra']), BOTTOM)
+    ).toBe(true);
   });
 
   it('everything dominates BOTTOM', () => {
@@ -181,7 +183,9 @@ describe('isComparable', () => {
 
 describe('labelsEqual', () => {
   it('returns true for identical labels', () => {
-    expect(labelsEqual(makeLabel(2, ['secrets', 'pii']), makeLabel(2, ['secrets', 'pii']))).toBe(true);
+    expect(labelsEqual(makeLabel(2, ['secrets', 'pii']), makeLabel(2, ['secrets', 'pii']))).toBe(
+      true
+    );
   });
 
   it('returns false for different levels', () => {

@@ -22,10 +22,7 @@ export function escapeXmlContent(text: string): string {
 export function stripControlChars(text: string): string {
   // Zero-width chars: U+200B (ZWSP), U+200C (ZWNJ), U+200D (ZWJ), U+FEFF (BOM), U+00AD (soft hyphen), U+2060 (WJ)
   // RTL/LTR overrides: U+202A-U+202E, U+2066-U+2069
-  return text.replace(
-    /[\u200B\u200C\u200D\uFEFF\u00AD\u2060\u202A-\u202E\u2066-\u2069]/g,
-    ''
-  );
+  return text.replace(/[\u200B\u200C\u200D\uFEFF\u00AD\u2060\u202A-\u202E\u2066-\u2069]/g, '');
 }
 
 /**
@@ -58,7 +55,11 @@ export function sanitizeFileName(name: string): string {
  * Wrap content in an XML-like tag with sanitized content.
  * The tag name is NOT sanitized (caller controls it).
  */
-export function wrapSanitized(tag: string, content: string, attrs?: Record<string, string>): string {
+export function wrapSanitized(
+  tag: string,
+  content: string,
+  attrs?: Record<string, string>
+): string {
   const sanitized = sanitizeForContext(content);
   const attrStr = attrs
     ? ' ' +

@@ -364,35 +364,74 @@ export interface FileGuardResult {
 }
 
 /** File extensions that should NEVER be read/written (private keys, certs) */
-const SENSITIVE_FILE_EXTENSIONS = [
-  '.pem', '.key', '.p12', '.pfx', '.jks', '.keystore',
-];
+const SENSITIVE_FILE_EXTENSIONS = ['.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'];
 
 /** Files that should NEVER be deleted (critical project files) */
 const PROTECTED_DELETE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\.gitignore$/i, reason: '.gitignore controls tracked files — deletion can expose secrets.' },
-  { pattern: /Dockerfile$/i, reason: 'Dockerfile is critical infrastructure — verify before deleting.' },
-  { pattern: /\.github\/workflows\//i, reason: 'CI/CD workflow — deletion can break deployment pipeline.' },
-  { pattern: /\.gitlab-ci\.yml$/i, reason: 'CI/CD config — deletion can break deployment pipeline.' },
-  { pattern: /CODEOWNERS$/i, reason: 'CODEOWNERS controls review policy — verify before deleting.' },
-  { pattern: /migrations?\//i, reason: 'Migration files are sequential — deletion can corrupt database schema.' },
-  { pattern: /package-lock\.json$/i, reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.' },
-  { pattern: /yarn\.lock$/i, reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.' },
-  { pattern: /pnpm-lock\.yaml$/i, reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.' },
+  {
+    pattern: /\.gitignore$/i,
+    reason: '.gitignore controls tracked files — deletion can expose secrets.',
+  },
+  {
+    pattern: /Dockerfile$/i,
+    reason: 'Dockerfile is critical infrastructure — verify before deleting.',
+  },
+  {
+    pattern: /\.github\/workflows\//i,
+    reason: 'CI/CD workflow — deletion can break deployment pipeline.',
+  },
+  {
+    pattern: /\.gitlab-ci\.yml$/i,
+    reason: 'CI/CD config — deletion can break deployment pipeline.',
+  },
+  {
+    pattern: /CODEOWNERS$/i,
+    reason: 'CODEOWNERS controls review policy — verify before deleting.',
+  },
+  {
+    pattern: /migrations?\//i,
+    reason: 'Migration files are sequential — deletion can corrupt database schema.',
+  },
+  {
+    pattern: /package-lock\.json$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.',
+  },
+  {
+    pattern: /yarn\.lock$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.',
+  },
+  {
+    pattern: /pnpm-lock\.yaml$/i,
+    reason: 'Lockfile ensures reproducible builds — deletion can cause dependency issues.',
+  },
 ];
 
 /** File patterns that should prompt user (ask mode) on write */
 const ASK_ON_WRITE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\.env(?:\.|$)/i, reason: '.env files may contain secrets — verify content before writing.' },
+  {
+    pattern: /\.env(?:\.|$)/i,
+    reason: '.env files may contain secrets — verify content before writing.',
+  },
 ];
 
 /** Exfiltration URL blocklist (domains commonly used for data theft) */
 export const EXFIL_URL_BLOCKLIST = [
-  'pastebin.com', 'hastebin.com', 'paste.ee', 'dpaste.org',
-  'transfer.sh', 'file.io', '0x0.st',
-  'webhook.site', 'requestbin.com', 'hookbin.com', 'pipedream.net',
-  'ngrok.io', 'ngrok.app', 'burpcollaborator.net',
-  'interact.sh', 'canarytokens.com',
+  'pastebin.com',
+  'hastebin.com',
+  'paste.ee',
+  'dpaste.org',
+  'transfer.sh',
+  'file.io',
+  '0x0.st',
+  'webhook.site',
+  'requestbin.com',
+  'hookbin.com',
+  'pipedream.net',
+  'ngrok.io',
+  'ngrok.app',
+  'burpcollaborator.net',
+  'interact.sh',
+  'canarytokens.com',
 ];
 
 /**
@@ -540,7 +579,9 @@ export function isDataContext(command: string): boolean {
 /** Check if rm -rf target is a safe path */
 export function isRmPathSafe(command: string): boolean {
   // Match both short flags (-rf, -fr) and long flags (--recursive --force, -r --force, etc.)
-  const match = command.match(/\brm\s+(?:-[a-zA-Z]*(?:rf|fr)[a-zA-Z]*|(?:--recursive\s+--force|--force\s+--recursive|-r\s+--force|--force\s+-r|-f\s+--recursive|--recursive\s+-f))\s+(.+?)(?:\s*[;&|]|$)/);
+  const match = command.match(
+    /\brm\s+(?:-[a-zA-Z]*(?:rf|fr)[a-zA-Z]*|(?:--recursive\s+--force|--force\s+--recursive|-r\s+--force|--force\s+-r|-f\s+--recursive|--recursive\s+-f))\s+(.+?)(?:\s*[;&|]|$)/
+  );
   if (!match) return false;
 
   const target = match[1].trim().replace(/["']/g, '');
@@ -615,7 +656,11 @@ export function checkDangerous(
     if (pattern.test(command)) {
       if (checkPath && isRmPathSafe(command)) continue;
       // Require host to be followed by port/path/quote/space/end — prevents localhost.evil.com bypass
-      if (exemptLocalhost && /(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?=[:/'")\s]|$)/.test(command)) continue;
+      if (
+        exemptLocalhost &&
+        /(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?=[:/'")\s]|$)/.test(command)
+      )
+        continue;
       return { reason, mode: config.mode as 'deny' | 'ask' };
     }
   }
