@@ -200,6 +200,15 @@ export async function detectTier2Semantic(text: string): Promise<InjectionResult
     // Embed all chunks in one batch call
     const chunkEmbeddings = await getEmbeddings(chunks);
 
+    // Validate embedding count matches input (fail-open on mismatch)
+    if (chunkEmbeddings.length !== chunks.length) {
+      logWarn(
+        'injection-semantic',
+        `Embedding count mismatch: expected ${chunks.length}, got ${chunkEmbeddings.length}`
+      );
+      return null;
+    }
+
     let bestSimilarity = 0;
     let bestPrototypeIdx = 0;
     let bestChunkIdx = 0;
