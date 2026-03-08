@@ -470,8 +470,8 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
         const decoded = Buffer.from(b64Match[0], 'base64').toString('utf8');
         // Only recurse if decoded text looks like actual text (mostly printable).
         // Allow non-ASCII printable chars (multilingual text) — reject only control chars.
-        // eslint-disable-next-line no-control-regex -- Intentional: detecting binary/control chars in decoded base64
         // biome-ignore lint/suspicious/noControlCharactersInRegex: Intentional — detecting binary content in decoded base64
+        // eslint-disable-next-line no-control-regex -- Intentional: detecting binary/control chars in decoded base64
         const controlChars = (decoded.match(/[\x00-\x08\x0E-\x1F\x7F]/g) || []).length;
         const controlRatio = decoded.length > 0 ? controlChars / decoded.length : 1;
         if (controlRatio < 0.2) {

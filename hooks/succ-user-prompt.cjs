@@ -154,7 +154,7 @@ process.stdin.on('end', async () => {
 
       // Defaults
       const autoSuggest = skillsConfig?.auto_suggest || {};
-      const enabled = autoSuggest.enabled !== false; // default: true
+      const enabled = autoSuggest.enabled === true; // default: false (matches skills.ts)
       const onUserPrompt = autoSuggest.on_user_prompt !== false; // default: true
       const minPromptLength = autoSuggest.min_prompt_length || 20;
       const cooldownPrompts = autoSuggest.cooldown_prompts || 3;
@@ -213,7 +213,7 @@ process.stdin.on('end', async () => {
               }
             }
           } catch (err) {
-            log(succDir, `Skill suggestion error: ${err.message || err}`);
+            log(succDir, `Skill suggestion error: ${err.message || err}${err.cause ? ' | cause: ' + (err.cause.message || err.cause) : ''} | port=${daemonPort}`);
           }
         } else {
           // Cooldown not passed, increment counter

@@ -477,6 +477,15 @@ function setupShutdownHandlers(): void {
   if (process.platform !== 'win32') {
     process.on('SIGHUP', shutdown);
   }
+
+  // Prevent silent crashes — log and keep running
+  process.on('uncaughtException', (err) => {
+    log(`[daemon] UNCAUGHT EXCEPTION: ${err.message}\n${err.stack}`);
+  });
+  process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
+    log(`[daemon] UNHANDLED REJECTION: ${msg}`);
+  });
 }
 
 function checkShutdown(): void {
