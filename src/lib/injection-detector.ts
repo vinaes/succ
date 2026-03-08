@@ -79,6 +79,7 @@ const DELIMITER_PATTERNS: StructuralPattern[] = [
 const HIDDEN_CONTENT_PATTERNS: StructuralPattern[] = [
   // Zero-width characters (bulk presence)
   {
+    // eslint-disable-next-line no-misleading-character-class -- Matching individual ZWJ codepoints is intentional for security
     pattern: /[\u200B\u200C\u200D\uFEFF\u00AD\u2060]{3,}/,
     description: 'Cluster of zero-width/invisible characters',
     severity: 'suspicious',
@@ -414,33 +415,51 @@ const SEMANTIC_PATTERNS: SemanticPattern[] = [
 
 // ─── Detection Functions ─────────────────────────────────────────────
 
+const SEVERITY_RANK: Record<InjectionSeverity, number> = {
+  definite: 3,
+  probable: 2,
+  suspicious: 1,
+};
+
+function pickStronger(
+  current: InjectionResult | null,
+  candidate: InjectionResult
+): InjectionResult {
+  if (!current) return candidate;
+  return SEVERITY_RANK[candidate.severity] > SEVERITY_RANK[current.severity] ? candidate : current;
+}
+
 /**
  * Tier 1: Structural injection detection (language-independent, instant).
  * Safe for .cjs hooks — no imports needed.
+ * Scans ALL patterns and returns the highest-severity match.
  */
 export function detectTier1(text: string, _depth = 0): InjectionResult | null {
+  let best: InjectionResult | null = null;
+
   for (const { pattern, description, severity } of ALL_TIER1_PATTERNS) {
     if (pattern.test(text)) {
-      return {
+      best = pickStronger(best, {
         detected: true,
         severity,
         tier: 1,
         pattern: pattern.source,
         description,
-      };
+      });
+      if (best.severity === 'definite') return best; // Can't get higher
     }
   }
 
   // Check for high density of combining characters (homoglyph attack)
   const combiningCount = (text.match(/[\u0300-\u036F\u0483-\u0489]/g) || []).length;
   if (combiningCount > 5 && combiningCount / text.length > 0.15) {
-    return {
+    best = pickStronger(best, {
       detected: true,
       severity: 'suspicious',
       tier: 1,
       pattern: 'combining_char_density',
       description: `High combining character density (${combiningCount} in ${text.length} chars) — possible homoglyph obfuscation`,
-    };
+    });
   }
 
   // Check for base64-encoded injection (decode and re-scan, max 2 levels deep)
@@ -454,10 +473,19 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
         if (printableRatio > 0.8) {
           const innerResult = detectTier1(decoded, _depth + 1);
           if (innerResult) {
-            return {
+            best = pickStronger(best, {
               ...innerResult,
               description: `Base64-encoded: ${innerResult.description}`,
-            };
+            });
+          }
+
+          // Also run Tier 2 on decoded content (catches semantic injections in base64)
+          const semanticResult = detectTier2(decoded);
+          if (semanticResult) {
+            best = pickStronger(best, {
+              ...semanticResult,
+              description: `Base64-encoded: ${semanticResult.description}`,
+            });
           }
         }
       } catch {
@@ -466,31 +494,36 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
     }
   }
 
-  return null;
+  return best;
 }
 
 /**
  * Tier 2: Multilingual semantic injection detection (regex).
  * Runs in daemon context where more compute is acceptable.
+ * Scans ALL patterns and returns the highest-severity match.
  */
 export function detectTier2(text: string): InjectionResult | null {
+  let best: InjectionResult | null = null;
+
   for (const { pattern, description, language, severity } of SEMANTIC_PATTERNS) {
     if (pattern.test(text)) {
-      return {
+      best = pickStronger(best, {
         detected: true,
         severity,
         tier: 2,
         pattern: pattern.source,
         description: `[${language}] ${description}`,
-      };
+      });
+      if (best.severity === 'definite') return best; // Can't get higher
     }
   }
-  return null;
+
+  return best;
 }
 
 /**
  * Run synchronous tiers of injection detection (Tier 1 + Tier 2 regex).
- * Returns the highest-severity match, or null if clean.
+ * Returns the highest-severity match across all tiers, or null if clean.
  * Use detectInjectionAsync() for full detection including embedding-based semantic.
  */
 export function detectInjection(
@@ -498,20 +531,26 @@ export function detectInjection(
   options: { tier1?: boolean; tier2?: boolean } = {}
 ): InjectionResult | null {
   const { tier1 = true, tier2 = true } = options;
+  let best: InjectionResult | null = null;
 
   // Tier 1 first (instant, structural)
   if (tier1) {
     const result = detectTier1(text);
-    if (result) return result;
+    if (result) {
+      if (result.severity === 'definite') return result;
+      best = result;
+    }
   }
 
-  // Tier 2 (multilingual regex)
+  // Tier 2 (multilingual regex) — may find higher severity than Tier 1
   if (tier2) {
     const result = detectTier2(text);
-    if (result) return result;
+    if (result) {
+      best = best ? pickStronger(best, result) : result;
+    }
   }
 
-  return null;
+  return best;
 }
 
 /**
@@ -525,28 +564,45 @@ export async function detectInjectionAsync(
   options: { tier1?: boolean; tier2?: boolean; tier2Semantic?: boolean } = {}
 ): Promise<InjectionResult | null> {
   const { tier1 = true, tier2 = true, tier2Semantic = true } = options;
+  let best: InjectionResult | null = null;
 
   // Tier 1 (instant, structural)
   if (tier1) {
     const result = detectTier1(text);
-    if (result) return result;
+    if (result) {
+      if (result.severity === 'definite') return result;
+      best = result;
+    }
   }
 
-  // Tier 2 regex (multilingual)
+  // Tier 2 regex (multilingual) — may find higher severity than Tier 1
   if (tier2) {
     const result = detectTier2(text);
-    if (result) return result;
+    if (result) {
+      best = best ? pickStronger(best, result) : result;
+      if (best.severity === 'definite') return best;
+    }
   }
 
-  // Tier 2.C semantic (embedding-based, async)
+  // Tier 2.C semantic (embedding-based, async) — fail-open on error
   if (tier2Semantic) {
-    // Lazy import to avoid pulling in embeddings.ts when not needed (.cjs path)
-    const { detectTier2Semantic } = await import('./injection-semantic.js');
-    const result = await detectTier2Semantic(text);
-    if (result) return result;
+    try {
+      // Lazy import to avoid pulling in embeddings.ts when not needed (.cjs path)
+      const { detectTier2Semantic } = await import('./injection-semantic.js');
+      const result = await detectTier2Semantic(text);
+      if (result) {
+        best = best ? pickStronger(best, result) : result;
+      }
+    } catch (err) {
+      // Fail-open: embedding module unavailable or threw — continue with deterministic results
+      const { logWarn } = await import('./fault-logger.js');
+      logWarn('injection', 'Tier 2.C semantic detection unavailable or failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
-  return null;
+  return best;
 }
 
 /**

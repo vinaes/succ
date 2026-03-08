@@ -257,8 +257,7 @@ async function callOllamaNativeChat(
   });
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => '');
-    logWarn('guardrails', `Ollama native chat error ${response.status}: ${errorBody}`);
+    logWarn('guardrails', `Ollama native chat error ${response.status}`);
     return null;
   }
 
@@ -444,7 +443,7 @@ export async function evaluateCodePolicy(
   if (cached) return cached;
 
   const truncated = content.length > 4000 ? content.slice(0, 4000) + '\n... [truncated]' : content;
-  const fileInfo = filePath ? `File: ${filePath}\n\n` : '';
+  const fileInfo = filePath ? `File: ${stripControlChars(filePath)}\n\n` : '';
   const gc = getGuardrailsConfig();
 
   if (isSafetyClassifierModel(gc?.model)) {
@@ -515,6 +514,15 @@ async function evaluateCodePolicyLlamaGuard(
         severity: mapping.severity,
         description: `Llama Guard flagged ${mapping.code} violation`,
       }));
+
+    // If model said "unsafe" but no categories mapped, treat as indeterminate (fail-open → null)
+    if (!safe && violations.length === 0) {
+      logWarn(
+        'guardrails',
+        `Llama Guard code policy: unsafe but no mapped categories [${categories.join(', ')}]`
+      );
+      return null;
+    }
 
     const result: CodePolicyResult = { violations, safe: violations.length === 0 };
     codePolicyCache.set(hash, result);

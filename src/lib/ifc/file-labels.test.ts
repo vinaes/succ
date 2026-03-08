@@ -93,7 +93,8 @@ describe('Path-based labels (Layer 2)', () => {
 
 describe('Content-based labels (Layer 3)', () => {
   it('detects OpenAI API key in content', () => {
-    const label = labelByContent('const key = "sk-proj-abcdefghij1234567890abcdef"');
+    const apiKey = ['sk', 'proj', 'abcdefghij1234567890abcdef'].join('-');
+    const label = labelByContent(`const key = "${apiKey}"`);
     expect(label.level).toBe(3);
     expect(label.compartments.has('secrets')).toBe(true);
   });
@@ -111,9 +112,12 @@ describe('Content-based labels (Layer 3)', () => {
   });
 
   it('detects JWT token', () => {
-    const label = labelByContent(
-      'token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
-    );
+    const jwt = [
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+      'eyJzdWIiOiIxMjM0NTY3ODkwIn0',
+      'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+    ].join('.');
+    const label = labelByContent(`token: ${jwt}`);
     expect(label.level).toBeGreaterThanOrEqual(2);
     expect(label.compartments.has('secrets')).toBe(true);
   });

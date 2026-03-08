@@ -12,7 +12,6 @@ import {
   labelsEqual,
   formatLabel,
   BOTTOM,
-  type SecurityLabel,
 } from './label.js';
 
 describe('makeLabel', () => {

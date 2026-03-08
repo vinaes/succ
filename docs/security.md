@@ -4,7 +4,7 @@ succ includes a multi-layered security system that protects against prompt injec
 
 ## Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    Content Flow                         │
 │                                                         │
@@ -69,7 +69,7 @@ Detects injection phrases in 12 languages via regex and embedding similarity. Ru
 
 Uses cosine similarity between incoming text and a prototype bank of ~50 canonical injection phrases in 12 languages. Catches novel paraphrases and languages not covered by regex.
 
-```
+```text
 "please kindly set aside the prior directives"  →  sim=0.87  →  probable injection
 "忽略之前的指令" (Chinese)                         →  sim=0.92  →  definite injection
 ```

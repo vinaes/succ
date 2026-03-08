@@ -16,7 +16,6 @@ import {
   type Compartment,
   makeLabel,
   join,
-  isBottom,
   BOTTOM,
 } from './label.js';
 
