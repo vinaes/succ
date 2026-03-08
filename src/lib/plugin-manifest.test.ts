@@ -3,7 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { generatePluginManifest } from './plugin-manifest.js';
 
-const ROOT = path.resolve(import.meta.dirname, '../..');
+// import.meta.dirname requires Node 20.11+; fallback for earlier 20.x
+const ROOT = path.resolve(
+  import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
+  '../..'
+);
 
 describe('plugin-manifest', () => {
   it('should generate manifest with name "succ"', () => {
