@@ -561,7 +561,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // isServiceSession already defined above
 
     try {
-      await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
+      const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -571,8 +571,11 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         }),
         signal: AbortSignal.timeout(3000),
       });
-    } catch {
-      // intentionally empty — registration failed, continue anyway
+      if (!res.ok) {
+        log(`Session register failed: ${res.status} ${res.statusText} session=${sessionId}`);
+      }
+    } catch (err) {
+      log(`Session register error for ${sessionId}: ${err.message || err}`);
     }
   }
 
