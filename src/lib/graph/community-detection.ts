@@ -162,10 +162,11 @@ export interface CommunityResult {
 }
 
 /**
- * Detect communities in the memory graph.
+ * Detect communities using Label Propagation Algorithm.
  * Updates memory tags with community:N assignments.
+ * Exported for testing; prefer `detectCommunities()` which tries Louvain first.
  */
-export async function detectCommunities(
+export async function detectCommunitiesLP(
   options: { maxIterations?: number; minCommunitySize?: number; tagPrefix?: string } = {}
 ): Promise<CommunityResult> {
   const { maxIterations = 100, minCommunitySize = 2, tagPrefix = 'community' } = options;
@@ -251,6 +252,39 @@ export async function detectCommunities(
   }
 
   return { communities, isolated, iterations: maxIterations };
+}
+
+/**
+ * Detect communities in the memory graph.
+ * Tries Louvain modularity optimization first (higher quality); falls back to
+ * Label Propagation if graphology is unavailable.
+ * Updates memory tags with community:N assignments.
+ */
+export async function detectCommunities(
+  options: { maxIterations?: number; minCommunitySize?: number; tagPrefix?: string } = {}
+): Promise<CommunityResult> {
+  const { minCommunitySize = 2 } = options;
+
+  try {
+    const { detectLouvainCommunities } = await import('./graphology-bridge.js');
+    const louvainResult = await detectLouvainCommunities(minCommunitySize);
+
+    // Map LouvainCommunity[] to CommunityResult format
+    return {
+      communities: louvainResult.communities.map((c) => ({
+        id: c.id,
+        size: c.size,
+        members: c.members,
+      })),
+      isolated: louvainResult.isolated,
+      iterations: 1, // Louvain converges internally; report 1 pass
+    };
+  } catch (err) {
+    logWarn('community-detection', 'Louvain unavailable, falling back to Label Propagation', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return detectCommunitiesLP(options);
+  }
 }
 
 /**

@@ -26,7 +26,8 @@ import {
   LinkRelation,
   getAllMemoriesWithEmbeddings as getAllMemoriesWithEmbeddingsDb,
 } from './storage/index.js';
-import { cosineSimilarity, getEmbedding } from './embeddings.js';
+import { getEmbedding } from './embeddings.js';
+import { findSimilarPairs } from './similarity-utils.js';
 import { getIdleReflectionConfig, getConfig, getLLMTaskConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { callLLM, type LLMBackend } from './llm.js';
@@ -215,13 +216,9 @@ export async function findConsolidationCandidates(
     similarPairs = await runSimilarityWorkers(embeddings, pairs, similarityThreshold);
   } else {
     // Process sequentially for small datasets (faster due to no worker overhead)
-    similarPairs = [];
-    for (const [i, j] of pairs) {
-      const similarity = cosineSimilarity(memories[i].embedding, memories[j].embedding);
-      if (similarity >= similarityThreshold) {
-        similarPairs.push({ i, j, similarity });
-      }
-    }
+    const items = memories.map((m, idx) => ({ id: idx, embedding: m.embedding }));
+    const rawPairs = findSimilarPairs(items, similarityThreshold);
+    similarPairs = rawPairs.map(({ a, b, similarity }) => ({ i: a, j: b, similarity }));
   }
 
   // Sort by similarity descending and take top candidates
@@ -281,28 +278,19 @@ export async function findConsolidationCandidatesSync(
 
   if (memories.length < 2) return [];
 
+  const items = memories.map((m, idx) => ({ id: idx, embedding: m.embedding }));
+  const rawPairs = findSimilarPairs(items, similarityThreshold);
+  rawPairs.sort((a, b) => b.similarity - a.similarity);
+
   const candidates: ConsolidationCandidate[] = [];
-
-  for (let i = 0; i < memories.length && candidates.length < limit; i++) {
-    for (let j = i + 1; j < memories.length && candidates.length < limit; j++) {
-      const m1 = memories[i];
-      const m2 = memories[j];
-
-      const similarity = cosineSimilarity(m1.embedding, m2.embedding);
-
-      if (similarity >= similarityThreshold) {
-        const action = determineAction(m1, m2, similarity);
-        candidates.push({
-          memory1: m1,
-          memory2: m2,
-          similarity,
-          ...action,
-        });
-      }
-    }
+  for (const { a: i, b: j, similarity } of rawPairs) {
+    if (candidates.length >= limit) break;
+    const m1 = memories[i];
+    const m2 = memories[j];
+    const action = determineAction(m1, m2, similarity);
+    candidates.push({ memory1: m1, memory2: m2, similarity, ...action });
   }
 
-  candidates.sort((a, b) => b.similarity - a.similarity);
   return candidates;
 }
 

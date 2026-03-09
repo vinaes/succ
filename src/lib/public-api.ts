@@ -322,8 +322,8 @@ export { generateHyDE } from './search/hyde.js';
 export type { HyDEResult } from './search/hyde.js';
 
 // --- Search: BM25 query expansion ---
-export { expandQuery } from './search/query-expansion.js';
-export type { ExpandedQuery } from './search/query-expansion.js';
+export { expandQuery, expandQueryFull, looksLikeCode } from './query-expansion.js';
+export type { ExpandedQuery } from './query-expansion.js';
 
 // --- Search: Repo map ---
 export { generateRepoMap } from './search/repo-map.js';

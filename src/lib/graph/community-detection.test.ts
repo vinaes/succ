@@ -19,6 +19,11 @@ let mockMemories: Array<{
   created_at: string;
 }>;
 
+// Force Louvain to fail so detectCommunities() falls back to LP — tests validate LP tag behavior
+vi.mock('./graphology-bridge.js', () => {
+  throw new Error('graphology-bridge mocked out');
+});
+
 vi.mock('../storage/index.js', () => ({
   getAllMemoryLinksForExport: async () => mockLinks,
   getAllMemoriesForExport: async () => mockMemories,

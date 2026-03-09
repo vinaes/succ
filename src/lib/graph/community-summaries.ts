@@ -5,6 +5,8 @@
  * and stores them as special `community-summary` tagged memory nodes.
  * These enable thematic/abstract search across the knowledge graph.
  */
+// NOTE: See also reflection-synthesizer.ts which extracts patterns/learnings from communities.
+// This module generates retrieval-oriented GraphRAG summaries; that one generates actionable insights.
 
 import { detectLouvainCommunities, type LouvainCommunity } from './graphology-bridge.js';
 import { getMemoryById, saveMemory, deleteMemoriesByTag } from '../storage/index.js';
@@ -119,9 +121,7 @@ async function summarizeCommunity(community: LouvainCommunity): Promise<number |
   }
 
   // Generate summary via LLM — memory content is treated as untrusted data
-  const delimitedMemories = memberContents
-    .map((m) => `<memory>\n${m}\n</memory>`)
-    .join('\n\n');
+  const delimitedMemories = memberContents.map((m) => `<memory>\n${m}\n</memory>`).join('\n\n');
 
   const prompt = `You are summarizing a cluster of related knowledge graph memories. These memories were grouped together by community detection because they are semantically connected.
 

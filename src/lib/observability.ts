@@ -174,8 +174,8 @@ export async function getDashboard(): Promise<ObservabilityDashboard> {
     const memRow = await getMemoryHealth();
     memoryHealth = {
       total: memRow.total,
-      staleCount: memRow.stale,
-      staleRatio: memRow.total > 0 ? memRow.stale / memRow.total : 0,
+      staleCount: memRow.stale_unused_90d,
+      staleRatio: memRow.total > 0 ? memRow.stale_unused_90d / memRow.total : 0,
       avgAge: Math.round(memRow.avg_age_days),
       avgAccessCount: Math.round(memRow.avg_access * 10) / 10,
       neverAccessed: memRow.never_accessed,

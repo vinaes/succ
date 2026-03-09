@@ -145,7 +145,8 @@ export async function pprEnhancedRerank(
   for (const memoryId of candidates) {
     const semantic = maxSemantic > 0 ? (semanticMap.get(memoryId) ?? 0) / maxSemantic : 0;
     const ppr = maxPPR > 0 ? (pprScores.get(memoryId) ?? 0) / maxPPR : 0;
-    const centrality = maxCentrality > 0 ? (centralityScores.get(memoryId) ?? 0) / maxCentrality : 0;
+    const centrality =
+      maxCentrality > 0 ? (centralityScores.get(memoryId) ?? 0) / maxCentrality : 0;
     const feedback = feedbackFactors.get(memoryId) ?? 1.0;
 
     // Combine scores (weights: semantic + ppr + centrality = linear blend)

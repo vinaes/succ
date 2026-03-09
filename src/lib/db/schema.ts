@@ -366,6 +366,7 @@ export function initDb(database: Database.Database): void {
   `);
 
   // Migration: add confidence and source_type columns for memory provenance
+  // confidence: extraction correctness for auto-extracted memories (0.5 default, promoted to 0.7 on use). Distinct from quality_score (LLM content quality assessment).
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
   } catch {

@@ -15,8 +15,8 @@ import {
   collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
 } from '../db/auto-memory.js';
-import { cosineSimilarity } from '../embeddings.js';
 import { bufferToFloatArray } from '../db/helpers.js';
+import { findSimilarPairs, groupByUnionFind } from '../similarity-utils.js';
 import { logInfo, logWarn } from '../fault-logger.js';
 
 // ============================================================================
@@ -73,83 +73,47 @@ export async function consolidateAutoMemories(options?: {
     // Step 1: Find and merge near-duplicates (two-pass to avoid incorrect deletions).
     //
     // Pass 1: Identify all duplicate pairs and elect a winner for each group.
-    //   We track which id "survives" for every memory involved in at least one
-    //   duplicate pair.  Using a Union-Find (disjoint-set) structure ensures that
-    //   if A≈B and A≈C, all three end up in the same group and only the member
-    //   with the highest access_count is kept — regardless of the order pairs are
-    //   discovered.
+    //   Using a Union-Find (disjoint-set) structure ensures that if A≈B and A≈C,
+    //   all three end up in the same group and only the member with the highest
+    //   access_count is kept — regardless of the order pairs are discovered.
     //
     // Pass 2: Commit deletions only after all comparisons are finished.
 
-    // Union-Find helpers (path-compressed)
-    const parent = new Map<number, number>();
-    const rankMap = new Map<number, number>();
-
-    function find(x: number): number {
-      if (!parent.has(x)) {
-        parent.set(x, x);
-        rankMap.set(x, 0);
-      }
-      if (parent.get(x) !== x) {
-        parent.set(x, find(parent.get(x)!));
-      }
-      return parent.get(x)!;
+    // Build embedding vectors, filtering out dimension mismatches.
+    // Dimension mismatch can happen after embedding model change — skip those items.
+    const embeds = new Map<number, number[]>();
+    for (const mem of autoMemories) {
+      embeds.set(mem.id, bufferToFloatArray(mem.embedding));
     }
 
-    function union(a: number, b: number): void {
-      const ra = find(a);
-      const rb = find(b);
-      if (ra === rb) return;
-      // Union by rank: attach lower-rank tree under higher-rank root
-      const rankA = rankMap.get(ra) ?? 0;
-      const rankB = rankMap.get(rb) ?? 0;
-      if (rankA < rankB) {
-        parent.set(ra, rb);
-      } else if (rankA > rankB) {
-        parent.set(rb, ra);
-      } else {
-        parent.set(rb, ra);
-        rankMap.set(ra, rankA + 1);
+    // Only include items whose embedding dimension matches the majority.
+    // We determine the expected dimension from the first non-empty embedding.
+    let expectedDim: number | null = null;
+    for (const vec of embeds.values()) {
+      if (vec.length > 0) {
+        expectedDim = vec.length;
+        break;
       }
     }
 
-    // Pass 1: build duplicate groups
-    const embedCache = new Map<number, number[]>();
+    const compatibleItems = autoMemories
+      .filter((m) => expectedDim === null || embeds.get(m.id)!.length === expectedDim)
+      .map((m) => ({ id: m.id, embedding: embeds.get(m.id)! }));
 
-    for (let i = 0; i < autoMemories.length; i++) {
-      const memI = autoMemories[i];
-      if (!embedCache.has(memI.id)) {
-        embedCache.set(memI.id, bufferToFloatArray(memI.embedding));
-      }
-      const iEmbed = embedCache.get(memI.id)!;
+    // Free embedding map — no longer needed after building compatibleItems
+    embeds.clear();
 
-      for (let j = i + 1; j < autoMemories.length; j++) {
-        const memJ = autoMemories[j];
-        if (!embedCache.has(memJ.id)) {
-          embedCache.set(memJ.id, bufferToFloatArray(memJ.embedding));
-        }
-        const jEmbed = embedCache.get(memJ.id)!;
-
-        // Skip dimension mismatch (can happen after embedding model change)
-        if (iEmbed.length !== jEmbed.length) continue;
-
-        const similarity = cosineSimilarity(iEmbed, jEmbed);
-        if (similarity >= mergeThreshold) {
-          union(memI.id, memJ.id);
-        }
-      }
-    }
-
-    // Free embedding vectors — no longer needed after similarity comparisons
-    embedCache.clear();
+    // Pass 1: find similar pairs then group transitively
+    const similarPairs = findSimilarPairs(compatibleItems, mergeThreshold);
+    const unionGroups = groupByUnionFind(similarPairs);
 
     // Pass 2: within each group elect the survivor (highest access_count, then lowest id),
     // then collect the rest for deletion.
+    const memById = new Map(autoMemories.map((m) => [m.id, m]));
     const groups = new Map<number, typeof autoMemories>();
-    for (const mem of autoMemories) {
-      const root = find(mem.id);
-      if (!groups.has(root)) groups.set(root, []);
-      groups.get(root)!.push(mem);
+    for (const [root, memberIds] of unionGroups) {
+      const members = memberIds.map((id) => memById.get(id)).filter(Boolean) as typeof autoMemories;
+      groups.set(root, members);
     }
 
     const toDelete: number[] = [];

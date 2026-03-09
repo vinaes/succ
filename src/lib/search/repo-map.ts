@@ -13,9 +13,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { logInfo, logWarn } from '../fault-logger.js';
-import { EXTENSION_TO_LANGUAGE, type SymbolType } from '../tree-sitter/types.js';
-import { parseCode } from '../tree-sitter/parser.js';
-import { extractSymbols } from '../tree-sitter/extractor.js';
+import { extractSymbolsFromContent } from '../tree-sitter/public.js';
+import { EXTENSION_TO_LANGUAGE } from '../tree-sitter/types.js';
 import { getProjectRoot } from '../config.js';
 
 // ============================================================================
@@ -152,7 +151,7 @@ export async function generateRepoMap(
 
 /**
  * Extract symbols from a file using tree-sitter AST parsing.
- * Falls back to empty symbols on parse failure (non-fatal).
+ * Delegates to tree-sitter public API. Non-fatal — returns empty on failure.
  */
 async function extractFileSymbols(
   content: string,
@@ -160,39 +159,16 @@ async function extractFileSymbols(
   maxSymbols: number,
   symbolTypesFilter?: string[]
 ): Promise<string[]> {
-  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
-  const language = EXTENSION_TO_LANGUAGE[ext];
-  if (!language) return [];
-
-  let tree: Awaited<ReturnType<typeof parseCode>>;
   try {
-    tree = await parseCode(content, language);
-  } catch (error) {
-    logWarn('repo-map', `Failed to parse ${filePath}`, {
-      error: error instanceof Error ? error.message : String(error),
+    return await extractSymbolsFromContent(content, filePath, {
+      symbolTypes: symbolTypesFilter,
+      maxSymbols,
     });
-    return [];
-  }
-
-  if (!tree) return [];
-
-  try {
-    let symbols = await extractSymbols(tree, content, language);
-
-    // Apply symbol type filter if specified
-    if (symbolTypesFilter && symbolTypesFilter.length > 0) {
-      const typeSet = new Set(symbolTypesFilter as SymbolType[]);
-      symbols = symbols.filter((s) => typeSet.has(s.type));
-    }
-
-    return symbols.slice(0, maxSymbols).map((s) => s.name);
   } catch (error) {
     logWarn('repo-map', `Failed to extract symbols from ${filePath}`, {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
-  } finally {
-    tree.delete();
   }
 }
 

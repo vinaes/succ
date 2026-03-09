@@ -6,6 +6,7 @@
  *
  * Inspired by Cognee's ~90% accuracy from feedback loops.
  */
+// NOTE: Use-rate boost from recall events. See also temporal.ts calculateAccessBoost() for count-based access boost. These are complementary.
 
 import {
   insertRecallEvent,

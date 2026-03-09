@@ -503,7 +503,7 @@ export async function getMemoryStats(): Promise<any> {
 export async function getMemoryHealth(): Promise<{
   total: number;
   never_accessed: number;
-  stale: number;
+  stale_unused_90d: number;
   avg_age_days: number;
   avg_access: number;
 }> {

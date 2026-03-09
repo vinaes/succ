@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseCode } from './parser.js';
 import { extractSymbols } from './extractor.js';
-import { getLanguageForExtension } from './types.js';
+import { getLanguageForExtension, EXTENSION_TO_LANGUAGE } from './types.js';
 import type { SymbolInfo, SymbolType } from './types.js';
 import { NotFoundError, ValidationError } from '../errors.js';
 
@@ -70,6 +70,40 @@ export async function extractSymbolsFromFile(
     }
 
     return { symbols, language, file: filePath };
+  } finally {
+    tree.delete();
+  }
+}
+
+/**
+ * Extract AST symbols from source code content (no file read).
+ * Returns symbol names only. Non-fatal — returns empty array on parse failure.
+ */
+export async function extractSymbolsFromContent(
+  content: string,
+  filePath: string,
+  options?: {
+    symbolTypes?: string[];
+    maxSymbols?: number;
+  }
+): Promise<string[]> {
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  const language = EXTENSION_TO_LANGUAGE[ext];
+  if (!language) return [];
+
+  const tree = await parseCode(content, language);
+  if (!tree) return [];
+
+  try {
+    let symbols = await extractSymbols(tree, content, language);
+
+    if (options?.symbolTypes?.length) {
+      const typeSet = new Set(options.symbolTypes);
+      symbols = symbols.filter((s) => typeSet.has(s.type));
+    }
+
+    const names = symbols.map((s) => s.name);
+    return options?.maxSymbols ? names.slice(0, options.maxSymbols) : names;
   } finally {
     tree.delete();
   }

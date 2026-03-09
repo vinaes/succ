@@ -7,6 +7,8 @@
  * Plugs into daemon's handleReflection() between community detection
  * and centrality cache update.
  */
+// NOTE: See also graph/community-summaries.ts which generates GraphRAG-style retrieval summaries.
+// This module extracts actionable patterns/learnings; that one creates abstract theme descriptions.
 
 import { callLLM } from './llm.js';
 import { getEmbedding } from './embeddings.js';
