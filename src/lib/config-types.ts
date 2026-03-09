@@ -126,6 +126,31 @@ export interface SuccConfig {
   // Tool profile: controls which MCP tools are registered
   // auto (detect by client, default) | core (8 tools) | standard (12 tools) | full (14 tools)
   tool_profile?: 'auto' | 'core' | 'standard' | 'full';
+  // Auto memory extraction settings (session-end fact extraction + periodic consolidation)
+  auto_memory?: AutoMemoryConfig;
+}
+
+/**
+ * Auto Memory Config — automatic memory extraction from sessions.
+ *
+ * Phase 1: Per-session extraction (session-end hook → LLM → quality gate → save)
+ * Phase 2: Periodic consolidation (merge duplicates, promote high-usage)
+ */
+export interface AutoMemoryConfig {
+  /** Enable auto memory extraction (default: true) */
+  enabled?: boolean;
+  /** Extract facts on session end (default: true) */
+  phase1_on_session_end?: boolean;
+  /** Consolidation interval in hours (default: 4, 0 to disable) */
+  phase2_interval_hours?: number;
+  /** Minimum quality threshold for extracted facts (0-1, default: 0.7) */
+  quality_threshold?: number;
+  /** Enable secret redaction before storing (default: true) */
+  secret_redaction?: boolean;
+  /** Max unused days before auto-prune (default: 90, 0 to disable) */
+  max_unused_days?: number;
+  /** Confidence promotion threshold — promote after N accesses (default: 5) */
+  confidence_promotion_accesses?: number;
 }
 
 /**
@@ -265,6 +290,19 @@ export interface LLMConfig {
     api_url?: string;
     api_key?: string;
     max_tokens?: number; // Default: 500
+  };
+  /** Cross-encoder reranker settings */
+  reranker?: {
+    /** Enable reranking after hybrid search (default: true) */
+    enabled?: boolean;
+    /** ONNX cross-encoder model (default: 'cross-encoder/ms-marco-MiniLM-L-6-v2') */
+    model?: string;
+    /** Weight of reranker score vs original score: 0=original only, 1=reranker only (default: 0.7) */
+    weight?: number;
+    /** Minimum results required to trigger reranking (default: 3) */
+    min_results?: number;
+    /** Maximum document characters to send to reranker (default: 1000) */
+    max_doc_chars?: number;
   };
 }
 

@@ -6,6 +6,9 @@ const SOURCE_ROOT = path.join(process.cwd(), 'src');
 const ALLOWED_RAW_SQL_FILES = new Set([
   'src/commands/benchmark-sqlite-vec.ts',
   'src/lib/bpe.ts', // Intentionally SQLite-only — BPE has no PG implementation (guarded by isPostgresBackend())
+  'src/lib/auto-memory/consolidation.ts', // Delegates to db/auto-memory.ts + db/helpers.ts (proper DB layer modules)
+  'src/lib/observability.ts', // Delegates to db/observability.ts (proper DB layer module)
+  'src/lib/retrieval-feedback.ts', // Delegates to db/recall-events.ts (proper DB layer module)
 ]);
 
 const PREPARE_SQL_RE =

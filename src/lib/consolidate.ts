@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import {
   Memory,
   MemoryType,
+  type SourceType,
   deleteMemory,
   invalidateMemory,
   restoreInvalidatedMemory,
@@ -86,6 +87,8 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
     priority_score?: number | null;
     valid_from?: string | null;
     valid_until?: string | null;
+    confidence?: number | null;
+    source_type?: string | null;
   }
 
   return rows
@@ -105,6 +108,8 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from ?? null,
       valid_until: row.valid_until ?? null,
+      confidence: row.confidence ?? null,
+      source_type: (row.source_type ?? null) as SourceType | null,
       created_at: row.created_at,
       embedding: row.embedding as number[],
     }));

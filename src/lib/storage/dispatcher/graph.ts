@@ -16,7 +16,8 @@ export class GraphDispatcherMixin extends StorageDispatcherBase {
     relation: LinkRelation = 'related',
     weight: number = 1.0,
     validFrom?: string,
-    validUntil?: string
+    validUntil?: string,
+    metadata?: Record<string, unknown>
   ): Promise<{ id: number; created: boolean }> {
     if (this.backend === 'postgresql' && this.postgres)
       return this.postgres.createMemoryLink(
@@ -25,10 +26,15 @@ export class GraphDispatcherMixin extends StorageDispatcherBase {
         relation,
         weight,
         validFrom,
-        validUntil
+        validUntil,
+        metadata
       );
     const sqlite = await this.getSqliteFns();
-    return sqlite.createMemoryLink(sourceId, targetId, relation, weight, { validFrom, validUntil });
+    return sqlite.createMemoryLink(sourceId, targetId, relation, weight, {
+      validFrom,
+      validUntil,
+      metadata,
+    });
   }
 
   async deleteMemoryLink(

@@ -9,6 +9,7 @@ import type {
   MemoryRecord,
   MemorySearchResult,
   MemoryStats,
+  SourceType,
   WorkingMemoryRecord,
 } from '../types.js';
 
@@ -25,6 +26,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       qualityFactors?: Record<string, number>;
       validFrom?: string;
       validUntil?: string;
+      confidence?: number;
+      sourceType?: SourceType;
     }
   ): Promise<{
     id: number;
@@ -37,6 +40,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const qualityFactors = options?.qualityFactors;
     const validFrom = options?.validFrom;
     const validUntil = options?.validUntil;
+    const confidence = options?.confidence ?? (qualityScore != null ? qualityScore : 0.5);
+    const sourceType = options?.sourceType ?? 'human';
 
     // Auto-correction: detect similar (but not duplicate) memories in 0.82-0.92 range
     if (deduplicate) {
@@ -71,7 +76,10 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         qualityScore,
         qualityFactors,
         validFrom,
-        validUntil
+        validUntil,
+        false, // isGlobal
+        confidence,
+        sourceType
       );
 
       // Sync to Qdrant with full payload
@@ -100,6 +108,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
           qualityScore != null ? { score: qualityScore, factors: qualityFactors ?? {} } : undefined,
         validFrom,
         validUntil,
+        confidence,
+        sourceType,
       });
 
       savedId = result.id;

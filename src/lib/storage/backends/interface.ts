@@ -208,7 +208,9 @@ export interface StorageBackend {
     qualityScore: number | undefined,
     qualityFactors: Record<string, number> | undefined,
     validFrom: string | undefined,
-    validUntil: string | undefined
+    validUntil: string | undefined,
+    confidence?: number,
+    sourceType?: string
   ): number;
 
   /**
@@ -385,7 +387,8 @@ export interface StorageBackend {
     relation: LinkRelation,
     weight: number,
     validFrom: string | undefined,
-    validUntil: string | undefined
+    validUntil: string | undefined,
+    metadata?: Record<string, unknown>
   ): { id: number; created: boolean };
 
   /**

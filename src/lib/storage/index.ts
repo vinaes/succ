@@ -374,6 +374,8 @@ export async function saveMemory(
     validFrom?: string | Date;
     validUntil?: string | Date;
     autoLink?: boolean;
+    confidence?: number;
+    sourceType?: import('./types.js').SourceType;
   }
 ): Promise<{
   id: number;
@@ -408,6 +410,8 @@ export async function saveMemory(
     qualityFactors: qf,
     validFrom,
     validUntil,
+    confidence: options?.confidence,
+    sourceType: options?.sourceType,
   });
 
   // Convert dispatcher result to backward-compatible format
@@ -736,20 +740,24 @@ export async function createMemoryLink(
   targetId: number,
   relation?: LinkRelation,
   weight?: number,
-  optionsOrValidFrom?: string | { validFrom?: string; validUntil?: string },
+  optionsOrValidFrom?:
+    | string
+    | { validFrom?: string; validUntil?: string; metadata?: Record<string, unknown> },
   validUntil?: string
 ): Promise<{ id: number; created: boolean }> {
   const d = await getStorageDispatcher();
   let vf: string | undefined;
   let vu: string | undefined;
+  let metadata: Record<string, unknown> | undefined;
   if (typeof optionsOrValidFrom === 'object') {
     vf = optionsOrValidFrom.validFrom;
     vu = optionsOrValidFrom.validUntil;
+    metadata = optionsOrValidFrom.metadata;
   } else {
     vf = optionsOrValidFrom;
     vu = validUntil;
   }
-  return d.createMemoryLink(sourceId, targetId, relation, weight, vf, vu);
+  return d.createMemoryLink(sourceId, targetId, relation, weight, vf, vu, metadata);
 }
 
 export async function deleteMemoryLink(

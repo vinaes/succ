@@ -7,6 +7,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { minimatch } from 'minimatch';
 import {
   hybridSearchCode,
   hybridSearchDocs,
@@ -23,6 +24,43 @@ import {
   extractAnswerFromResults,
 } from '../helpers.js';
 
+/**
+ * Filter search results by include/exclude path glob patterns.
+ *
+ * @param results - Search results with file_path field
+ * @param includePaths - Only include results matching these globs (OR logic)
+ * @param excludePaths - Exclude results matching these globs (OR logic)
+ * @returns Filtered results
+ */
+function filterByPaths<T extends { file_path: string }>(
+  results: T[],
+  includePaths?: string[],
+  excludePaths?: string[]
+): T[] {
+  return results.filter((r) => {
+    // Normalize path separators for consistent matching
+    const filePath = r.file_path.replace(/\\/g, '/');
+
+    // Check include patterns (OR: match any)
+    if (includePaths && includePaths.length > 0) {
+      const matches = includePaths.some((pattern) =>
+        minimatch(filePath, pattern, { dot: true, matchBase: true })
+      );
+      if (!matches) return false;
+    }
+
+    // Check exclude patterns (OR: exclude if any match)
+    if (excludePaths && excludePaths.length > 0) {
+      const excluded = excludePaths.some((pattern) =>
+        minimatch(filePath, pattern, { dot: true, matchBase: true })
+      );
+      if (excluded) return false;
+    }
+
+    return true;
+  });
+}
+
 export function registerSearchTools(server: McpServer) {
   // Tool: succ_search - Hybrid search in brain vault (BM25 + semantic)
   server.registerTool(
@@ -38,6 +76,18 @@ export function registerSearchTools(server: McpServer) {
           .optional()
           .default(0.2)
           .describe('Similarity threshold 0-1 (default: 0.2)'),
+        include_paths: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Only include results from these path patterns (glob: **/*.ts, src/auth/*). Narrows search to specific directories or file types.'
+          ),
+        exclude_paths: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Exclude results matching these path patterns (glob: **/test/**, **/*.test.ts). Filters out irrelevant directories.'
+          ),
         output: z
           .enum(['full', 'lean'])
           .optional()
@@ -58,7 +108,16 @@ export function registerSearchTools(server: McpServer) {
         openWorldHint: false,
       },
     },
-    async ({ query, limit, threshold, output, extract, project_path }) => {
+    async ({
+      query,
+      limit,
+      threshold,
+      include_paths,
+      exclude_paths,
+      output,
+      extract,
+      project_path,
+    }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -106,8 +165,17 @@ export function registerSearchTools(server: McpServer) {
         }
 
         const queryEmbedding = await getEmbedding(query);
-        // Use hybrid search for docs
-        const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold);
+        // Use hybrid search for docs — overfetch if path filters are applied
+        const hasPathFilters =
+          (include_paths && include_paths.length > 0) ||
+          (exclude_paths && exclude_paths.length > 0);
+        const fetchLimit = hasPathFilters ? limit * 5 : limit;
+        let results = await hybridSearchDocs(query, queryEmbedding, fetchLimit, threshold);
+
+        // Apply path filters
+        if (hasPathFilters) {
+          results = filterByPaths(results, include_paths, exclude_paths).slice(0, limit);
+        }
 
         if (results.length === 0) {
           return {
@@ -212,6 +280,18 @@ export function registerSearchTools(server: McpServer) {
           .enum(['function', 'method', 'class', 'interface', 'type_alias'])
           .optional()
           .describe('Filter by AST symbol type (e.g., "function", "class")'),
+        include_paths: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Only include results from these path patterns (glob: **/*.ts, src/auth/*). Narrows search scope.'
+          ),
+        exclude_paths: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Exclude results matching these path patterns (glob: **/test/**, node_modules/**). Filters out irrelevant files.'
+          ),
         output: z
           .enum(['full', 'lean', 'signatures'])
           .optional()
@@ -234,7 +314,18 @@ export function registerSearchTools(server: McpServer) {
         openWorldHint: false,
       },
     },
-    async ({ query, limit, threshold, regex, symbol_type, output, extract, project_path }) => {
+    async ({
+      query,
+      limit,
+      threshold,
+      regex,
+      symbol_type,
+      include_paths,
+      exclude_paths,
+      output,
+      extract,
+      project_path,
+    }) => {
       await applyProjectPath(project_path);
       // Check if project is initialized
       if (isGlobalOnlyMode()) {
@@ -252,15 +343,25 @@ export function registerSearchTools(server: McpServer) {
         const queryEmbedding = await getEmbedding(query);
         // Build filters from optional params
         const filters = regex || symbol_type ? { regex, symbolType: symbol_type } : undefined;
+        // Overfetch if path filters are applied
+        const hasPathFilters =
+          (include_paths && include_paths.length > 0) ||
+          (exclude_paths && exclude_paths.length > 0);
+        const fetchLimit = hasPathFilters ? limit * 5 : limit;
         // Hybrid search: BM25 + vector with RRF fusion
-        const codeResults = await hybridSearchCode(
+        let codeResults = await hybridSearchCode(
           query,
           queryEmbedding,
-          limit,
+          fetchLimit,
           threshold,
           undefined,
           filters
         );
+
+        // Apply path filters
+        if (hasPathFilters) {
+          codeResults = filterByPaths(codeResults, include_paths, exclude_paths).slice(0, limit);
+        }
 
         if (codeResults.length === 0) {
           return {

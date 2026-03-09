@@ -30,6 +30,7 @@ import {
   closeStorageDispatcher,
 } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
+import { cleanupReranker } from '../lib/reranker.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { getProjectRoot, getToolProfile } from '../lib/config.js';
 import { logError, logInfo, logWarn } from '../lib/fault-logger.js';
@@ -46,6 +47,7 @@ import { registerPrdTools } from './tools/prd.js';
 import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
 import { registerWebFetchTools } from './tools/web-fetch.js';
+import { registerReviewTools } from './tools/review.js';
 import { setResolvedProfile } from './profile.js';
 
 const require = createRequire(import.meta.url);
@@ -169,6 +171,7 @@ registerPrdTools(server);
 registerWebSearchTools(server);
 registerDebugTools(server);
 registerWebFetchTools(server);
+registerReviewTools(server);
 
 // Apply tool profile (gate non-profile tools with helpful error stubs)
 const profile = getToolProfile();
@@ -188,6 +191,7 @@ process.on('unhandledRejection', (error) => {
     error instanceof Error ? error : new Error(String(error))
   );
   cleanupEmbeddings();
+  cleanupReranker().catch(() => {});
   closeDb();
   closeGlobalDb();
   process.exit(1);
@@ -280,6 +284,7 @@ main().catch(async (error) => {
   );
   await closeStorageDispatcher();
   cleanupEmbeddings();
+  await cleanupReranker();
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();

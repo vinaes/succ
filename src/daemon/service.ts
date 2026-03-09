@@ -39,6 +39,7 @@ import {
   initStorageDispatcher,
 } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
+import { cleanupReranker } from '../lib/reranker.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { loadBudgets } from '../lib/token-budget.js';
 import {
@@ -65,6 +66,7 @@ import { watcherRoutes } from './routes/watcher.js';
 import { analyzerRoutes } from './routes/analyzer.js';
 import { skillRoutes } from './routes/skills.js';
 import { hookRoutes } from './routes/hooks.js';
+import { addVersionedRoutes, getApiVersionInfo } from './routes/versioning.js';
 
 export type { DaemonConfig, DaemonState };
 
@@ -185,7 +187,7 @@ function createRouteContext(): RouteContext {
 }
 
 function buildRoutes(ctx: RouteContext): RouteMap {
-  return {
+  const baseRoutes: RouteMap = {
     ...statusRoutes(ctx),
     ...sessionRoutes(ctx),
     ...searchRoutes(ctx),
@@ -195,7 +197,13 @@ function buildRoutes(ctx: RouteContext): RouteMap {
     ...analyzerRoutes(ctx),
     ...skillRoutes(ctx),
     ...hookRoutes(ctx),
+
+    // API version info endpoint
+    'GET /api/version': async () => getApiVersionInfo(),
   };
+
+  // Add /v1/api/* aliases for all /api/* routes
+  return addVersionedRoutes(baseRoutes);
 }
 
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -519,6 +527,7 @@ export function shutdownDaemon(): void {
 
   closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
+  cleanupReranker().catch(() => {});
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();

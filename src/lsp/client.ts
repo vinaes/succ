@@ -1,0 +1,392 @@
+/**
+ * LSP Client — headless LSP connection over JSON-RPC stdio.
+ *
+ * Manages lifecycle: spawn → initialize → query → shutdown.
+ * Uses vscode-languageserver-protocol for typed LSP messages.
+ */
+
+import { spawn, type ChildProcess } from 'child_process';
+import {
+  createProtocolConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+  type ProtocolConnection,
+} from 'vscode-languageserver-protocol/node.js';
+import {
+  InitializeRequest,
+  ShutdownRequest,
+  ExitNotification,
+  DidOpenTextDocumentNotification,
+  DidCloseTextDocumentNotification,
+  DefinitionRequest,
+  ReferencesRequest,
+  HoverRequest,
+  type InitializeParams,
+  type InitializeResult,
+  type TextDocumentIdentifier,
+  type Position,
+  type Location,
+  type LocationLink,
+  type Hover,
+} from 'vscode-languageserver-protocol';
+import * as fs from 'fs';
+import * as path from 'path';
+import { logInfo, logWarn } from '../lib/fault-logger.js';
+import { pathToFileURL } from 'url';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface LspClientOptions {
+  /** Server command */
+  command: string;
+  /** Server arguments */
+  args: string[];
+  /** Project root path */
+  rootPath: string;
+  /** Initialization options for the server */
+  initializationOptions?: Record<string, unknown>;
+  /** Idle timeout in ms (default: 600000 = 10 min) */
+  idleTimeoutMs?: number;
+}
+
+export interface LspLocation {
+  uri: string;
+  filePath: string;
+  line: number;
+  character: number;
+  endLine?: number;
+  endCharacter?: number;
+}
+
+// ============================================================================
+// Client
+// ============================================================================
+
+export class LspClient {
+  private process: ChildProcess | null = null;
+  private connection: ProtocolConnection | null = null;
+  private initialized = false;
+  private openDocuments = new Set<string>();
+  private idleTimer: NodeJS.Timeout | null = null;
+  private readonly idleTimeoutMs: number;
+  private readonly options: LspClientOptions;
+
+  constructor(options: LspClientOptions) {
+    this.options = options;
+    this.idleTimeoutMs = options.idleTimeoutMs ?? 600000;
+  }
+
+  /**
+   * Start the LSP server process and initialize the connection.
+   */
+  async start(): Promise<InitializeResult> {
+    if (this.initialized) {
+      throw new Error('LSP client already initialized');
+    }
+
+    // Spawn the server process
+    this.process = spawn(this.options.command, this.options.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: this.options.rootPath,
+    });
+
+    if (!this.process.stdout || !this.process.stdin) {
+      throw new Error('Failed to get stdio streams from LSP server process');
+    }
+
+    // Capture stderr for diagnostics
+    this.process.stderr?.on('data', (data: Buffer) => {
+      const msg = data.toString().trim();
+      if (msg) {
+        logWarn('lsp-client', `stderr from ${this.options.command}: ${msg.substring(0, 200)}`);
+      }
+    });
+
+    this.process.on('exit', (code) => {
+      logInfo('lsp-client', `${this.options.command} exited with code ${code}`);
+      this.cleanup();
+    });
+
+    // Create JSON-RPC connection
+    this.connection = createProtocolConnection(
+      new StreamMessageReader(this.process.stdout),
+      new StreamMessageWriter(this.process.stdin)
+    );
+    this.connection.listen();
+
+    // Initialize
+    const rootUri = pathToFileURL(this.options.rootPath).toString();
+    const initParams: InitializeParams = {
+      processId: process.pid,
+      rootUri,
+      capabilities: {
+        textDocument: {
+          definition: { dynamicRegistration: false },
+          references: { dynamicRegistration: false },
+          hover: {
+            dynamicRegistration: false,
+            contentFormat: ['plaintext', 'markdown'],
+          },
+          callHierarchy: { dynamicRegistration: false },
+        },
+      },
+      initializationOptions: this.options.initializationOptions,
+    };
+
+    const result = await this.connection.sendRequest(InitializeRequest.type, initParams);
+
+    // Notify initialized
+    this.connection.sendNotification('initialized', {});
+    this.initialized = true;
+    this.resetIdleTimer();
+
+    logInfo('lsp-client', `${this.options.command} initialized for ${this.options.rootPath}`);
+
+    return result;
+  }
+
+  /**
+   * Open a text document in the server.
+   */
+  async openDocument(filePath: string): Promise<void> {
+    if (!this.connection) throw new Error('LSP client not started');
+
+    const uri = pathToFileURL(filePath).toString();
+    if (this.openDocuments.has(uri)) return;
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const languageId = this.detectLanguageId(filePath);
+
+    this.connection.sendNotification(DidOpenTextDocumentNotification.type, {
+      textDocument: {
+        uri,
+        languageId,
+        version: 1,
+        text: content,
+      },
+    });
+
+    this.openDocuments.add(uri);
+    this.resetIdleTimer();
+  }
+
+  /**
+   * Close a text document.
+   */
+  async closeDocument(filePath: string): Promise<void> {
+    if (!this.connection) return;
+
+    const uri = pathToFileURL(filePath).toString();
+    if (!this.openDocuments.has(uri)) return;
+
+    this.connection.sendNotification(DidCloseTextDocumentNotification.type, {
+      textDocument: { uri },
+    });
+
+    this.openDocuments.delete(uri);
+  }
+
+  /**
+   * Find the definition of a symbol at a position.
+   */
+  async definition(filePath: string, line: number, character: number): Promise<LspLocation[]> {
+    if (!this.connection) throw new Error('LSP client not started');
+    this.resetIdleTimer();
+
+    await this.openDocument(filePath);
+    const uri = pathToFileURL(filePath).toString();
+
+    const result = await this.connection.sendRequest(DefinitionRequest.type, {
+      textDocument: { uri },
+      position: { line, character },
+    });
+
+    return this.normalizeLocations(result);
+  }
+
+  /**
+   * Find all references to a symbol at a position.
+   */
+  async references(
+    filePath: string,
+    line: number,
+    character: number,
+    includeDeclaration: boolean = true
+  ): Promise<LspLocation[]> {
+    if (!this.connection) throw new Error('LSP client not started');
+    this.resetIdleTimer();
+
+    await this.openDocument(filePath);
+    const uri = pathToFileURL(filePath).toString();
+
+    const result = await this.connection.sendRequest(ReferencesRequest.type, {
+      textDocument: { uri },
+      position: { line, character },
+      context: { includeDeclaration },
+    });
+
+    return this.normalizeLocations(result);
+  }
+
+  /**
+   * Get hover information for a symbol at a position.
+   */
+  async hover(filePath: string, line: number, character: number): Promise<string | null> {
+    if (!this.connection) throw new Error('LSP client not started');
+    this.resetIdleTimer();
+
+    await this.openDocument(filePath);
+    const uri = pathToFileURL(filePath).toString();
+
+    const result: Hover | null = await this.connection.sendRequest(HoverRequest.type, {
+      textDocument: { uri },
+      position: { line, character },
+    });
+
+    if (!result?.contents) return null;
+
+    if (typeof result.contents === 'string') return result.contents;
+    if ('value' in result.contents) return result.contents.value;
+    if (Array.isArray(result.contents)) {
+      return result.contents.map((c) => (typeof c === 'string' ? c : c.value)).join('\n');
+    }
+
+    return null;
+  }
+
+  /**
+   * Gracefully shutdown the server.
+   */
+  async shutdown(): Promise<void> {
+    if (!this.connection || !this.initialized) return;
+
+    this.clearIdleTimer();
+
+    try {
+      // Close all open documents
+      for (const uri of this.openDocuments) {
+        this.connection.sendNotification(DidCloseTextDocumentNotification.type, {
+          textDocument: { uri },
+        });
+      }
+      this.openDocuments.clear();
+
+      // Send shutdown request
+      await this.connection.sendRequest(ShutdownRequest.type);
+      // Send exit notification
+      this.connection.sendNotification(ExitNotification.type);
+    } catch (error) {
+      logWarn('lsp-client', 'Error during shutdown', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    this.cleanup();
+  }
+
+  /**
+   * Check if the client is connected and initialized.
+   */
+  get isReady(): boolean {
+    return this.initialized && this.connection !== null;
+  }
+
+  // ============================================================================
+  // Internal
+  // ============================================================================
+
+  private cleanup(): void {
+    this.clearIdleTimer();
+    this.initialized = false;
+
+    if (this.connection) {
+      this.connection.dispose();
+      this.connection = null;
+    }
+
+    if (this.process) {
+      if (!this.process.killed) {
+        this.process.kill('SIGTERM');
+      }
+      this.process = null;
+    }
+  }
+
+  private resetIdleTimer(): void {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      logInfo('lsp-client', `Idle timeout reached, shutting down ${this.options.command}`);
+      this.shutdown().catch((err) => {
+        logWarn('lsp-client', 'Shutdown failed on idle timeout', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, this.idleTimeoutMs);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private normalizeLocations(
+    result: Location | Location[] | LocationLink[] | null | undefined
+  ): LspLocation[] {
+    if (!result) return [];
+
+    const items = Array.isArray(result) ? result : [result];
+
+    // Convert LocationLink to Location format
+    const locations: Location[] = items.map((item) => {
+      if ('targetUri' in item) {
+        // LocationLink
+        return { uri: item.targetUri, range: item.targetRange };
+      }
+      return item as Location;
+    });
+
+    return locations.map((loc) => {
+      const filePath = new URL(loc.uri).pathname;
+      // On Windows, URL pathname starts with / before drive letter
+      const normalizedPath =
+        process.platform === 'win32' && filePath.startsWith('/') ? filePath.substring(1) : filePath;
+
+      return {
+        uri: loc.uri,
+        filePath: normalizedPath,
+        line: loc.range.start.line,
+        character: loc.range.start.character,
+        endLine: loc.range.end.line,
+        endCharacter: loc.range.end.character,
+      };
+    });
+  }
+
+  private detectLanguageId(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const map: Record<string, string> = {
+      '.ts': 'typescript',
+      '.tsx': 'typescriptreact',
+      '.js': 'javascript',
+      '.jsx': 'javascriptreact',
+      '.py': 'python',
+      '.go': 'go',
+      '.rs': 'rust',
+      '.cs': 'csharp',
+      '.c': 'c',
+      '.cpp': 'cpp',
+      '.h': 'c',
+      '.hpp': 'cpp',
+      '.rb': 'ruby',
+      '.java': 'java',
+      '.kt': 'kotlin',
+      '.vue': 'vue',
+      '.svelte': 'svelte',
+    };
+    return map[ext] ?? 'plaintext';
+  }
+}

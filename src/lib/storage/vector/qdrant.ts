@@ -23,6 +23,7 @@ import type {
   StorageConfig,
   Memory,
   MemoryType,
+  SourceType,
 } from '../types.js';
 import { DependencyError } from '../../errors.js';
 
@@ -1296,6 +1297,8 @@ export class QdrantVectorStore implements VectorStore {
       priority_score: asNullableNumber(payload.priority_score),
       valid_from: asNullableString(payload.valid_from),
       valid_until: asNullableString(payload.valid_until),
+      confidence: asNullableNumber(payload.confidence),
+      source_type: asNullableString(payload.source_type) as SourceType | null,
       created_at: asString(payload.created_at),
       similarity: point.score,
     };

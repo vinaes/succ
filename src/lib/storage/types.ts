@@ -117,6 +117,15 @@ export const MEMORY_TYPES = [
 ] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
+export const SOURCE_TYPES = [
+  'human',
+  'agent',
+  'canonical_doc',
+  'imported',
+  'auto_extracted',
+] as const;
+export type SourceType = (typeof SOURCE_TYPES)[number];
+
 export interface Memory {
   id: number;
   content: string;
@@ -132,6 +141,8 @@ export interface Memory {
   correction_count: number;
   is_invariant: boolean;
   priority_score: number | null;
+  confidence: number | null;
+  source_type: SourceType | null;
   created_at: string;
 }
 
@@ -312,6 +323,11 @@ export const LINK_RELATIONS = [
   'implements',
   'supersedes',
   'references',
+  // Bridge edges: code ↔ knowledge
+  'documents',
+  'bug_in',
+  'test_covers',
+  'motivates',
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
@@ -325,6 +341,19 @@ export interface MemoryLink {
   valid_from: string | null;
   valid_until: string | null;
   created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/** Metadata for bridge edges (code ↔ knowledge). */
+export interface BridgeEdgeMetadata {
+  /** Code file path this edge references */
+  code_path?: string;
+  /** Symbol name within the file */
+  symbol_name?: string;
+  /** Line range [start, end] */
+  line_range?: [number, number];
+  /** Auto-detected or manual */
+  detection: 'auto' | 'manual';
 }
 
 export interface MemoryLinkInput {
@@ -334,6 +363,7 @@ export interface MemoryLinkInput {
   weight?: number;
   validFrom?: string | Date;
   validUntil?: string | Date;
+  metadata?: Record<string, unknown>;
 }
 
 export interface MemoryWithLinks extends Memory {

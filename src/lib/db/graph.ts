@@ -18,6 +18,11 @@ export const LINK_RELATIONS = [
   'implements', // A implements B (decision → code)
   'supersedes', // A supersedes/replaces B
   'references', // A references B
+  // Bridge edges: code ↔ knowledge
+  'documents', // Decision/learning explains code
+  'bug_in', // Error memory → code location
+  'test_covers', // Test → function it tests
+  'motivates', // Pattern → code module
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
@@ -32,6 +37,25 @@ export interface MemoryLink {
   valid_from: string | null; // When relationship became valid
   valid_until: string | null; // When relationship expired/was invalidated
   created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/** Parse metadata JSON from SQLite TEXT column */
+function parseMetadata(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Parse raw SQLite row into MemoryLink with metadata */
+function parseLink(row: any): MemoryLink {
+  return {
+    ...row,
+    metadata: parseMetadata(row.metadata),
+  };
 }
 
 export interface MemoryWithLinks extends Memory {
@@ -66,6 +90,7 @@ export function createMemoryLink(
   options?: {
     validFrom?: string | Date;
     validUntil?: string | Date;
+    metadata?: Record<string, unknown>;
   }
 ): { id: number; created: boolean } {
   // Convert Date objects to ISO strings
@@ -79,12 +104,13 @@ export function createMemoryLink(
       ? options.validUntil.toISOString()
       : options.validUntil
     : null;
+  const metadataStr = options?.metadata ? JSON.stringify(options.metadata) : null;
 
   try {
     const result = cachedPrepare(`
-        INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
+        INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr, metadataStr);
 
     // Auto-tag superseded memories for archive
     if (relation === 'supersedes') {
@@ -140,13 +166,13 @@ export function getMemoryLinks(memoryId: number): {
   outgoing: MemoryLink[];
   incoming: MemoryLink[];
 } {
-  const outgoing = cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(
-    memoryId
-  ) as MemoryLink[];
+  const outgoing = (
+    cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(memoryId) as any[]
+  ).map(parseLink);
 
-  const incoming = cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(
-    memoryId
-  ) as MemoryLink[];
+  const incoming = (
+    cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(memoryId) as any[]
+  ).map(parseLink);
 
   return { outgoing, incoming };
 }
