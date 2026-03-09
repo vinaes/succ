@@ -265,8 +265,27 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const contextParts: string[] = [];
         let askReason: string | null = null;
 
+        // Detect bypass permission mode — prefer session-registered value (trusted),
+        // fall back to request body for sessions started before this feature.
+        const sessionId0 = input.session_id;
+        const registeredIfc = sessionId0 ? ifcStates.get(sessionId0) : null;
+        const permissionMode =
+          registeredIfc?.permissionMode ?? (body as Record<string, unknown>)?.permission_mode;
+        const isBypassMode = permissionMode === 'bypassPermissions';
+        const secConfig = getConfig().security;
+        const trustBypass = isBypassMode && secConfig?.trustAgentPermissions === true;
+
         // 0. Injection scan on tool input (Tier 1 + Tier 2 regex + Tier 2.C semantic)
-        const inputToScan = filePath || command || (toolInput.url as string) || '';
+        // Scan all input fields: path, command, url, AND content body
+        const inputParts = [
+          filePath,
+          command,
+          toolInput.url as string,
+          typeof toolInput.content === 'string' && toolInput.content.length < 50000
+            ? toolInput.content
+            : '',
+        ].filter(Boolean);
+        const inputToScan = inputParts.join('\n');
         if (inputToScan) {
           const injectionResult = await detectInjectionAsync(inputToScan);
           if (injectionResult && injectionResult.severity === 'definite') {
@@ -288,13 +307,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const operation = toolName === 'Read' ? 'read' : 'write';
           const fileGuardResult = checkFileOperation(operation, filePath);
           if (fileGuardResult) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: fileGuardResult.mode === 'ask' ? 'ask' : 'deny',
-                permissionDecisionReason: `[succ file guard] ${fileGuardResult.reason}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="file-guard">[succ file guard — bypassed] ${sanitizeForContext(fileGuardResult.reason, 300)}</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: fileGuardResult.mode === 'ask' ? 'ask' : 'deny',
+                  permissionDecisionReason: `[succ file guard] ${fileGuardResult.reason}`,
+                },
+              };
+            }
           }
         }
 
@@ -302,13 +327,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (toolName === 'WebFetch' && toolInput.url) {
           const url = toolInput.url as string;
           if (isExfilUrl(url)) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'ask',
-                permissionDecisionReason: `[succ security] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="exfiltration">[succ security — bypassed] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'ask',
+                  permissionDecisionReason: `[succ security] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.`,
+                },
+              };
+            }
           }
         }
 
@@ -339,24 +370,36 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             const destLabel =
               channel === 'file_write' && filePath ? quickFileLabel(filePath) : undefined;
             const actionId = `${channel}:step${ifcState.outboundStepCount}`;
-            const secConfig = getConfig().security;
+            const ifcSecConfig = getConfig().security;
             const wdResult = checkWriteDown(ifcState, channel, {
               destinationLabel: destLabel,
               actionId,
-              stepLimits: secConfig?.ifc?.stepLimits,
+              stepLimits: ifcSecConfig?.ifc?.stepLimits,
             });
 
             if (wdResult.action === 'deny') {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PreToolUse',
-                  permissionDecision: 'deny',
-                  permissionDecisionReason: `[succ IFC] ${wdResult.reason}`,
-                },
-              };
+              if (trustBypass) {
+                contextParts.push(
+                  `<security-warning type="ifc">[succ IFC — bypassed] ${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
+                );
+              } else {
+                return {
+                  hookSpecificOutput: {
+                    hookEventName: 'PreToolUse',
+                    permissionDecision: 'deny',
+                    permissionDecisionReason: `[succ IFC] ${wdResult.reason}`,
+                  },
+                };
+              }
             }
             if (wdResult.action === 'ask') {
-              if (!askReason) askReason = `[IFC] ${wdResult.reason}`;
+              if (trustBypass) {
+                contextParts.push(
+                  `<security-warning type="ifc">[succ IFC — bypassed] ${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
+                );
+              } else {
+                if (!askReason) askReason = `[IFC] ${wdResult.reason}`;
+              }
             }
             // Step counting moved to PostToolUse — counted only when tool actually runs
             if (wdResult.action === 'warn') {
@@ -384,16 +427,34 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           }
 
           if (rule.action === 'deny') {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: `[succ rule] ${sanitizeForContext(rule.content, 500)}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                wrapSanitized(
+                  'security-warning',
+                  `[succ rule — bypassed] ${sanitizeForContext(rule.content, 500)}`
+                )
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason: `[succ rule] ${sanitizeForContext(rule.content, 500)}`,
+                },
+              };
+            }
           }
           if (rule.action === 'ask' && !askReason) {
-            askReason = sanitizeForContext(rule.content, 500);
+            if (trustBypass) {
+              contextParts.push(
+                wrapSanitized(
+                  'security-warning',
+                  `[succ rule — bypassed] ${sanitizeForContext(rule.content, 500)}`
+                )
+              );
+            } else {
+              askReason = sanitizeForContext(rule.content, 500);
+            }
           }
           if (rule.action === 'inject' || rule.action === 'allow') {
             contextParts.push(wrapSanitized('hook-rule', rule.content));
@@ -427,13 +488,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
           const dangerResult = checkDangerous(command, safetyConfig);
           if (dangerResult) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: dangerResult.mode === 'ask' ? 'ask' : 'deny',
-                permissionDecisionReason: `[succ guard] ${dangerResult.reason}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="command-safety">[succ guard — bypassed] ${sanitizeForContext(dangerResult.reason, 300)}</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: dangerResult.mode === 'ask' ? 'ask' : 'deny',
+                  permissionDecisionReason: `[succ guard] ${dangerResult.reason}`,
+                },
+              };
+            }
           }
 
           // 4. Git commit guidelines
@@ -454,16 +521,28 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 const critical = policyResult.violations.filter((v) => v.severity === 'critical');
                 const high = policyResult.violations.filter((v) => v.severity === 'high');
                 if (critical.length > 0) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'deny',
-                      permissionDecisionReason: `[succ guardrails] Critical security vulnerabilities detected:\n${sanitizeForContext(formatViolations(critical), 500)}`,
-                    },
-                  };
+                  if (trustBypass) {
+                    contextParts.push(
+                      `<security-warning type="code-policy">[succ guardrails — bypassed] Critical security vulnerabilities:\n${sanitizeForContext(formatViolations(critical), 500)}</security-warning>`
+                    );
+                  } else {
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: 'PreToolUse',
+                        permissionDecision: 'deny',
+                        permissionDecisionReason: `[succ guardrails] Critical security vulnerabilities detected:\n${sanitizeForContext(formatViolations(critical), 500)}`,
+                      },
+                    };
+                  }
                 }
                 if (high.length > 0 && !askReason) {
-                  askReason = `[guardrails] Security issues detected:\n${sanitizeForContext(formatViolations(high), 500)}`;
+                  if (trustBypass) {
+                    contextParts.push(
+                      `<security-warning type="code-policy">[succ guardrails — bypassed] High severity issues:\n${sanitizeForContext(formatViolations(high), 500)}</security-warning>`
+                    );
+                  } else {
+                    askReason = `[guardrails] Security issues detected:\n${sanitizeForContext(formatViolations(high), 500)}`;
+                  }
                 }
                 if (policyResult.violations.length > 0) {
                   contextParts.push(
@@ -954,6 +1033,14 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             ? (input.tool_input as Record<string, unknown>)
             : {};
 
+        // Detect bypass mode (same logic as pre-tool)
+        const permSessionId = input.session_id;
+        const permIfc = permSessionId ? ifcStates.get(permSessionId) : null;
+        const permMode =
+          permIfc?.permissionMode ?? (body as Record<string, unknown>)?.permission_mode;
+        const permBypass =
+          permMode === 'bypassPermissions' && getConfig().security?.trustAgentPermissions === true;
+
         // Run command safety guard FIRST (deny always wins over allow rules)
         const command = (toolInput.command as string) || '';
         if (command) {
@@ -961,6 +1048,13 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
           const dangerResult = checkDangerous(command, safetyConfig);
           if (dangerResult && dangerResult.mode === 'deny') {
+            if (permBypass) {
+              ctx.log(
+                `[hooks/permission] Safety guard bypassed (trustAgentPermissions): ${dangerResult.reason}`
+              );
+              // Allow through — agent has full permissions
+              return {};
+            }
             ctx.log(`[hooks/permission] Safety guard denied: ${dangerResult.reason}`);
             return {
               hookSpecificOutput: {
@@ -993,6 +1087,12 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         if (topRule.action === 'deny') {
+          if (permBypass) {
+            ctx.log(
+              `[hooks/permission] Hook-rule #${topRule.id} deny bypassed (trustAgentPermissions)`
+            );
+            return {}; // pass-through
+          }
           ctx.log(`[hooks/permission] Auto-denied ${toolName} by rule #${topRule.id}`);
           return {
             hookSpecificOutput: {
@@ -1151,7 +1251,13 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           ctx.log(`[hooks/session-start] Registered session: ${sessionId}`);
         }
         // Initialize clean IFC state for this session
-        ifcStates.set(sessionId, createSessionIFC());
+        const ifcState = createSessionIFC();
+        // Store permission mode from session start (trusted source of truth)
+        const startPermMode = (body as Record<string, unknown>)?.permission_mode;
+        if (typeof startPermMode === 'string') {
+          ifcState.permissionMode = startPermMode;
+        }
+        ifcStates.set(sessionId, ifcState);
         // Track fallback IDs for cleanup (prevent memory leak)
         if (!transcriptPath) {
           fallbackSessionIds.add(sessionId);

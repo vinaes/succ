@@ -524,6 +524,7 @@ function loadConfig(projectDir) {
     commandSafetyGuard: { mode: 'deny', allowlist: [], customPatterns: [] },
     includeCoAuthoredBy: true,
     preCommitReview: false,
+    trustAgentPermissions: false,
   };
 
   const configPaths = [
@@ -554,6 +555,11 @@ function loadConfig(projectDir) {
         }
         if (config.preCommitReview === true) {
           defaults.preCommitReview = true;
+        }
+
+        // Security: trust agent permissions bypass
+        if (config.security && config.security.trustAgentPermissions === true) {
+          defaults.trustAgentPermissions = true;
         }
 
         break;
@@ -816,8 +822,17 @@ process.stdin.on('end', async () => {
     const contextParts = [];
     let askReason = null;
 
-    // 0. Injection scan on tool input
-    const inputToScan = filePath || command || toolInput.url || '';
+    // Detect if agent is running with bypassed permissions (e.g. --dangerously-skip-permissions)
+    const permissionMode = hookInput.permission_mode || '';
+    const isBypassMode = permissionMode === 'bypassPermissions';
+
+    // Load config once for all checks
+    const config = loadConfig(projectDir);
+    const trustBypass = isBypassMode && config.trustAgentPermissions;
+
+    // 0. Injection scan on tool input (path, command, url, and content body)
+    const inputParts = [filePath, command, toolInput.url, toolInput.content].filter(Boolean);
+    const inputToScan = inputParts.join('\n');
     if (inputToScan) {
       const injectionDesc = detectTier1(inputToScan);
       if (injectionDesc) {
@@ -835,13 +850,18 @@ process.stdin.on('end', async () => {
       const operation = toolName === 'Read' ? 'read' : 'write';
       const fileGuardResult = checkFileGuard(operation, filePath);
       if (fileGuardResult) {
-        const result =
-          fileGuardResult.mode === 'ask'
-            ? { ask: true, askReason: `[succ file guard] ${fileGuardResult.reason}` }
-            : { deny: true, denyReason: `[succ file guard] ${fileGuardResult.reason}` };
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
+        // In bypass mode with trustAgentPermissions: downgrade to context warning
+        if (trustBypass) {
+          contextParts.push(`<security-warning type="file-guard">[succ file guard — bypassed] ${escapeXml(fileGuardResult.reason)}</security-warning>`);
+        } else {
+          const result =
+            fileGuardResult.mode === 'ask'
+              ? { ask: true, askReason: `[succ file guard] ${fileGuardResult.reason}` }
+              : { deny: true, denyReason: `[succ file guard] ${fileGuardResult.reason}` };
+          const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+          console.log(JSON.stringify(json));
+          process.exit(exitCode);
+        }
       }
     }
 
@@ -865,15 +885,23 @@ process.stdin.on('end', async () => {
       if (detectTier1(rule.content)) continue;
 
       if (rule.action === 'deny') {
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
-          deny: true,
-          denyReason: `[succ rule] ${sanitize(rule.content, 500)}`,
-        });
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
+        if (trustBypass) {
+          contextParts.push(`<security-warning>[succ rule — bypassed] ${sanitize(rule.content, 500)}</security-warning>`);
+        } else {
+          const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+            deny: true,
+            denyReason: `[succ rule] ${sanitize(rule.content, 500)}`,
+          });
+          console.log(JSON.stringify(json));
+          process.exit(exitCode);
+        }
       }
       if (rule.action === 'ask' && !askReason) {
-        askReason = sanitize(rule.content, 500);
+        if (trustBypass) {
+          contextParts.push(`<security-warning>[succ rule — bypassed] ${sanitize(rule.content, 500)}</security-warning>`);
+        } else {
+          askReason = sanitize(rule.content, 500);
+        }
       }
       if (rule.action === 'inject') {
         contextParts.push(`<hook-rule>${sanitize(rule.content)}</hook-rule>`);
@@ -891,16 +919,20 @@ process.stdin.on('end', async () => {
 
     // 3. Command safety guard (Bash only)
     if (command) {
-      const config = loadConfig(projectDir);
       const dangerousResult = checkDangerous(command, config);
       if (dangerousResult) {
-        const result =
-          dangerousResult.mode === 'ask'
-            ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
-            : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
+        // In bypass mode with trustAgentPermissions: downgrade to context warning
+        if (trustBypass) {
+          contextParts.push(`<security-warning type="command-safety">[succ guard — bypassed] ${escapeXml(dangerousResult.reason)}</security-warning>`);
+        } else {
+          const result =
+            dangerousResult.mode === 'ask'
+              ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
+              : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
+          const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+          console.log(JSON.stringify(json));
+          process.exit(exitCode);
+        }
       }
 
       // 4. Hook rule ask (after safety guard, so deny takes priority)
