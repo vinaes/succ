@@ -5,7 +5,7 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.52] - 2026-03-09
+## [1.4.59] - 2026-03-10
 
 ### Changed
 - **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, worktree resolution, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic
