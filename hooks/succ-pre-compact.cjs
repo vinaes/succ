@@ -202,8 +202,8 @@ process.stdin.on('end', async () => {
           signal: AbortSignal.timeout(2000),
         }).catch(() => { /* fire and forget */ });
       }
-    } catch {
-      // intentionally empty — daemon notification is best-effort
+    } catch (e) {
+      log(succDir, `Daemon notify failed: ${e.message || e}`);
     }
 
     // Exit successfully (PreCompact cannot block compaction)
@@ -213,7 +213,7 @@ process.stdin.on('end', async () => {
     try {
       const projectDir = (JSON.parse(input).cwd || process.cwd()).replace(/\\/g, '/');
       log(path.join(projectDir, '.succ'), `PreCompact error: ${err.message || err}`);
-    } catch { /* ignore */ }
+    } catch { /* last-resort catch — logging itself failed, nothing we can do */ }
     process.exit(0);
   }
 });

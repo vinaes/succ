@@ -515,7 +515,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           log(succDir, `Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
 
           // Cleanup stats file
-          try { fs.unlinkSync(statsFile); } catch { /* ok */ }
+          try { fs.unlinkSync(statsFile); } catch (e) { log(succDir, `Failed to cleanup stats file: ${e.message || e}`); }
         }
       } catch (err) {
         log(succDir, `Failed to read compact stats: ${err.message || err}`);
