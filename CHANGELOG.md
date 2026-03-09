@@ -5,6 +5,31 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.51] - 2026-03-09
+
+### Changed
+- **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic
+- **MCP tool DRY** — 83 inline `{ content: [{ type: 'text', text }] }` patterns replaced with `createToolResponse()`/`createErrorResponse()` across 7 tool files (config, debug, graph, indexing, prd, status, web-search)
+- **Hook daemon port** — 5 hooks now use shared `getDaemonPort()` from `core/daemon-boot.cjs` instead of inline file reads
+- **Hook config loading** — consistent global+project config merge via `core/config.cjs` (was 3 different implementations with merge order inconsistency)
+- `catch (error: any)` → `catch (error)` across 44 catch clauses in 17 files — TypeScript `unknown` default forces proper narrowing
+- `any[]` → `HybridMemoryResult[]` in recall tool for proper type safety
+
+### Fixed
+- **N+1 in contextual-proximity** — batch-fetch all memory links before loop (was 2 DB calls per pair)
+- **N+1 in reindex** — parallel deletes + chunked re-indexing with concurrency=5
+- **N+1 in retention** — batch `invalidateMemory` via `Promise.allSettled`
+- **Sequential embeddings in recall** — temporal subquery and query expansion embeddings now use `Promise.all`
+- **Sequential centrality upserts** — parallelized via `Promise.all`
+- **Silent catches** — `logWarn` added to 14 bare `catch {}` blocks in daemon hooks.ts, plus `memories.ts` and `graph-export.ts`
+- **Top-level `await import('os')`** in `consolidate.ts` replaced with static import
+- **`getProjectRoot().replace()`** called 6 times in `db/skills.ts` extracted to `getProjectId()`
+
+### Added
+- `getErrorMessage(error: unknown): string` utility in `src/lib/errors.ts`
+- `hooks/core/log.cjs` — shared hook logging module
+- `hooks/core/config.cjs` — shared global+project config loader
+
 ## [1.4.0] - 2026-02-20
 
 ### Breaking Changes
