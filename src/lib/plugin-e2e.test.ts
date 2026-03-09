@@ -244,7 +244,7 @@ describe('Hook scripts E2E', () => {
     const trimmed = stdout.trim();
     if (trimmed && trimmed.endsWith('}')) {
       const output = JSON.parse(trimmed);
-      expect(output.permissionDecision).toBeUndefined();
+      expect(output.hookSpecificOutput?.permissionDecision).toBeUndefined();
     }
   }, 15_000);
 
