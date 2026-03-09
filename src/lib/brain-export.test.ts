@@ -11,6 +11,7 @@ import {
 vi.mock('fs');
 vi.mock('./config.js', () => ({
   getSuccDir: vi.fn(() => '/mock/.succ'),
+  getProjectRoot: vi.fn(() => '/mock/project'),
 }));
 
 const mockFs = vi.mocked(fs);

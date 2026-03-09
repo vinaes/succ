@@ -57,6 +57,11 @@ export function getServerPath(serverName: string): string {
 
 /** Get the binary path for a server after installation */
 export function getServerBinaryPath(serverName: string, command: string): string {
+  // Validate command to prevent path traversal
+  const basename = path.basename(command);
+  if (basename !== command || command.includes('..')) {
+    return command; // Fall back to global command for suspicious input
+  }
   const serverDir = getServerPath(serverName);
   const npmBin = path.join(serverDir, 'node_modules', '.bin', command);
   if (fs.existsSync(npmBin)) return npmBin;
@@ -149,11 +154,23 @@ function installViaNpm(
   // Install packages with --ignore-scripts for security
   logInfo('lsp-installer', `Installing ${serverName} via npm: ${strategy.packages.join(', ')}`);
 
-  execFileSync('npm', ['install', '--ignore-scripts', ...strategy.packages], {
-    cwd: serverDir,
-    stdio: 'pipe',
-    timeout: 120000,
-  });
+  try {
+    execFileSync('npm', ['install', '--ignore-scripts', ...strategy.packages], {
+      cwd: serverDir,
+      stdio: 'pipe',
+      timeout: 120000,
+    });
+  } catch (error) {
+    // Clean up partial install so listInstalledServers() doesn't report false positives
+    try {
+      fs.rmSync(serverDir, { recursive: true, force: true });
+    } catch (cleanupErr) {
+      logWarn('lsp-installer', `Failed to clean up partial install for ${serverName}`, {
+        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      });
+    }
+    throw error;
+  }
 
   logInfo('lsp-installer', `Successfully installed ${serverName}`);
   return true;

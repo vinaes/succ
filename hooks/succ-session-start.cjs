@@ -79,14 +79,14 @@ process.stdin.on('end', async () => {
       if (fs.existsSync(configPath)) {
         try {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          if (config.includeCoAuthoredBy === false) {
-            includeCoAuthoredBy = false;
+          if (typeof config.includeCoAuthoredBy === 'boolean') {
+            includeCoAuthoredBy = config.includeCoAuthoredBy;
           }
-          if (config.communicationAutoAdapt === false) {
-            communicationAutoAdapt = false;
+          if (typeof config.communicationAutoAdapt === 'boolean') {
+            communicationAutoAdapt = config.communicationAutoAdapt;
           }
-          if (config.communicationTrackHistory === true) {
-            communicationTrackHistory = true;
+          if (typeof config.communicationTrackHistory === 'boolean') {
+            communicationTrackHistory = config.communicationTrackHistory;
           }
           // Check for OpenRouter API key: llm.api_key, llm.embeddings.api_key, or web_search.api_key
           if (!hasOpenRouterKey) {

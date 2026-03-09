@@ -1740,6 +1740,15 @@ export class PostgresBackend {
     confidence: number = 0.5,
     sourceType: string = 'human'
   ): Promise<number> {
+    // Validate provenance fields
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+      confidence = 0.5;
+    }
+    const validSourceTypes = ['human', 'agent', 'canonical_doc'];
+    if (!validSourceTypes.includes(sourceType)) {
+      sourceType = 'human';
+    }
+
     const pool = await this.getPool();
     const projectId = isGlobal ? null : this.projectId;
 
@@ -2171,24 +2180,21 @@ export class PostgresBackend {
     }
 
     const metadataJson = metadata ? JSON.stringify(metadata) : null;
-    const result = await pool.query<{ id: number }>(
+    const result = await pool.query<{ id: number; xmax: string }>(
       `INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (source_id, target_id, relation) DO NOTHING
-       RETURNING id`,
+       ON CONFLICT (source_id, target_id, relation) DO UPDATE
+         SET metadata = COALESCE(EXCLUDED.metadata, memory_links.metadata),
+             weight = EXCLUDED.weight,
+             valid_from = COALESCE(EXCLUDED.valid_from, memory_links.valid_from),
+             valid_until = COALESCE(EXCLUDED.valid_until, memory_links.valid_until)
+       RETURNING id, xmax::text`,
       [sourceId, targetId, relation, weight, validFrom ?? null, validUntil ?? null, metadataJson]
     );
 
-    if (result.rows.length > 0) {
-      return { id: result.rows[0].id, created: true };
-    }
-
-    // Link already existed — fetch its id
-    const existing = await pool.query<{ id: number }>(
-      'SELECT id FROM memory_links WHERE source_id = $1 AND target_id = $2 AND relation = $3',
-      [sourceId, targetId, relation]
-    );
-    return { id: existing.rows[0].id, created: false };
+    const row = result.rows[0];
+    // xmax = '0' means a fresh insert; non-zero means an update (conflict resolved)
+    return { id: row.id, created: row.xmax === '0' };
   }
 
   async deleteMemoryLink(

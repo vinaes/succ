@@ -196,6 +196,8 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
         .filter((s) => s.length > 0);
     } else if (typeof value === 'string' && value.startsWith('"') && value.endsWith('"')) {
       value = value.slice(1, -1);
+    } else if (typeof value === 'string' && value.startsWith("'") && value.endsWith("'")) {
+      value = value.slice(1, -1);
     }
 
     result[key] = value;
@@ -327,7 +329,7 @@ export function exportBrainSnapshot(outputPath?: string, brainDir?: string): Bra
       headings: extractHeadings(doc.content),
       // Extract key terms (simple word frequency)
       keyTerms: extractKeyTerms(doc.content),
-      wordCount: doc.content.split(/\s+/).length,
+      wordCount: doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0,
     })),
   };
 
