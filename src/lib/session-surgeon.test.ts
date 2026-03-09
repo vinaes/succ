@@ -3,7 +3,13 @@ import { writeFile, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { trimToolContent, trimThinking, trimAll, compactBefore, extractDialogue } from './session-surgeon.js';
+import {
+  trimToolContent,
+  trimThinking,
+  trimAll,
+  compactBefore,
+  extractDialogue,
+} from './session-surgeon.js';
 import type { TranscriptEntry } from './session-analyzer.js';
 
 // ── Test helpers ─────────────────────────────────────────────────────
@@ -17,15 +23,28 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  try { await unlink(testFile); } catch { /* ok */ }
-  try { await unlink(testFile + '.bak'); } catch { /* ok */ }
+  try {
+    await unlink(testFile);
+  } catch {
+    /* ok */
+  }
+  try {
+    await unlink(testFile + '.bak');
+  } catch {
+    /* ok */
+  }
 });
 
 function makeJSONL(entries: Record<string, unknown>[]): string {
   return entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
 }
 
-function entry(uuid: string, parentUuid: string | null, type: string, content: unknown[]): Record<string, unknown> {
+function entry(
+  uuid: string,
+  parentUuid: string | null,
+  type: string,
+  content: unknown[]
+): Record<string, unknown> {
   return {
     uuid,
     parentUuid,
@@ -40,8 +59,12 @@ describe('trimToolContent', () => {
   it('trims tool_use inputs and tool_result content', async () => {
     const jsonl = makeJSONL([
       entry('u1', null, 'user', [{ type: 'text', text: 'Read a file' }]),
-      entry('a1', 'u1', 'assistant', [{ type: 'tool_use', name: 'Read', id: 'toolu_1', input: { file_path: '/src/big-file.ts' } }]),
-      entry('u2', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'x'.repeat(500) }]),
+      entry('a1', 'u1', 'assistant', [
+        { type: 'tool_use', name: 'Read', id: 'toolu_1', input: { file_path: '/src/big-file.ts' } },
+      ]),
+      entry('u2', 'a1', 'user', [
+        { type: 'tool_result', tool_use_id: 'toolu_1', content: 'x'.repeat(500) },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -58,10 +81,18 @@ describe('trimToolContent', () => {
 
   it('respects --tools filter', async () => {
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Read', id: 'r1', input: { file_path: '/a.ts' } }]),
-      entry('u1', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'r1', content: 'read-result' }]),
-      entry('a2', 'u1', 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } }]),
-      entry('u2', 'a2', 'user', [{ type: 'tool_result', tool_use_id: 'b1', content: 'bash-result' }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Read', id: 'r1', input: { file_path: '/a.ts' } },
+      ]),
+      entry('u1', 'a1', 'user', [
+        { type: 'tool_result', tool_use_id: 'r1', content: 'read-result' },
+      ]),
+      entry('a2', 'u1', 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } },
+      ]),
+      entry('u2', 'a2', 'user', [
+        { type: 'tool_result', tool_use_id: 'b1', content: 'bash-result' },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -76,8 +107,12 @@ describe('trimToolContent', () => {
 
   it('respects --only-inputs', async () => {
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'npm test' } }]),
-      entry('u1', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'b1', content: 'All tests passed' }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'npm test' } },
+      ]),
+      entry('u1', 'a1', 'user', [
+        { type: 'tool_result', tool_use_id: 'b1', content: 'All tests passed' },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -92,8 +127,12 @@ describe('trimToolContent', () => {
 
   it('respects --only-results', async () => {
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'npm test' } }]),
-      entry('u1', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'b1', content: 'All tests passed' }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'npm test' } },
+      ]),
+      entry('u1', 'a1', 'user', [
+        { type: 'tool_result', tool_use_id: 'b1', content: 'All tests passed' },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -109,8 +148,12 @@ describe('trimToolContent', () => {
   it('respects --keep-last-lines', async () => {
     const resultContent = 'line1\nline2\nline3\nERROR: something broke\nstack trace here';
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'test' } }]),
-      entry('u1', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'b1', content: resultContent }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'test' } },
+      ]),
+      entry('u1', 'a1', 'user', [
+        { type: 'tool_result', tool_use_id: 'b1', content: resultContent },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -124,7 +167,9 @@ describe('trimToolContent', () => {
 
   it('dry run does not modify file', async () => {
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } },
+      ]),
       entry('u1', 'a1', 'user', [{ type: 'tool_result', tool_use_id: 'b1', content: 'output' }]),
     ]);
     await writeFile(testFile, jsonl);
@@ -138,7 +183,9 @@ describe('trimToolContent', () => {
 
   it('creates backup by default', async () => {
     const jsonl = makeJSONL([
-      entry('a1', null, 'assistant', [{ type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } }]),
+      entry('a1', null, 'assistant', [
+        { type: 'tool_use', name: 'Bash', id: 'b1', input: { command: 'ls' } },
+      ]),
     ]);
     await writeFile(testFile, jsonl);
 
@@ -165,7 +212,9 @@ describe('trimThinking', () => {
     const result = await trimThinking(testFile, { noBackup: true });
     expect(result.entriesModified).toBe(1);
     // charsRemoved = original length - replacement ('[trimmed by succ]') length
-    expect(result.charsRemoved).toBe('Let me think carefully about this problem...'.length - '[trimmed by succ]'.length);
+    expect(result.charsRemoved).toBe(
+      'Let me think carefully about this problem...'.length - '[trimmed by succ]'.length
+    );
 
     const modified = await readFile(testFile, 'utf-8');
     expect(modified).toContain('[trimmed by succ]');
@@ -215,9 +264,24 @@ describe('trimAll', () => {
 describe('extractDialogue', () => {
   it('extracts user/assistant text, skips tools and commands', () => {
     const entries: TranscriptEntry[] = [
-      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'What is TypeScript?' }] } },
-      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'It is a typed superset of JS.' }] } },
-      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', id: 'b1', input: {} }] } },
+      {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'What is TypeScript?' }] },
+      },
+      {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'It is a typed superset of JS.' }],
+        },
+      },
+      {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', name: 'Bash', id: 'b1', input: {} }],
+        },
+      },
       { type: 'user', message: { role: 'user', content: '<command-name>/model</command-name>' } },
       { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Thanks!' }] } },
     ];
@@ -253,7 +317,10 @@ describe('compactBefore', () => {
 
     // Read output and verify structure
     const output = await readFile(compactOut, 'utf-8');
-    const lines = output.trim().split('\n').map((l) => JSON.parse(l));
+    const lines = output
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
 
     // Line 0: compact_boundary
     expect(lines[0].subtype).toBe('compact_boundary');
@@ -273,13 +340,15 @@ describe('compactBefore', () => {
     expect(slugs.size).toBe(1);
 
     // Cleanup
-    try { await unlink(compactOut); } catch { /* ok */ }
+    try {
+      await unlink(compactOut);
+    } catch {
+      /* ok */
+    }
   });
 
   it('rejects invalid positions', async () => {
-    const jsonl = makeJSONL([
-      entry('u1', null, 'user', [{ type: 'text', text: 'only entry' }]),
-    ]);
+    const jsonl = makeJSONL([entry('u1', null, 'user', [{ type: 'text', text: 'only entry' }])]);
     await writeFile(testFile, jsonl);
 
     await expect(compactBefore(testFile, 0)).rejects.toThrow('Invalid beforePos');

@@ -111,8 +111,18 @@ export function parseSessionJSONL(content: string): TranscriptEntry[] {
 // ── Content block classification ─────────────────────────────────────
 
 /** Count characters in a content value by category. */
-export function classifyContent(content: string | ContentBlock[] | null | undefined): ContentBreakdown {
-  const result: ContentBreakdown = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0, other: 0, total: 0 };
+export function classifyContent(
+  content: string | ContentBlock[] | null | undefined
+): ContentBreakdown {
+  const result: ContentBreakdown = {
+    text: 0,
+    tool_use: 0,
+    tool_result: 0,
+    thinking: 0,
+    image: 0,
+    other: 0,
+    total: 0,
+  };
 
   if (!content) return result;
 
@@ -178,11 +188,6 @@ export function classifyContent(content: string | ContentBlock[] | null | undefi
 
 // ── Tool result index ────────────────────────────────────────────────
 
-interface ToolResultEntry {
-  toolUseId: string;
-  chars: number;
-}
-
 /** Build mapping from tool_use_id → total result chars across all entries. */
 function buildToolResultIndex(entries: TranscriptEntry[]): Map<string, number> {
   const index = new Map<string, number>();
@@ -215,7 +220,15 @@ function buildToolResultIndex(entries: TranscriptEntry[]): Map<string, number> {
 
 /** Analyze a list of transcript entries and produce full session stats. */
 export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
-  const charTotals: ContentBreakdown = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0, other: 0, total: 0 };
+  const charTotals: ContentBreakdown = {
+    text: 0,
+    tool_use: 0,
+    tool_result: 0,
+    thinking: 0,
+    image: 0,
+    other: 0,
+    total: 0,
+  };
 
   // Tool stats accumulator
   const toolMap = new Map<string, { calls: number; inputChars: number; resultChars: number }>();
@@ -300,8 +313,10 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   // Strippable = tool_use + tool_result + thinking + image
-  const strippableTokens = tokenTotals.tool_use + tokenTotals.tool_result + tokenTotals.thinking + tokenTotals.image;
-  const strippablePercent = tokenTotals.total > 0 ? (strippableTokens / tokenTotals.total) * 100 : 0;
+  const strippableTokens =
+    tokenTotals.tool_use + tokenTotals.tool_result + tokenTotals.thinking + tokenTotals.image;
+  const strippablePercent =
+    tokenTotals.total > 0 ? (strippableTokens / tokenTotals.total) * 100 : 0;
 
   return {
     totalLines: entries.length,
@@ -345,8 +360,12 @@ export function formatAnalysisReport(analysis: SessionAnalysis, filePath?: strin
   lines.push('TOKEN BREAKDOWN BY CONTENT TYPE');
   lines.push('─'.repeat(72));
   lines.push('');
-  lines.push(`  ${'Type'.padEnd(16)} ${'Chars'.padStart(12)} ${'Est. Tokens'.padStart(12)} ${'%'.padStart(7)}  Note`);
-  lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(12)} ${'─'.repeat(12)} ${'─'.repeat(7)}  ${'─'.repeat(12)}`);
+  lines.push(
+    `  ${'Type'.padEnd(16)} ${'Chars'.padStart(12)} ${'Est. Tokens'.padStart(12)} ${'%'.padStart(7)}  Note`
+  );
+  lines.push(
+    `  ${'─'.repeat(16)} ${'─'.repeat(12)} ${'─'.repeat(12)} ${'─'.repeat(7)}  ${'─'.repeat(12)}`
+  );
 
   const grandTotal = tokenTotals.total || 1;
   const strippableTypes = new Set(['tool_use', 'tool_result', 'thinking', 'image']);
@@ -356,12 +375,18 @@ export function formatAnalysisReport(analysis: SessionAnalysis, filePath?: strin
     const tokens = tokenTotals[key];
     const pct = ((tokens / grandTotal) * 100).toFixed(1);
     const note = strippableTypes.has(key) ? 'trimmable' : '';
-    lines.push(`  ${key.padEnd(16)} ${fmt(chars).padStart(12)} ${fmt(tokens).padStart(12)} ${(pct + '%').padStart(7)}  ${note}`);
+    lines.push(
+      `  ${key.padEnd(16)} ${fmt(chars).padStart(12)} ${fmt(tokens).padStart(12)} ${(pct + '%').padStart(7)}  ${note}`
+    );
   }
 
   lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(12)} ${'─'.repeat(12)} ${'─'.repeat(7)}`);
-  lines.push(`  ${'TOTAL'.padEnd(16)} ${fmt(analysis.charTotals.total).padStart(12)} ${fmt(tokenTotals.total).padStart(12)} ${'100.0%'.padStart(7)}`);
-  lines.push(`  ${'TRIMMABLE'.padEnd(16)} ${''.padStart(12)} ${fmt(strippableTokens).padStart(12)} ${(strippablePercent.toFixed(1) + '%').padStart(7)}`);
+  lines.push(
+    `  ${'TOTAL'.padEnd(16)} ${fmt(analysis.charTotals.total).padStart(12)} ${fmt(tokenTotals.total).padStart(12)} ${'100.0%'.padStart(7)}`
+  );
+  lines.push(
+    `  ${'TRIMMABLE'.padEnd(16)} ${''.padStart(12)} ${fmt(strippableTokens).padStart(12)} ${(strippablePercent.toFixed(1) + '%').padStart(7)}`
+  );
   lines.push('');
 
   // Tool breakdown
@@ -370,8 +395,12 @@ export function formatAnalysisReport(analysis: SessionAnalysis, filePath?: strin
     lines.push('TOKEN BREAKDOWN BY TOOL NAME');
     lines.push('─'.repeat(72));
     lines.push('');
-    lines.push(`  ${'Tool'.padEnd(28)} ${'Calls'.padStart(6)} ${'Inputs'.padStart(10)} ${'Results'.padStart(10)} ${'Total'.padStart(10)} ${'%'.padStart(7)}`);
-    lines.push(`  ${'─'.repeat(28)} ${'─'.repeat(6)} ${'─'.repeat(10)} ${'─'.repeat(10)} ${'─'.repeat(10)} ${'─'.repeat(7)}`);
+    lines.push(
+      `  ${'Tool'.padEnd(28)} ${'Calls'.padStart(6)} ${'Inputs'.padStart(10)} ${'Results'.padStart(10)} ${'Total'.padStart(10)} ${'%'.padStart(7)}`
+    );
+    lines.push(
+      `  ${'─'.repeat(28)} ${'─'.repeat(6)} ${'─'.repeat(10)} ${'─'.repeat(10)} ${'─'.repeat(10)} ${'─'.repeat(7)}`
+    );
 
     const toolTotal = toolBreakdown.reduce((sum, t) => sum + t.totalTokens, 0) || 1;
     for (const tool of toolBreakdown) {
@@ -393,7 +422,9 @@ export function formatAnalysisReport(analysis: SessionAnalysis, filePath?: strin
     lines.push(`  ${'─'.repeat(5)} ${'─'.repeat(12)}  ${'─'.repeat(50)}`);
 
     for (const cp of cutPoints) {
-      lines.push(`  ${String(cp.position).padStart(5)} ${fmt(cp.cumulativeTokens).padStart(12)}  ${cp.preview}`);
+      lines.push(
+        `  ${String(cp.position).padStart(5)} ${fmt(cp.cumulativeTokens).padStart(12)}  ${cp.preview}`
+      );
     }
     lines.push('');
   }
@@ -415,7 +446,9 @@ export function formatCompactStats(
   const lines: string[] = [];
   lines.push(`Compact: ${fmtK(bt.total)} → ${fmtK(afterTokens)} tokens (${pct}% freed)`);
   lines.push('');
-  lines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+  lines.push(
+    `  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`
+  );
   lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
 
   for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image'] as const) {
@@ -424,11 +457,15 @@ export function formatCompactStats(
     const aVal = key === 'text' ? afterTokens : 0;
     const f = bVal - aVal;
     if (bVal === 0 && f === 0) continue;
-    lines.push(`  ${key.padEnd(16)} ${fmtK(bVal).padStart(8)} ${fmtK(aVal).padStart(8)} ${fmtK(f).padStart(8)}`);
+    lines.push(
+      `  ${key.padEnd(16)} ${fmtK(bVal).padStart(8)} ${fmtK(aVal).padStart(8)} ${fmtK(f).padStart(8)}`
+    );
   }
 
   lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
-  lines.push(`  ${'TOTAL'.padEnd(16)} ${fmtK(bt.total).padStart(8)} ${fmtK(afterTokens).padStart(8)} ${fmtK(freed).padStart(8)}`);
+  lines.push(
+    `  ${'TOTAL'.padEnd(16)} ${fmtK(bt.total).padStart(8)} ${fmtK(afterTokens).padStart(8)} ${fmtK(freed).padStart(8)}`
+  );
 
   // Top tools trimmed
   const topTools = before.toolBreakdown.slice(0, 5).filter((t) => t.totalTokens > 0);

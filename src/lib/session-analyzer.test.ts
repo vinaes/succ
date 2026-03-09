@@ -35,9 +35,7 @@ function makeToolUseEntry(name: string, input: unknown, id: string): TranscriptE
     type: 'assistant',
     message: {
       role: 'assistant',
-      content: [
-        { type: 'tool_use', name, input, id },
-      ],
+      content: [{ type: 'tool_use', name, input, id }],
     },
   };
 }
@@ -47,9 +45,7 @@ function makeToolResultEntry(toolUseId: string, result: string): TranscriptEntry
     type: 'user',
     message: {
       role: 'user',
-      content: [
-        { type: 'tool_result', tool_use_id: toolUseId, content: result },
-      ],
+      content: [{ type: 'tool_result', tool_use_id: toolUseId, content: result }],
     },
   };
 }
@@ -136,17 +132,13 @@ describe('classifyContent', () => {
   });
 
   it('classifies thinking blocks', () => {
-    const blocks: ContentBlock[] = [
-      { type: 'thinking', thinking: 'Let me think about this...' },
-    ];
+    const blocks: ContentBlock[] = [{ type: 'thinking', thinking: 'Let me think about this...' }];
     const result = classifyContent(blocks);
     expect(result.thinking).toBe('Let me think about this...'.length);
   });
 
   it('classifies image blocks', () => {
-    const blocks: ContentBlock[] = [
-      { type: 'image', source: { type: 'base64' } },
-    ];
+    const blocks: ContentBlock[] = [{ type: 'image', source: { type: 'base64' } }];
     const result = classifyContent(blocks);
     expect(result.image).toBeGreaterThan(0);
   });
@@ -161,7 +153,14 @@ describe('classifyContent', () => {
     expect(result.thinking).toBe(3);
     expect(result.text).toBe(18);
     expect(result.tool_use).toBeGreaterThan(0);
-    expect(result.total).toBe(result.text + result.tool_use + result.thinking + result.tool_result + result.image + result.other);
+    expect(result.total).toBe(
+      result.text +
+        result.tool_use +
+        result.thinking +
+        result.tool_result +
+        result.image +
+        result.other
+    );
   });
 });
 
@@ -197,7 +196,9 @@ describe('analyzeSession', () => {
     expect(result.cutPoints[0].position).toBe(0);
     expect(result.cutPoints[0].preview).toBe('First question');
     expect(result.cutPoints[1].position).toBe(2);
-    expect(result.cutPoints[1].cumulativeTokens).toBeGreaterThan(result.cutPoints[0].cumulativeTokens);
+    expect(result.cutPoints[1].cumulativeTokens).toBeGreaterThan(
+      result.cutPoints[0].cumulativeTokens
+    );
   });
 
   it('tracks tool breakdown by name', () => {
@@ -245,7 +246,9 @@ describe('analyzeSession', () => {
     ];
     const result = analyzeSession(entries);
     expect(result.toolBreakdown[0].name).toBe('Read');
-    expect(result.toolBreakdown[0].totalTokens).toBeGreaterThan(result.toolBreakdown[1].totalTokens);
+    expect(result.toolBreakdown[0].totalTokens).toBeGreaterThan(
+      result.toolBreakdown[1].totalTokens
+    );
   });
 });
 
@@ -272,7 +275,15 @@ describe('formatAnalysisReport', () => {
 describe('formatCompactStats', () => {
   it('formats before/after delta', () => {
     const before = {
-      tokenTotals: { text: 10000, tool_use: 5000, tool_result: 25000, thinking: 8000, image: 2000, other: 0, total: 50000 },
+      tokenTotals: {
+        text: 10000,
+        tool_use: 5000,
+        tool_result: 25000,
+        thinking: 8000,
+        image: 2000,
+        other: 0,
+        total: 50000,
+      },
       toolBreakdown: [
         { name: 'Read', calls: 10, inputTokens: 1000, resultTokens: 15000, totalTokens: 16000 },
         { name: 'Bash', calls: 5, inputTokens: 2000, resultTokens: 5000, totalTokens: 7000 },

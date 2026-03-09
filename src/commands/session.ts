@@ -12,10 +12,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { logWarn } from '../lib/fault-logger.js';
-import {
-  analyzeSessionFile,
-  formatAnalysisReport,
-} from '../lib/session-analyzer.js';
+import { analyzeSessionFile, formatAnalysisReport } from '../lib/session-analyzer.js';
 import {
   trimToolContent,
   trimThinking,
@@ -64,7 +61,7 @@ async function resolveSessionPath(pathArg: string | undefined): Promise<string> 
 
   throw new Error(
     'No session path provided and no sessions found.\n' +
-    'Usage: succ session analyze <path-to-session.jsonl>'
+      'Usage: succ session analyze <path-to-session.jsonl>'
   );
 }
 

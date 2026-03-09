@@ -6,9 +6,14 @@
  * Compact is the only operation that restructures the chain.
  */
 
-import { readFile, writeFile, copyFile, stat } from 'node:fs/promises';
+import { readFile, writeFile, copyFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { parseSessionJSONL, estimateTokens, type TranscriptEntry, type ContentBlock } from './session-analyzer.js';
+import {
+  parseSessionJSONL,
+  estimateTokens,
+  type TranscriptEntry,
+  type ContentBlock,
+} from './session-analyzer.js';
 import { logWarn } from './fault-logger.js';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -54,7 +59,10 @@ export interface CompactResult {
 // ── Trim: Tool Content ───────────────────────────────────────────────
 
 /** Trim tool_use inputs and/or tool_result content from a session JSONL. */
-export async function trimToolContent(filePath: string, options: TrimOptions = {}): Promise<TrimResult> {
+export async function trimToolContent(
+  filePath: string,
+  options: TrimOptions = {}
+): Promise<TrimResult> {
   const raw = await readFile(filePath, 'utf-8');
   const lines = raw.split('\n');
 
@@ -81,7 +89,9 @@ export async function trimToolContent(filePath: string, options: TrimOptions = {
           toolNameById.set(block.id, block.name);
         }
       }
-    } catch (e) { logWarn('session-surgeon', `Skipping malformed JSONL line in tool_use index pass: ${e}`); }
+    } catch (e) {
+      logWarn('session-surgeon', `Skipping malformed JSONL line in tool_use index pass: ${e}`);
+    }
   }
 
   // Second pass: trim content
@@ -117,7 +127,8 @@ export async function trimToolContent(filePath: string, options: TrimOptions = {
       if (block.type === 'tool_use' && trimInputs) {
         if (toolFilter && !toolFilter.has(block.name || '')) continue;
         const serializedInput = block.input ? JSON.stringify(block.input) : '';
-        if (serializedInput.length > 2) { // > 2 = not already {}
+        if (serializedInput.length > 2) {
+          // > 2 = not already {}
           block.input = {};
           charsRemoved += serializedInput.length - 2; // subtract replacement '{}' length
           modified = true;
@@ -281,7 +292,8 @@ export async function trimAll(
 
       if (block.type === 'tool_use' && block.input) {
         const len = JSON.stringify(block.input).length;
-        if (len > 2) { // > 2 = not already {}
+        if (len > 2) {
+          // > 2 = not already {}
           block.input = {};
           charsRemoved += len - 2; // subtract replacement '{}' length
           modified = true;
@@ -367,8 +379,10 @@ export async function compactBefore(
   let cwd: string | undefined;
   let version: string | undefined;
   for (const entry of entries) {
-    if (!cwd && (entry as Record<string, unknown>).cwd) cwd = (entry as Record<string, unknown>).cwd as string;
-    if (!version && (entry as Record<string, unknown>).version) version = (entry as Record<string, unknown>).version as string;
+    if (!cwd && (entry as Record<string, unknown>).cwd)
+      cwd = (entry as Record<string, unknown>).cwd as string;
+    if (!version && (entry as Record<string, unknown>).version)
+      version = (entry as Record<string, unknown>).version as string;
     if (cwd && version) break;
   }
 
@@ -469,7 +483,9 @@ export async function compactBefore(
   const chainVerified = verifyChain(newEntries);
 
   // Determine output path
-  const outputPath = options.outputPath || filePath.replace(/\.jsonl$/, `-compact-${newSessionId.slice(0, 8)}.jsonl`);
+  const outputPath =
+    options.outputPath ||
+    filePath.replace(/\.jsonl$/, `-compact-${newSessionId.slice(0, 8)}.jsonl`);
 
   const result: CompactResult = {
     preCutMessages: preCut.length,
