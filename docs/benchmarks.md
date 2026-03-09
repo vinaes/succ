@@ -116,14 +116,37 @@ Note: Warm-up includes downloading model on first run. Subsequent loads are fast
 
 ## Embedding Models
 
-### Local (Default)
+### Local — General Purpose (Default)
 
-| Model | Dimensions | Size | Speed | Accuracy | Recommendation |
-|-------|------------|------|-------|----------|----------------|
-| `Xenova/all-MiniLM-L6-v2` | 384 | ~23MB | 253/sec | Best | **Default - best balance** |
-| `Xenova/bge-small-en-v1.5` | 384 | ~33MB | 24/sec | Good | Slower, no accuracy gain |
-| `Xenova/bge-base-en-v1.5` | 768 | ~110MB | 94/sec | Good | 2x bigger embeddings, similar accuracy |
-| `Xenova/bge-large-en-v1.5` | 1024 | ~335MB | ~30/sec | - | Not tested yet |
+| Model | Dimensions | Max Tokens | Size | Speed | Accuracy | Recommendation |
+|-------|------------|------------|------|-------|----------|----------------|
+| `Xenova/all-MiniLM-L6-v2` | 384 | 128 | ~23MB | 253/sec | Best | **Default - best balance** |
+| `Xenova/bge-small-en-v1.5` | 384 | 512 | ~33MB | 24/sec | Good | Slower, no accuracy gain |
+| `Xenova/bge-base-en-v1.5` | 768 | 512 | ~110MB | 94/sec | Good | 2x bigger embeddings, similar accuracy |
+| `Xenova/bge-large-en-v1.5` | 1024 | 512 | ~335MB | ~30/sec | - | Not tested yet |
+
+### Local — Code-Specific (Long Context)
+
+These models support late chunking (embed full file, pool by AST boundaries) and HyDE.
+
+| Model | Dimensions | Max Tokens | Notes |
+|-------|------------|------------|-------|
+| `jinaai/jina-embeddings-v2-base-code` | 768 | 8192 | Best for code search, supports late chunking |
+| `jinaai/jina-embeddings-v2-base-en` | 768 | 8192 | Long-context general purpose |
+| `nomic-ai/nomic-embed-code` | 768 | 8192 | Open, ONNX-convertible via optimum-cli |
+| `baai/bge-m3` | 1024 | 8192 | Multilingual, long context |
+
+Code-specific models are recommended for `succ_search_code` when working with large files. Configure via:
+
+```json
+{
+  "llm": {
+    "embeddings": {
+      "model": "jinaai/jina-embeddings-v2-base-code"
+    }
+  }
+}
+```
 
 ### OpenRouter API
 
@@ -131,6 +154,12 @@ Note: Warm-up includes downloading model on first run. Subsequent loads are fast
 |-------|------------|------|
 | `openai/text-embedding-3-small` | 1536 | $0.02/1M tokens |
 | `openai/text-embedding-3-large` | 3072 | $0.13/1M tokens |
+
+### API — Code-Specific
+
+| Model | Dimensions | Cost | Notes |
+|-------|------------|------|-------|
+| `voyage-code-2` | 1536 | $0.12/1M | Best SWE-bench retrieval accuracy |
 
 ## Running Your Own Benchmarks
 

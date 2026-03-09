@@ -5,6 +5,43 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-03-09
+
+### Added
+- **Cross-encoder reranker** — ONNX-based cross-encoder (ms-marco-MiniLM-L-6-v2) reranks hybrid search results by scoring (query, document) pairs for relevance. Configurable weight, min results, max doc chars. Graceful degradation on failure
+- **HyDE (Hypothetical Document Embeddings)** — generates hypothetical code snippets via LLM for natural language queries, embeds them to bridge the NL↔code embedding gap. Uses tree-sitter AST to detect code queries and skip HyDE
+- **Late chunking** — embeds full file with long-context model (e.g., jina 8192 tokens), pools per-token hidden states by AST chunk boundaries for context-aware chunk embeddings
+- **Hierarchical summaries (RAPTOR-style)** — bottom-up LLM summarization at file → directory → module → repo zoom levels. Query routing via `inferSummaryLevel()` matches query specificity to the right zoom
+- **Code-specific embedding models** — support for jina-embeddings-v2-base-code (768d, 8192 ctx), nomic-embed-code, BGE-M3 with configurable `max_length` per model
+- **Graph algorithms** — Personalized PageRank (PPR) retrieval, Tarjan's SCC for circular dependency detection, articulation point (bridge) analysis for architectural bottlenecks, community summaries via LLM
+- **Retrieval feedback loop** — tracks search result clicks/usage, adjusts future ranking based on historical relevance signals
+- **Observability pipeline** — structured logging of search latency, embedding times, LLM calls; recall analytics with per-query metrics stored in SQLite
+- **Auto-memory extraction** — session-end fact extraction via LLM with quality gate + periodic consolidation (merge duplicates, promote high-usage)
+- **Repo map** — generates tree-style project structure maps for LLM context
+- **Cross-repo search** — search across multiple succ-indexed repositories
+- **Diff-brain analysis** — LLM-powered diff analysis for brain vault document changes
+- **LSP client infrastructure** — language server protocol client, installer, and server registry for code intelligence
+- **MCP review tool** — `succ_review` for code review via MCP
+- **Bridge edges** — cross-graph edges connecting code graph and memory graph
+- **Co-change analysis** — git log mining to detect files frequently changed together
+
+### Changed
+- `generateHyDE()` uses tree-sitter AST parsing instead of regex heuristics for code detection — more accurate, zero false positives on natural language
+- `NativeOrtSession` accepts configurable `maxLength` (was hardcoded 128) for long-context embedding models
+- `NativeOrtSession` exports `embedRaw()` for per-token hidden states and `getTokenOffsets()` for token position mapping
+- PPR algorithm precomputes weighted degrees for O(E) total instead of O(E) per neighbor per iteration
+- Reranker uses failure memoization — `rerankerInitFailed` flag prevents retrying initialization on every search call
+- `db.prepare()` used instead of `cachedPrepare` for dynamic SQL with variable placeholder counts in recall-events
+
+### Fixed
+- `diff-brain`: removed `--` separator before diffRef in execFileSync (was treating revision as file path)
+- `execSync` → `execFileSync` in review context-pack and co-change analysis (command injection prevention)
+- All empty catch blocks replaced with `logWarn()` per NO SILENT CATCH convention
+- `inferSummaryLevel`: directory-level indicators checked before repo-level (fixes "describe this folder" → repo)
+- `inferSummaryLevel`: camelCase regex fixed from `/[A-Z][a-z]+[A-Z]/` to `/[a-z][A-Z]/` (matches "hashPassword")
+- `getTokenOffsets`: passes `[text]` (array) for consistency with `embedRaw` 2D tensor output
+- Iterative Tarjan DFS replaces recursive implementation (avoids stack overflow on large graphs)
+
 ## [1.4.0] - 2026-02-20
 
 ### Breaking Changes
