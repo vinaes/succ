@@ -38,8 +38,6 @@ jobs:
 
       - name: Test
         run: npx vitest run
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
 
   format-check:
     runs-on: ubuntu-latest

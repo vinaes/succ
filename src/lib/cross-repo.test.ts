@@ -1,14 +1,41 @@
-import { describe, it, expect, vi } from 'vitest';
-import * as fs from 'fs';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type * as fs from 'fs';
+
+vi.mock('./fault-logger.js', () => ({
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+}));
+
+// Targeted fs mock — only override functions the SUT uses.
+// Full vi.mock('fs') auto-mocks the entire module including internals
+// that vitest's fork worker needs for cleanup, causing worker crashes.
+const existsSyncMock = vi.fn<(...args: unknown[]) => boolean>(() => false);
+const readdirSyncMock = vi.fn<(...args: unknown[]) => unknown[]>(() => []);
+
+vi.mock('fs', async (importOriginal) => {
+  const orig = (await importOriginal()) as typeof fs;
+  return {
+    ...orig,
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    readdirSync: (...args: unknown[]) => readdirSyncMock(...args),
+    default: {
+      ...orig.default,
+      existsSync: (...args: unknown[]) => existsSyncMock(...args),
+      readdirSync: (...args: unknown[]) => readdirSyncMock(...args),
+    },
+  };
+});
+
 import { discoverProjects, listProjects } from './cross-repo.js';
 
-vi.mock('fs');
-
-const mockFs = vi.mocked(fs);
-
 describe('cross-repo', () => {
+  beforeEach(() => {
+    existsSyncMock.mockReset();
+    readdirSyncMock.mockReset();
+  });
+
   it('should discover succ-initialized projects', () => {
-    mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+    existsSyncMock.mockImplementation((p: unknown) => {
       const s = String(p).replace(/\\/g, '/');
       if (s === '/projects') return true;
       if (s.includes('myapp/.succ/succ.db')) return true;
@@ -16,10 +43,10 @@ describe('cross-repo', () => {
       return false;
     });
 
-    mockFs.readdirSync.mockReturnValue([
-      { name: 'myapp', isDirectory: () => true, isFile: () => false } as any,
-      { name: 'other', isDirectory: () => true, isFile: () => false } as any,
-      { name: '.hidden', isDirectory: () => true, isFile: () => false } as any,
+    readdirSyncMock.mockReturnValue([
+      { name: 'myapp', isDirectory: () => true, isFile: () => false },
+      { name: 'other', isDirectory: () => true, isFile: () => false },
+      { name: '.hidden', isDirectory: () => true, isFile: () => false },
     ]);
 
     const projects = discoverProjects(['/projects']);
@@ -30,14 +57,14 @@ describe('cross-repo', () => {
   });
 
   it('should skip non-existent search paths', () => {
-    mockFs.existsSync.mockReturnValue(false);
+    existsSyncMock.mockReturnValue(false);
     const projects = discoverProjects(['/nonexistent']);
     expect(projects).toHaveLength(0);
   });
 
   it('should handle fs errors gracefully', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockImplementation(() => {
+    existsSyncMock.mockReturnValue(true);
+    readdirSyncMock.mockImplementation(() => {
       throw new Error('Permission denied');
     });
 
@@ -46,7 +73,7 @@ describe('cross-repo', () => {
   });
 
   it('listProjects should delegate to discoverProjects', () => {
-    mockFs.existsSync.mockReturnValue(false);
+    existsSyncMock.mockReturnValue(false);
     const result = listProjects(['/nowhere']);
     expect(result).toEqual([]);
   });
