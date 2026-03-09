@@ -13,7 +13,7 @@ import Graph from 'graphology';
 import louvain from 'graphology-communities-louvain';
 import pagerank from 'graphology-metrics/centrality/pagerank';
 import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
-import { bidirectional } from 'graphology-shortest-path';
+import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
 import { logInfo } from '../fault-logger.js';
 
@@ -176,10 +176,26 @@ function computePPR(
     weightedDegrees.set(node, wDeg);
   });
 
+  // Identify dangling nodes (zero weighted degree) — their mass must be redistributed
+  // to prevent score mass from collapsing each iteration.
+  const danglingNodes: string[] = [];
+  graph.forEachNode((node) => {
+    if ((weightedDegrees.get(node) ?? 0) === 0) {
+      danglingNodes.push(node);
+    }
+  });
+
   // Power iteration
   for (let iter = 0; iter < maxIterations; iter++) {
     const newScores = new Map<string, number>();
     let diff = 0;
+
+    // Collect dangling mass — redistribute uniformly across all nodes
+    let danglingMass = 0;
+    for (const d of danglingNodes) {
+      danglingMass += scores.get(d) ?? 0;
+    }
+    const danglingShare = (alpha * danglingMass) / n;
 
     graph.forEachNode((node) => {
       // Contribution from neighbors
@@ -194,9 +210,9 @@ function computePPR(
         }
       });
 
-      // PPR formula: (1-alpha) * personalization + alpha * neighbor_contrib
+      // PPR formula: (1-alpha) * personalization + alpha * neighbor_contrib + dangling_share
       const p = personalization.get(node) ?? 0;
-      const newScore = (1 - alpha) * p + alpha * neighborContrib;
+      const newScore = (1 - alpha) * p + alpha * neighborContrib + danglingShare;
       newScores.set(node, newScore);
       diff += Math.abs(newScore - (scores.get(node) ?? 0));
     });
@@ -297,8 +313,8 @@ export async function shortestPath(
     return null;
   }
 
-  const pathNodes = bidirectional(graph, fromKey, toKey);
-  if (!pathNodes) return null;
+  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, 'weight');
+  if (!pathNodes || pathNodes.length === 0) return null;
 
   // Calculate total weight
   let totalWeight = 0;
@@ -510,8 +526,8 @@ export async function whyRelated(
     return null;
   }
 
-  const pathNodes = bidirectional(graph, fromKey, toKey);
-  if (!pathNodes) {
+  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, 'weight');
+  if (!pathNodes || pathNodes.length === 0) {
     return { connected: false, path: [], distance: Number.MAX_SAFE_INTEGER };
   }
 

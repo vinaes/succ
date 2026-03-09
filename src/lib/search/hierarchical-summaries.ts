@@ -222,7 +222,8 @@ export async function generateHierarchicalSummaries(
   const extensions = options?.extensions ?? CODE_EXTENSIONS;
   const excludes = options?.excludes ?? DEFAULT_EXCLUDES;
   const maxFiles = options?.maxFiles ?? 200;
-  const concurrency = options?.concurrency ?? 3;
+  const rawConcurrency = options?.concurrency ?? 3;
+  const concurrency = Math.max(1, Math.floor(rawConcurrency));
   const includeRepo = options?.includeRepo ?? true;
 
   const summaries: HierarchicalSummary[] = [];
@@ -279,7 +280,7 @@ export async function generateHierarchicalSummaries(
   }
 
   const dirSummaries: HierarchicalSummary[] = [];
-  const dirEntries = [...dirGroups.entries()].filter(([, files]) => files.length >= 2);
+  const dirEntries = [...dirGroups.entries()].filter(([, files]) => files.length >= 1);
 
   for (let i = 0; i < dirEntries.length; i += concurrency) {
     const batch = dirEntries.slice(i, i + concurrency);
@@ -326,7 +327,7 @@ export async function generateHierarchicalSummaries(
   }
 
   const moduleSummaries: HierarchicalSummary[] = [];
-  const moduleEntries = [...moduleGroups.entries()].filter(([, dirs]) => dirs.length >= 2);
+  const moduleEntries = [...moduleGroups.entries()].filter(([, dirs]) => dirs.length >= 1);
 
   for (const [moduleKey, moduleDirs] of moduleEntries) {
     try {
@@ -419,17 +420,26 @@ Summary:`;
 /**
  * Get the appropriate summary level for a query based on specificity.
  *
- * Heuristic: short queries with module/project words → higher level,
- * queries with specific function/variable names → file level.
+ * Heuristic: specific symbol/file queries → file level first,
+ * then explicit scope keywords, then broad repo phrases.
+ * Symbol checks must precede generic repo phrases so that
+ * "what does myFunction do" resolves to file, not repo.
  */
 export function inferSummaryLevel(query: string): SummaryLevel {
   const lower = query.toLowerCase();
+
+  // Specific symbol name check first (camelCase, snake_case) — most precise signal
+  if (/[a-z][A-Z]/.test(query) || /[a-zA-Z]{2,}_[a-zA-Z]{2,}/.test(query)) return 'file';
 
   // Directory-level indicators (checked before repo to handle "describe this folder")
   const dirWords = ['directory', 'folder', 'namespace', 'dir '];
   if (dirWords.some((w) => lower.includes(w))) return 'directory';
 
-  // Repo-level indicators
+  // Module-level indicators (checked before repo — "describe auth module" → module)
+  const moduleWords = ['module', 'subsystem', 'component', 'layer', 'package'];
+  if (moduleWords.some((w) => lower.includes(w))) return 'module';
+
+  // Repo-level indicators — broad phrases that only match repo-scope queries
   const repoWords = [
     'project',
     'codebase',
@@ -440,13 +450,6 @@ export function inferSummaryLevel(query: string): SummaryLevel {
     'what does this do',
   ];
   if (repoWords.some((w) => lower.includes(w))) return 'repo';
-
-  // Module-level indicators
-  const moduleWords = ['module', 'subsystem', 'component', 'layer', 'package'];
-  if (moduleWords.some((w) => lower.includes(w))) return 'module';
-
-  // If query contains a specific symbol name (camelCase, snake_case, PascalCase), go file-level
-  if (/[a-z][A-Z]/.test(query) || /\w_\w/.test(query)) return 'file';
 
   // Default to directory (good middle ground)
   return 'directory';

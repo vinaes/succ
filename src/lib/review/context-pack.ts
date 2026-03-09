@@ -78,8 +78,11 @@ export async function generateReviewContext(
   const projectRoot = getProjectRoot();
 
   // Step 1: Get and parse diff
-  const diffText = getDiff(diffRef, projectRoot);
-  const parsed = parseDiffText(diffText);
+  const diffResult = getDiff(diffRef, projectRoot);
+  if (diffResult.error) {
+    return emptyContextPack(`git diff failed: ${diffResult.error}`);
+  }
+  const parsed = parseDiffText(diffResult.text);
 
   if (parsed.totalFiles === 0) {
     return emptyContextPack('No changes found for the given diff reference.');
@@ -146,24 +149,23 @@ export async function generateReviewContext(
 // Pipeline Steps
 // ============================================================================
 
-function getDiff(diffRef: string, projectRoot: string): string {
+function getDiff(diffRef: string, projectRoot: string): { text: string; error?: string } {
   try {
     // Validate diffRef: allow refs, flags like --cached/--staged, ranges
     if (!/^[\w.~^/\-@{}]+$/.test(diffRef) && !/^--(?:cached|staged)$/.test(diffRef)) {
       throw new Error(`Invalid diff reference: ${diffRef}`);
     }
-    return execFileSync('git', ['diff', diffRef], {
+    const text = execFileSync('git', ['diff', diffRef], {
       cwd: projectRoot,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024, // 10MB
       timeout: 30000,
     });
+    return { text };
   } catch (error) {
-    logWarn('review', 'git diff failed', {
-      error: error instanceof Error ? error.message : String(error),
-      diffRef,
-    });
-    return '';
+    const message = error instanceof Error ? error.message : String(error);
+    logWarn('review', 'git diff failed', { error: message, diffRef });
+    return { text: '', error: message };
   }
 }
 

@@ -136,7 +136,18 @@ export function registerSearchTools(server: McpServer) {
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
         if (isWildcard) {
-          const recentDocs = await getRecentDocuments(limit);
+          // Overfetch when path filters are present so we can filter and still hit limit
+          const hasPathFilters =
+            (include_paths && include_paths.length > 0) ||
+            (exclude_paths && exclude_paths.length > 0);
+          const fetchLimit = hasPathFilters ? limit * 5 : limit;
+          let recentDocs = await getRecentDocuments(fetchLimit);
+
+          // Apply path filters
+          if (hasPathFilters) {
+            recentDocs = filterByPaths(recentDocs, include_paths, exclude_paths).slice(0, limit);
+          }
+
           if (recentDocs.length === 0) {
             return {
               content: [

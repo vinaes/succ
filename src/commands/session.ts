@@ -84,6 +84,11 @@ export async function sessionTrim(
     backup?: boolean;
   }
 ): Promise<void> {
+  if (!pathArg) {
+    throw new Error(
+      'A session path is required for trim.\n' + 'Usage: succ session trim <path-to-session.jsonl>'
+    );
+  }
   const filePath = await resolveSessionPath(pathArg);
 
   const trimOptions: TrimOptions = {
@@ -115,6 +120,12 @@ export async function sessionTrimThinking(
   pathArg: string | undefined,
   options: { dryRun?: boolean; backup?: boolean }
 ): Promise<void> {
+  if (!pathArg) {
+    throw new Error(
+      'A session path is required for trim-thinking.\n' +
+        'Usage: succ session trim-thinking <path-to-session.jsonl>'
+    );
+  }
   const filePath = await resolveSessionPath(pathArg);
   const result = await trimThinking(filePath, {
     dryRun: options.dryRun,
@@ -132,6 +143,12 @@ export async function sessionTrimAll(
   pathArg: string | undefined,
   options: { dryRun?: boolean; backup?: boolean }
 ): Promise<void> {
+  if (!pathArg) {
+    throw new Error(
+      'A session path is required for trim-all.\n' +
+        'Usage: succ session trim-all <path-to-session.jsonl>'
+    );
+  }
   const filePath = await resolveSessionPath(pathArg);
   const result = await trimAll(filePath, {
     dryRun: options.dryRun,
@@ -149,6 +166,12 @@ export async function sessionCompact(
   pathArg: string | undefined,
   options: { before: number; dryRun?: boolean; backup?: boolean; output?: string }
 ): Promise<void> {
+  if (!pathArg) {
+    throw new Error(
+      'A session path is required for compact.\n' +
+        'Usage: succ session compact <path-to-session.jsonl> --before <N>'
+    );
+  }
   const filePath = await resolveSessionPath(pathArg);
   const result = await compactBefore(filePath, options.before, {
     dryRun: options.dryRun,
@@ -164,7 +187,11 @@ export async function sessionCompact(
   console.log(`  Chain verified:    ${result.chainVerified ? 'OK' : 'FAILED'}`);
   console.log(`  Output:            ${result.outputPath}`);
   console.log(`  Session ID:        ${result.sessionId}`);
-  if (!options.dryRun && result.chainVerified) {
+  if (!result.chainVerified) {
+    console.error('\n  ERROR: Session chain verification failed. The output file may be corrupt.');
+    process.exit(1);
+  }
+  if (!options.dryRun) {
     console.log(`\n  Resume with: claude -r ${result.sessionId}`);
   }
 }

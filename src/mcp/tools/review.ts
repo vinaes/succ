@@ -26,11 +26,15 @@ export function registerReviewTools(server: McpServer) {
           ),
         max_related: z
           .number()
+          .int()
+          .min(1)
           .optional()
           .default(10)
           .describe('Maximum number of related symbols to return (default: 10)'),
         max_memories: z
           .number()
+          .int()
+          .min(1)
           .optional()
           .default(10)
           .describe('Maximum number of relevant memories to return (default: 10)'),

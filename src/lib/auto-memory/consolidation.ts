@@ -161,13 +161,14 @@ export async function consolidateAutoMemories(options?: {
       for (const mem of group) {
         if (mem.id !== survivor.id) {
           toDelete.push(mem.id);
-          result.merged++;
         }
       }
     }
 
     if (toDelete.length > 0) {
       await deleteMemoriesByIds(toDelete);
+      // Increment only after the delete succeeds so the count stays accurate on failure
+      result.merged = toDelete.length;
     }
 
     // Step 2: Promote high-usage memories (skip any that were just deleted)

@@ -164,7 +164,16 @@ async function extractFileSymbols(
   const language = EXTENSION_TO_LANGUAGE[ext];
   if (!language) return [];
 
-  const tree = await parseCode(content, language);
+  let tree: Awaited<ReturnType<typeof parseCode>>;
+  try {
+    tree = await parseCode(content, language);
+  } catch (error) {
+    logWarn('repo-map', `Failed to parse ${filePath}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+
   if (!tree) return [];
 
   try {
@@ -177,6 +186,11 @@ async function extractFileSymbols(
     }
 
     return symbols.slice(0, maxSymbols).map((s) => s.name);
+  } catch (error) {
+    logWarn('repo-map', `Failed to extract symbols from ${filePath}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
   } finally {
     tree.delete();
   }
