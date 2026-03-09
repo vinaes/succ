@@ -204,7 +204,11 @@ export function isLateChunkingSupported(): boolean {
 function computeLineOffsets(content: string): number[] {
   const offsets: number[] = [0]; // Line 1 starts at offset 0
   for (let i = 0; i < content.length; i++) {
-    if (content[i] === '\n') {
+    // Handle CRLF: skip \r before \n so offsets stay consistent
+    if (content[i] === '\r' && content[i + 1] === '\n') {
+      offsets.push(i + 2);
+      i++; // skip the \n
+    } else if (content[i] === '\n') {
       offsets.push(i + 1);
     }
   }

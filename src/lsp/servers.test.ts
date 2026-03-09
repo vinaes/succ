@@ -102,12 +102,7 @@ describe('LSP servers', () => {
     it('should detect exactly TypeScript and Go for a combined project', () => {
       const exists = vi.fn((p: string) => p.endsWith('tsconfig.json') || p.endsWith('go.mod'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('typescript');
-      expect(result).toContain('go');
-      // Must not include languages whose markers are absent
-      expect(result).not.toContain('python');
-      expect(result).not.toContain('rust');
-      expect(result).not.toContain('csharp');
+      expect(result.sort()).toEqual(['go', 'typescript']);
     });
 
     it('should return empty array for unknown projects', () => {
