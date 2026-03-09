@@ -3652,6 +3652,47 @@ export class PostgresBackend {
     };
   }
 
+  async getMemoryHealth(): Promise<{
+    total: number;
+    never_accessed: number;
+    stale: number;
+    avg_age_days: number;
+    avg_access: number;
+  }> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? '(LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+
+    const result = await pool.query<{
+      total: string;
+      never_accessed: string;
+      stale: string;
+      avg_age_days: string | null;
+      avg_access: string | null;
+    }>(
+      `SELECT
+         COUNT(*) as total,
+         SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
+         SUM(CASE WHEN EXTRACT(EPOCH FROM (now() - created_at)) / 86400 > 90
+               AND access_count = 0 THEN 1 ELSE 0 END) as stale,
+         AVG(EXTRACT(EPOCH FROM (now() - created_at)) / 86400) as avg_age_days,
+         AVG(access_count) as avg_access
+       FROM memories WHERE ${scopeCond}`,
+      scopeParams
+    );
+
+    const row = result.rows[0];
+    return {
+      total: parseInt(row.total) || 0,
+      never_accessed: parseInt(row.never_accessed) || 0,
+      stale: parseInt(row.stale) || 0,
+      avg_age_days: parseFloat(row.avg_age_days ?? '0') || 0,
+      avg_access: parseFloat(row.avg_access ?? '0') || 0,
+    };
+  }
+
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
     const pool = await this.getPool();
     const result = await pool.query('DELETE FROM memories WHERE created_at < $1', [

@@ -10,10 +10,12 @@
  */
 
 import {
-  getMemoryHealthRow,
-  getIndexFreshnessRows,
-  getTokenSavingsRow,
-} from './db/observability.js';
+  getMemoryHealth,
+  getStats,
+  getCodeFileCount,
+  getTokenStatsSummary,
+} from './storage/index.js';
+import { logWarn } from './fault-logger.js';
 
 // ============================================================================
 // Types
@@ -154,8 +156,9 @@ export function getLatencyStats(
 
 /**
  * Generate a full observability dashboard.
+ * Uses storage abstraction — works with both SQLite and PostgreSQL backends.
  */
-export function getDashboard(): ObservabilityDashboard {
+export async function getDashboard(): Promise<ObservabilityDashboard> {
   const queryLatency = getLatencyStats();
 
   let memoryHealth = {
@@ -167,33 +170,52 @@ export function getDashboard(): ObservabilityDashboard {
     neverAccessed: 0,
   };
 
-  const memRow = getMemoryHealthRow();
-  if (memRow) {
+  try {
+    const memRow = await getMemoryHealth();
     memoryHealth = {
-      total: memRow.total ?? 0,
-      staleCount: memRow.stale ?? 0,
-      staleRatio: memRow.total > 0 ? (memRow.stale ?? 0) / memRow.total : 0,
-      avgAge: Math.round(memRow.avg_age_days ?? 0),
-      avgAccessCount: Math.round((memRow.avg_access ?? 0) * 10) / 10,
-      neverAccessed: memRow.never_accessed ?? 0,
+      total: memRow.total,
+      staleCount: memRow.stale,
+      staleRatio: memRow.total > 0 ? memRow.stale / memRow.total : 0,
+      avgAge: Math.round(memRow.avg_age_days),
+      avgAccessCount: Math.round(memRow.avg_access * 10) / 10,
+      neverAccessed: memRow.never_accessed,
     };
+  } catch (e) {
+    logWarn('observability', `Failed to get memory health: ${e instanceof Error ? e.message : e}`);
   }
 
-  const idxRows = getIndexFreshnessRows();
-  const indexFreshness = {
-    totalDocuments: idxRows.doc_count,
-    totalCodeChunks: idxRows.code_count,
-    lastIndexedAt: idxRows.last_updated,
+  let indexFreshness = {
+    totalDocuments: 0,
+    totalCodeChunks: 0,
+    lastIndexedAt: null as string | null,
   };
+  try {
+    const [docStats, codeCount] = await Promise.all([getStats(), getCodeFileCount()]);
+    indexFreshness = {
+      totalDocuments: docStats.total_documents,
+      totalCodeChunks: codeCount,
+      lastIndexedAt: docStats.last_indexed,
+    };
+  } catch (e) {
+    logWarn(
+      'observability',
+      `Failed to get index freshness: ${e instanceof Error ? e.message : e}`
+    );
+  }
 
-  const tokenRow = getTokenSavingsRow();
-  const totalSaved = tokenRow.total_saved;
-  const totalFull = tokenRow.total_full;
-  const tokenSavings = {
-    totalSaved,
-    totalFull,
-    savingsRatio: totalFull > 0 ? totalSaved / totalFull : 0,
-  };
+  let tokenSavings = { totalSaved: 0, totalFull: 0, savingsRatio: 0 };
+  try {
+    const summary = await getTokenStatsSummary();
+    const totalSaved = summary.total_savings_tokens ?? 0;
+    const totalFull = summary.total_full_source_tokens ?? 0;
+    tokenSavings = {
+      totalSaved,
+      totalFull,
+      savingsRatio: totalFull > 0 ? totalSaved / totalFull : 0,
+    };
+  } catch (e) {
+    logWarn('observability', `Failed to get token savings: ${e instanceof Error ? e.message : e}`);
+  }
 
   return {
     queryLatency,

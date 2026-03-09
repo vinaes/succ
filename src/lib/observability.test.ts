@@ -1,11 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { recordLatency, withLatency, getLatencyStats } from './observability.js';
 
-// Mock DB dependencies to avoid real DB connections
-vi.mock('./db/observability.js', () => ({
-  getMemoryHealthRow: vi.fn(() => null),
-  getIndexFreshnessRows: vi.fn(() => ({ doc_count: 0, last_updated: null, code_count: 0 })),
-  getTokenSavingsRow: vi.fn(() => ({ total_saved: 0, total_full: 0 })),
+// Mock storage dependencies to avoid real DB connections
+vi.mock('./storage/index.js', () => ({
+  getMemoryHealth: vi.fn(async () => ({
+    total: 0,
+    never_accessed: 0,
+    stale: 0,
+    avg_age_days: 0,
+    avg_access: 0,
+  })),
+  getStats: vi.fn(async () => ({ total_documents: 0, total_files: 0, last_indexed: null })),
+  getCodeFileCount: vi.fn(async () => 0),
+  getTokenStatsSummary: vi.fn(async () => ({
+    total_savings_tokens: 0,
+    total_full_source_tokens: 0,
+  })),
+}));
+
+vi.mock('./fault-logger.js', () => ({
+  logWarn: vi.fn(),
 }));
 
 describe('observability', () => {

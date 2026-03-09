@@ -97,6 +97,7 @@ export {
   restoreInvalidatedMemory,
   getConsolidationHistory,
   getMemoryStats,
+  getMemoryHealth,
   deleteMemoriesOlderThan,
   deleteMemoriesByTag,
   getMemoryById,

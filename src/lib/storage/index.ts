@@ -500,6 +500,17 @@ export async function getMemoryStats(): Promise<any> {
   return d.getMemoryStats();
 }
 
+export async function getMemoryHealth(): Promise<{
+  total: number;
+  never_accessed: number;
+  stale: number;
+  avg_age_days: number;
+  avg_access: number;
+}> {
+  const d = await getStorageDispatcher();
+  return d.getMemoryHealth();
+}
+
 export async function deleteMemoriesOlderThan(date: Date): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesOlderThan(date);

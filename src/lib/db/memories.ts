@@ -763,6 +763,44 @@ export function getMemoryStats(): {
 }
 
 /**
+ * Get memory health metrics for observability dashboard.
+ */
+export function getMemoryHealth(): {
+  total: number;
+  never_accessed: number;
+  stale: number;
+  avg_age_days: number;
+  avg_access: number;
+} {
+  const row = cachedPrepare(
+    `SELECT
+       COUNT(*) as total,
+       SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
+       SUM(CASE WHEN julianday('now') - julianday(created_at) > 90
+             AND access_count = 0 THEN 1 ELSE 0 END) as stale,
+       AVG(julianday('now') - julianday(created_at)) as avg_age_days,
+       AVG(access_count) as avg_access
+     FROM memories`
+  ).get() as
+    | {
+        total: number;
+        never_accessed: number;
+        stale: number;
+        avg_age_days: number;
+        avg_access: number;
+      }
+    | undefined;
+
+  return {
+    total: row?.total ?? 0,
+    never_accessed: row?.never_accessed ?? 0,
+    stale: row?.stale ?? 0,
+    avg_age_days: row?.avg_age_days ?? 0,
+    avg_access: row?.avg_access ?? 0,
+  };
+}
+
+/**
  * Delete memories older than a given date
  */
 export function deleteMemoriesOlderThan(date: Date): number {

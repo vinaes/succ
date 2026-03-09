@@ -394,6 +394,18 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return sqlite.getMemoryStats();
   }
 
+  async getMemoryHealth(): Promise<{
+    total: number;
+    never_accessed: number;
+    stale: number;
+    avg_age_days: number;
+    avg_access: number;
+  }> {
+    if (this.backend === 'postgresql' && this.postgres) return this.postgres.getMemoryHealth();
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getMemoryHealth();
+  }
+
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
     if (this.backend === 'postgresql' && this.postgres)
       return this.postgres.deleteMemoriesOlderThan(date);
