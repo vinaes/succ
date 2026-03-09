@@ -42,6 +42,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getTokenOffsets`: passes `[text]` (array) for consistency with `embedRaw` 2D tensor output
 - Iterative Tarjan DFS replaces recursive implementation (avoids stack overflow on large graphs)
 
+## [1.4.10] - 2026-03-06
+
+### Added
+- **Multi-layered security hardening** — 3-tier prompt injection detection (structural patterns → multilingual regex + semantic embedding → LLM classification), Bell-LaPadula information flow control with 4 security levels + 4 compartments, content sanitization across 13 entry points, +35 command safety patterns across 10 categories
+- **HTTP hooks + PermissionRequest** — daemon handles hooks via HTTP POST (Claude Code v2.1.63+), auto-approve/deny permission dialogs via hook-rules (`type="allow"` skips dialog, `type="error"` blocks), deterministic daemon port from SHA-256(projectDir)
+- **Multi-agent support** — shared adapter module normalizes hook I/O for Cursor, GitHub Copilot, and Gemini CLI; `succ setup cursor|copilot|gemini` installation commands
+- **PostgreSQL full-text search** — `tsvector` column + GIN indexes, `ts_rank_cd` text scoring fused with pgvector cosine via RRF; all 8 BM25 dispatcher methods properly branch on PG backend
+- **Codex integration** — `succ setup codex` configures MCP + project trust, `succ codex` generates AGENTS.md with fresh succ context then spawns codex
+- **`succ init` copies hooks/core/ shared modules** — adapter, daemon-boot, and shared utils bundled with project hooks
+
+### Changed
+- Storage dispatcher decomposed: 2698-line monolith → 14 mixin modules in `src/lib/storage/dispatcher/`
+- Daemon service decomposed: 1710-line monolith → 9 route modules in `src/daemon/routes/`
+- ~116 `any` types eliminated via typed interfaces, `unknown`, boundary parsing
+- Zod validation on all 28 daemon API routes with 10MB body limit
+- 185 generic logWarn messages → descriptive context-specific messages
+- ESLint upgraded 9 → 10, all lint errors fixed, npm audit vulnerabilities resolved
+- Replaced `@iarna/toml` (unmaintained, CJS) with `smol-toml` (ESM, typed)
+- Removed `node-pty` dependency (native C++ build requirement eliminated)
+
+### Fixed
+- 31 CodeQL alerts addressed across 6 categories
+- Subdomain spoofing in URL hostname checks prevented
+- Skill suggestions always failing with fetch error
+- Daemon startup error logging in session-start hook
+- IFC step counting, tag validation, chunk sampling (CodeRabbit review)
+- `console.log` → `logInfo` across codebase, magic numbers extracted to constants
+
 ## [1.4.0] - 2026-02-20
 
 ### Breaking Changes
