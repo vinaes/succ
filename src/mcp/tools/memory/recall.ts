@@ -193,7 +193,7 @@ export function registerRecallTool(server: McpServer): void {
             query
           );
 
-        let localResults: any[];
+        let localResults: HybridMemoryResult[];
 
         if (isTemporalQuery && !globalOnlyMode) {
           // Extract key entities from query for separate searches
@@ -203,18 +203,24 @@ export function registerRecallTool(server: McpServer): void {
 
           if (subQueries.length > 1) {
             // Multi-pass: search for each entity separately, merge results
-            const allSubResults = new Map<number, any>();
-            for (const subQuery of subQueries) {
-              const subEmbedding = await getEmbedding(subQuery);
-              const subResults = await hybridSearchMemories(
-                subQuery,
-                subEmbedding,
-                limit,
-                0.2,
-                retrievalConfig.bm25_alpha
-              );
+            const allSubResults = new Map<number, HybridMemoryResult>();
+
+            // Compute all subquery embeddings in parallel
+            const subEmbeddings = await Promise.all(subQueries.map((sq) => getEmbedding(sq)));
+
+            // Run all subquery searches in parallel
+            const subSearchResults = await Promise.all(
+              subQueries.map((sq, i) =>
+                hybridSearchMemories(sq, subEmbeddings[i], limit, 0.2, retrievalConfig.bm25_alpha)
+              )
+            );
+
+            for (const subResults of subSearchResults) {
               for (const r of subResults) {
-                if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
+                if (
+                  !allSubResults.has(r.id) ||
+                  r.similarity > allSubResults.get(r.id)!.similarity
+                ) {
                   allSubResults.set(r.id, r);
                 }
               }
@@ -229,7 +235,7 @@ export function registerRecallTool(server: McpServer): void {
               retrievalConfig.bm25_alpha
             );
             for (const r of originalResults) {
-              if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id).similarity) {
+              if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id)!.similarity) {
                 allSubResults.set(r.id, r);
               }
             }
@@ -269,16 +275,16 @@ export function registerRecallTool(server: McpServer): void {
             const { expandQuery } = await import('../../../lib/query-expansion.js');
             const expandedQueries = await expandQuery(query, retrievalConfig.query_expansion_mode);
             if (expandedQueries.length > 0) {
+              // Compute all expansion embeddings + searches in parallel
+              const eqEmbeddings = await Promise.all(expandedQueries.map((eq) => getEmbedding(eq)));
+              const eqSearchResults = await Promise.all(
+                expandedQueries.map((eq, i) =>
+                  hybridSearchMemories(eq, eqEmbeddings[i], limit, 0.3, retrievalConfig.bm25_alpha)
+                )
+              );
+
               const existingIds = new Set(localResults.map((r) => r.id));
-              for (const eq of expandedQueries) {
-                const eqEmbedding = await getEmbedding(eq);
-                const eqResults = await hybridSearchMemories(
-                  eq,
-                  eqEmbedding,
-                  limit,
-                  0.3,
-                  retrievalConfig.bm25_alpha
-                );
+              for (const eqResults of eqSearchResults) {
                 for (const r of eqResults) {
                   if (!existingIds.has(r.id)) {
                     localResults.push(r);
@@ -292,7 +298,7 @@ export function registerRecallTool(server: McpServer): void {
                   }
                 }
               }
-              localResults.sort((a: any, b: any) => b.similarity - a.similarity);
+              localResults.sort((a, b) => b.similarity - a.similarity);
               localResults = localResults.slice(0, limit * 2);
             }
           } catch (err) {

@@ -61,14 +61,15 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
   const raw = calculateDegreeCentrality(links);
   const normalized = normalizeCentrality(raw);
 
-  let count = 0;
-  for (const [memId, deg] of raw) {
-    const norm = normalized.get(memId) ?? 0;
-    await upsertCentralityScore(memId, deg, norm);
-    count++;
-  }
+  const entries = Array.from(raw.entries()).map(([memId, deg]) => ({
+    memId,
+    degree: deg,
+    normalized: normalized.get(memId) ?? 0,
+  }));
 
-  return { updated: count };
+  await Promise.all(entries.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized)));
+
+  return { updated: entries.length };
 }
 
 /**

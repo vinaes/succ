@@ -257,8 +257,11 @@ export function saveMemory(
   // Async supersession check: detect if new memory replaces an existing one (fire-and-forget)
   import('../supersession.js')
     .then((m) => m.checkSupersession(newId, content, embedding))
-    .catch(() => {
-      // Supersession module not available or failed — non-critical
+    .catch((err) => {
+      logWarn(
+        'memories',
+        `Supersession check failed: ${err instanceof Error ? err.message : String(err)}`
+      );
     });
 
   invalidateMemoriesBm25Index();
