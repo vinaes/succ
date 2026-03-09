@@ -217,7 +217,7 @@ export interface MemoryPayload {
   last_accessed: string | null;
   quality_score: number | null;
   confidence: number | null;
-  source_type: string | null;
+  source_type: SourceType | null;
 }
 
 // ============================================================================
@@ -250,7 +250,7 @@ export interface MemoryUpsertMeta {
   lastAccessed?: string | null;
   qualityScore?: number | null;
   confidence?: number | null;
-  sourceType?: string | null;
+  sourceType?: SourceType | null;
 }
 
 // ============================================================================
@@ -1310,7 +1310,18 @@ export class QdrantVectorStore implements VectorStore {
       valid_from: asNullableString(payload.valid_from),
       valid_until: asNullableString(payload.valid_until),
       confidence: asNullableNumber(payload.confidence),
-      source_type: asNullableString(payload.source_type) as SourceType | null,
+      source_type: (() => {
+        const raw = asNullableString(payload.source_type);
+        if (raw === null) return null;
+        const valid: SourceType[] = [
+          'human',
+          'agent',
+          'canonical_doc',
+          'imported',
+          'auto_extracted',
+        ];
+        return (valid as string[]).includes(raw) ? (raw as SourceType) : null;
+      })(),
       created_at: asString(payload.created_at),
       similarity: point.score,
     };

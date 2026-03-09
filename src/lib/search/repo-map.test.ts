@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
+import type { SymbolInfo } from '../tree-sitter/types.js';
 
 vi.mock('../fault-logger.js', () => ({
   logInfo: vi.fn(),
@@ -11,7 +12,208 @@ vi.mock('../config.js', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock fs at module level (ESM-compatible — vi.spyOn on namespace fails)
+// Mock tree-sitter: parseCode returns a fake tree, extractSymbols returns
+// symbols based on simple regex (for test purposes only — production uses AST)
+// ---------------------------------------------------------------------------
+
+const fakeTree = { delete: vi.fn() };
+
+vi.mock('../tree-sitter/parser.js', () => ({
+  parseCode: vi.fn(() => fakeTree),
+}));
+
+/**
+ * Lightweight symbol extraction for tests — mimics what tree-sitter
+ * would return for common patterns. Production code uses the real AST.
+ */
+function fakeExtractSymbols(_tree: unknown, content: string, language: string): SymbolInfo[] {
+  const symbols: SymbolInfo[] = [];
+  const lines = content.split('\n');
+
+  if (language === 'typescript' || language === 'javascript' || language === 'tsx') {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if ((m = line.match(/export\s+(?:async\s+)?function\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'function',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/export\s+(?:const|let|var)\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'variable',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/export\s+class\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'class',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/export\s+interface\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'interface',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/export\s+type\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'type_alias',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/export\s+enum\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'enum',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      }
+    }
+  }
+
+  if (language === 'python') {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if ((m = line.match(/^def\s+(\w+)/))) {
+        if (!m[1].startsWith('_')) {
+          symbols.push({
+            name: m[1],
+            type: 'function',
+            startRow: i,
+            endRow: i,
+            startColumn: 0,
+            endColumn: line.length,
+          });
+        }
+      } else if ((m = line.match(/^class\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'class',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      }
+    }
+  }
+
+  if (language === 'go') {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if ((m = line.match(/^func\s+(\w+)/))) {
+        if (m[1][0] === m[1][0].toUpperCase()) {
+          symbols.push({
+            name: m[1],
+            type: 'function',
+            startRow: i,
+            endRow: i,
+            startColumn: 0,
+            endColumn: line.length,
+          });
+        }
+      } else if ((m = line.match(/^type\s+(\w+)\s+struct/))) {
+        if (m[1][0] === m[1][0].toUpperCase()) {
+          symbols.push({
+            name: m[1],
+            type: 'struct',
+            startRow: i,
+            endRow: i,
+            startColumn: 0,
+            endColumn: line.length,
+          });
+        }
+      } else if ((m = line.match(/^type\s+(\w+)\s+interface/))) {
+        if (m[1][0] === m[1][0].toUpperCase()) {
+          symbols.push({
+            name: m[1],
+            type: 'interface',
+            startRow: i,
+            endRow: i,
+            startColumn: 0,
+            endColumn: line.length,
+          });
+        }
+      }
+    }
+  }
+
+  if (language === 'rust') {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if ((m = line.match(/pub\s+(?:async\s+)?fn\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'function',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/pub\s+struct\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'struct',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/pub\s+enum\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'enum',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      } else if ((m = line.match(/pub\s+trait\s+(\w+)/))) {
+        symbols.push({
+          name: m[1],
+          type: 'trait',
+          startRow: i,
+          endRow: i,
+          startColumn: 0,
+          endColumn: line.length,
+        });
+      }
+    }
+  }
+
+  return symbols;
+}
+
+vi.mock('../tree-sitter/extractor.js', () => ({
+  extractSymbols: vi.fn(fakeExtractSymbols),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock fs at module level (ESM-compatible)
 // ---------------------------------------------------------------------------
 
 const readdirSyncMock = vi.fn<(...args: unknown[]) => unknown>();
@@ -104,6 +306,7 @@ describe('generateRepoMap', () => {
     readFileSyncMock.mockReset();
     existsSyncMock.mockReset();
     watchMock.mockClear();
+    fakeTree.delete.mockClear();
   });
 
   it('returns an empty result for an empty directory', async () => {
@@ -259,5 +462,15 @@ describe('generateRepoMap', () => {
 
     expect(result.text).toMatch(/src\/a\.ts: alpha/);
     expect(result.totalSymbols).toBe(1);
+  });
+
+  it('cleans up tree after extraction', async () => {
+    buildFsMock({
+      '/project/mod.ts': 'export function test() {}',
+    });
+
+    await generateRepoMap('/project');
+
+    expect(fakeTree.delete).toHaveBeenCalled();
   });
 });

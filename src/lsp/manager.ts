@@ -279,6 +279,9 @@ function detectLanguageFromFile(filePath: string): string | null {
     go: 'go',
     rs: 'rust',
     cs: 'csharp',
+    kt: 'kotlin',
+    kts: 'kotlin',
+    swift: 'swift',
   };
 
   return extMap[ext] ?? null;

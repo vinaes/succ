@@ -2,8 +2,7 @@
  * Repo Map Generation — Aider-style compact repository overview.
  *
  * Generates a compact text map: file path + exported symbols, one line per file.
- * Used for routing BEFORE semantic search. Function-level granularity is
- * the retrieval sweet spot (Aider, Agentless, TSP all use this).
+ * Uses tree-sitter AST for accurate symbol extraction (13 languages).
  *
  * Output example:
  *   src/lib/auth.ts: hashPassword, verifyToken, createSession
@@ -14,7 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { logInfo, logWarn } from '../fault-logger.js';
-import { EXTENSION_TO_LANGUAGE } from '../tree-sitter/types.js';
+import { EXTENSION_TO_LANGUAGE, type SymbolType } from '../tree-sitter/types.js';
+import { parseCode } from '../tree-sitter/parser.js';
+import { extractSymbols } from '../tree-sitter/extractor.js';
 import { getProjectRoot } from '../config.js';
 
 // ============================================================================
@@ -39,7 +40,7 @@ export interface RepoMapResult {
 // ============================================================================
 
 /**
- * Generate a repo map from tree-sitter symbol extraction.
+ * Generate a repo map using tree-sitter AST symbol extraction.
  *
  * @param rootPath - Project root (default: getProjectRoot())
  * @param options - Filter options
@@ -53,14 +54,35 @@ export async function generateRepoMap(
     exclude?: string[];
     /** Max symbols per file (default: 10) */
     maxSymbolsPerFile?: number;
-    /** Symbol types to include (default: functions, classes, interfaces, type aliases) */
+    /**
+     * Symbol types to include. Accepted values match tree-sitter SymbolType:
+     * 'function', 'method', 'class', 'interface', 'type_alias', 'enum',
+     * 'struct', 'trait', 'impl', 'module', 'variable', 'constant'.
+     * Plural aliases are also accepted: 'functions'→'function', etc.
+     */
     symbolTypes?: string[];
   }
 ): Promise<RepoMapResult> {
   const root = rootPath ?? getProjectRoot();
   const maxSymbols = options?.maxSymbolsPerFile ?? 10;
   const includeGlobs = options?.include;
-  const symbolTypesFilter = options?.symbolTypes;
+
+  // Normalize plural aliases → singular to match SymbolType values
+  const symbolAliasMap: Record<string, string> = {
+    functions: 'function',
+    methods: 'method',
+    classes: 'class',
+    interfaces: 'interface',
+    types: 'type_alias',
+    type_aliases: 'type_alias',
+    enums: 'enum',
+    structs: 'struct',
+    traits: 'trait',
+    modules: 'module',
+    variables: 'variable',
+    constants: 'constant',
+  };
+  const symbolTypesFilter = options?.symbolTypes?.map((t) => symbolAliasMap[t] ?? t);
 
   // Default exclude patterns
   const defaultExcludes = [
@@ -79,13 +101,12 @@ export async function generateRepoMap(
 
   const excludeSet = new Set([...defaultExcludes, ...(options?.exclude ?? [])]);
 
-  // Walk the directory tree — use tree-sitter's EXTENSION_TO_LANGUAGE as the canonical
-  // set of code extensions (30+ extensions, single source of truth)
+  // Walk the directory tree — use EXTENSION_TO_LANGUAGE as canonical set
   const entries: RepoMapEntry[] = [];
   const codeExtensions = new Set(Object.keys(EXTENSION_TO_LANGUAGE).map((e) => `.${e}`));
 
   try {
-    await walkDir(root, excludeSet, codeExtensions, entries, maxSymbols);
+    await walkDir(root, excludeSet, codeExtensions, entries, maxSymbols, symbolTypesFilter);
   } catch (error) {
     logWarn('repo-map', 'Error walking directory', {
       error: error instanceof Error ? error.message : String(error),
@@ -98,29 +119,6 @@ export async function generateRepoMap(
     filtered = filtered.filter((e) => {
       const relative = path.relative(root, e.filePath).replace(/\\/g, '/');
       return includeGlobs.some((glob) => minimatch(relative, glob, { dot: true, matchBase: true }));
-    });
-  }
-
-  // Apply symbolTypes filter: only retain the requested symbol kinds per entry.
-  // The initial walk stores all symbols without kind information, so we re-read
-  // each file to run the typed extraction. Files that fail to read are kept
-  // with their original symbol list (best effort).
-  if (symbolTypesFilter && symbolTypesFilter.length > 0) {
-    filtered = filtered.map((e) => {
-      let content: string;
-      try {
-        content = fs.readFileSync(e.filePath, 'utf-8');
-      } catch {
-        return e; // keep original symbols if we can't re-read
-      }
-      return {
-        ...e,
-        symbols: extractSymbolsRegexFiltered(
-          content,
-          path.extname(e.filePath).toLowerCase(),
-          symbolTypesFilter
-        ).slice(0, maxSymbols),
-      };
     });
   }
 
@@ -148,190 +146,52 @@ export async function generateRepoMap(
 }
 
 // ============================================================================
-// Symbol Extraction (lightweight — no tree-sitter dependency)
+// Tree-sitter symbol extraction per file
 // ============================================================================
 
 /**
- * Extract exported symbols from a file using regex patterns.
- * This is a lightweight fallback — tree-sitter extraction is preferred
- * but requires the parser to be loaded.
+ * Extract symbols from a file using tree-sitter AST parsing.
+ * Falls back to empty symbols on parse failure (non-fatal).
  */
-function extractSymbolsRegex(content: string, ext: string): string[] {
-  const symbols: string[] = [];
-
-  // TypeScript/JavaScript exports
-  if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-    const patterns = [
-      /export\s+(?:async\s+)?function\s+(\w+)/g,
-      /export\s+(?:const|let|var)\s+(\w+)/g,
-      /export\s+class\s+(\w+)/g,
-      /export\s+interface\s+(\w+)/g,
-      /export\s+type\s+(\w+)/g,
-      /export\s+enum\s+(\w+)/g,
-      /export\s+default\s+(?:class|function)\s+(\w+)/g,
-    ];
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        symbols.push(match[1]);
-      }
-    }
-  }
-
-  // Python
-  if (ext === '.py') {
-    const patterns = [/^def\s+(\w+)/gm, /^class\s+(\w+)/gm];
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        if (!match[1].startsWith('_')) symbols.push(match[1]);
-      }
-    }
-  }
-
-  // Go
-  if (ext === '.go') {
-    const patterns = [/^func\s+(\w+)/gm, /^type\s+(\w+)\s+struct/gm, /^type\s+(\w+)\s+interface/gm];
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        // Go exports start with uppercase
-        if (match[1][0] === match[1][0].toUpperCase()) {
-          symbols.push(match[1]);
-        }
-      }
-    }
-  }
-
-  // Rust
-  if (ext === '.rs') {
-    const patterns = [
-      /pub\s+(?:async\s+)?fn\s+(\w+)/g,
-      /pub\s+struct\s+(\w+)/g,
-      /pub\s+enum\s+(\w+)/g,
-      /pub\s+trait\s+(\w+)/g,
-    ];
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        symbols.push(match[1]);
-      }
-    }
-  }
-
-  return [...new Set(symbols)]; // Deduplicate
-}
-
-/**
- * Symbol kind constants for filtering.
- * Maps regex pattern groups to coarse kind strings accepted by the `symbolTypes` option.
- */
-type SymbolKind = 'function' | 'class' | 'interface' | 'type' | 'variable';
-
-interface SymbolWithKind {
-  name: string;
-  kind: SymbolKind;
-}
-
-/**
- * Like `extractSymbolsRegex`, but tags each symbol with its coarse kind so
- * callers can filter by `symbolTypes`.
- */
-function extractSymbolsWithKind(content: string, ext: string): SymbolWithKind[] {
-  const results: SymbolWithKind[] = [];
-
-  if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-    const typed: Array<[RegExp, SymbolKind]> = [
-      [/export\s+(?:async\s+)?function\s+(\w+)/g, 'function'],
-      [/export\s+default\s+(?:async\s+)?function\s+(\w+)/g, 'function'],
-      [/export\s+class\s+(\w+)/g, 'class'],
-      [/export\s+default\s+class\s+(\w+)/g, 'class'],
-      [/export\s+interface\s+(\w+)/g, 'interface'],
-      [/export\s+type\s+(\w+)/g, 'type'],
-      [/export\s+enum\s+(\w+)/g, 'type'],
-      [/export\s+(?:const|let|var)\s+(\w+)/g, 'variable'],
-    ];
-    for (const [pattern, kind] of typed) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        results.push({ name: match[1], kind });
-      }
-    }
-  }
-
-  if (ext === '.py') {
-    const typed: Array<[RegExp, SymbolKind]> = [
-      [/^def\s+(\w+)/gm, 'function'],
-      [/^class\s+(\w+)/gm, 'class'],
-    ];
-    for (const [pattern, kind] of typed) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        if (!match[1].startsWith('_')) results.push({ name: match[1], kind });
-      }
-    }
-  }
-
-  if (ext === '.go') {
-    const typed: Array<[RegExp, SymbolKind]> = [
-      [/^func\s+(\w+)/gm, 'function'],
-      [/^type\s+(\w+)\s+struct/gm, 'class'],
-      [/^type\s+(\w+)\s+interface/gm, 'interface'],
-    ];
-    for (const [pattern, kind] of typed) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        if (match[1][0] === match[1][0].toUpperCase()) {
-          results.push({ name: match[1], kind });
-        }
-      }
-    }
-  }
-
-  if (ext === '.rs') {
-    const typed: Array<[RegExp, SymbolKind]> = [
-      [/pub\s+(?:async\s+)?fn\s+(\w+)/g, 'function'],
-      [/pub\s+struct\s+(\w+)/g, 'class'],
-      [/pub\s+enum\s+(\w+)/g, 'type'],
-      [/pub\s+trait\s+(\w+)/g, 'interface'],
-    ];
-    for (const [pattern, kind] of typed) {
-      let match;
-      while ((match = pattern.exec(content)) !== null) {
-        results.push({ name: match[1], kind });
-      }
-    }
-  }
-
-  // Deduplicate by name (first occurrence wins)
-  const seen = new Set<string>();
-  return results.filter((e) => {
-    if (seen.has(e.name)) return false;
-    seen.add(e.name);
-    return true;
-  });
-}
-
-/**
- * Extract exported symbols filtered to only the requested coarse kinds.
- */
-function extractSymbolsRegexFiltered(
+async function extractFileSymbols(
   content: string,
-  ext: string,
-  symbolTypes: string[]
-): string[] {
-  const typeSet = new Set(symbolTypes);
-  return extractSymbolsWithKind(content, ext)
-    .filter((e) => typeSet.has(e.kind))
-    .map((e) => e.name);
+  filePath: string,
+  maxSymbols: number,
+  symbolTypesFilter?: string[]
+): Promise<string[]> {
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  const language = EXTENSION_TO_LANGUAGE[ext];
+  if (!language) return [];
+
+  const tree = await parseCode(content, language);
+  if (!tree) return [];
+
+  try {
+    let symbols = await extractSymbols(tree, content, language);
+
+    // Apply symbol type filter if specified
+    if (symbolTypesFilter && symbolTypesFilter.length > 0) {
+      const typeSet = new Set(symbolTypesFilter as SymbolType[]);
+      symbols = symbols.filter((s) => typeSet.has(s.type));
+    }
+
+    return symbols.slice(0, maxSymbols).map((s) => s.name);
+  } finally {
+    tree.delete();
+  }
 }
+
+// ============================================================================
+// Directory walker
+// ============================================================================
 
 async function walkDir(
   dir: string,
   excludes: Set<string>,
   extensions: Set<string>,
   entries: RepoMapEntry[],
-  maxSymbols: number
+  maxSymbols: number,
+  symbolTypesFilter?: string[]
 ): Promise<void> {
   let dirEntries: fs.Dirent[];
   try {
@@ -350,7 +210,7 @@ async function walkDir(
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      await walkDir(fullPath, excludes, extensions, entries, maxSymbols);
+      await walkDir(fullPath, excludes, extensions, entries, maxSymbols, symbolTypesFilter);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (!extensions.has(ext)) continue;
@@ -358,8 +218,7 @@ async function walkDir(
       try {
         const content = fs.readFileSync(fullPath, 'utf-8');
         const lineCount = content.split('\n').length;
-        const allSymbols = extractSymbolsRegex(content, ext);
-        const symbols = allSymbols.slice(0, maxSymbols);
+        const symbols = await extractFileSymbols(content, fullPath, maxSymbols, symbolTypesFilter);
 
         entries.push({ filePath: fullPath, symbols, lineCount });
       } catch (error) {

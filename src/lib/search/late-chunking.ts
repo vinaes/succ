@@ -93,6 +93,26 @@ export async function lateChunkEmbed(
     // 2. Get token offsets for the full file
     const tokenOffsets = session.getTokenOffsets(content);
 
+    // Detect tokenizer truncation: if the model's max_length was exceeded the
+    // tokenizer silently truncates the input. We check by finding the last
+    // token whose offset covers real content (non-special tokens have non-zero
+    // offsets) and comparing its end to the content length. If the furthest
+    // character covered is substantially less than the full content length the
+    // file was truncated and late chunking would produce incorrect embeddings
+    // for the trailing chunks.
+    const lastCoveredChar = tokenOffsets.reduce((max, [, tEnd], i) => {
+      // Skip special tokens (offset [0,0] after position 0)
+      if (tEnd === 0 && i > 0) return max;
+      return Math.max(max, tEnd);
+    }, 0);
+    if (lastCoveredChar > 0 && lastCoveredChar < content.length * 0.95) {
+      return {
+        chunks: [],
+        usedLateChunking: false,
+        fallbackReason: `File exceeds model max_length (covered ${lastCoveredChar}/${content.length} chars); falling back to standard chunking`,
+      };
+    }
+
     // 3. Run model on full file → get per-token hidden states
     const raw = await session.embedRaw(content);
 

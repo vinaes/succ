@@ -61,7 +61,7 @@ async function resolveSessionPath(pathArg: string | undefined): Promise<string> 
 
   throw new Error(
     'No session path provided and no sessions found.\n' +
-      'Usage: succ session analyze <path-to-session.jsonl>'
+      'Usage: succ session <subcommand> <path-to-session.jsonl>'
   );
 }
 
@@ -87,7 +87,14 @@ export async function sessionTrim(
   const filePath = await resolveSessionPath(pathArg);
 
   const trimOptions: TrimOptions = {
-    tools: options.tools ? options.tools.split(',').map((t) => t.trim()) : undefined,
+    tools: (() => {
+      if (!options.tools) return undefined;
+      const parsed = options.tools
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      return parsed.length > 0 ? parsed : undefined;
+    })(),
     onlyInputs: options.onlyInputs,
     onlyResults: options.onlyResults,
     keepLastLines: options.keepLastLines,
