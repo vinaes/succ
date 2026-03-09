@@ -557,7 +557,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     const transcriptPath = hookInput.transcript_path || '';
     const sessionId = transcriptPath
       ? path.basename(transcriptPath, '.jsonl')
-      : `session-${Date.now()}`;
+      : hookInput.session_id || `session-${Date.now()}`;
     // isServiceSession already defined above
 
     try {

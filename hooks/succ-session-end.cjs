@@ -18,6 +18,7 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
   const log = (msg) => _log(succDir, 'session-end', msg);
   const daemonPort = getDaemonPort(succDir);
   if (!daemonPort) {
+    log('Daemon port unavailable — skipping session unregister/reflection');
     process.exit(0);
   }
 
