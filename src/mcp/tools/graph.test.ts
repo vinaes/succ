@@ -26,6 +26,11 @@ vi.mock('../../lib/storage/index.js', () => ({
 vi.mock('../helpers.js', () => ({
   projectPathParam: {} as any,
   applyProjectPath: vi.fn(async () => {}),
+  createToolResponse: (text: string) => ({ content: [{ type: 'text' as const, text }] }),
+  createErrorResponse: (text: string) => ({
+    content: [{ type: 'text' as const, text }],
+    isError: true,
+  }),
 }));
 
 import { registerGraphTools } from './graph.js';

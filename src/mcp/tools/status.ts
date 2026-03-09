@@ -28,7 +28,12 @@ import {
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
 import { logWarn } from '../../lib/fault-logger.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 
 export function registerStatusTools(server: McpServer) {
   server.registerTool(
@@ -69,14 +74,9 @@ export function registerStatusTools(server: McpServer) {
               const globalMemStats = await getRecentGlobalMemories(1);
               const globalCount = globalMemStats.length > 0 ? 'available' : 'empty';
 
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories\n\nTip: Pass project_path to succ tools to access project-local data.`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `## Mode\n  Global-only (no .succ/ in this project)\n  Run \`succ init\` to enable full features\n\n## Global Memory\n  Status: ${globalCount}\n  Use succ_recall and succ_remember for cross-project memories\n\nTip: Pass project_path to succ tools to access project-local data.`
+              );
             }
 
             const stats = await getStats();
@@ -254,24 +254,11 @@ export function registerStatusTools(server: McpServer) {
 
             const statusText = status.filter(Boolean).join('\n');
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: statusText,
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error getting status: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(statusText);
+          } catch (error) {
+            return createErrorResponse(
+              `Error getting status: ${error instanceof Error ? error.message : String(error)}`
+            );
           } finally {
             closeDb();
           }
@@ -376,24 +363,11 @@ export function registerStatusTools(server: McpServer) {
               lines.push('  No stats recorded yet.');
             }
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: lines.join('\n'),
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error getting stats: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(lines.join('\n'));
+          } catch (error) {
+            return createErrorResponse(
+              `Error getting stats: ${error instanceof Error ? error.message : String(error)}`
+            );
           } finally {
             closeDb();
           }
@@ -404,39 +378,20 @@ export function registerStatusTools(server: McpServer) {
             const { calculateAIReadinessScore, formatAIReadinessScore } =
               await import('../../lib/ai-readiness.js');
             const result = await calculateAIReadinessScore();
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAIReadinessScore(result),
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error calculating score: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(formatAIReadinessScore(result));
+          } catch (error) {
+            return createErrorResponse(
+              `Error calculating score: ${error instanceof Error ? error.message : String(error)}`
+            );
           } finally {
             closeDb();
           }
         }
 
         default:
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Unknown action: "${action}". Valid actions: overview, stats, score`,
-              },
-            ],
-            isError: true,
-          };
+          return createErrorResponse(
+            `Unknown action: "${action}". Valid actions: overview, stats, score`
+          );
       }
     }
   );

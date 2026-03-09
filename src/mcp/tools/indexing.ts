@@ -5,7 +5,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { analyzeFile } from '../../commands/analyze.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 
 export function registerIndexingTools(server: McpServer) {
   server.registerTool(
@@ -50,10 +55,7 @@ export function registerIndexingTools(server: McpServer) {
       await applyProjectPath(project_path);
 
       if (['doc', 'code', 'analyze', 'symbols'].includes(action) && !file) {
-        return {
-          content: [{ type: 'text' as const, text: `"file" is required for action="${action}"` }],
-          isError: true,
-        };
+        return createErrorResponse(`"file" is required for action="${action}"`);
       }
 
       switch (action) {
@@ -63,46 +65,18 @@ export function registerIndexingTools(server: McpServer) {
             const result = await indexDocFile(file!, { force });
 
             if (!result.success) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: result.error || 'Failed to index file',
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(result.error || 'Failed to index file');
             }
 
             if (result.skipped) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Skipped: ${result.reason}`,
-                  },
-                ],
-              };
+              return createToolResponse(`Skipped: ${result.reason}`);
             }
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Indexed: ${file} (${result.chunks} chunks)`,
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error indexing file: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(`Indexed: ${file} (${result.chunks} chunks)`);
+          } catch (error) {
+            return createErrorResponse(
+              `Error indexing file: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -112,46 +86,18 @@ export function registerIndexingTools(server: McpServer) {
             const result = await indexCodeFile(file!, { force });
 
             if (!result.success) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: result.error || 'Failed to index file',
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(result.error || 'Failed to index file');
             }
 
             if (result.skipped) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Skipped: ${result.reason}`,
-                  },
-                ],
-              };
+              return createToolResponse(`Skipped: ${result.reason}`);
             }
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Indexed: ${file} (${result.chunks} chunks)`,
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error indexing code file: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(`Indexed: ${file} (${result.chunks} chunks)`);
+          } catch (error) {
+            return createErrorResponse(
+              `Error indexing code file: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -160,35 +106,14 @@ export function registerIndexingTools(server: McpServer) {
             const result = await analyzeFile(file!, { mode });
 
             if (result.success) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Analyzed: ${file}\nOutput: ${result.outputPath}`,
-                  },
-                ],
-              };
+              return createToolResponse(`Analyzed: ${file}\nOutput: ${result.outputPath}`);
             } else {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Error analyzing file: ${result.error}`,
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(`Error analyzing file: ${result.error}`);
             }
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error analyzing file: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+          } catch (error) {
+            return createErrorResponse(
+              `Error analyzing file: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -200,14 +125,7 @@ export function registerIndexingTools(server: McpServer) {
             const result = await reindexFiles(projectRoot);
 
             if (result.reindexed === 0 && result.cleaned === 0 && result.errors === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `All ${result.total} indexed files are up to date.`,
-                  },
-                ],
-              };
+              return createToolResponse(`All ${result.total} indexed files are up to date.`);
             }
 
             const lines = [...result.details];
@@ -215,14 +133,11 @@ export function registerIndexingTools(server: McpServer) {
             if (result.cleaned > 0) lines.push(`Cleaned: ${result.cleaned} deleted entries`);
             if (result.errors > 0) lines.push(`Errors: ${result.errors}`);
 
-            return {
-              content: [{ type: 'text' as const, text: lines.join('\n') }],
-            };
-          } catch (error: any) {
-            return {
-              content: [{ type: 'text' as const, text: `Error during reindex: ${error.message}` }],
-              isError: true,
-            };
+            return createToolResponse(lines.join('\n'));
+          } catch (error) {
+            return createErrorResponse(
+              `Error during reindex: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -233,10 +148,7 @@ export function registerIndexingTools(server: McpServer) {
 
             const absolutePath = path.default.resolve(file!);
             if (!fs.default.existsSync(absolutePath)) {
-              return {
-                content: [{ type: 'text' as const, text: `File not found: ${file}` }],
-                isError: true,
-              };
+              return createErrorResponse(`File not found: ${file}`);
             }
 
             const content = fs.default.readFileSync(absolutePath, 'utf-8');
@@ -247,28 +159,16 @@ export function registerIndexingTools(server: McpServer) {
             const ext = absolutePath.split('.').pop() || '';
             const language = getLanguageForExtension(ext);
             if (!language) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`,
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(
+                `Unsupported language for extension .${ext}. Supported: ts, js, py, go, rs, java, kt, c, cpp, cs, php, rb, swift`
+              );
             }
 
             const tree = await parseCode(content, language);
             if (!tree) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Failed to parse ${file} — tree-sitter grammar not available for ${language}`,
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(
+                `Failed to parse ${file} — tree-sitter grammar not available for ${language}`
+              );
             }
 
             try {
@@ -279,14 +179,9 @@ export function registerIndexingTools(server: McpServer) {
               }
 
               if (symbols.length === 0) {
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: `No ${type === 'all' ? '' : type + ' '}symbols found in ${file}`,
-                    },
-                  ],
-                };
+                return createToolResponse(
+                  `No ${type === 'all' ? '' : type + ' '}symbols found in ${file}`
+                );
               }
 
               const lines = symbols.map((s) => {
@@ -295,32 +190,21 @@ export function registerIndexingTools(server: McpServer) {
                 return `  ${s.type} **${s.name}**${sig} (L${s.startRow + 1}-${s.endRow + 1})${doc}`;
               });
 
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `${symbols.length} symbols in ${file} (${language}):\n\n${lines.join('\n')}`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `${symbols.length} symbols in ${file} (${language}):\n\n${lines.join('\n')}`
+              );
             } finally {
               tree.delete();
             }
-          } catch (error: any) {
-            return {
-              content: [
-                { type: 'text' as const, text: `Error extracting symbols: ${error.message}` },
-              ],
-              isError: true,
-            };
+          } catch (error) {
+            return createErrorResponse(
+              `Error extracting symbols: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
         default:
-          return {
-            content: [{ type: 'text' as const, text: `Unknown action: ${action}` }],
-            isError: true,
-          };
+          return createErrorResponse(`Unknown action: ${action}`);
       }
     }
   );

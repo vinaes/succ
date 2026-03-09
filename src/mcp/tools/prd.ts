@@ -4,7 +4,12 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 import { generatePrd } from '../../lib/prd/generate.js';
 import { runPrd } from '../../lib/prd/runner.js';
 import { exportPrdToObsidian, exportAllPrds } from '../../lib/prd/export.js';
@@ -109,12 +114,7 @@ export function registerPrdTools(server: McpServer) {
       switch (action) {
         case 'generate': {
           if (!description) {
-            return {
-              content: [
-                { type: 'text' as const, text: '"description" is required for action="generate"' },
-              ],
-              isError: true,
-            };
+            return createErrorResponse('"description" is required for action="generate"');
           }
           try {
             const result = await generatePrd(description, {
@@ -136,13 +136,10 @@ export function registerPrdTools(server: McpServer) {
 
             text += `\n\nNext: succ prd run ${result.prd.id}`;
 
-            return { content: [{ type: 'text' as const, text }] };
+            return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            return {
-              content: [{ type: 'text' as const, text: `Error generating PRD: ${msg}` }],
-              isError: true,
-            };
+            return createErrorResponse(`Error generating PRD: ${msg}`);
           }
         }
 
@@ -150,24 +147,16 @@ export function registerPrdTools(server: McpServer) {
           try {
             const entries = listPrds(all);
             if (entries.length === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'No PRDs found. Create one with succ_prd(action="generate").',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'No PRDs found. Create one with succ_prd(action="generate").'
+              );
             }
 
             const lines = entries.map((e) => `${e.id} | ${e.status.padEnd(11)} | ${e.title}`);
-            return { content: [{ type: 'text' as const, text: `PRDs:\n${lines.join('\n')}` }] };
+            return createToolResponse(`PRDs:\n${lines.join('\n')}`);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            return {
-              content: [{ type: 'text' as const, text: `Error listing PRDs: ${msg}` }],
-              isError: true,
-            };
+            return createErrorResponse(`Error listing PRDs: ${msg}`);
           }
         }
 
@@ -176,16 +165,12 @@ export function registerPrdTools(server: McpServer) {
             let id = prd_id;
             if (!id) {
               const latest = findLatestPrd();
-              if (!latest) return { content: [{ type: 'text' as const, text: 'No PRDs found.' }] };
+              if (!latest) return createToolResponse('No PRDs found.');
               id = latest.id;
             }
 
             const prd = loadPrd(id);
-            if (!prd)
-              return {
-                content: [{ type: 'text' as const, text: `PRD not found: ${id}` }],
-                isError: true,
-              };
+            if (!prd) return createErrorResponse(`PRD not found: ${id}`);
 
             const tasks = loadTasks(id);
             let text = `PRD: ${prd.title} (${prd.id})\nStatus: ${prd.status}\nMode: ${prd.execution_mode}`;
@@ -212,10 +197,10 @@ export function registerPrdTools(server: McpServer) {
               text += `\n\nResume: succ prd run ${id} --resume`;
             }
 
-            return { content: [{ type: 'text' as const, text }] };
+            return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true };
+            return createErrorResponse(`Error: ${msg}`);
           }
         }
 
@@ -225,14 +210,9 @@ export function registerPrdTools(server: McpServer) {
             if (!id) {
               const latest = findLatestPrd();
               if (!latest)
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: 'No PRDs found. Create one with succ_prd(action="generate").',
-                    },
-                  ],
-                };
+                return createToolResponse(
+                  'No PRDs found. Create one with succ_prd(action="generate").'
+                );
               id = latest.id;
             }
 
@@ -256,13 +236,10 @@ export function registerPrdTools(server: McpServer) {
               text += `\nMerge: git merge ${result.branch}`;
             }
 
-            return { content: [{ type: 'text' as const, text }] };
+            return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            return {
-              content: [{ type: 'text' as const, text: `Error running PRD: ${msg}` }],
-              isError: true,
-            };
+            return createErrorResponse(`Error running PRD: ${msg}`);
           }
         }
 
@@ -271,44 +248,26 @@ export function registerPrdTools(server: McpServer) {
             if (all) {
               const results = exportAllPrds(output);
               if (results.length === 0) {
-                return { content: [{ type: 'text' as const, text: 'No PRDs found.' }] };
+                return createToolResponse('No PRDs found.');
               }
               const lines = results.map(
                 (r) => `${r.prdId}: ${r.filesCreated} files → ${r.outputDir}`
               );
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Exported ${results.length} PRDs:\n${lines.join('\n')}`,
-                  },
-                ],
-              };
+              return createToolResponse(`Exported ${results.length} PRDs:\n${lines.join('\n')}`);
             }
 
             const result = exportPrdToObsidian(prd_id, output);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}\n\nGenerated:\n- Overview.md (summary + embedded dependency graph)\n- Timeline.md (Mermaid Gantt chart)\n- Dependencies.md (Mermaid flowchart DAG)\n- Tasks/*.md (per-task detail pages)`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}\n\nGenerated:\n- Overview.md (summary + embedded dependency graph)\n- Timeline.md (Mermaid Gantt chart)\n- Dependencies.md (Mermaid flowchart DAG)\n- Tasks/*.md (per-task detail pages)`
+            );
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            return {
-              content: [{ type: 'text' as const, text: `Error exporting PRD: ${msg}` }],
-              isError: true,
-            };
+            return createErrorResponse(`Error exporting PRD: ${msg}`);
           }
         }
 
         default:
-          return {
-            content: [{ type: 'text' as const, text: `Unknown action: ${action}` }],
-            isError: true,
-          };
+          return createErrorResponse(`Unknown action: ${action}`);
       }
     }
   );

@@ -10,7 +10,12 @@ import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
 import { maskSensitive } from '../../lib/config-display.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const SENSITIVE_PATTERNS = [
@@ -89,38 +94,17 @@ export function registerConfigTools(server: McpServer) {
             const { getConfigDisplay, formatConfigDisplay } = await import('../../lib/config.js');
             const display = getConfigDisplay(true); // mask secrets
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatConfigDisplay(display),
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error getting config: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(formatConfigDisplay(display));
+          } catch (error) {
+            return createErrorResponse(
+              `Error getting config: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
         case 'set': {
           if (!key || !value) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'Both "key" and "value" are required for action="set".',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse('Both "key" and "value" are required for action="set".');
           }
 
           try {
@@ -133,15 +117,9 @@ export function registerConfigTools(server: McpServer) {
             if (scope === 'project') {
               const succDir = getSuccDir();
               if (!fs.existsSync(succDir)) {
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: 'Project not initialized. Run `succ init` first or use scope="global".',
-                    },
-                  ],
-                  isError: true,
-                };
+                return createErrorResponse(
+                  'Project not initialized. Run `succ init` first or use scope="global".'
+                );
               }
               configDir = succDir;
               configPath = path.join(succDir, 'config.json');
@@ -165,15 +143,9 @@ export function registerConfigTools(server: McpServer) {
             // Guard against prototype pollution
             const keys = key.split('.');
             if (keys.some((k) => FORBIDDEN_KEYS.has(k))) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Invalid config key: "${key}" contains a reserved property name.`,
-                  },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(
+                `Invalid config key: "${key}" contains a reserved property name.`
+              );
             }
 
             // Handle nested keys (e.g., "idle_reflection.enabled")
@@ -199,24 +171,13 @@ export function registerConfigTools(server: McpServer) {
             // Save config
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`,
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error setting config: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(
+              `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`
+            );
+          } catch (error) {
+            return createErrorResponse(
+              `Error setting config: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -233,37 +194,13 @@ export function registerConfigTools(server: McpServer) {
 
             const stat = fs.statSync(outputPath);
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Checkpoint created successfully!
-
-File: ${outputPath}
-Project: ${cp.project_name}
-Size: ${formatSize(stat.size)}
-
-Contents:
-  Memories: ${cp.stats.memories_count}
-  Documents: ${cp.stats.documents_count}
-  Memory links: ${cp.stats.links_count}
-  Centrality scores: ${cp.stats.centrality_count || 0}
-  Brain files: ${cp.stats.brain_files_count}
-
-To restore: succ checkpoint restore "${outputPath}"`,
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(
+              `Checkpoint created successfully!\n\nFile: ${outputPath}\nProject: ${cp.project_name}\nSize: ${formatSize(stat.size)}\n\nContents:\n  Memories: ${cp.stats.memories_count}\n  Documents: ${cp.stats.documents_count}\n  Memory links: ${cp.stats.links_count}\n  Centrality scores: ${cp.stats.centrality_count || 0}\n  Brain files: ${cp.stats.brain_files_count}\n\nTo restore: succ checkpoint restore "${outputPath}"`
+            );
+          } catch (error) {
+            return createErrorResponse(
+              `Error: ${error instanceof Error ? error.message : String(error)}`
+            );
           } finally {
             closeDb();
             await closeStorageDispatcher();
@@ -277,14 +214,9 @@ To restore: succ checkpoint restore "${outputPath}"`,
             const checkpoints = listCheckpoints();
 
             if (checkpoints.length === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'No checkpoints found. Create one with: succ_config action="checkpoint_create"',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'No checkpoints found. Create one with: succ_config action="checkpoint_create"'
+              );
             }
 
             const lines = ['Available checkpoints:\n'];
@@ -298,39 +230,20 @@ To restore: succ checkpoint restore "${outputPath}"`,
             }
             lines.push(`Total: ${checkpoints.length} checkpoint(s)`);
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: lines.join('\n'),
-                },
-              ],
-            };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Error: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(lines.join('\n'));
+          } catch (error) {
+            return createErrorResponse(
+              `Error: ${error instanceof Error ? error.message : String(error)}`
+            );
           } finally {
             closeDb();
           }
         }
 
         default:
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Unknown action: "${action}". Valid actions: show, set, checkpoint_create, checkpoint_list`,
-              },
-            ],
-            isError: true,
-          };
+          return createErrorResponse(
+            `Unknown action: "${action}". Valid actions: show, set, checkpoint_create, checkpoint_list`
+          );
       }
     }
   );
