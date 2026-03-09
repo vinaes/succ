@@ -10,6 +10,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { QdrantVectorStore, createQdrantVectorStore } from './qdrant.js';
 
+const QDRANT_URL = 'http://localhost:6333';
+
 // Unique prefix per test run to avoid conflicts when src/ and dist/ tests run in parallel
 const TEST_PREFIX = `succ_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_`;
 
@@ -17,19 +19,61 @@ const TEST_CONFIG = {
   backend: 'sqlite' as const,
   vector: 'qdrant' as const,
   qdrant: {
-    url: 'http://localhost:6333',
+    url: QDRANT_URL,
     collection_prefix: TEST_PREFIX,
   },
 };
+
+const TEST_COLLECTION_NAMES = [
+  `${TEST_PREFIX}documents`,
+  `${TEST_PREFIX}memories`,
+  `${TEST_PREFIX}global_memories`,
+];
 
 // Check if Qdrant is available
 async function isQdrantAvailable(): Promise<boolean> {
   try {
     // Use root endpoint which returns version info
-    const response = await fetch('http://localhost:6333/');
+    const response = await fetch(`${QDRANT_URL}/`);
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Delete collections by name via HTTP API.
+ * Does not require a client instance — works even when store.init() failed.
+ */
+async function deleteCollectionsViaApi(names: string[]): Promise<void> {
+  for (const name of names) {
+    try {
+      await fetch(`${QDRANT_URL}/collections/${name}`, { method: 'DELETE' });
+    } catch {
+      // Best effort — Qdrant may be down
+    }
+  }
+}
+
+/**
+ * Clean up stale test collections from previous crashed runs.
+ * Deletes any collection matching `succ_test_*` that is NOT from this run.
+ */
+async function cleanupStaleTestCollections(): Promise<void> {
+  try {
+    const resp = await fetch(`${QDRANT_URL}/collections`);
+    if (!resp.ok) return;
+    const data = (await resp.json()) as { result: { collections: Array<{ name: string }> } };
+    const stale = data.result.collections
+      .map((c) => c.name)
+      .filter((name) => name.startsWith('succ_test_') && !name.startsWith(TEST_PREFIX));
+
+    if (stale.length > 0) {
+      console.log(`Cleaning up ${stale.length} stale test collections from previous runs`);
+      await deleteCollectionsViaApi(stale);
+    }
+  } catch {
+    // Non-fatal — just skip cleanup
   }
 }
 
@@ -41,6 +85,9 @@ describe('Qdrant Vector Store Integration', async () => {
     return;
   }
 
+  // Always clean up stale collections before starting, even if this run fails later
+  await cleanupStaleTestCollections();
+
   let store: QdrantVectorStore;
   const DIMENSIONS = 384;
 
@@ -50,19 +97,11 @@ describe('Qdrant Vector Store Integration', async () => {
   });
 
   afterAll(async () => {
+    // Always delete test collections via API (works even if store/client is broken)
+    await deleteCollectionsViaApi(TEST_COLLECTION_NAMES);
+
     if (store) {
-      // Clean up test collections
-      try {
-        const client = (store as any).client;
-        if (client) {
-          await client.deleteCollection(`${TEST_PREFIX}documents`).catch(() => {});
-          await client.deleteCollection(`${TEST_PREFIX}memories`).catch(() => {});
-          await client.deleteCollection(`${TEST_PREFIX}global_memories`).catch(() => {});
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
-      await store.close();
+      await store.close().catch(() => {});
     }
   });
 
