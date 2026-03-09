@@ -161,7 +161,8 @@ function parseBrainDoc(
   }
 
   // Extract title from frontmatter or first heading
-  let title = (frontmatter.title as string) ?? '';
+  const rawTitle = frontmatter.title;
+  let title = rawTitle != null ? String(rawTitle) : '';
   if (!title) {
     const headingMatch = body.match(/^#\s+(.+)/m);
     title = headingMatch?.[1] ?? filename.replace(/\.md$/, '');
@@ -215,7 +216,7 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
  */
 export function exportBrainAsJson(outputPath?: string, brainDir?: string): BrainExportResult {
   const docs = readBrainVault(brainDir);
-  const snapshot = createSnapshot(docs);
+  const snapshot = createSnapshot(docs, brainDir);
   const json = JSON.stringify(snapshot, null, 2);
 
   if (outputPath) {
@@ -272,8 +273,8 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
     lines.push('');
     lines.push(`*Source: \`${doc.relativePath}\` | Modified: ${doc.modifiedAt}*`);
     lines.push('');
-    // Strip frontmatter from content for the pack
-    let body = doc.content;
+    // Strip frontmatter from content for the pack (handle CRLF)
+    let body = doc.content.replace(/\r\n/g, '\n');
     if (body.startsWith('---\n')) {
       const endIdx = body.indexOf('\n---\n', 4);
       if (endIdx !== -1) {
@@ -317,7 +318,7 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
  */
 export function exportBrainSnapshot(outputPath?: string, brainDir?: string): BrainExportResult {
   const docs = readBrainVault(brainDir);
-  const snapshot = createSnapshot(docs);
+  const snapshot = createSnapshot(docs, brainDir);
 
   // Add search index metadata
   const searchableSnapshot = {
@@ -363,16 +364,22 @@ export function exportBrainSnapshot(outputPath?: string, brainDir?: string): Bra
 // Internal
 // ============================================================================
 
-function createSnapshot(docs: BrainDoc[]): BrainSnapshot {
+function createSnapshot(docs: BrainDoc[], brainDir?: string): BrainSnapshot {
   const categories: Record<string, number> = {};
   for (const doc of docs) {
     const category = doc.relativePath.includes('/') ? doc.relativePath.split('/')[0] : 'root';
     categories[category] = (categories[category] ?? 0) + 1;
   }
 
+  // Derive projectRoot from brainDir when caller provides an explicit vault path.
+  // Default layout is <projectRoot>/.succ/brain, so go up two levels.
+  const projectRoot = brainDir
+    ? path.resolve(brainDir, '..', '..')
+    : (getProjectRoot() ?? process.cwd());
+
   return {
     exportedAt: new Date().toISOString(),
-    projectRoot: getProjectRoot() ?? process.cwd(),
+    projectRoot,
     version: getPackageVersion(),
     documents: docs,
     stats: {

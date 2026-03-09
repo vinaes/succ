@@ -516,7 +516,25 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                   if (typeof msgContent === 'string') {
                     postChars += msgContent.length;
                   } else if (Array.isArray(msgContent)) {
-                    postChars += JSON.stringify(msgContent).length;
+                    // Count per-block chars to match pre-compact estimation
+                    for (const block of msgContent) {
+                      if (typeof block === 'string') {
+                        postChars += block.length;
+                      } else if (block && block.type === 'text') {
+                        postChars += (block.text || '').length;
+                      } else if (block && block.type === 'tool_use') {
+                        postChars += block.input ? JSON.stringify(block.input).length : 0;
+                        postChars += (block.name || '').length + (block.id || '').length;
+                      } else if (block && block.type === 'tool_result') {
+                        const rc = block.content;
+                        if (typeof rc === 'string') postChars += rc.length;
+                        else if (Array.isArray(rc)) postChars += JSON.stringify(rc).length;
+                      } else if (block && block.type === 'thinking') {
+                        postChars += (block.thinking || '').length;
+                      } else if (block && block.type === 'image') {
+                        postChars += block.source ? JSON.stringify(block.source).length : 100;
+                      }
+                    }
                   }
                 } catch {
                   /* skip malformed lines */
