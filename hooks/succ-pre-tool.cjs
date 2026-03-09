@@ -23,6 +23,8 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
+const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { loadMergedConfig } = require('./core/config.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
 
@@ -520,50 +522,17 @@ function quickFileLabel(filePath) {
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 function loadConfig(projectDir) {
-  const defaults = {
-    commandSafetyGuard: { mode: 'deny', allowlist: [], customPatterns: [] },
-    includeCoAuthoredBy: true,
-    preCommitReview: false,
+  const merged = loadMergedConfig(projectDir);
+  const csg = merged.commandSafetyGuard || {};
+  return {
+    commandSafetyGuard: {
+      mode: csg.mode || 'deny',
+      allowlist: Array.isArray(csg.allowlist) ? csg.allowlist : [],
+      customPatterns: Array.isArray(csg.customPatterns) ? csg.customPatterns : [],
+    },
+    includeCoAuthoredBy: merged.includeCoAuthoredBy !== false,
+    preCommitReview: merged.preCommitReview === true,
   };
-
-  const configPaths = [
-    path.join(projectDir, '.succ', 'config.json'),
-    path.join(require('os').homedir(), '.succ', 'config.json'),
-  ];
-
-  for (const configPath of configPaths) {
-    if (fs.existsSync(configPath)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-
-        // Command safety guard
-        if (config.commandSafetyGuard) {
-          if (config.commandSafetyGuard.mode) {
-            defaults.commandSafetyGuard.mode = config.commandSafetyGuard.mode;
-          }
-          if (Array.isArray(config.commandSafetyGuard.allowlist)) {
-            defaults.commandSafetyGuard.allowlist = config.commandSafetyGuard.allowlist;
-          }
-          if (Array.isArray(config.commandSafetyGuard.customPatterns)) {
-            defaults.commandSafetyGuard.customPatterns = config.commandSafetyGuard.customPatterns;
-          }
-        }
-
-        if (config.includeCoAuthoredBy === false) {
-          defaults.includeCoAuthoredBy = false;
-        }
-        if (config.preCommitReview === true) {
-          defaults.preCommitReview = true;
-        }
-
-        break;
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }
-
-  return defaults;
 }
 
 /**
@@ -726,15 +695,8 @@ MEDIUM and below — commit is OK, mention findings in summary.
 
 // ─── Daemon helpers ──────────────────────────────────────────────────
 
-function getDaemonPort(projectDir) {
-  const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
-  if (!fs.existsSync(portFile)) return null;
-  const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-  return port && !isNaN(port) ? port : null;
-}
-
-async function recallFileMemories(projectDir, fileName) {
-  const port = getDaemonPort(projectDir);
+async function recallFileMemories(succDir, fileName) {
+  const port = getDaemonPort(succDir);
   if (!port) return [];
 
   try {
@@ -752,8 +714,8 @@ async function recallFileMemories(projectDir, fileName) {
   }
 }
 
-async function fetchHookRules(projectDir, toolName, toolInput) {
-  const port = getDaemonPort(projectDir);
+async function fetchHookRules(succDir, toolName, toolInput) {
+  const port = getDaemonPort(succDir);
   if (!port) return [];
 
   try {
@@ -778,150 +740,108 @@ function formatFileContext(memories, fileName) {
 
 // ─── Main ────────────────────────────────────────────────────────────
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    input += chunk;
+adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) => {
+  // Skip if this is a service session (daemon, reflection agent, etc.)
+  if (process.env.SUCC_SERVICE_SESSION === '1') {
+    process.exit(0);
   }
-});
 
-process.stdin.on('end', async () => {
-  try {
-    const rawInput = JSON.parse(input);
-    const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, rawInput);
-    let projectDir = hookInput.cwd || process.cwd();
+  const toolName = hookInput.tool_name || '';
+  const toolInput = hookInput.tool_input || {};
+  const filePath = toolInput.file_path || '';
+  const command = toolInput.command || '';
+  const contextParts = [];
+  let askReason = null;
 
-    // Windows path fix
-    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
-      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+  // 0. Injection scan on tool input
+  const inputToScan = filePath || command || toolInput.url || '';
+  if (inputToScan) {
+    const injectionDesc = detectTier1(inputToScan);
+    if (injectionDesc) {
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+        deny: true,
+        denyReason: `[succ security] Prompt injection detected in tool input: ${injectionDesc}`,
+      });
+      console.log(JSON.stringify(json));
+      process.exit(exitCode);
+    }
+  }
+
+  // 0b. File operation guard
+  if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
+    const operation = toolName === 'Read' ? 'read' : 'write';
+    const fileGuardResult = checkFileGuard(operation, filePath);
+    if (fileGuardResult) {
+      const result =
+        fileGuardResult.mode === 'ask'
+          ? { ask: true, askReason: `[succ file guard] ${fileGuardResult.reason}` }
+          : { deny: true, denyReason: `[succ file guard] ${fileGuardResult.reason}` };
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+      console.log(JSON.stringify(json));
+      process.exit(exitCode);
+    }
+  }
+
+  // 0c. IFC: Proactive file label classification (warn in context)
+  if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
+    const fileLabel = quickFileLabel(filePath);
+    if (fileLabel && fileLabel.level >= 2) {
+      contextParts.push(
+        `<security-warning type="ifc">[succ IFC] File ${sanitizeFileName(path.basename(filePath))} classified as ${escapeXml(fileLabel.label)}. ` +
+          `Subsequent outbound operations (curl, WebFetch, git push) may be restricted.</security-warning>`
+      );
+    }
+  }
+
+  // 1. Dynamic hook rules from memory (ALL tools)
+  // Note: deny/ask exit immediately — any accumulated contextParts are intentionally
+  // discarded because the tool call is being blocked or requires confirmation.
+  const rules = await fetchHookRules(succDir, toolName, toolInput);
+  for (const rule of rules) {
+    // Scan rule content for injection (prevents poisoned memory escalation)
+    if (detectTier1(rule.content)) continue;
+
+    if (rule.action === 'deny') {
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+        deny: true,
+        denyReason: `[succ rule] ${sanitize(rule.content, 500)}`,
+      });
+      console.log(JSON.stringify(json));
+      process.exit(exitCode);
+    }
+    if (rule.action === 'ask' && !askReason) {
+      askReason = sanitize(rule.content, 500);
+    }
+    if (rule.action === 'inject') {
+      contextParts.push(`<hook-rule>${sanitize(rule.content)}</hook-rule>`);
+    }
+  }
+
+  // 2. File-linked memories (Edit/Write only — Read is too frequent, wastes context)
+  if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
+    const fileName = path.basename(filePath);
+    const memories = await recallFileMemories(succDir, fileName);
+    if (memories.length > 0) {
+      contextParts.push(formatFileContext(memories, sanitizeFileName(fileName)));
+    }
+  }
+
+  // 3. Command safety guard (Bash only)
+  if (command) {
+    const config = loadConfig(projectDir);
+    const dangerousResult = checkDangerous(command, config);
+    if (dangerousResult) {
+      const result =
+        dangerousResult.mode === 'ask'
+          ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
+          : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
+      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
+      console.log(JSON.stringify(json));
+      process.exit(exitCode);
     }
 
-    // Skip if this is a service session (daemon, reflection agent, etc.)
-    if (process.env.SUCC_SERVICE_SESSION === '1') {
-      process.exit(0);
-    }
-
-    // Skip if succ is not initialized
-    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
-      process.exit(0);
-    }
-
-    const toolName = hookInput.tool_name || '';
-    const toolInput = hookInput.tool_input || {};
-    const filePath = toolInput.file_path || '';
-    const command = toolInput.command || '';
-    const contextParts = [];
-    let askReason = null;
-
-    // 0. Injection scan on tool input
-    const inputToScan = filePath || command || toolInput.url || '';
-    if (inputToScan) {
-      const injectionDesc = detectTier1(inputToScan);
-      if (injectionDesc) {
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
-          deny: true,
-          denyReason: `[succ security] Prompt injection detected in tool input: ${injectionDesc}`,
-        });
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
-      }
-    }
-
-    // 0b. File operation guard
-    if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
-      const operation = toolName === 'Read' ? 'read' : 'write';
-      const fileGuardResult = checkFileGuard(operation, filePath);
-      if (fileGuardResult) {
-        const result =
-          fileGuardResult.mode === 'ask'
-            ? { ask: true, askReason: `[succ file guard] ${fileGuardResult.reason}` }
-            : { deny: true, denyReason: `[succ file guard] ${fileGuardResult.reason}` };
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
-      }
-    }
-
-    // 0c. IFC: Proactive file label classification (warn in context)
-    if (filePath && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit')) {
-      const fileLabel = quickFileLabel(filePath);
-      if (fileLabel && fileLabel.level >= 2) {
-        contextParts.push(
-          `<security-warning type="ifc">[succ IFC] File ${sanitizeFileName(path.basename(filePath))} classified as ${escapeXml(fileLabel.label)}. ` +
-            `Subsequent outbound operations (curl, WebFetch, git push) may be restricted.</security-warning>`
-        );
-      }
-    }
-
-    // 1. Dynamic hook rules from memory (ALL tools)
-    // Note: deny/ask exit immediately — any accumulated contextParts are intentionally
-    // discarded because the tool call is being blocked or requires confirmation.
-    const rules = await fetchHookRules(projectDir, toolName, toolInput);
-    for (const rule of rules) {
-      // Scan rule content for injection (prevents poisoned memory escalation)
-      if (detectTier1(rule.content)) continue;
-
-      if (rule.action === 'deny') {
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
-          deny: true,
-          denyReason: `[succ rule] ${sanitize(rule.content, 500)}`,
-        });
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
-      }
-      if (rule.action === 'ask' && !askReason) {
-        askReason = sanitize(rule.content, 500);
-      }
-      if (rule.action === 'inject') {
-        contextParts.push(`<hook-rule>${sanitize(rule.content)}</hook-rule>`);
-      }
-    }
-
-    // 2. File-linked memories (Edit/Write only — Read is too frequent, wastes context)
-    if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
-      const fileName = path.basename(filePath);
-      const memories = await recallFileMemories(projectDir, fileName);
-      if (memories.length > 0) {
-        contextParts.push(formatFileContext(memories, sanitizeFileName(fileName)));
-      }
-    }
-
-    // 3. Command safety guard (Bash only)
-    if (command) {
-      const config = loadConfig(projectDir);
-      const dangerousResult = checkDangerous(command, config);
-      if (dangerousResult) {
-        const result =
-          dangerousResult.mode === 'ask'
-            ? { ask: true, askReason: `[succ guard] ${dangerousResult.reason}` }
-            : { deny: true, denyReason: `[succ guard] ${dangerousResult.reason}` };
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', result);
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
-      }
-
-      // 4. Hook rule ask (after safety guard, so deny takes priority)
-      if (askReason) {
-        const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
-          ask: true,
-          askReason: `[succ rule] ${askReason}`,
-        });
-        console.log(JSON.stringify(json));
-        process.exit(exitCode);
-      }
-
-      // 5. Git commit — inject guidelines + diff review reminder
-      if (/\bgit\s+commit\b/.test(command)) {
-        const commitContext = buildCommitContext(config);
-        if (commitContext) {
-          contextParts.push(commitContext);
-        }
-      }
-    } else if (askReason) {
-      // Non-Bash ask rule
+    // 4. Hook rule ask (after safety guard, so deny takes priority)
+    if (askReason) {
       const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
         ask: true,
         askReason: `[succ rule] ${askReason}`,
@@ -930,20 +850,33 @@ process.stdin.on('end', async () => {
       process.exit(exitCode);
     }
 
-    // 6. Emit combined context
-    if (contextParts.length > 0) {
-      const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
-        additionalContext: contextParts.join('\n'),
-      });
-      if (json && Object.keys(json).length > 0) {
-        console.log(JSON.stringify(json));
+    // 5. Git commit — inject guidelines + diff review reminder
+    if (/\bgit\s+commit\b/.test(command)) {
+      const commitContext = buildCommitContext(config);
+      if (commitContext) {
+        contextParts.push(commitContext);
       }
-      if (exitCode) process.exit(exitCode);
     }
-
-    process.exit(0);
-  } catch {
-    // Fail-open: don't block on hook errors
-    process.exit(0);
+  } else if (askReason) {
+    // Non-Bash ask rule
+    const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+      ask: true,
+      askReason: `[succ rule] ${askReason}`,
+    });
+    console.log(JSON.stringify(json));
+    process.exit(exitCode);
   }
+
+  // 6. Emit combined context
+  if (contextParts.length > 0) {
+    const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
+      additionalContext: contextParts.join('\n'),
+    });
+    if (json && Object.keys(json).length > 0) {
+      console.log(JSON.stringify(json));
+    }
+    if (exitCode) process.exit(exitCode);
+  }
+
+  process.exit(0);
 });

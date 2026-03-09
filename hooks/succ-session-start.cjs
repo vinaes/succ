@@ -21,94 +21,32 @@ const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { ensureDaemon } = require('./core/daemon-boot.cjs');
+const { log: _log } = require('./core/log.cjs');
+const { loadMergedConfig } = require('./core/config.cjs');
 
-// Logging helper - writes to .succ/.tmp/hooks.log
-function log(succDir, message) {
-  try {
-    const tmpDir = path.join(succDir, '.tmp');
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir, { recursive: true });
+adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir }) => {
+  const log = (msg) => _log(succDir, 'session-start', msg);
+
+  // Load merged config (global defaults, project overrides)
+  const config = loadMergedConfig(projectDir);
+  let includeCoAuthoredBy = config.includeCoAuthoredBy !== false;
+  let communicationAutoAdapt = config.communicationAutoAdapt !== false;
+  let communicationTrackHistory = config.communicationTrackHistory === true;
+  let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
+  if (!hasOpenRouterKey) {
+    const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
+    if (keys.some(k => typeof k === 'string' && k.startsWith('sk-or-'))) {
+      hasOpenRouterKey = true;
     }
-    const logFile = path.join(tmpDir, 'hooks.log');
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logFile, `[${timestamp}] [session-start] ${message}\n`);
-  } catch {
-    // intentionally empty — logging failed, not critical
   }
-}
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    input += chunk;
-  }
-});
+  const contextParts = [];
+  const projectName = path.basename(projectDir);
 
-process.stdin.on('end', async () => {
-  try {
-    const rawInput = JSON.parse(input);
-    const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, rawInput);
-    let projectDir = hookInput.cwd || process.cwd();
+  // Git Context removed - Claude Code provides native git integration
 
-    // Windows path fix
-    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
-      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
-    }
-
-    const succDir = path.join(projectDir, '.succ');
-
-    // Skip if succ is not initialized in this project
-    if (!fs.existsSync(succDir)) {
-      process.exit(0);
-    }
-
-    // Load config settings (project config overrides global, but both are checked)
-    let includeCoAuthoredBy = true;   // default: true
-    let communicationAutoAdapt = true; // default: true
-    let communicationTrackHistory = false; // default: false
-    let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
-    const configPaths = [
-      // Global first, then project overrides
-      path.join(require('os').homedir(), '.succ', 'config.json'),
-      path.join(succDir, 'config.json'),
-    ];
-    for (const configPath of configPaths) {
-      if (fs.existsSync(configPath)) {
-        try {
-          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          if (config.includeCoAuthoredBy === false) {
-            includeCoAuthoredBy = false;
-          }
-          if (config.communicationAutoAdapt === false) {
-            communicationAutoAdapt = false;
-          }
-          if (config.communicationTrackHistory === true) {
-            communicationTrackHistory = true;
-          }
-          // Check for OpenRouter API key: llm.api_key, llm.embeddings.api_key, or web_search.api_key
-          if (!hasOpenRouterKey) {
-            const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
-            if (keys.some(k => typeof k === 'string' && k.startsWith('sk-or-'))) {
-              hasOpenRouterKey = true;
-            }
-          }
-          // No break — merge both configs (global defaults, project overrides)
-        } catch {
-          // intentionally empty — ignore parse errors
-        }
-      }
-    }
-
-    const contextParts = [];
-    const projectName = path.basename(projectDir);
-
-    // Git Context removed - Claude Code provides native git integration
-
-    // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
-    contextParts.push(`<succ-tools>
+  // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
+  contextParts.push(`<succ-tools>
 <critical>
 ⚠️ ALWAYS pass project_path="${projectDir}" to ALL succ_* tool calls.
 Without it, succ works in global-only mode and can't access project data.
@@ -390,7 +328,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // Check if this is a compact event (after /compact)
     const isCompactEvent = hookInput.source === 'compact';
 
-    log(succDir, `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`);
+    log(`source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`);
 
     // Precomputed Context from previous session (only on fresh start, not compact)
     if (!isCompactEvent) {
@@ -430,8 +368,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
 
     // Ensure daemon is running and get port (shared module)
-    const logFn = (msg) => log(succDir, msg);
-    const { port: daemonPort } = await ensureDaemon(projectDir, logFn);
+    const { port: daemonPort } = await ensureDaemon(projectDir, log);
 
     // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
     // ensureDaemon already verified the port is alive, so no need to re-check
@@ -439,9 +376,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
       try {
         fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
           `export SUCC_DAEMON_PORT=${daemonPort}\n`);
-        log(succDir, `Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
+        log(`Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
       } catch (err) {
-        log(succDir, `Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
+        log(`Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
       }
     }
 
@@ -460,16 +397,16 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         // Store the full context that should be injected (without briefing, that comes later)
         const contextForFallback = contextParts.join('\n\n');
         fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
-        log(succDir, `Created compact-pending flag (${contextForFallback.length} chars)`);
+        log(`Created compact-pending flag (${contextForFallback.length} chars)`);
       } catch (err) {
-        log(succDir, `Failed to create compact-pending: ${err.message || err}`);
+        log(`Failed to create compact-pending: ${err.message || err}`);
       }
     }
 
     // Generate compact briefing (slow operation - may timeout)
     // Even if this times out, we have the compact-pending fallback above
     if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
-      log(succDir, `Generating compact briefing for ${hookInput.transcript_path}`);
+      log(`Generating compact briefing for ${hookInput.transcript_path}`);
       try {
         const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
           method: 'POST',
@@ -481,15 +418,15 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const result = await response.json();
           if (result.success && result.briefing) {
             contextParts.push(`<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`);
-            log(succDir, `Briefing generated: ${result.briefing.length} chars`);
+            log(`Briefing generated: ${result.briefing.length} chars`);
           } else {
-            log(succDir, `Briefing failed: ${result.error || 'no briefing returned'}`);
+            log(`Briefing failed: ${result.error || 'no briefing returned'}`);
           }
         } else {
-          log(succDir, `Briefing API error: ${response.status} ${response.statusText}`);
+          log(`Briefing API error: ${response.status} ${response.statusText}`);
         }
       } catch (err) {
-        log(succDir, `Briefing exception: ${err.message || err}`);
+        log(`Briefing exception: ${err.message || err}`);
         // Briefing generation failed, continue without it
       }
     }
@@ -582,10 +519,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
       if (json && Object.keys(json).length > 0) {
         console.log(JSON.stringify(json));
       }
-      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
+      log(`Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
       if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
     } else {
-      log(succDir, `No context parts to output`);
+      log(`No context parts to output`);
     }
 
     // Register session with daemon
@@ -607,9 +544,4 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
 
     process.exit(0);
-
-  } catch {
-    // intentionally empty
-    process.exit(0);
-  }
 });

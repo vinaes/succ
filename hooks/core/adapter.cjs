@@ -335,6 +335,64 @@ function adaptContext(agent, context) {
   return adapted.trim();
 }
 
+// ─── Hook Runner ─────────────────────────────────────────────────────
+
+/**
+ * Run a hook with standard boilerplate handled automatically.
+ *
+ * Handles:
+ *   - Reading stdin as JSON
+ *   - detectAgent() + normalizeInput()
+ *   - Windows /c/... → C:/... path fix for projectDir
+ *   - Checking .succ/ exists (exits 0 if not — hook is a no-op)
+ *   - Wrapping everything in try/catch (exits 0 on any error — fail-open)
+ *
+ * The callback receives { agent, hookInput, projectDir, succDir } and is
+ * responsible for all hook-specific logic including calling process.exit().
+ *
+ * @param {string} hookName - Human-readable name used in error messages
+ * @param {function({ agent, hookInput, projectDir, succDir }): Promise<void>} callback
+ */
+function runHook(hookName, callback) {
+  const fs = require('fs');
+  const path = require('path');
+
+  let input = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('readable', () => {
+    let chunk;
+    while ((chunk = process.stdin.read()) !== null) {
+      input += chunk;
+    }
+  });
+
+  process.stdin.on('end', async () => {
+    try {
+      const rawInput = JSON.parse(input);
+      const agent = detectAgent(rawInput);
+      const hookInput = normalizeInput(agent, rawInput);
+      let projectDir = hookInput.cwd || process.cwd();
+
+      // Windows path fix: /c/Users/... → C:/Users/...
+      if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
+        projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+      }
+
+      const succDir = path.join(projectDir, '.succ');
+
+      // Skip if succ is not initialized in this project
+      if (!fs.existsSync(succDir)) {
+        process.exit(0);
+      }
+
+      await callback({ agent, hookInput, projectDir, succDir });
+    } catch {
+      // Fail-open: never crash the hook, always let the tool call proceed
+      process.exit(0);
+    }
+  });
+}
+
 // ─── Exports ─────────────────────────────────────────────────────────
 
 module.exports = {
@@ -343,5 +401,6 @@ module.exports = {
   mapToolName,
   formatOutput,
   adaptContext,
+  runHook,
   TOOL_MAP,
 };

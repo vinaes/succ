@@ -9,84 +9,47 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
+const { getDaemonPort } = require('./core/daemon-boot.cjs');
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    input += chunk;
+adapter.runHook('stop-reflection', async ({ hookInput, succDir }) => {
+  const tmpDir = path.join(succDir, '.tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
   }
-});
 
-process.stdin.on('end', async () => {
-  try {
-    const rawInput = JSON.parse(input);
-    const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, rawInput);
-    let projectDir = hookInput.cwd || process.cwd();
+  // Get session_id from transcript_path (unique per session)
+  const transcriptPath = hookInput.transcript_path || '';
+  const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
 
-    // Convert /c/... to C:/... on Windows if needed
-    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
-      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
-    }
+  const daemonPort = getDaemonPort(succDir);
 
-    // Skip if succ is not initialized in this project
-    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
-      process.exit(0);
-    }
+  // Check if this is a service session (e.g., reflection subagent)
+  const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
 
-    const tmpDir = path.join(projectDir, '.succ', '.tmp');
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir, { recursive: true });
-    }
+  // Notify daemon of stop activity (awaited)
+  const notifyDaemon = async () => {
+    if (!daemonPort || !sessionId) return;
 
-    // Get session_id from transcript_path (unique per session)
-    const transcriptPath = hookInput.transcript_path || '';
-    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
-
-    // Read daemon port
-    let daemonPort = null;
     try {
-      const portFile = path.join(tmpDir, 'daemon.port');
-      if (fs.existsSync(portFile)) {
-        daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-      }
+      await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          type: 'stop',
+          transcript_path: transcriptPath,
+          is_service: isServiceSession,
+        }),
+        signal: AbortSignal.timeout(2000),
+      });
     } catch {
       // intentionally empty
     }
+  };
 
-    // Check if this is a service session (e.g., reflection subagent)
-    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
-
-    // Notify daemon of stop activity (awaited)
-    const notifyDaemon = async () => {
-      if (!daemonPort || !sessionId) return;
-
-      try {
-        await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: sessionId,
-            type: 'stop',
-            transcript_path: transcriptPath,
-            is_service: isServiceSession,
-          }),
-          signal: AbortSignal.timeout(2000),
-        });
-      } catch {
-        // intentionally empty
-      }
-    };
-
-    // Wait for daemon notification before exit
-    await notifyDaemon();
-    process.exit(0);
-  } catch {
-    // intentionally empty
-    process.exit(0);
-  }
+  // Wait for daemon notification before exit
+  await notifyDaemon();
+  process.exit(0);
 });
 
 // Safety timeout
