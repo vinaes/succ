@@ -63,14 +63,27 @@ async function getQuery(language: string): Promise<Query | null> {
 
 /**
  * Map capture name suffix to SymbolType.
+ * For `definition.type`, refines based on tree-sitter node type
+ * (enum_declaration → 'enum', struct_item → 'struct', etc.).
  */
-function captureNameToSymbolType(captureName: string): SymbolType | null {
+function captureNameToSymbolType(captureName: string, nodeType?: string): SymbolType | null {
   if (captureName === 'definition.function') return 'function';
   if (captureName === 'definition.method') return 'method';
   if (captureName === 'definition.class') return 'class';
   if (captureName === 'definition.interface') return 'interface';
-  if (captureName === 'definition.type') return 'type_alias';
+  if (captureName === 'definition.type') {
+    return refineTypeSymbol(nodeType);
+  }
   return null;
+}
+
+/** Refine `definition.type` captures into specific SymbolType values. */
+function refineTypeSymbol(nodeType?: string): SymbolType {
+  if (!nodeType) return 'type_alias';
+  if (nodeType.includes('enum')) return 'enum';
+  if (nodeType.includes('struct')) return 'struct';
+  if (nodeType.includes('namespace')) return 'module';
+  return 'type_alias';
 }
 
 /**
@@ -228,7 +241,7 @@ export async function extractSymbols(
   const definitionCaptures = captures.filter((c) => c.name.startsWith('definition.'));
 
   for (const defCapture of definitionCaptures) {
-    const symbolType = captureNameToSymbolType(defCapture.name);
+    const symbolType = captureNameToSymbolType(defCapture.name, defCapture.node.type);
     if (!symbolType) continue;
 
     // Find the @name capture for this definition

@@ -11,6 +11,7 @@ const mockDb = { prepare: mockPrepare, transaction: mockTransaction };
 vi.mock('./db/connection.js', () => ({
   getDb: vi.fn(() => mockDb),
   cachedPrepare: vi.fn(() => ({ run: mockRun, get: mockGet, all: mockAll })),
+  onDbChange: vi.fn(),
 }));
 
 vi.mock('./fault-logger.js', () => ({

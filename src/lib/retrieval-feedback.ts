@@ -20,7 +20,7 @@ import {
   getBoostDataForMemories,
   getNeverUsedMemoryRows,
   deleteOldRecallEvents,
-} from './db/recall-events.js';
+} from './db/index.js';
 
 // ============================================================================
 // Types

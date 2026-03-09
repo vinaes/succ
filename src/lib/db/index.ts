@@ -142,6 +142,34 @@ export {
   hybridSearchGlobalMemories,
 } from './hybrid-search.js';
 
+// Re-export auto-memory functions and types
+export type { AutoMemoryRow } from './auto-memory.js';
+export {
+  getAutoExtractedMemories,
+  promoteMemoryConfidence,
+  collectPruneableAutoMemoryIds,
+  getAutoMemoryStatsRow,
+} from './auto-memory.js';
+
+// Re-export recall-events functions and types
+export type { RecallStatsRow, RecallSummaryRow, RecallPerformerRow, BoostRow } from './recall-events.js';
+export {
+  insertRecallEvent,
+  insertRecallEventsBatch,
+  getRecallStatsRow,
+  getRecallSummaryRow,
+  getNeverUsedCount,
+  getTopPerformers,
+  getWorstPerformers,
+  getBoostDataForMemory,
+  getBoostDataForMemories,
+  getNeverUsedMemoryRows,
+  deleteOldRecallEvents,
+} from './recall-events.js';
+
+// Re-export helpers
+export { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
+
 // Re-export knowledge graph functions and types
 export type { LinkRelation, MemoryLink, MemoryWithLinks } from './graph.js';
 export {

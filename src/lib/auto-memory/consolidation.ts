@@ -14,8 +14,8 @@ import {
   promoteMemoryConfidence,
   collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
-} from '../db/auto-memory.js';
-import { bufferToFloatArray } from '../db/helpers.js';
+  bufferToFloatArray,
+} from '../db/index.js';
 import { findSimilarPairs, groupByUnionFind } from '../similarity-utils.js';
 import { logInfo, logWarn } from '../fault-logger.js';
 

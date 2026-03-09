@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { getStorageDispatcher } from '../../lib/storage/index.js';
+import { getSuccDir } from '../../lib/config.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { processSessionEnd } from '../session-processor.js';
@@ -12,6 +15,12 @@ import {
   type RouteContext,
   type RouteMap,
 } from './types.js';
+
+/** Path for persisting pre-compact stats (survives session unregister + daemon restart). */
+function preCompactStatsPath(sessionId: string): string {
+  const tmpDir = path.join(getSuccDir(), '.tmp');
+  return path.join(tmpDir, `session-${sessionId}-pre-compact.json`);
+}
 
 export function sessionRoutes(ctx: RouteContext): RouteMap {
   return {
@@ -124,27 +133,52 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         return { success: false, error: 'payload too large' };
       }
       const sessionId = (stats.sessionId as string) || 'unknown';
+
+      // Persist to disk so stats survive session unregister and daemon restarts
+      try {
+        const statsFile = preCompactStatsPath(sessionId);
+        const dir = path.dirname(statsFile);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(statsFile, JSON.stringify(stats), 'utf-8');
+      } catch (err) {
+        ctx.log(`[pre-compact] Failed to persist stats: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // Also attach to live session for fast reads during active session
       const manager = requireSessionManager(ctx);
       const session = manager.get(sessionId);
       if (session) {
         (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
-        ctx.log(
-          `[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`
-        );
-      } else {
-        ctx.log(`[pre-compact] Session ${sessionId} not found, stats not stored`);
       }
+      ctx.log(
+        `[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`
+      );
       return { success: true };
     },
 
     'GET /api/session/stats': async (_body, searchParams) => {
       const sessionId = searchParams.get('session_id') || '';
       if (!sessionId) return { error: 'session_id required' };
+
+      // Fast path: live session in memory
       const manager = requireSessionManager(ctx);
       const session = manager.get(sessionId) as
         | (SessionState & { preCompactStats?: unknown })
         | null;
-      return { stats: session?.preCompactStats || null };
+      if (session?.preCompactStats) {
+        return { stats: session.preCompactStats };
+      }
+
+      // Fallback: read from persisted file (survives unregister + restart)
+      try {
+        const statsFile = preCompactStatsPath(sessionId);
+        if (fs.existsSync(statsFile)) {
+          return { stats: JSON.parse(fs.readFileSync(statsFile, 'utf-8')) };
+        }
+      } catch {
+        // File corrupted or unreadable — fall through to null
+      }
+      return { stats: null };
     },
   };
 }
