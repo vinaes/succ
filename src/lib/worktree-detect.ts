@@ -50,7 +50,15 @@ export function resolveMainRepoRoot(worktreeDir: string): string | null {
     // Resolve to absolute path (may be relative)
     const absoluteGitDir = path.resolve(worktreeDir, gitCommonDir);
     // Main repo root is the parent of .git/
-    const mainRoot = path.dirname(absoluteGitDir);
+    let mainRoot = path.dirname(absoluteGitDir);
+
+    // On Windows, git may return 8.3 short paths (e.g. RUNNER~1 instead of RUNNERADMIN).
+    // Normalize to long paths so string comparisons work downstream.
+    try {
+      mainRoot = fs.realpathSync.native(mainRoot);
+    } catch {
+      // realpathSync.native may fail if path doesn't exist; keep as-is
+    }
 
     // Sanity check: main root should have .git as a directory
     const mainGitPath = path.join(mainRoot, '.git');
