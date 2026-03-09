@@ -7,24 +7,22 @@ You have access to succ's persistent memory system via MCP tools. ALWAYS pass `p
 
 ## Save to memory
 
-Use `succ_remember` to save important information:
+Use `succ_remember` with `project_path` to save important information:
 
-- Decisions and their rationale → `tags: ["decision"]`
-- Learnings from debugging → `tags: ["learning"]`
-- Patterns discovered → `tags: ["pattern"]`
+- Decisions: `succ_remember content="Chose SQLite for local-first" tags=["decision"] project_path="/path/to/project"`
+- Learnings: `succ_remember content="ESM needs .js extensions" tags=["learning"] project_path="/path/to/project"`
+- Patterns: `succ_remember content="Always validate at boundaries" tags=["pattern"] project_path="/path/to/project"`
 - Failed approaches → use `succ_dead_end` instead (boosted in recall to prevent retrying)
-
-Always include relevant tags for categorization.
 
 ## Recall from memory
 
 Use `succ_recall` to find past context:
 
-- By topic: `query="authentication flow"`
-- By type: `tags=["decision"]`
-- Time-scoped: `since="last week"`
+- By topic: `succ_recall query="authentication flow" project_path="/path/to/project"`
+- By type: `succ_recall query="auth" tags=["decision"] project_path="/path/to/project"`
+- Time-scoped: `succ_recall query="recent work" since="last week" project_path="/path/to/project"`
 
 ## Search knowledge base
 
-- `succ_search` — brain vault documents (architecture docs, specs, research)
-- `succ_search_code` — source code (functions, classes, patterns, with AST symbol metadata)
+- `succ_search query="API design" project_path="/path/to/project"` — brain vault documents
+- `succ_search_code query="handleAuth" project_path="/path/to/project"` — source code with AST metadata
