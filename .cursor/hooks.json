@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-session-start.cjs\\\"\""
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-session-end.cjs\\\"\""
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-pre-tool.cjs\\\"\"",
+        "matcher": "*"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-post-tool.cjs\\\"\""
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-user-prompt.cjs\\\"\""
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "cmd /c \"set SUCC_AGENT=cursor && node \\\"C:/C:/dev/svn/succ/.claude/worktrees/simplify-fixes/hooks/succ-stop-reflection.cjs\\\"\""
+      }
+    ]
+  },
+  "version": 1
+}

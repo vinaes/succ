@@ -66,10 +66,10 @@ export async function gatherTaskContext(task: Task, prdId: string): Promise<Task
           }
         }
       } catch (error) {
-        logWarn('context', 'Memory recall query failed for PRD context', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // Query failed — skip this query
+        const msg = error instanceof Error ? error.message : String(error);
+        logWarn('context', 'Memory recall query failed for PRD context', { error: msg });
+        // DB not initialized or unavailable — no point retrying remaining queries
+        if (msg.includes('not initialized') || msg.includes('not exist')) break;
       }
     }
   } catch (error) {

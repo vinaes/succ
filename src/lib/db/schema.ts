@@ -479,17 +479,11 @@ export function initVecTables(database: Database.Database): void {
       needsMemoriesMigration = true;
       memoriesDimChange = true;
     } else if (!vecMemoriesMigrated) {
-      try {
-        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as {
-          cnt: number;
-        };
-        const memCount = database
-          .prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL')
-          .get() as { cnt: number };
-        needsMemoriesMigration = vecCount.cnt === 0 && memCount.cnt > 0;
-      } catch {
-        needsMemoriesMigration = false;
-      }
+      // Legacy table: created before migration-flag mechanism was added.
+      // Recreate with current dimensions — old embeddings are likely wrong dims.
+      logWarn('sqlite-vec', `vec_memories missing migration flag — recreating with ${dims} dims`);
+      needsMemoriesMigration = true;
+      memoriesDimChange = true;
     }
   }
 
@@ -581,17 +575,11 @@ export function initVecTables(database: Database.Database): void {
       needsDocumentsMigration = true;
       documentsDimChange = true;
     } else if (!vecDocumentsMigrated) {
-      try {
-        const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_documents').get() as {
-          cnt: number;
-        };
-        const docCount = database
-          .prepare('SELECT COUNT(*) as cnt FROM documents WHERE embedding IS NOT NULL')
-          .get() as { cnt: number };
-        needsDocumentsMigration = vecCount.cnt === 0 && docCount.cnt > 0;
-      } catch {
-        needsDocumentsMigration = false;
-      }
+      // Legacy table: created before migration-flag mechanism was added.
+      // Recreate with current dimensions — old embeddings are likely wrong dims.
+      logWarn('sqlite-vec', `vec_documents missing migration flag — recreating with ${dims} dims`);
+      needsDocumentsMigration = true;
+      documentsDimChange = true;
     }
   }
 
@@ -818,19 +806,25 @@ export function initGlobalVecTable(database: Database.Database): void {
     .prepare("SELECT value FROM metadata WHERE key = 'vec_memories_migrated_dims'")
     .get() as { value: string } | undefined;
 
-  // Check if migration is needed — skip if persistent flag exists
+  // Check if migration is needed — skip if persistent flag matches current dims
   let needsMigration = false;
-  if (vecMemoriesExists && !vecMigrated) {
-    try {
-      const vecCount = database.prepare('SELECT COUNT(*) as cnt FROM vec_memories').get() as {
-        cnt: number;
-      };
-      const memCount = database
-        .prepare('SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NOT NULL')
-        .get() as { cnt: number };
-      needsMigration = vecCount.cnt === 0 && memCount.cnt > 0;
-    } catch {
-      needsMigration = false;
+  let dimChange = false;
+  if (vecMemoriesExists) {
+    if (vecMigrated && Number(vecMigrated.value) !== dims) {
+      logWarn(
+        'sqlite-vec',
+        `global vec_memories dimension change: ${vecMigrated.value} -> ${dims}. Recreating.`
+      );
+      needsMigration = true;
+      dimChange = true;
+    } else if (!vecMigrated) {
+      // Legacy table: recreate with current dimensions
+      logWarn(
+        'sqlite-vec',
+        `global vec_memories missing migration flag — recreating with ${dims} dims`
+      );
+      needsMigration = true;
+      dimChange = true;
     }
   }
 
@@ -864,24 +858,26 @@ export function initGlobalVecTable(database: Database.Database): void {
         )
         .run();
 
-      // Migrate existing embeddings
-      const memories = database
-        .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
-        .all() as Array<{ id: number; embedding: Buffer }>;
+      // Migrate existing embeddings (skip on dim change — old embeddings are incompatible)
+      if (!dimChange) {
+        const memories = database
+          .prepare('SELECT id, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY id')
+          .all() as Array<{ id: number; embedding: Buffer }>;
 
-      if (memories.length > 0) {
-        const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
-        const insertMap = database.prepare(
-          'INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)'
-        );
+        if (memories.length > 0) {
+          const insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
+          const insertMap = database.prepare(
+            'INSERT INTO vec_memories_map(vec_rowid, memory_id) VALUES (?, ?)'
+          );
 
-        const migrate = database.transaction(() => {
-          for (const mem of memories) {
-            const result = insertVec.run(mem.embedding);
-            insertMap.run(result.lastInsertRowid, mem.id);
-          }
-        });
-        migrate();
+          const migrate = database.transaction(() => {
+            for (const mem of memories) {
+              const result = insertVec.run(mem.embedding);
+              insertMap.run(result.lastInsertRowid, mem.id);
+            }
+          });
+          migrate();
+        }
       }
 
       // Store persistent migration flag

@@ -426,11 +426,20 @@ function runHook(hookName, callback) {
         projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
       }
 
-      const succDir = path.join(projectDir, '.succ');
+      let succDir = path.join(projectDir, '.succ');
 
-      // Skip if succ is not initialized in this project
+      // Worktree-aware resolution: if .succ/ missing, check if we're in a git worktree
       if (!fs.existsSync(succDir)) {
-        process.exit(0);
+        try {
+          const { resolveSuccDir } = require('./worktree.cjs');
+          const resolved = resolveSuccDir(projectDir);
+          if (!resolved) {
+            process.exit(0);
+          }
+          succDir = resolved;
+        } catch {
+          process.exit(0);
+        }
       }
 
       await callback({ agent, hookInput, projectDir, succDir });

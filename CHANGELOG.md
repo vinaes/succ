@@ -5,10 +5,10 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.51] - 2026-03-09
+## [1.4.52] - 2026-03-09
 
 ### Changed
-- **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic
+- **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, worktree resolution, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic
 - **MCP tool DRY** — 83 inline `{ content: [{ type: 'text', text }] }` patterns replaced with `createToolResponse()`/`createErrorResponse()` across 7 tool files (config, debug, graph, indexing, prd, status, web-search)
 - **Hook daemon port** — 5 hooks now use shared `getDaemonPort()` from `core/daemon-boot.cjs` instead of inline file reads
 - **Hook config loading** — consistent global+project config merge via `core/config.cjs` (was 3 different implementations with merge order inconsistency)
@@ -29,6 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getErrorMessage(error: unknown): string` utility in `src/lib/errors.ts`
 - `hooks/core/log.cjs` — shared hook logging module
 - `hooks/core/config.cjs` — shared global+project config loader
+
+## [1.4.49] - 2026-03-09
+
+### Added
+- **Worktree-aware `.succ/` resolution** — runtime detection of git worktrees, resolves main repo root, creates Windows junctions so hooks and daemon find the correct `.succ/` directory
+- **`worktree-detect.ts`** — `isGitWorktree()`, `resolveMainRepoRoot()`, `ensureSuccInWorktree()`, `resolveSuccDir()` exports for worktree handling
+- **`hooks/core/worktree.cjs`** — CJS shared module with identical worktree logic for hook files
+- **Qdrant circuit breaker** — disables Qdrant after 3 consecutive failures per session to stop log spam; resets counter on successful operations
+- 15 end-to-end tests with real git worktrees covering detection, resolution, junction creation, and CJS parity
+
+### Fixed
+- **Storage backend normalization** — `'postgres'` in config now normalized to `'postgresql'` in both Zod validation (`config-validation.ts`) and dispatcher config reader, preventing silent fallback to SQLite
+- **sqlite-vec dimension migration** — legacy `vec_memories`/`vec_documents` tables missing migration flag now detected and recreated with correct dimensions instead of silently using stale 384-dim tables
+- **All 6 hooks worktree-aware** — `succ-session-start`, `succ-pre-tool`, `succ-post-tool`, `succ-session-end`, `succ-user-prompt`, `succ-stop-reflection` now resolve `.succ/` through worktree detection instead of assuming `projectDir/.succ/`
+- **`daemon-boot.cjs`** — checks main repo for `dist/daemon/service.js` when running inside a worktree
+- **PRD context query loop** — breaks on first "DB not initialized" error instead of logging 5 identical warnings
+- **`getGitHead()`** — checks `--is-inside-work-tree` first, suppresses expected "not a git repository" errors
+- **Silent catch blocks** — added `logWarn` to junction failure catch in `config.ts` and unexpected git errors in `analyze-state.ts`
 
 ## [1.4.0] - 2026-02-20
 

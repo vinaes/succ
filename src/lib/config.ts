@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { execFileSync } from 'child_process';
 import { deepMerge, validateConfig } from './config-validation.js';
 
 // Re-export all types (type-only exports use 'export type')
@@ -234,7 +235,44 @@ export function getProjectRoot(): string {
 }
 
 export function getSuccDir(): string {
-  return path.join(getProjectRoot(), '.succ');
+  const projectRoot = getProjectRoot();
+  const localSucc = path.join(projectRoot, '.succ');
+
+  if (fs.existsSync(localSucc)) return localSucc;
+
+  // Worktree fallback: resolve main repo's .succ/ with lazy junction
+  try {
+    // Inline worktree detection (sync) to avoid circular/async imports.
+    // Full logic lives in worktree-detect.ts for reuse.
+    const gitPath = path.join(projectRoot, '.git');
+    const isWorktree = fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
+    if (isWorktree) {
+      const gitCommonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      }).trim();
+      const mainRoot = path.dirname(path.resolve(projectRoot, gitCommonDir));
+      const mainSucc = path.join(mainRoot, '.succ');
+      if (fs.existsSync(mainSucc)) {
+        // Lazy junction: create <worktree>/.succ → <main>/.succ
+        try {
+          fs.symlinkSync(mainSucc, localSucc, 'junction');
+          return localSucc;
+        } catch (err) {
+          logWarn('config', 'Worktree .succ junction failed, using main repo path directly', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return mainSucc;
+        }
+      }
+    }
+  } catch {
+    // Not a worktree or git unavailable — fall through
+  }
+
+  return localSucc;
 }
 
 /**

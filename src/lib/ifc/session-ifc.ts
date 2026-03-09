@@ -46,6 +46,8 @@ export interface SessionIFCState {
   outboundStepCount: number;
   labelHistory: LabelHistoryEntry[];
   trustedActions: Set<string>;
+  /** Permission mode registered at session start (trusted source of truth for bypass detection) */
+  permissionMode?: string;
 }
 
 export type OutboundChannel =
