@@ -71,8 +71,9 @@ function loadMergedConfig(projectDir) {
       try {
         const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         merged = mergeConfig(merged, raw);
-      } catch {
-        // intentionally empty — ignore parse errors, stay fail-open
+      } catch (err) {
+        // Fail-open: warn but continue with defaults so hooks don't break
+        console.error(`[succ] Config parse error in ${configPath}: ${err.message || err}`);
       }
     }
   }

@@ -409,7 +409,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
       }
       // Store the full context that should be injected (without briefing, that comes later)
-      const contextForFallback = contextParts.join('\n\n');
+      const contextForFallback = adapter.adaptContext(agent, contextParts.join('\n\n'));
       fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
       log(`Created compact-pending flag (${contextForFallback.length} chars)`);
     } catch (err) {

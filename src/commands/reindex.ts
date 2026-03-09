@@ -27,14 +27,24 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
   let reindexed = 0;
   let errors = 0;
 
-  // Clean up deleted entries — batch all deletes in parallel
-  await Promise.all(
+  // Clean up deleted entries — batch all deletes (don't let one failure abort the rest)
+  const deleteResults = await Promise.allSettled(
     deleted.map(async (filePath) => {
       await deleteDocumentsByPath(filePath);
       await deleteFileHash(filePath);
-      details.push(`Removed: ${filePath}`);
+      return filePath;
     })
   );
+  for (const r of deleteResults) {
+    if (r.status === 'fulfilled') {
+      details.push(`Removed: ${r.value}`);
+    } else {
+      details.push(
+        `Delete error: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+      );
+      errors++;
+    }
+  }
 
   // Re-index stale files — bounded concurrency (5 at a time)
   const CONCURRENCY = 5;

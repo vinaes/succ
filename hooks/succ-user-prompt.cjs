@@ -21,6 +21,9 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
   const log = (msg) => _log(succDir, 'user-prompt', msg);
 
   const tmpDir = path.join(succDir, '.tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
 
   // Get session_id from transcript_path (unique per session)
   const transcriptPath = hookInput.transcript_path || '';
@@ -30,6 +33,9 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
 
   // Check if this is a service session (e.g., reflection subagent)
   const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+  // Collect all context parts — output a single JSON at the end to avoid broken hook parsing
+  const contextParts = [];
 
   // Check for compact-pending fallback
   // This handles the case where SessionStart hook output was lost after /compact
@@ -43,15 +49,9 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
 
       if (pendingContext.trim()) {
         log(`Injecting compact-pending fallback context (${pendingContext.length} chars)`);
-
-        // Output as additionalContext - this will be injected into the agent's context
-        const { json, exitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
-          additionalContext: `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`,
-        });
-        if (json && Object.keys(json).length > 0) {
-          console.log(JSON.stringify(json));
-        }
-        if (exitCode) process.exit(exitCode);
+        contextParts.push(
+          `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`
+        );
       }
     } catch (err) {
       log(`Error processing compact-pending: ${err.message || err}`);
@@ -140,18 +140,7 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
                 `Suggesting ${suggestions.length} skill(s): ${suggestions.map((s) => s.name).join(', ')}`
               );
 
-              // Output as additionalContext
-              const { json: sugJson, exitCode: sugExitCode } = adapter.formatOutput(
-                agent,
-                'UserPromptSubmit',
-                {
-                  additionalContext: suggestionContext,
-                }
-              );
-              if (sugJson && Object.keys(sugJson).length > 0) {
-                console.log(JSON.stringify(sugJson));
-              }
-              if (sugExitCode) process.exit(sugExitCode);
+              contextParts.push(suggestionContext);
             } else {
               // No suggestions, increment cooldown
               fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');
@@ -171,6 +160,17 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
         }
       }
     }
+  }
+
+  // Emit a single hook payload with all collected context
+  if (contextParts.length > 0) {
+    const { json, exitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
+      additionalContext: contextParts.join('\n\n'),
+    });
+    if (json && Object.keys(json).length > 0) {
+      console.log(JSON.stringify(json));
+    }
+    if (exitCode) process.exit(exitCode);
   }
 
   process.exit(0);

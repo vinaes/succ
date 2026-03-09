@@ -25,6 +25,7 @@ Desktop.ini
 # Editor files
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~

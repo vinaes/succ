@@ -88,7 +88,14 @@ function parseGitFileForMainRepo(worktreeDir: string): string | null {
     const gitDir = path.resolve(worktreeDir, match[1].trim());
     // gitDir = /main-repo/.git/worktrees/<name>
     // main repo = gitDir/../../.. = /main-repo
-    const mainRoot = path.resolve(gitDir, '..', '..', '..');
+    let mainRoot = path.resolve(gitDir, '..', '..', '..');
+
+    // Normalize 8.3 short names on Windows (same as happy-path above)
+    try {
+      mainRoot = fs.realpathSync.native(mainRoot);
+    } catch {
+      // realpathSync.native may fail if path doesn't exist; keep as-is
+    }
 
     if (fs.existsSync(path.join(mainRoot, '.git'))) {
       return mainRoot;

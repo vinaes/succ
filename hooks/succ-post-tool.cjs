@@ -262,8 +262,13 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         const bullets = parseMemoryMdBullets(memContent);
         if (bullets.length > 0) {
           await Promise.allSettled(
-            bullets.map((bullet) =>
-              fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
+            bullets.map((bullet) => {
+              // Run the same injection guard used by succRemember()
+              if (isInjectionDetected(bullet.text)) {
+                console.error('[succ] MEMORY.md bullet blocked: injection detected');
+                return Promise.resolve();
+              }
+              return fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -272,8 +277,8 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
                   source: 'memory-md-sync',
                 }),
                 signal: AbortSignal.timeout(5000),
-              }).catch(() => {})
-            )
+              }).catch(() => {});
+            })
           );
         }
       } catch {

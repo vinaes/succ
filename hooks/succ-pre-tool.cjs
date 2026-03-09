@@ -824,7 +824,7 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
     const fileName = path.basename(filePath);
     const memories = await recallFileMemories(succDir, fileName);
     if (memories.length > 0) {
-      contextParts.push(formatFileContext(memories, sanitizeFileName(fileName)));
+      contextParts.push(formatFileContext(memories, fileName));
     }
   }
 
