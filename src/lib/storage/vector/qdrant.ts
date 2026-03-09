@@ -216,6 +216,8 @@ export interface MemoryPayload {
   access_count: number;
   last_accessed: string | null;
   quality_score: number | null;
+  confidence: number | null;
+  source_type: string | null;
 }
 
 // ============================================================================
@@ -247,6 +249,8 @@ export interface MemoryUpsertMeta {
   accessCount?: number;
   lastAccessed?: string | null;
   qualityScore?: number | null;
+  confidence?: number | null;
+  sourceType?: string | null;
 }
 
 // ============================================================================
@@ -847,6 +851,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: 0,
             last_accessed: null,
             quality_score: null,
+            confidence: meta.confidence ?? null,
+            source_type: meta.sourceType ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -885,6 +891,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: 0,
             last_accessed: null,
             quality_score: null,
+            confidence: meta.confidence ?? null,
+            source_type: meta.sourceType ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -925,6 +933,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: item.meta.accessCount ?? 0,
             last_accessed: item.meta.lastAccessed ?? null,
             quality_score: item.meta.qualityScore ?? null,
+            confidence: item.meta.confidence ?? null,
+            source_type: item.meta.sourceType ?? null,
           } satisfies MemoryPayload,
         })),
       });
@@ -965,6 +975,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: item.meta.accessCount ?? 0,
             last_accessed: item.meta.lastAccessed ?? null,
             quality_score: item.meta.qualityScore ?? null,
+            confidence: item.meta.confidence ?? null,
+            source_type: item.meta.sourceType ?? null,
           } satisfies MemoryPayload,
         })),
       });

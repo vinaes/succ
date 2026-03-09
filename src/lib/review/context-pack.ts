@@ -13,7 +13,7 @@ import { execFileSync } from 'child_process';
 import { parseDiffText, extractChangedSymbols, summarizeDiff } from '../diff-parser.js';
 import type { ParsedDiff } from '../diff-parser.js';
 import { getEmbedding } from '../embeddings.js';
-import { logInfo, logWarn } from '../fault-logger.js';
+import { logWarn } from '../fault-logger.js';
 import { callLLM } from '../llm.js';
 import { getProjectRoot } from '../config.js';
 

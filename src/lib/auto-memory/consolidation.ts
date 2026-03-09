@@ -70,31 +70,94 @@ export async function consolidateAutoMemories(options?: {
       return result;
     }
 
-    // Step 1: Find and merge near-duplicates
-    const toDelete: number[] = [];
-    const seen = new Set<number>();
+    // Step 1: Find and merge near-duplicates (two-pass to avoid incorrect deletions).
+    //
+    // Pass 1: Identify all duplicate pairs and elect a winner for each group.
+    //   We track which id "survives" for every memory involved in at least one
+    //   duplicate pair.  Using a Union-Find (disjoint-set) structure ensures that
+    //   if A≈B and A≈C, all three end up in the same group and only the member
+    //   with the highest access_count is kept — regardless of the order pairs are
+    //   discovered.
+    //
+    // Pass 2: Commit deletions only after all comparisons are finished.
+
+    // Union-Find helpers (path-compressed)
+    const parent = new Map<number, number>();
+    const rankMap = new Map<number, number>();
+
+    function find(x: number): number {
+      if (!parent.has(x)) {
+        parent.set(x, x);
+        rankMap.set(x, 0);
+      }
+      if (parent.get(x) !== x) {
+        parent.set(x, find(parent.get(x)!));
+      }
+      return parent.get(x)!;
+    }
+
+    function union(a: number, b: number): void {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra === rb) return;
+      // Attach lower rank to higher rank; ties go to higher access_count
+      const rankA = rankMap.get(ra) ?? 0;
+      const rankB = rankMap.get(rb) ?? 0;
+      if (rankA < rankB) {
+        parent.set(ra, rb);
+      } else if (rankA > rankB) {
+        parent.set(rb, ra);
+      } else {
+        parent.set(rb, ra);
+        rankMap.set(ra, rankA + 1);
+      }
+    }
+
+    // Pass 1: build duplicate groups
+    const embedCache = new Map<number, number[]>();
 
     for (let i = 0; i < autoMemories.length; i++) {
-      if (seen.has(autoMemories[i].id)) continue;
-
-      const iEmbed = bufferToFloatArray(autoMemories[i].embedding);
+      const memI = autoMemories[i];
+      if (!embedCache.has(memI.id)) {
+        embedCache.set(memI.id, bufferToFloatArray(memI.embedding));
+      }
+      const iEmbed = embedCache.get(memI.id)!;
 
       for (let j = i + 1; j < autoMemories.length; j++) {
-        if (seen.has(autoMemories[j].id)) continue;
+        const memJ = autoMemories[j];
+        if (!embedCache.has(memJ.id)) {
+          embedCache.set(memJ.id, bufferToFloatArray(memJ.embedding));
+        }
+        const jEmbed = embedCache.get(memJ.id)!;
 
-        const jEmbed = bufferToFloatArray(autoMemories[j].embedding);
         const similarity = cosineSimilarity(iEmbed, jEmbed);
-
         if (similarity >= mergeThreshold) {
-          // Keep the one with higher access_count, delete the other
-          if (autoMemories[i].access_count >= autoMemories[j].access_count) {
-            toDelete.push(autoMemories[j].id);
-            seen.add(autoMemories[j].id);
-          } else {
-            toDelete.push(autoMemories[i].id);
-            seen.add(autoMemories[i].id);
-            break; // i is deleted, no need to check further
-          }
+          union(memI.id, memJ.id);
+        }
+      }
+    }
+
+    // Pass 2: within each group elect the survivor (highest access_count, then lowest id),
+    // then collect the rest for deletion.
+    const groups = new Map<number, typeof autoMemories>();
+    for (const mem of autoMemories) {
+      const root = find(mem.id);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root)!.push(mem);
+    }
+
+    const toDelete: number[] = [];
+    for (const group of groups.values()) {
+      if (group.length < 2) continue; // singleton — nothing to merge
+      // Elect the member with the highest access_count (ties: keep lowest id)
+      const survivor = group.reduce((best, cur) => {
+        if (cur.access_count > best.access_count) return cur;
+        if (cur.access_count === best.access_count && cur.id < best.id) return cur;
+        return best;
+      });
+      for (const mem of group) {
+        if (mem.id !== survivor.id) {
+          toDelete.push(mem.id);
           result.merged++;
         }
       }
@@ -104,10 +167,11 @@ export async function consolidateAutoMemories(options?: {
       await deleteMemoriesByIds(toDelete);
     }
 
-    // Step 2: Promote high-usage memories
+    // Step 2: Promote high-usage memories (skip any that were just deleted)
+    const deletedSet = new Set(toDelete);
     const toPromote = autoMemories.filter(
       (m) =>
-        !seen.has(m.id) &&
+        !deletedSet.has(m.id) &&
         m.access_count >= promotionAccesses &&
         (m.confidence === null || m.confidence < 0.7)
     );

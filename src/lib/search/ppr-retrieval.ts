@@ -11,7 +11,7 @@
 
 import { personalizedPageRank, computePageRank } from '../graph/graphology-bridge.js';
 import { getBoostFactors } from '../retrieval-feedback.js';
-import { logInfo, logWarn } from '../fault-logger.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Types

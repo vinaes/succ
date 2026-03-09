@@ -103,9 +103,21 @@ export async function lateChunkEmbed(
     const results: LateChunkResult[] = [];
 
     for (const chunk of chunks) {
-      // Find character range for this chunk in the original content
+      // Find character range for this chunk in the original content.
+      // chunk.startLine / chunk.endLine are 1-indexed.
+      //
+      // The end boundary is derived from lineOffsets rather than from
+      // chunk.content.length.  chunk.content is assembled with join('\n'),
+      // which omits the trailing newline that exists in the original source.
+      // Using lineOffsets[endLine] (= start-of-next-line) gives the correct
+      // exclusive end that covers the trailing '\n'.  For the very last chunk
+      // we fall back to content.length so we never read past the buffer.
       const chunkCharStart = getCharOffsetForLine(lineOffsets, chunk.startLine);
-      const chunkCharEnd = chunkCharStart + chunk.content.length;
+      // lineOffsets is 0-indexed by line (lineOffsets[0] = offset of line 1).
+      // The offset of the line after endLine is lineOffsets[endLine] when it
+      // exists, otherwise the total content length.
+      const chunkCharEnd =
+        chunk.endLine < lineOffsets.length ? lineOffsets[chunk.endLine] : content.length;
 
       // Map char range to token range
       const tokenRange = charRangeToTokenRange(tokenOffsets, chunkCharStart, chunkCharEnd);

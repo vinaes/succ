@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { minimatch } from 'minimatch';
 import { logInfo, logWarn } from '../fault-logger.js';
 import { getProjectRoot } from '../config.js';
 
@@ -57,6 +58,8 @@ export async function generateRepoMap(
 ): Promise<RepoMapResult> {
   const root = rootPath ?? getProjectRoot();
   const maxSymbols = options?.maxSymbolsPerFile ?? 10;
+  const includeGlobs = options?.include;
+  const symbolTypesFilter = options?.symbolTypes;
 
   // Default exclude patterns
   const defaultExcludes = [
@@ -104,25 +107,57 @@ export async function generateRepoMap(
     });
   }
 
+  // Apply include glob filter: only keep files that match at least one pattern
+  let filtered = entries;
+  if (includeGlobs && includeGlobs.length > 0) {
+    filtered = filtered.filter((e) => {
+      const relative = path.relative(root, e.filePath).replace(/\\/g, '/');
+      return includeGlobs.some((glob) => minimatch(relative, glob, { dot: true, matchBase: true }));
+    });
+  }
+
+  // Apply symbolTypes filter: only retain the requested symbol kinds per entry.
+  // The initial walk stores all symbols without kind information, so we re-read
+  // each file to run the typed extraction. Files that fail to read are kept
+  // with their original symbol list (best effort).
+  if (symbolTypesFilter && symbolTypesFilter.length > 0) {
+    filtered = filtered.map((e) => {
+      let content: string;
+      try {
+        content = fs.readFileSync(e.filePath, 'utf-8');
+      } catch {
+        return e; // keep original symbols if we can't re-read
+      }
+      return {
+        ...e,
+        symbols: extractSymbolsRegexFiltered(
+          content,
+          path.extname(e.filePath).toLowerCase(),
+          symbolTypesFilter
+        ).slice(0, maxSymbols),
+      };
+    });
+  }
+
   // Sort by path
-  entries.sort((a, b) => a.filePath.localeCompare(b.filePath));
+  filtered.sort((a, b) => a.filePath.localeCompare(b.filePath));
 
   // Generate text representation
-  const lines = entries.map((e) => {
+  const lines = filtered.map((e) => {
     const relative = path.relative(root, e.filePath).replace(/\\/g, '/');
     const symbolStr =
       e.symbols.length > 0 ? `: ${e.symbols.join(', ')}` : ` (${e.lineCount} lines)`;
     return `${relative}${symbolStr}`;
   });
 
-  const totalSymbols = entries.reduce((sum, e) => sum + e.symbols.length, 0);
+  const totalSymbols = filtered.reduce((sum, e) => sum + e.symbols.length, 0);
 
-  logInfo('repo-map', `Generated repo map: ${entries.length} files, ${totalSymbols} symbols`);
+  logInfo('repo-map', `Generated repo map: ${filtered.length} files, ${totalSymbols} symbols`);
 
   return {
-    entries,
+    entries: filtered,
     text: lines.join('\n'),
-    totalFiles: entries.length,
+    totalFiles: filtered.length,
     totalSymbols,
   };
 }
@@ -200,6 +235,110 @@ function extractSymbolsRegex(content: string, ext: string): string[] {
   }
 
   return [...new Set(symbols)]; // Deduplicate
+}
+
+/**
+ * Symbol kind constants for filtering.
+ * Maps regex pattern groups to coarse kind strings accepted by the `symbolTypes` option.
+ */
+type SymbolKind = 'function' | 'class' | 'interface' | 'type' | 'variable';
+
+interface SymbolWithKind {
+  name: string;
+  kind: SymbolKind;
+}
+
+/**
+ * Like `extractSymbolsRegex`, but tags each symbol with its coarse kind so
+ * callers can filter by `symbolTypes`.
+ */
+function extractSymbolsWithKind(content: string, ext: string): SymbolWithKind[] {
+  const results: SymbolWithKind[] = [];
+
+  if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+    const typed: Array<[RegExp, SymbolKind]> = [
+      [/export\s+(?:async\s+)?function\s+(\w+)/g, 'function'],
+      [/export\s+default\s+(?:async\s+)?function\s+(\w+)/g, 'function'],
+      [/export\s+class\s+(\w+)/g, 'class'],
+      [/export\s+default\s+class\s+(\w+)/g, 'class'],
+      [/export\s+interface\s+(\w+)/g, 'interface'],
+      [/export\s+type\s+(\w+)/g, 'type'],
+      [/export\s+enum\s+(\w+)/g, 'type'],
+      [/export\s+(?:const|let|var)\s+(\w+)/g, 'variable'],
+    ];
+    for (const [pattern, kind] of typed) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        results.push({ name: match[1], kind });
+      }
+    }
+  }
+
+  if (ext === '.py') {
+    const typed: Array<[RegExp, SymbolKind]> = [
+      [/^def\s+(\w+)/gm, 'function'],
+      [/^class\s+(\w+)/gm, 'class'],
+    ];
+    for (const [pattern, kind] of typed) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        if (!match[1].startsWith('_')) results.push({ name: match[1], kind });
+      }
+    }
+  }
+
+  if (ext === '.go') {
+    const typed: Array<[RegExp, SymbolKind]> = [
+      [/^func\s+(\w+)/gm, 'function'],
+      [/^type\s+(\w+)\s+struct/gm, 'class'],
+      [/^type\s+(\w+)\s+interface/gm, 'interface'],
+    ];
+    for (const [pattern, kind] of typed) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        if (match[1][0] === match[1][0].toUpperCase()) {
+          results.push({ name: match[1], kind });
+        }
+      }
+    }
+  }
+
+  if (ext === '.rs') {
+    const typed: Array<[RegExp, SymbolKind]> = [
+      [/pub\s+(?:async\s+)?fn\s+(\w+)/g, 'function'],
+      [/pub\s+struct\s+(\w+)/g, 'class'],
+      [/pub\s+enum\s+(\w+)/g, 'type'],
+      [/pub\s+trait\s+(\w+)/g, 'interface'],
+    ];
+    for (const [pattern, kind] of typed) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        results.push({ name: match[1], kind });
+      }
+    }
+  }
+
+  // Deduplicate by name (first occurrence wins)
+  const seen = new Set<string>();
+  return results.filter((e) => {
+    if (seen.has(e.name)) return false;
+    seen.add(e.name);
+    return true;
+  });
+}
+
+/**
+ * Extract exported symbols filtered to only the requested coarse kinds.
+ */
+function extractSymbolsRegexFiltered(
+  content: string,
+  ext: string,
+  symbolTypes: string[]
+): string[] {
+  const typeSet = new Set(symbolTypes);
+  return extractSymbolsWithKind(content, ext)
+    .filter((e) => typeSet.has(e.kind))
+    .map((e) => e.name);
 }
 
 async function walkDir(

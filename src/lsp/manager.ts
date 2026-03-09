@@ -160,10 +160,14 @@ export async function getHover(
 }
 
 /**
- * Shutdown all active LSP clients.
+ * Shutdown all active LSP clients, including any still initializing.
+ *
+ * Clients whose `start()` is in-flight (present in `initializing`) are awaited
+ * first so that their process is never left running after this function returns.
  */
 export async function shutdownAll(): Promise<void> {
-  const shutdowns = Array.from(clients.entries()).map(async ([key, client]) => {
+  // Collect already-resolved clients
+  const clientShutdowns = Array.from(clients.entries()).map(async ([key, client]) => {
     try {
       await client.shutdown();
     } catch (error) {
@@ -173,8 +177,30 @@ export async function shutdownAll(): Promise<void> {
     }
   });
 
-  await Promise.all(shutdowns);
+  // Also await any in-flight initializations and shut down the resulting clients
+  const initializingShutdowns = Array.from(initializing.entries()).map(async ([key, promise]) => {
+    let client: LspClient | null = null;
+    try {
+      client = await promise;
+    } catch {
+      // Initialization failed — no client to shut down
+      return;
+    }
+    if (!client) return;
+    try {
+      await client.shutdown();
+    } catch (error) {
+      logWarn('lsp-manager', `Failed to shutdown in-flight client ${key}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  await Promise.all([...clientShutdowns, ...initializingShutdowns]);
   clients.clear();
+  // initializing entries remove themselves in getClient's finally block;
+  // clearing here ensures no stale entries remain even if called out of order.
+  initializing.clear();
   logInfo('lsp-manager', 'All LSP clients shut down');
 }
 

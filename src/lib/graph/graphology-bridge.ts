@@ -15,7 +15,7 @@ import pagerank from 'graphology-metrics/centrality/pagerank';
 import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
 import { bidirectional } from 'graphology-shortest-path';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
-import { logInfo, logWarn } from '../fault-logger.js';
+import { logInfo } from '../fault-logger.js';
 
 // ============================================================================
 // Graph Cache

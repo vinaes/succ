@@ -240,6 +240,16 @@ export async function createManualBridgeEdge(
 /**
  * Find all memories connected to a given code path via bridge edges.
  * Searches both memory content and link metadata.
+ *
+ * Two sources are combined:
+ * 1. Semantic search — memories whose content mentions the code path.
+ * 2. Link metadata — memories connected via bridge edges that record
+ *    the code path in their metadata (covers manual edges and edges where
+ *    the memory text doesn't repeat the full path).
+ *
+ * When options.relation is provided, only memories matched via a bridge
+ * edge of that relation type (or, for content-only matches, memories whose
+ * inferred relation matches) are returned.
  */
 export async function findMemoriesForCode(
   codePath: string,
@@ -253,11 +263,9 @@ export async function findMemoriesForCode(
   }>
 > {
   const limit = options?.limit ?? 20;
+  const wantRelation = options?.relation;
 
-  // Search memories that mention this code path
-  const queryEmbed = await getEmbedding(codePath);
-  const memories = await hybridSearchMemories(codePath, queryEmbed, limit);
-
+  const seen = new Set<number>();
   const results: Array<{
     memoryId: number;
     content: string;
@@ -265,26 +273,52 @@ export async function findMemoriesForCode(
     score: number;
   }> = [];
 
+  // ── Source 1: semantic / hybrid search ────────────────────────────────────
+  // Fetch more than `limit` so we have candidates after filtering.
+  const queryEmbed = await getEmbedding(codePath);
+  const memories = await hybridSearchMemories(codePath, queryEmbed, limit * 2);
+
   for (const mem of memories) {
-    if (!mem.content.includes(codePath)) continue;
-
-    // Check if this memory has bridge edges
+    // Inspect bridge links regardless of whether the content mentions the path.
+    // Bridge link metadata is the authoritative source for code-path associations.
     const links = await getMemoryLinks(mem.id);
-    const bridgeLinks = [...links.outgoing, ...links.incoming].filter((l) => {
-      if (options?.relation && l.relation !== options.relation) return false;
-      return BRIDGE_RELATIONS.includes(l.relation as BridgeRelation);
+    const allLinks = [...links.outgoing, ...links.incoming];
+
+    // Find bridge links that reference this code path
+    const matchingBridgeLinks = allLinks.filter((l) => {
+      if (!BRIDGE_RELATIONS.includes(l.relation as BridgeRelation)) return false;
+      if (wantRelation && l.relation !== wantRelation) return false;
+      // Check link metadata for the code path
+      const meta = l.metadata as Partial<BridgeEdgeMetadata> | undefined;
+      if (meta?.code_path) {
+        return meta.code_path === codePath || codePath.endsWith(meta.code_path);
+      }
+      // No metadata — fall back to content check
+      return mem.content.includes(codePath);
     });
 
-    // Determine the relation — from bridge links or inferred
-    const relation =
-      bridgeLinks.length > 0 ? bridgeLinks[0].relation : inferBridgeRelation(mem.content, mem.tags);
+    // Determine relation for this memory
+    let relation: string;
+    if (matchingBridgeLinks.length > 0) {
+      relation = matchingBridgeLinks[0].relation;
+    } else {
+      // No matching bridge link found.
+      // Accept content-only matches only when the memory text contains the path.
+      if (!mem.content.includes(codePath)) continue;
+      relation = inferBridgeRelation(mem.content, mem.tags);
+      // Apply relation filter for content-inferred matches
+      if (wantRelation && relation !== wantRelation) continue;
+    }
 
-    results.push({
-      memoryId: mem.id,
-      content: mem.content,
-      relation,
-      score: mem.similarity ?? 0,
-    });
+    if (!seen.has(mem.id)) {
+      seen.add(mem.id);
+      results.push({
+        memoryId: mem.id,
+        content: mem.content,
+        relation,
+        score: mem.similarity ?? 0,
+      });
+    }
   }
 
   return results.slice(0, limit);

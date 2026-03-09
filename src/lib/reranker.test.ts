@@ -2,7 +2,7 @@
  * Tests for cross-encoder reranker
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock config before importing reranker
 vi.mock('./config.js', () => ({

@@ -157,7 +157,7 @@ export async function sessionCompact(
   console.log(`  Chain verified:    ${result.chainVerified ? 'OK' : 'FAILED'}`);
   console.log(`  Output:            ${result.outputPath}`);
   console.log(`  Session ID:        ${result.sessionId}`);
-  if (!options.dryRun) {
+  if (!options.dryRun && result.chainVerified) {
     console.log(`\n  Resume with: claude -r ${result.sessionId}`);
   }
 }

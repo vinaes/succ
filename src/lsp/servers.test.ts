@@ -55,53 +55,66 @@ describe('LSP servers', () => {
   });
 
   describe('detectProjectLanguages', () => {
-    it('should detect TypeScript projects', () => {
+    it('should detect TypeScript projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('tsconfig.json'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('typescript');
+      expect(result).toEqual(['typescript']);
     });
 
-    it('should detect Python projects', () => {
+    it('should detect Python projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('pyproject.toml'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('python');
+      expect(result).toEqual(['python']);
     });
 
-    it('should detect Go projects', () => {
+    it('should detect Go projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('go.mod'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('go');
+      expect(result).toEqual(['go']);
     });
 
-    it('should detect Rust projects', () => {
+    it('should detect Rust projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('Cargo.toml'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('rust');
+      expect(result).toEqual(['rust']);
     });
 
-    it('should detect Kotlin projects', () => {
+    it('should detect C# projects via glob marker', () => {
+      // readdirSync returns a .csproj file — the glob *.csproj should match it
+      const exists = vi.fn(() => false);
+      const readdir = vi.fn(() => ['MyApp.csproj']);
+      const result = detectProjectLanguages('/project', exists, readdir);
+      expect(result).toEqual(['csharp']);
+    });
+
+    it('should detect Kotlin projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('build.gradle.kts'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('kotlin');
+      expect(result).toEqual(['kotlin']);
     });
 
-    it('should detect Swift projects', () => {
+    it('should detect Swift projects only', () => {
       const exists = vi.fn((p: string) => p.endsWith('Package.swift'));
       const result = detectProjectLanguages('/project', exists);
-      expect(result).toContain('swift');
+      expect(result).toEqual(['swift']);
     });
 
-    it('should detect multiple languages', () => {
+    it('should detect exactly TypeScript and Go for a combined project', () => {
       const exists = vi.fn((p: string) => p.endsWith('tsconfig.json') || p.endsWith('go.mod'));
       const result = detectProjectLanguages('/project', exists);
       expect(result).toContain('typescript');
       expect(result).toContain('go');
+      // Must not include languages whose markers are absent
+      expect(result).not.toContain('python');
+      expect(result).not.toContain('rust');
+      expect(result).not.toContain('csharp');
     });
 
-    it('should return empty for unknown projects', () => {
+    it('should return empty array for unknown projects', () => {
       const exists = vi.fn(() => false);
-      const result = detectProjectLanguages('/project', exists);
-      expect(result).toHaveLength(0);
+      const readdir = vi.fn(() => []);
+      const result = detectProjectLanguages('/project', exists, readdir);
+      expect(result).toEqual([]);
     });
   });
 });

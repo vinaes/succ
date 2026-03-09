@@ -185,18 +185,34 @@ export class NativeOrtSession {
   /**
    * Tokenize text and return token offsets (character positions).
    * Used by late chunking to map AST chunk boundaries to token positions.
+   *
+   * Transformers.js does not support `return_offsets_mapping` — the option is
+   * silently ignored (the field is absent from the returned tensor map) or, in
+   * some versions, throws.  We attempt the call with the option first; if the
+   * offsets are absent or the call throws we fall back to a uniform character-
+   * distribution estimate which is good enough for the late-chunking use case.
    */
   getTokenOffsets(text: string): Array<[number, number]> {
     if (!this.tokenizer) {
       throw new DependencyError('Session not initialized. Call init() first.');
     }
 
-    // Pass as array for consistent behavior with embedRaw() (2D tensor output)
-    const encoded = this.tokenizer([text], {
-      truncation: true,
-      max_length: this.maxLength,
-      return_offsets_mapping: true,
-    });
+    // Pass as array for consistent behavior with embedRaw() (2D tensor output).
+    // return_offsets_mapping is a hint — not all tokenizer backends honour it.
+    let encoded: any;
+    try {
+      encoded = this.tokenizer([text], {
+        truncation: true,
+        max_length: this.maxLength,
+        return_offsets_mapping: true,
+      });
+    } catch {
+      // Some tokenizer backends throw on unknown options; retry without it.
+      encoded = this.tokenizer([text], {
+        truncation: true,
+        max_length: this.maxLength,
+      });
+    }
 
     // offsets_mapping: [[start, end], ...] for each token
     const offsets: Array<[number, number]> = [];
@@ -205,15 +221,22 @@ export class NativeOrtSession {
       for (let i = 0; i < data.length; i += 2) {
         offsets.push([Number(data[i]), Number(data[i + 1])]);
       }
-    } else {
-      // Fallback: estimate from token count and text length
-      const tokenCount = encoded.input_ids.dims[encoded.input_ids.dims.length - 1];
-      const charPerToken = Math.ceil(text.length / Math.max(tokenCount, 1));
-      for (let i = 0; i < tokenCount; i++) {
-        const start = i * charPerToken;
-        const end = Math.min((i + 1) * charPerToken, text.length);
-        offsets.push([start, end]);
-      }
+    }
+
+    if (offsets.length > 0) {
+      return offsets;
+    }
+
+    // Fallback: build a uniform character-range estimate.
+    // This is imprecise but keeps late-chunking functional without native
+    // offset support.  The late-chunking pipeline already handles the case
+    // where token ranges map to zero tokens (they are skipped).
+    const tokenCount = encoded.input_ids.dims[encoded.input_ids.dims.length - 1];
+    const charPerToken = Math.ceil(text.length / Math.max(tokenCount, 1));
+    for (let i = 0; i < tokenCount; i++) {
+      const start = i * charPerToken;
+      const end = Math.min((i + 1) * charPerToken, text.length);
+      offsets.push([start, end]);
     }
 
     return offsets;

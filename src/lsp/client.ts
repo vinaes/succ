@@ -18,6 +18,7 @@ import {
   ExitNotification,
   DidOpenTextDocumentNotification,
   DidCloseTextDocumentNotification,
+  DidChangeTextDocumentNotification,
   DefinitionRequest,
   ReferencesRequest,
   HoverRequest,
@@ -68,7 +69,12 @@ export class LspClient {
   private process: ChildProcess | null = null;
   private connection: ProtocolConnection | null = null;
   private initialized = false;
-  private openDocuments = new Set<string>();
+  /** Tracks open documents: URI → document version counter */
+  private openDocuments = new Map<string, number>();
+  /** File watchers for open documents to detect external edits */
+  private fileWatchers = new Map<string, fs.FSWatcher>();
+  /** Debounce timers for file change events (Windows fires duplicates) */
+  private fileChangeTimers = new Map<string, NodeJS.Timeout>();
   private idleTimer: NodeJS.Timeout | null = null;
   private readonly idleTimeoutMs: number;
   private readonly options: LspClientOptions;
@@ -80,6 +86,7 @@ export class LspClient {
 
   /**
    * Start the LSP server process and initialize the connection.
+   * Cleans up spawned process and connection on any failure.
    */
   async start(): Promise<InitializeResult> {
     if (this.initialized) {
@@ -93,6 +100,8 @@ export class LspClient {
     });
 
     if (!this.process.stdout || !this.process.stdin) {
+      // Spawned but streams unavailable — clean up immediately
+      this.cleanup();
       throw new Error('Failed to get stdio streams from LSP server process');
     }
 
@@ -116,64 +125,82 @@ export class LspClient {
     );
     this.connection.listen();
 
-    // Initialize
-    const rootUri = pathToFileURL(this.options.rootPath).toString();
-    const initParams: InitializeParams = {
-      processId: process.pid,
-      rootUri,
-      capabilities: {
-        textDocument: {
-          definition: { dynamicRegistration: false },
-          references: { dynamicRegistration: false },
-          hover: {
-            dynamicRegistration: false,
-            contentFormat: ['plaintext', 'markdown'],
+    // Initialize — clean up resources on any failure
+    try {
+      const rootUri = pathToFileURL(this.options.rootPath).toString();
+      const initParams: InitializeParams = {
+        processId: process.pid,
+        rootUri,
+        capabilities: {
+          textDocument: {
+            definition: { dynamicRegistration: false },
+            references: { dynamicRegistration: false },
+            hover: {
+              dynamicRegistration: false,
+              contentFormat: ['plaintext', 'markdown'],
+            },
+            callHierarchy: { dynamicRegistration: false },
           },
-          callHierarchy: { dynamicRegistration: false },
         },
-      },
-      initializationOptions: this.options.initializationOptions,
-    };
+        initializationOptions: this.options.initializationOptions,
+      };
 
-    const result = await this.connection.sendRequest(InitializeRequest.type, initParams);
+      const result = await this.connection.sendRequest(InitializeRequest.type, initParams);
 
-    // Notify initialized
-    this.connection.sendNotification('initialized', {});
-    this.initialized = true;
-    this.resetIdleTimer();
+      // Notify initialized
+      this.connection.sendNotification('initialized', {});
+      this.initialized = true;
+      this.resetIdleTimer();
 
-    logInfo('lsp-client', `${this.options.command} initialized for ${this.options.rootPath}`);
+      logInfo('lsp-client', `${this.options.command} initialized for ${this.options.rootPath}`);
 
-    return result;
+      return result;
+    } catch (error) {
+      // Clean up the spawned process and connection so nothing leaks
+      this.cleanup();
+      throw error;
+    }
   }
 
   /**
-   * Open a text document in the server.
+   * Open a text document in the server (or re-sync it if disk content changed).
+   *
+   * If the document is already open and unchanged, this is a no-op.
+   * If the document was opened before but the file has since been modified
+   * on disk (detected via mtime tracking in the file watcher), the server
+   * receives a DidChange notification with the updated text.
    */
   async openDocument(filePath: string): Promise<void> {
     if (!this.connection) throw new Error('LSP client not started');
 
     const uri = pathToFileURL(filePath).toString();
-    if (this.openDocuments.has(uri)) return;
+    const existingVersion = this.openDocuments.get(uri);
 
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const languageId = this.detectLanguageId(filePath);
+    if (existingVersion === undefined) {
+      // First open: read from disk and send DidOpen
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const languageId = this.detectLanguageId(filePath);
 
-    this.connection.sendNotification(DidOpenTextDocumentNotification.type, {
-      textDocument: {
-        uri,
-        languageId,
-        version: 1,
-        text: content,
-      },
-    });
+      this.connection.sendNotification(DidOpenTextDocumentNotification.type, {
+        textDocument: {
+          uri,
+          languageId,
+          version: 1,
+          text: content,
+        },
+      });
+      this.openDocuments.set(uri, 1);
 
-    this.openDocuments.add(uri);
+      // Watch for external edits so we can push DidChange on next use
+      this.watchFile(filePath, uri);
+    }
+    // If already open the watcher keeps the version current; nothing to do here.
+
     this.resetIdleTimer();
   }
 
   /**
-   * Close a text document.
+   * Close a text document and stop watching it for changes.
    */
   async closeDocument(filePath: string): Promise<void> {
     if (!this.connection) return;
@@ -186,6 +213,70 @@ export class LspClient {
     });
 
     this.openDocuments.delete(uri);
+    this.unwatchFile(uri);
+  }
+
+  // ============================================================================
+  // File watching — detect external edits while a document is open
+  // ============================================================================
+
+  private watchFile(filePath: string, uri: string): void {
+    try {
+      const watcher = fs.watch(filePath, { persistent: false }, (event) => {
+        if (event === 'change') {
+          // Debounce: Windows (and sometimes macOS) fires duplicate 'change' events.
+          // Coalesce within 100ms to avoid flooding the LSP server.
+          const existing = this.fileChangeTimers.get(uri);
+          if (existing) clearTimeout(existing);
+          this.fileChangeTimers.set(
+            uri,
+            setTimeout(() => {
+              this.fileChangeTimers.delete(uri);
+              this.onFileChanged(filePath, uri);
+            }, 100)
+          );
+        }
+      });
+      this.fileWatchers.set(uri, watcher);
+    } catch {
+      // Non-fatal: if we can't watch, the document just won't auto-refresh
+    }
+  }
+
+  private unwatchFile(uri: string): void {
+    const timer = this.fileChangeTimers.get(uri);
+    if (timer) {
+      clearTimeout(timer);
+      this.fileChangeTimers.delete(uri);
+    }
+    const watcher = this.fileWatchers.get(uri);
+    if (watcher) {
+      watcher.close();
+      this.fileWatchers.delete(uri);
+    }
+  }
+
+  /**
+   * Called when a watched file changes on disk.
+   * Sends DidChange so the server sees the updated content.
+   */
+  private onFileChanged(filePath: string, uri: string): void {
+    if (!this.connection || !this.openDocuments.has(uri)) return;
+
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return; // File may have been deleted; don't crash
+    }
+
+    const nextVersion = (this.openDocuments.get(uri) ?? 1) + 1;
+    this.openDocuments.set(uri, nextVersion);
+
+    this.connection.sendNotification(DidChangeTextDocumentNotification.type, {
+      textDocument: { uri, version: nextVersion },
+      contentChanges: [{ text: content }],
+    });
   }
 
   /**
@@ -266,12 +357,11 @@ export class LspClient {
 
     try {
       // Close all open documents
-      for (const uri of this.openDocuments) {
+      for (const uri of this.openDocuments.keys()) {
         this.connection.sendNotification(DidCloseTextDocumentNotification.type, {
           textDocument: { uri },
         });
       }
-      this.openDocuments.clear();
 
       // Send shutdown request
       await this.connection.sendRequest(ShutdownRequest.type);
@@ -300,6 +390,21 @@ export class LspClient {
   private cleanup(): void {
     this.clearIdleTimer();
     this.initialized = false;
+
+    // Cancel pending file-change debounce timers
+    for (const timer of this.fileChangeTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.fileChangeTimers.clear();
+
+    // Stop all file watchers
+    for (const watcher of this.fileWatchers.values()) {
+      watcher.close();
+    }
+    this.fileWatchers.clear();
+
+    // Clear document tracking so stale state doesn't persist across restarts
+    this.openDocuments.clear();
 
     if (this.connection) {
       this.connection.dispose();

@@ -38,8 +38,8 @@ function filterByPaths<T extends { file_path: string }>(
   excludePaths?: string[]
 ): T[] {
   return results.filter((r) => {
-    // Normalize path separators for consistent matching
-    const filePath = r.file_path.replace(/\\/g, '/');
+    // Strip storage prefix (e.g. "code:") and normalize path separators
+    const filePath = r.file_path.replace(/^[a-z]+:(?=\/)/, '').replace(/\\/g, '/');
 
     // Check include patterns (OR: match any)
     if (includePaths && includePaths.length > 0) {

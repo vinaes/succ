@@ -49,8 +49,8 @@ export function registerReviewTools(server: McpServer) {
       },
     },
     async ({ diff_ref, max_related, max_memories, skip_llm, project_path }) => {
-      await applyProjectPath(project_path);
       try {
+        await applyProjectPath(project_path);
         const pack = await generateReviewContext(diff_ref, {
           maxRelatedSymbols: max_related,
           maxMemories: max_memories,

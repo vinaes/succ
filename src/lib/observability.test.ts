@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { recordLatency, withLatency, getLatencyStats } from './observability.js';
 
 // Mock DB dependencies to avoid real DB connections

@@ -220,20 +220,24 @@ export async function rerank<T extends Rerankable>(
   topK?: number
 ): Promise<T[]> {
   if (results.length === 0) return [];
-  if (results.length === 1) return results;
+
+  // Helper: apply topK slice consistently on every return path.
+  const applyTopK = (arr: T[]): T[] => (topK !== undefined ? arr.slice(0, topK) : arr);
+
+  if (results.length === 1) return applyTopK(results);
 
   const config = getConfig();
   const rerankerConfig = config.llm?.reranker;
 
   // Check if reranking is enabled
   if (rerankerConfig?.enabled === false) {
-    return results;
+    return applyTopK(results);
   }
 
   // Don't rerank if too few results (overhead not worth it)
   const minResults = rerankerConfig?.min_results ?? 3;
   if (results.length < minResults) {
-    return results;
+    return applyTopK(results);
   }
 
   try {
@@ -265,15 +269,14 @@ export async function rerank<T extends Rerankable>(
     reranked.sort((a, b) => b.similarity - a.similarity);
 
     // Return top-K
-    const k = topK ?? results.length;
-    return reranked.slice(0, k);
+    return applyTopK(reranked);
   } catch (error) {
     // Graceful degradation: return original results if reranker fails
     logWarn(
       'reranker',
       `Cross-encoder reranking failed, returning original results: ${error instanceof Error ? error.message : String(error)}`
     );
-    return results;
+    return applyTopK(results);
   }
 }
 

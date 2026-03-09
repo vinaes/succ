@@ -12,10 +12,6 @@ import {
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 
-function makeEntry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
-  return { type: 'assistant', ...overrides };
-}
-
 function makeUserEntry(text: string, position?: number): TranscriptEntry {
   return {
     type: 'user',

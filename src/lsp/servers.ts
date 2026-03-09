@@ -5,6 +5,8 @@
  * Three install strategies: npm, binary download, or runtime check.
  */
 
+import * as fs from 'fs';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -150,28 +152,63 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
 
 /**
  * Detect which LSP servers should be used for a project.
- * Checks for root marker files to determine project languages.
+ * Checks for root marker files (exact names) and glob-style markers (e.g. "*.csproj").
+ *
+ * @param rootPath - Absolute path to the project root directory
+ * @param existsSync - Predicate to test whether a path exists (injectable for tests)
+ * @param readdirSync - Read a directory and return its entry names (injectable for tests)
  */
 export function detectProjectLanguages(
   rootPath: string,
-  existsSync: (path: string) => boolean
+  existsSync: (path: string) => boolean,
+  readdirSync: (path: string) => string[] = defaultReaddirSync
 ): string[] {
   const detected: string[] = [];
 
   for (const [key, config] of Object.entries(LSP_SERVERS)) {
+    let found = false;
     for (const marker of config.rootMarkers) {
-      // Handle glob-like patterns (*.csproj)
-      if (marker.startsWith('*')) {
-        // Skip glob patterns in simple check — handled at runtime
-        continue;
+      if (found) break;
+
+      if (marker.includes('*')) {
+        // Glob marker — check whether any file in rootPath matches the pattern.
+        // We only support simple "*.ext" wildcards at the root level.
+        const entries = readdirSync(rootPath);
+        const pattern = globToRegExp(marker);
+        if (entries.some((name) => pattern.test(name))) {
+          found = true;
+        }
+      } else {
+        // Exact marker file name
+        if (existsSync(`${rootPath}/${marker}`)) {
+          found = true;
+        }
       }
-      const markerPath = `${rootPath}/${marker}`;
-      if (existsSync(markerPath)) {
-        detected.push(key);
-        break;
-      }
+    }
+    if (found) {
+      detected.push(key);
     }
   }
 
   return detected;
+}
+
+/** Default readdirSync that returns an empty array on error. */
+function defaultReaddirSync(dirPath: string): string[] {
+  try {
+    return fs.readdirSync(dirPath) as string[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Convert a simple glob pattern (e.g. "*.csproj") to a RegExp.
+ * Only handles leading/trailing "*" wildcards at the root level.
+ */
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters
+    .replace(/\*/g, '.*'); // convert * to .*
+  return new RegExp(`^${escaped}$`);
 }
