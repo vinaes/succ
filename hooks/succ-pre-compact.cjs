@@ -243,8 +243,8 @@ process.stdin.on('end', async () => {
       log(succDir, `Daemon notify failed: ${e.message || e}`);
     }
 
-    // Exit successfully (PreCompact cannot block compaction)
-    process.exit(0);
+    // Allow event loop to drain (pending fetch promises) before exiting
+    process.exitCode = 0;
   } catch (err) {
     // Fail-open: never block compaction
     try {
@@ -256,6 +256,6 @@ process.stdin.on('end', async () => {
     } catch {
       /* last-resort catch — logging itself failed, nothing we can do */
     }
-    process.exit(0);
+    process.exitCode = 0;
   }
 });

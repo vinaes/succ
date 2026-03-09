@@ -135,11 +135,13 @@ export function extractChangedSymbols(diff: ParsedDiff): Array<{ file: string; s
 
     for (const chunk of file.chunks) {
       // The @@ header often contains function/class context after the second @@.
-      // Use a possessive-style pattern that avoids catastrophic backtracking:
-      // match exactly two @@ delimiters with non-@ content between them.
-      const match = chunk.header.match(/^@@[^@]*@@\s+(.{1,200})/);
-      if (match) {
-        const symbolName = match[1].trim();
+      // Avoid regex backtracking — use indexOf to find the closing @@.
+      const headerStr = chunk.header;
+      const closingAt = headerStr.indexOf('@@', 2);
+      const symbolContext =
+        closingAt >= 0 ? headerStr.slice(closingAt + 2, closingAt + 202).trimStart() : '';
+      if (symbolContext.length > 0) {
+        const symbolName = symbolContext.trim();
         const key = `${filePath}:${symbolName}`;
         if (!seen.has(key) && symbolName.length > 0) {
           seen.add(key);

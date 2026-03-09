@@ -113,9 +113,12 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
     },
 
     'POST /api/hooks/pre-compact': async (body) => {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return { success: false, error: 'invalid pre-compact payload' };
+      }
       const stats = body as Record<string, unknown>;
       // Payload size guard — pre-compact stats should be small
-      const payloadSize = JSON.stringify(stats).length;
+      const payloadSize = Buffer.byteLength(JSON.stringify(stats), 'utf8');
       if (payloadSize > 64_000) {
         ctx.log(`[pre-compact] Rejected oversized payload: ${payloadSize} bytes`);
         return { success: false, error: 'payload too large' };
