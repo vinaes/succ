@@ -99,6 +99,11 @@ export class StorageDispatcherBase {
     throw new Error('StorageDispatcher mixin method _filterOutPinned not initialized');
   }
 
+  // Qdrant circuit breaker — disable after consecutive failures to stop log spam
+  private static readonly QDRANT_CIRCUIT_THRESHOLD = 3;
+  private _qdrantConsecutiveFailures = 0;
+  private _qdrantCircuitOpen = false;
+
   // Learning delta auto-tracking counters
   protected _sessionCounters = {
     memoriesCreated: 0,
@@ -122,11 +127,28 @@ export class StorageDispatcherBase {
     this.qdrantStore = init.qdrant;
   }
 
-  /** Log Qdrant failure and increment counter. Qdrant is optional — errors never throw. */
+  /** Reset consecutive failure counter on successful Qdrant operation. */
+  protected _resetQdrantFailures(): void {
+    this._qdrantConsecutiveFailures = 0;
+  }
+
+  /** Log Qdrant failure, increment counter, open circuit breaker after threshold. */
   protected _warnQdrantFailure(operation: string, error: unknown): void {
     this._sessionCounters.qdrantSyncFailures++;
+    this._qdrantConsecutiveFailures++;
     const msg = error instanceof Error ? error.message : String(error);
-    logError('storage', `Qdrant ${operation} failed: ${msg}`);
+    logError('storage', `Qdrant ${operation}: ${msg}`);
+
+    if (
+      !this._qdrantCircuitOpen &&
+      this._qdrantConsecutiveFailures >= StorageDispatcherBase.QDRANT_CIRCUIT_THRESHOLD
+    ) {
+      this._qdrantCircuitOpen = true;
+      logError(
+        'storage',
+        `Qdrant circuit breaker opened after ${this._qdrantConsecutiveFailures} consecutive failures — disabled for this session`
+      );
+    }
   }
 
   /** Get current session counters (non-destructive read) */
@@ -198,9 +220,9 @@ export class StorageDispatcherBase {
     return null;
   }
 
-  /** Check if Qdrant is configured and available */
+  /** Check if Qdrant is configured, available, and circuit breaker is closed */
   protected hasQdrant(): boolean {
-    return this.vectorBackend === 'qdrant' && this.qdrant !== null;
+    return this.vectorBackend === 'qdrant' && this.qdrant !== null && !this._qdrantCircuitOpen;
   }
 
   getBackendInfo(): {

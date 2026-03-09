@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { ensureDaemon } = require('./core/daemon-boot.cjs');
+const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
 
 // Logging helper - writes to .succ/.tmp/hooks.log
 function log(succDir, message) {
@@ -58,11 +59,15 @@ process.stdin.on('end', async () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    const succDir = path.join(projectDir, '.succ');
+    let succDir = path.join(projectDir, '.succ');
 
-    // Skip if succ is not initialized in this project
+    // Worktree-aware resolution: if .succ/ missing, check if we're in a git worktree
     if (!fs.existsSync(succDir)) {
-      process.exit(0);
+      const resolved = resolveWorktreeSuccDir(projectDir);
+      if (!resolved) {
+        process.exit(0); // Not a worktree and no .succ/ — skip
+      }
+      succDir = resolved;
     }
 
     // Load config settings (project config overrides global, but both are checked)

@@ -140,6 +140,12 @@ const SuccConfigSchema = z
  * never throws — returns the (possibly corrected) config.
  */
 export function validateConfig(raw: Record<string, unknown>): Record<string, unknown> {
+  // Normalize common aliases before Zod validation
+  const storage = raw.storage as Record<string, unknown> | undefined;
+  if (storage?.backend === 'postgres') {
+    storage.backend = 'postgresql';
+  }
+
   const result = SuccConfigSchema.safeParse(raw);
 
   if (!result.success) {

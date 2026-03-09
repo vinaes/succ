@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
+const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -34,13 +35,18 @@ process.stdin.on('end', async () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    // Skip if succ is not initialized in this project
-    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
-      process.exit(0);
+    // Skip if succ is not initialized (worktree-aware: resolve and capture path)
+    let succDir = path.join(projectDir, '.succ');
+    if (!fs.existsSync(succDir)) {
+      const resolved = resolveWorktreeSuccDir(projectDir);
+      if (!resolved) {
+        process.exit(0);
+      }
+      succDir = resolved;
     }
 
     // Read daemon port
-    const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
+    const portFile = path.join(succDir, '.tmp', 'daemon.port');
     let daemonPort = null;
     try {
       if (fs.existsSync(portFile)) {

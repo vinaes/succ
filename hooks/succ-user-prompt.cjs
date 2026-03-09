@@ -13,6 +13,7 @@
 const path = require('path');
 const fs = require('fs');
 const adapter = require('./core/adapter.cjs');
+const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
 
 // Logging helper - writes to .succ/.tmp/hooks.log
 function log(succDir, message) {
@@ -50,12 +51,17 @@ process.stdin.on('end', async () => {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
     }
 
-    // Skip if succ is not initialized in this project
-    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
-      process.exit(0);
+    // Skip if succ is not initialized (worktree-aware: resolve and capture path)
+    let succDir = path.join(projectDir, '.succ');
+    if (!fs.existsSync(succDir)) {
+      const resolved = resolveWorktreeSuccDir(projectDir);
+      if (!resolved) {
+        process.exit(0);
+      }
+      succDir = resolved;
     }
 
-    const tmpDir = path.join(projectDir, '.succ', '.tmp');
+    const tmpDir = path.join(succDir, '.tmp');
 
     // Get session_id from transcript_path (unique per session)
     const transcriptPath = hookInput.transcript_path || '';
@@ -75,7 +81,7 @@ process.stdin.on('end', async () => {
     // Check if this is a service session (e.g., reflection subagent)
     const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
 
-    const succDir = path.join(projectDir, '.succ');
+    // succDir already resolved above (worktree-aware)
 
     // Check for compact-pending fallback
     // This handles the case where SessionStart hook output was lost after /compact

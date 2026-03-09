@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { resolveMainRepoRoot } = require('./worktree.cjs');
 
 /**
  * Read daemon port from .succ/.tmp/daemon.port.
@@ -58,7 +59,14 @@ async function checkDaemon(port) {
  * @returns {boolean} Whether spawn was attempted
  */
 function startDaemon(projectDir, logFn) {
-  const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+  let servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+  // Worktree fallback: dist/ lives in the main repo
+  if (!fs.existsSync(servicePath)) {
+    const mainRepo = resolveMainRepoRoot(projectDir);
+    if (mainRepo) {
+      servicePath = path.join(mainRepo, 'dist', 'daemon', 'service.js');
+    }
+  }
   if (!fs.existsSync(servicePath)) {
     if (logFn) logFn('[daemon] service.js not found: ' + servicePath);
     return false;
@@ -95,7 +103,13 @@ function startDaemon(projectDir, logFn) {
  * @returns {Promise<{port: number|null}>} Daemon port or null if unavailable
  */
 async function ensureDaemon(projectDir, logFn) {
-  const succDir = path.join(projectDir, '.succ');
+  let succDir = path.join(projectDir, '.succ');
+  // Worktree fallback: .succ/ may be a junction or in the main repo
+  if (!fs.existsSync(succDir)) {
+    const { resolveSuccDir } = require('./worktree.cjs');
+    const resolved = resolveSuccDir(projectDir);
+    if (resolved) succDir = resolved;
+  }
 
   let port = getDaemonPort(succDir);
   if (port && await checkDaemon(port)) {

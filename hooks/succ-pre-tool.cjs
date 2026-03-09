@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
+const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
 
@@ -528,7 +529,7 @@ function loadConfig(projectDir) {
   };
 
   const configPaths = [
-    path.join(projectDir, '.succ', 'config.json'),
+    path.join(succDir, 'config.json'),
     path.join(require('os').homedir(), '.succ', 'config.json'),
   ];
 
@@ -733,7 +734,7 @@ MEDIUM and below — commit is OK, mention findings in summary.
 // ─── Daemon helpers ──────────────────────────────────────────────────
 
 function getDaemonPort(projectDir) {
-  const portFile = path.join(projectDir, '.succ', '.tmp', 'daemon.port');
+  const portFile = path.join(succDir, '.tmp', 'daemon.port');
   if (!fs.existsSync(portFile)) return null;
   const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
   return port && !isNaN(port) ? port : null;
@@ -810,9 +811,14 @@ process.stdin.on('end', async () => {
       process.exit(0);
     }
 
-    // Skip if succ is not initialized
-    if (!fs.existsSync(path.join(projectDir, '.succ'))) {
-      process.exit(0);
+    // Skip if succ is not initialized (worktree-aware: resolve and capture path)
+    let succDir = path.join(projectDir, '.succ');
+    if (!fs.existsSync(succDir)) {
+      const resolved = resolveWorktreeSuccDir(projectDir);
+      if (!resolved) {
+        process.exit(0);
+      }
+      succDir = resolved;
     }
 
     const toolName = hookInput.tool_name || '';
