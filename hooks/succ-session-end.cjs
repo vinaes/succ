@@ -19,9 +19,12 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
     process.exit(0);
   }
 
-  // Get session info
+  // Get session info — fall back to hookInput.session_id when transcript_path is absent
+  // (session-start registers a synthetic session_id in that case)
   const transcriptPath = hookInput.transcript_path || '';
-  const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
+  const sessionId = transcriptPath
+    ? path.basename(transcriptPath, '.jsonl')
+    : hookInput.session_id || null;
 
   if (!sessionId) {
     process.exit(0);

@@ -17,9 +17,12 @@ adapter.runHook('stop-reflection', async ({ hookInput, succDir }) => {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
 
-  // Get session_id from transcript_path (unique per session)
+  // Get session_id — fall back to hookInput.session_id when transcript_path is absent
+  // (session-start registers a synthetic session_id in that case)
   const transcriptPath = hookInput.transcript_path || '';
-  const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
+  const sessionId = transcriptPath
+    ? path.basename(transcriptPath, '.jsonl')
+    : hookInput.session_id || null;
 
   const daemonPort = getDaemonPort(succDir);
 
