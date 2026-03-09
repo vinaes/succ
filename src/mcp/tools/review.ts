@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { generateReviewContext } from '../../lib/review/context-pack.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { closeDb } from '../../lib/storage/index.js';
+import { logWarn } from '../../lib/fault-logger.js';
 
 export function registerReviewTools(server: McpServer) {
   server.registerTool(
@@ -129,6 +130,9 @@ export function registerReviewTools(server: McpServer) {
           ],
         };
       } catch (error: any) {
+        logWarn('review', 'Review context generation failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return {
           content: [
             {

@@ -9,7 +9,7 @@
  * 5. callLLM → structured review context pack
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { parseDiffText, extractChangedSymbols, summarizeDiff } from '../diff-parser.js';
 import type { ParsedDiff } from '../diff-parser.js';
 import { getEmbedding } from '../embeddings.js';
@@ -148,11 +148,11 @@ export async function generateReviewContext(
 
 function getDiff(diffRef: string, projectRoot: string): string {
   try {
-    // Sanitize diffRef to prevent command injection
-    if (!/^[\w.~^/\-@{}]+$/.test(diffRef)) {
+    // Validate diffRef: allow refs, flags like --cached/--staged, ranges
+    if (!/^[\w.~^/\-@{}]+$/.test(diffRef) && !/^--(?:cached|staged)$/.test(diffRef)) {
       throw new Error(`Invalid diff reference: ${diffRef}`);
     }
-    return execSync(`git diff ${diffRef}`, {
+    return execFileSync('git', ['diff', diffRef], {
       cwd: projectRoot,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024, // 10MB
@@ -279,7 +279,7 @@ async function getRecentHistory(
 
   for (const filePath of files) {
     try {
-      const log = execSync(`git log --oneline -5 -- "${filePath}"`, {
+      const log = execFileSync('git', ['log', '--oneline', '-5', '--', filePath], {
         cwd: projectRoot,
         encoding: 'utf-8',
         timeout: 10000,
@@ -291,8 +291,10 @@ async function getRecentHistory(
           commits: log.split('\n').filter(Boolean),
         });
       }
-    } catch {
-      // File might not exist in git history yet
+    } catch (error) {
+      logWarn('review', `Failed to get git history for ${filePath}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

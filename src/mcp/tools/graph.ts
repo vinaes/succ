@@ -26,6 +26,7 @@ import {
   computeBetweennessCentrality,
   detectLouvainCommunities,
 } from '../../lib/graph/graphology-bridge.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 
 export function registerGraphTools(server: McpServer) {
@@ -683,6 +684,9 @@ ${relationStats}`;
             };
         }
       } catch (error: any) {
+        logWarn('graph', `Graph tool error in action=${action}`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return {
           content: [
             {

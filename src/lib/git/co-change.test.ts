@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// Mock execSync before importing module
+// Mock execFileSync before importing module
 vi.mock('child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 vi.mock('../config.js', () => ({
@@ -14,10 +14,10 @@ vi.mock('../fault-logger.js', () => ({
   logWarn: vi.fn(),
 }));
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { analyzeCoChanges, getCoChangesForFile } from './co-change.js';
 
-const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 
 describe('co-change', () => {
   describe('analyzeCoChanges', () => {
@@ -38,7 +38,7 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = analyzeCoChanges(200, 2);
 
@@ -60,7 +60,7 @@ describe('co-change', () => {
       const files = Array.from({ length: 60 }, (_, i) => `file${i}.ts`).join('\n');
       const gitLog = `---COMMIT---\n${files}\n---COMMIT---\nsrc/a.ts\nsrc/b.ts\n`;
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = analyzeCoChanges(200, 1);
       // Should skip the 60-file commit
@@ -68,7 +68,7 @@ describe('co-change', () => {
     });
 
     it('should return empty on git failure', () => {
-      mockExecSync.mockImplementation(() => {
+      mockExecFileSync.mockImplementation(() => {
         throw new Error('not a git repository');
       });
 
@@ -89,7 +89,7 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = analyzeCoChanges(200, 2);
       // a+b and c+d only appear once each, so no pairs at minCooccurrence=2
@@ -112,7 +112,7 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = analyzeCoChanges(200, 2);
       expect(result.pairs).toHaveLength(1);
@@ -138,7 +138,7 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = getCoChangesForFile('src/lib/auth.ts', 200, 2, 10);
       expect(result.file).toBe('src/lib/auth.ts');
@@ -158,7 +158,7 @@ describe('co-change', () => {
     it('should return empty for unknown file', () => {
       const gitLog = ['---COMMIT---', 'src/a.ts', 'src/b.ts', ''].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = getCoChangesForFile('src/unknown.ts', 200, 2, 10);
       expect(result.cochanges).toHaveLength(0);
@@ -180,7 +180,7 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecSync.mockReturnValue(gitLog);
+      mockExecFileSync.mockReturnValue(gitLog);
 
       const result = getCoChangesForFile('src/main.ts', 200, 2, 1);
       expect(result.cochanges).toHaveLength(1);

@@ -6,7 +6,7 @@
  * co-change pairs weighted by recency.
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { getProjectRoot } from '../config.js';
 import { logInfo, logWarn } from '../fault-logger.js';
 
@@ -56,12 +56,21 @@ export function analyzeCoChanges(
   // Get commit file lists
   let log: string;
   try {
-    log = execSync(`git log --name-only --pretty=format:"---COMMIT---" -${maxCommits}`, {
-      cwd: projectRoot,
-      encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 30000,
-    });
+    log = execFileSync(
+      'git',
+      [
+        'log',
+        '--name-only',
+        '--pretty=format:---COMMIT---',
+        `-${Math.floor(Math.abs(maxCommits))}`,
+      ],
+      {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 30000,
+      }
+    );
   } catch (error) {
     logWarn('co-change', 'git log failed', {
       error: error instanceof Error ? error.message : String(error),
