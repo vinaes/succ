@@ -9,13 +9,16 @@
  * 5. callLLM → structured review context pack
  */
 
-import { execFileSync } from 'child_process';
+import { execFileSync, execFile as execFileCb } from 'child_process';
+import { promisify } from 'util';
 import { parseDiffText, extractChangedSymbols, summarizeDiff } from '../diff-parser.js';
 import type { ParsedDiff } from '../diff-parser.js';
 import { getEmbedding } from '../embeddings.js';
 import { logWarn } from '../fault-logger.js';
 import { callLLM } from '../llm.js';
 import { getProjectRoot } from '../config.js';
+
+const execFileAsync = promisify(execFileCb);
 
 // ============================================================================
 // Types
@@ -151,8 +154,12 @@ export async function generateReviewContext(
 
 function getDiff(diffRef: string, projectRoot: string): { text: string; error?: string } {
   try {
-    // Validate diffRef: allow refs, flags like --cached/--staged, ranges
-    if (!/^[\w.~^/\-@{}]+$/.test(diffRef) && !/^--(?:cached|staged)$/.test(diffRef)) {
+    // Validate diffRef: allow --cached/--staged, or refs that don't start with -
+    if (/^--(?:cached|staged)$/.test(diffRef)) {
+      // Allowed flags
+    } else if (diffRef.startsWith('-')) {
+      throw new Error(`Invalid diff reference: ${diffRef}`);
+    } else if (!/^[\w.~^/\-@{}]+$/.test(diffRef)) {
       throw new Error(`Invalid diff reference: ${diffRef}`);
     }
     const text = execFileSync('git', ['diff', diffRef], {
@@ -272,30 +279,32 @@ async function getRecentHistory(
   parsed: ParsedDiff,
   projectRoot: string
 ): Promise<Array<{ file: string; commits: string[] }>> {
-  const results: Array<{ file: string; commits: string[] }> = [];
-
   const files = parsed.files
     .map((f) => (f.to !== '/dev/null' ? f.to : f.from))
     .filter((f) => f !== '/dev/null')
     .slice(0, 10);
 
-  for (const filePath of files) {
-    try {
-      const log = execFileSync('git', ['log', '--oneline', '-5', '--', filePath], {
+  const settled = await Promise.allSettled(
+    files.map(async (filePath) => {
+      const { stdout } = await execFileAsync('git', ['log', '--oneline', '-5', '--', filePath], {
         cwd: projectRoot,
         encoding: 'utf-8',
         timeout: 10000,
-      }).trim();
+      });
+      const log = stdout.trim();
+      if (!log) return null;
+      return { file: filePath, commits: log.split('\n').filter(Boolean) };
+    })
+  );
 
-      if (log) {
-        results.push({
-          file: filePath,
-          commits: log.split('\n').filter(Boolean),
-        });
-      }
-    } catch (error) {
-      logWarn('review', `Failed to get git history for ${filePath}`, {
-        error: error instanceof Error ? error.message : String(error),
+  const results: Array<{ file: string; commits: string[] }> = [];
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled' && outcome.value) {
+      results.push(outcome.value);
+    } else if (outcome.status === 'rejected') {
+      logWarn('review', `Failed to get git history for ${files[i]}`, {
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
       });
     }
   }

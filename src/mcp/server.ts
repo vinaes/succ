@@ -15,7 +15,7 @@
  * - succ_web: Web search (actions: quick/search/deep/history)
  * - succ_debug: Structured debugging (12 actions)
  *
- * Tool profiles: auto (detect by client), core (8), standard (12), full (14)
+ * Tool profiles: auto (detect by client), core (8), standard (12), full (15)
  * Configure via: succ_config(action="set", key="tool_profile", value="auto|core|standard|full")
  * Auto-profile: Claude clients → full, other clients → standard
  */
@@ -110,7 +110,7 @@ function applyToolProfile(
               text:
                 `Tool "${name}" is not available in "${profile}" profile.\n\n` +
                 `To enable:\n  succ_config(action="set", key="tool_profile", value="${requiredProfile}")\n\n` +
-                `Available profiles: core (8 tools), standard (12 tools), full (14 tools)`,
+                `Available profiles: core (8 tools), standard (12 tools), full (15 tools)`,
             },
           ],
           isError: true,

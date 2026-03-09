@@ -164,6 +164,12 @@ describe('late-chunking', () => {
         const mag = Math.sqrt(chunk.embedding.reduce((sum, v) => sum + v * v, 0));
         expect(mag).toBeCloseTo(1.0, 1);
       }
+
+      // Chunks from different code spans should produce different embeddings
+      const emb0 = result.chunks[0].embedding;
+      const emb1 = result.chunks[1].embedding;
+      const identical = emb0.every((v, i) => v === emb1[i]);
+      expect(identical).toBe(false);
     });
 
     it('should handle embedRaw failure gracefully', async () => {

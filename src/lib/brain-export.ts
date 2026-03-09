@@ -7,8 +7,22 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { getSuccDir } from './config.js';
 import { logInfo, logWarn } from './fault-logger.js';
+
+const require = createRequire(import.meta.url);
+let _pkgVersion: string | undefined;
+function getPackageVersion(): string {
+  if (_pkgVersion) return _pkgVersion;
+  try {
+    const pkg = require('../../package.json') as { version: string };
+    _pkgVersion = pkg.version;
+  } catch {
+    _pkgVersion = '0.0.0';
+  }
+  return _pkgVersion;
+}
 
 // ============================================================================
 // Types
@@ -356,7 +370,7 @@ function createSnapshot(docs: BrainDoc[]): BrainSnapshot {
   return {
     exportedAt: new Date().toISOString(),
     projectRoot: process.cwd(),
-    version: '1.4.28',
+    version: getPackageVersion(),
     documents: docs,
     stats: {
       totalDocuments: docs.length,

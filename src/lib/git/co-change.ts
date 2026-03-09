@@ -6,9 +6,12 @@
  * co-change pairs weighted by recency.
  */
 
-import { execFileSync } from 'child_process';
+import { execFile as execFileCb } from 'child_process';
+import { promisify } from 'util';
 import { getProjectRoot } from '../config.js';
 import { logInfo, logWarn } from '../fault-logger.js';
+
+const execFile = promisify(execFileCb);
 
 // ============================================================================
 // Types
@@ -47,16 +50,16 @@ export interface CoChangeForFile {
  * @param maxCommits - Number of recent commits to analyze (default: 200)
  * @param minCooccurrence - Minimum co-change count to include (default: 2)
  */
-export function analyzeCoChanges(
+export async function analyzeCoChanges(
   maxCommits: number = 200,
   minCooccurrence: number = 2
-): CoChangeResult {
+): Promise<CoChangeResult> {
   const projectRoot = getProjectRoot();
 
   // Get commit file lists
   let log: string;
   try {
-    log = execFileSync(
+    const { stdout } = await execFile(
       'git',
       [
         'log',
@@ -71,6 +74,7 @@ export function analyzeCoChanges(
         timeout: 30000,
       }
     );
+    log = stdout;
   } catch (error) {
     logWarn('co-change', 'git log failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -133,13 +137,13 @@ export function analyzeCoChanges(
 /**
  * Get co-changing files for a specific file.
  */
-export function getCoChangesForFile(
+export async function getCoChangesForFile(
   filePath: string,
   maxCommits: number = 200,
   minCooccurrence: number = 2,
   limit: number = 10
-): CoChangeForFile {
-  const result = analyzeCoChanges(maxCommits, minCooccurrence);
+): Promise<CoChangeForFile> {
+  const result = await analyzeCoChanges(maxCommits, minCooccurrence);
 
   const cochanges: Array<{ path: string; count: number; score: number }> = [];
 

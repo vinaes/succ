@@ -586,7 +586,7 @@ ${relationStats}`;
               await import('../../lib/git/co-change.js');
 
             if (file_path) {
-              const result = getCoChangesForFile(file_path);
+              const result = await getCoChangesForFile(file_path);
               if (result.cochanges.length === 0) {
                 return {
                   content: [
@@ -612,7 +612,7 @@ ${relationStats}`;
             }
 
             // No file_path — show overall top co-change pairs
-            const result = analyzeCoChanges();
+            const result = await analyzeCoChanges();
             const topPairs = result.pairs.slice(0, 15);
             const lines = topPairs.map(
               (p) => `  ${p.fileA} ↔ ${p.fileB} (${p.count} times, score: ${p.score.toFixed(2)})`

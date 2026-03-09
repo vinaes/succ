@@ -186,7 +186,8 @@ describe('graphology-bridge', () => {
     it('should detect communities', async () => {
       setupMockGraph();
       const result = await detectLouvainCommunities();
-      expect(result.communities.length).toBeGreaterThanOrEqual(0);
+      expect(result.communities).toBeDefined();
+      expect(Array.isArray(result.communities)).toBe(true);
       // Modularity should be a number
       expect(typeof result.modularity).toBe('number');
     });

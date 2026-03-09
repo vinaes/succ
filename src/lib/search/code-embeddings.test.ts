@@ -66,9 +66,9 @@ describe('code-specific embeddings', () => {
       expect(getModelMaxLength('Xenova/bge-base-en-v1.5')).toBe(512);
     });
 
-    it('should return 128 for unknown models (safe default)', () => {
-      expect(getModelMaxLength('Xenova/all-MiniLM-L6-v2')).toBe(128);
-      expect(getModelMaxLength('unknown/model')).toBe(128);
+    it('should return 512 for unknown models (safe default)', () => {
+      expect(getModelMaxLength('Xenova/all-MiniLM-L6-v2')).toBe(512);
+      expect(getModelMaxLength('unknown/model')).toBe(512);
     });
   });
 });

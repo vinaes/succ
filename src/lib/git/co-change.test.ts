@@ -1,9 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock execFileSync before importing module
+// Mock child_process.execFile — vi.mock factory is hoisted, so we can't reference
+// outer variables. Instead, mock the whole module and set up behavior per-test via vi.mocked.
 vi.mock('child_process', () => ({
-  execFileSync: vi.fn(),
+  execFile: vi.fn(),
 }));
+
+// Mock util.promisify to return an async wrapper around our mock execFile
+vi.mock('util', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('util')>();
+  return {
+    ...actual,
+    promisify: (fn: any) =>
+      async (...args: any[]) => fn(...args),
+  };
+});
 
 vi.mock('../config.js', () => ({
   getProjectRoot: vi.fn(() => '/test/project'),
@@ -14,15 +25,24 @@ vi.mock('../fault-logger.js', () => ({
   logWarn: vi.fn(),
 }));
 
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
 import { analyzeCoChanges, getCoChangesForFile } from './co-change.js';
 
-const mockExecFileSync = vi.mocked(execFileSync);
+const mockExecFile = vi.mocked(execFile);
+
+function mockGitLog(gitLog: string): void {
+  // promisify wraps execFile to return a promise, and our mock promisify
+  // just calls the fn directly, so we mock execFile to resolve with { stdout }
+  (mockExecFile as any).mockResolvedValue({ stdout: gitLog, stderr: '' });
+}
 
 describe('co-change', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe('analyzeCoChanges', () => {
-    it('should parse commit log and find co-change pairs', () => {
-      // Simulate git log with 3 commits
+    it('should parse commit log and find co-change pairs', async () => {
       const gitLog = [
         '---COMMIT---',
         'src/lib/auth.ts',
@@ -38,12 +58,11 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = analyzeCoChanges(200, 2);
+      const result = await analyzeCoChanges(200, 2);
 
       expect(result.totalCommits).toBe(3);
-      // auth + config appear together twice → should be in pairs
       expect(result.pairs.length).toBeGreaterThanOrEqual(1);
 
       const authConfig = result.pairs.find(
@@ -56,28 +75,25 @@ describe('co-change', () => {
       expect(authConfig!.score).toBeGreaterThan(0);
     });
 
-    it('should skip large commits (>50 files)', () => {
+    it('should skip large commits (>50 files)', async () => {
       const files = Array.from({ length: 60 }, (_, i) => `file${i}.ts`).join('\n');
       const gitLog = `---COMMIT---\n${files}\n---COMMIT---\nsrc/a.ts\nsrc/b.ts\n`;
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = analyzeCoChanges(200, 1);
-      // Should skip the 60-file commit
+      const result = await analyzeCoChanges(200, 1);
       expect(result.totalCommits).toBe(1);
     });
 
-    it('should return empty on git failure', () => {
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error('not a git repository');
-      });
+    it('should return empty on git failure', async () => {
+      (mockExecFile as any).mockRejectedValue(new Error('not a git repository'));
 
-      const result = analyzeCoChanges();
+      const result = await analyzeCoChanges();
       expect(result.pairs).toEqual([]);
       expect(result.totalCommits).toBe(0);
     });
 
-    it('should apply minCooccurrence filter', () => {
+    it('should apply minCooccurrence filter', async () => {
       const gitLog = [
         '---COMMIT---',
         'src/a.ts',
@@ -89,15 +105,13 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = analyzeCoChanges(200, 2);
-      // a+b and c+d only appear once each, so no pairs at minCooccurrence=2
+      const result = await analyzeCoChanges(200, 2);
       expect(result.pairs).toHaveLength(0);
     });
 
-    it('should weight recent commits higher', () => {
-      // First commit (most recent) and last commit both have same pair
+    it('should weight recent commits higher', async () => {
       const gitLog = [
         '---COMMIT---',
         'src/a.ts',
@@ -112,16 +126,20 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = analyzeCoChanges(200, 2);
+      const result = await analyzeCoChanges(200, 2);
       expect(result.pairs).toHaveLength(1);
-      expect(result.pairs[0].recencyWeight).toBeGreaterThan(0);
+      // Recency weight is the average of two commits: one recent (high weight) and one old (low weight)
+      // For 3 commits: commit 0 → weight 1.0, commit 2 → weight ~0.4
+      // Average should be between 0.4 and 1.0
+      expect(result.pairs[0].recencyWeight).toBeGreaterThan(0.4);
+      expect(result.pairs[0].recencyWeight).toBeLessThanOrEqual(1.0);
     });
   });
 
   describe('getCoChangesForFile', () => {
-    it('should return co-changing files for a specific file', () => {
+    it('should return co-changing files for a specific file', async () => {
       const gitLog = [
         '---COMMIT---',
         'src/lib/auth.ts',
@@ -138,33 +156,31 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = getCoChangesForFile('src/lib/auth.ts', 200, 2, 10);
+      const result = await getCoChangesForFile('src/lib/auth.ts', 200, 2, 10);
       expect(result.file).toBe('src/lib/auth.ts');
       expect(result.cochanges.length).toBeGreaterThanOrEqual(1);
 
-      // config.ts changed with auth.ts twice
       const config = result.cochanges.find((c) => c.path === 'src/lib/config.ts');
       expect(config).toBeDefined();
       expect(config!.count).toBe(2);
 
-      // storage.ts also changed with auth.ts twice
       const storage = result.cochanges.find((c) => c.path === 'src/lib/storage.ts');
       expect(storage).toBeDefined();
       expect(storage!.count).toBe(2);
     });
 
-    it('should return empty for unknown file', () => {
+    it('should return empty for unknown file', async () => {
       const gitLog = ['---COMMIT---', 'src/a.ts', 'src/b.ts', ''].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = getCoChangesForFile('src/unknown.ts', 200, 2, 10);
+      const result = await getCoChangesForFile('src/unknown.ts', 200, 2, 10);
       expect(result.cochanges).toHaveLength(0);
     });
 
-    it('should respect limit parameter', () => {
+    it('should respect limit parameter', async () => {
       const gitLog = [
         '---COMMIT---',
         'src/main.ts',
@@ -180,9 +196,9 @@ describe('co-change', () => {
         '',
       ].join('\n');
 
-      mockExecFileSync.mockReturnValue(gitLog);
+      mockGitLog(gitLog);
 
-      const result = getCoChangesForFile('src/main.ts', 200, 2, 1);
+      const result = await getCoChangesForFile('src/main.ts', 200, 2, 1);
       expect(result.cochanges).toHaveLength(1);
     });
   });

@@ -29,6 +29,7 @@ import type {
   WebSearchHistoryRecord,
   WebSearchHistoryFilter,
   WebSearchHistorySummary,
+  SourceType,
 } from '../types.js';
 
 /**
@@ -210,7 +211,7 @@ export interface StorageBackend {
     validFrom: string | undefined,
     validUntil: string | undefined,
     confidence?: number,
-    sourceType?: string
+    sourceType?: SourceType
   ): number;
 
   /**

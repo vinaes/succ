@@ -81,6 +81,108 @@ describe('reranker', () => {
       expect(result).toEqual(input);
     });
 
+    it('should rerank results when model loads successfully', async () => {
+      // Mock a successful cross-encoder session with fresh module state
+      vi.resetModules();
+
+      const seqLen = 4;
+      const batchSize = 3;
+
+      vi.doMock('./config.js', () => ({
+        getConfig: vi.fn(() => ({
+          llm: {
+            reranker: {
+              enabled: true,
+              weight: 0.7,
+              min_results: 3,
+              max_doc_chars: 1000,
+            },
+          },
+          gpu_enabled: false,
+        })),
+      }));
+
+      // Mock the tokenizer — must return arrays matching scoreBatch expectations:
+      // encoded.input_ids[0].length is used for seqLen when no .dims property
+      const mockTokenizer = () => ({
+        input_ids: Array.from({ length: batchSize }, () =>
+          Array.from({ length: seqLen }, (_, i) => i)
+        ),
+        attention_mask: Array.from({ length: batchSize }, () =>
+          Array.from({ length: seqLen }, () => 1)
+        ),
+        token_type_ids: Array.from({ length: batchSize }, () =>
+          Array.from({ length: seqLen }, () => 0)
+        ),
+      });
+
+      vi.doMock('@huggingface/transformers', () => ({
+        AutoTokenizer: {
+          from_pretrained: vi.fn().mockResolvedValue(mockTokenizer),
+        },
+      }));
+
+      // Mock session that returns scores: third doc most relevant
+      const mockSession = {
+        inputNames: ['input_ids', 'attention_mask', 'token_type_ids'],
+        outputNames: ['logits'],
+        run: vi.fn().mockResolvedValue({
+          logits: { data: new Float32Array([-1.0, 0.0, 2.0]) },
+        }),
+        release: vi.fn(),
+      };
+
+      vi.doMock('onnxruntime-node', () => {
+        class MockTensor {
+          type: string;
+          data: any;
+          dims: any;
+          constructor(type: string, data: any, dims: any) {
+            this.type = type;
+            this.data = data;
+            this.dims = dims;
+          }
+        }
+        return {
+          InferenceSession: {
+            create: vi.fn().mockResolvedValue(mockSession),
+          },
+          Tensor: MockTensor,
+        };
+      });
+      vi.doMock('./ort-session.js', () => ({
+        resolveModelPath: vi.fn().mockResolvedValue('/mock/model.onnx'),
+      }));
+      vi.doMock('./ort-provider.js', () => ({
+        detectExecutionProvider: vi
+          .fn()
+          .mockReturnValue({ provider: 'cpu', fallbackChain: ['cpu'] }),
+      }));
+      vi.doMock('./fault-logger.js', () => ({
+        logInfo: vi.fn(),
+        logWarn: vi.fn(),
+      }));
+
+      const { rerank: rerankSuccess } = await import('./reranker.js');
+
+      const input: HybridSearchResult[] = [
+        { file_path: 'a.ts', content: 'least relevant', start_line: 1, end_line: 1, similarity: 0.9 },
+        { file_path: 'b.ts', content: 'mid relevant', start_line: 1, end_line: 1, similarity: 0.8 },
+        { file_path: 'c.ts', content: 'most relevant', start_line: 1, end_line: 1, similarity: 0.7 },
+      ];
+
+      const result = await rerankSuccess('test query', input);
+
+      // Should have same number of results
+      expect(result).toHaveLength(3);
+      // Third doc got highest cross-encoder score (2.0 → sigmoid ~0.88)
+      // Blended: c = 0.7*0.88 + 0.3*0.7 = 0.826
+      //          a = 0.7*0.27 + 0.3*0.9 = 0.459
+      //          b = 0.7*0.5  + 0.3*0.8 = 0.590
+      // So c should be first
+      expect(result[0].file_path).toBe('c.ts');
+    });
+
     it('should return original results on reranker failure (graceful degradation)', async () => {
       // Force initialization failure by mocking InferenceSession.create to throw
       const ort = await import('onnxruntime-node');

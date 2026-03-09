@@ -57,10 +57,10 @@ const MODEL_MAX_LENGTHS: Record<string, number> = {
 
 /**
  * Get max token length for a model (for tokenizer truncation).
- * Returns the model-specific limit, or 128 for unknown models.
+ * Returns the model-specific limit, or 512 for unknown models.
  */
 export function getModelMaxLength(model: string): number {
-  return MODEL_MAX_LENGTHS[model] ?? 128;
+  return MODEL_MAX_LENGTHS[model] ?? 512;
 }
 
 // Default timeout for API requests (30 seconds)

@@ -31,7 +31,7 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 import { logInfo, logWarn } from '../lib/fault-logger.js';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
 
 // ============================================================================
 // Types
@@ -456,10 +456,10 @@ export class LspClient {
     });
 
     return locations.map((loc) => {
-      const filePath = new URL(loc.uri).pathname;
-      // On Windows, URL pathname starts with / before drive letter
-      const normalizedPath =
-        process.platform === 'win32' && filePath.startsWith('/') ? filePath.substring(1) : filePath;
+      // Use fileURLToPath for correct percent-decoding and platform handling
+      const normalizedPath = loc.uri.startsWith('file://')
+        ? fileURLToPath(loc.uri)
+        : new URL(loc.uri).pathname;
 
       return {
         uri: loc.uri,
