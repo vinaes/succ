@@ -105,9 +105,11 @@ export async function status(): Promise<void> {
         console.log(`API key:              ${hasApiKey() ? 'Set' : 'Not set'}`);
         console.log(`API URL:              ${embCfg.api_url}`);
       }
-    } catch (error: any) {
+    } catch (error) {
       // Config validation failed - show the issue
-      console.log(`Config status:        ${error.message}`);
+      console.log(
+        `Config status:        ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     // Index freshness

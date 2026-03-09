@@ -143,12 +143,12 @@ export function registerDeadEndTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error recording dead-end: ${error.message}`,
+              text: `Error recording dead-end: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,

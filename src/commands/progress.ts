@@ -36,10 +36,11 @@ export async function progress(options: ProgressOptions = {}): Promise<void> {
     }
 
     console.log(`\n  Showing ${entries.length} entries (most recent first)`);
-  } catch (error: any) {
-    logError('progress', `Error reading progress log: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logError('progress', `Error reading progress log: ${msg}`);
 
-    console.error(`Error reading progress log: ${error.message}`);
+    console.error(`Error reading progress log: ${msg}`);
     process.exitCode = 1;
   } finally {
     closeDb();

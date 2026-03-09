@@ -123,12 +123,13 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: stats.total_memories,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'SQLite + sqlite-vec',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
   }
 }
@@ -199,12 +200,13 @@ async function testPostgresPgvector(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: recent.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'PostgreSQL + pgvector',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
   }
 }
@@ -301,12 +303,13 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: savedIds.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'PostgreSQL + Qdrant',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
   }
 }
@@ -399,12 +402,13 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: savedIds.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'SQLite + Qdrant',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
   }
 }
