@@ -28,6 +28,20 @@ describe('LSP servers', () => {
       expect(LSP_SERVERS.rust.install.type).toBe('binary');
     });
 
+    it('should have kotlin server', () => {
+      expect(LSP_SERVERS.kotlin).toBeDefined();
+      expect(LSP_SERVERS.kotlin.tier).toBe(2);
+      expect(LSP_SERVERS.kotlin.install.type).toBe('binary');
+      expect(LSP_SERVERS.kotlin.languages).toContain('kotlin');
+    });
+
+    it('should have swift server', () => {
+      expect(LSP_SERVERS.swift).toBeDefined();
+      expect(LSP_SERVERS.swift.tier).toBe(2);
+      expect(LSP_SERVERS.swift.install.type).toBe('runtime');
+      expect(LSP_SERVERS.swift.languages).toContain('swift');
+    });
+
     it('all servers should have required fields', () => {
       for (const [key, config] of Object.entries(LSP_SERVERS)) {
         expect(config.name).toBeTruthy();
@@ -63,6 +77,18 @@ describe('LSP servers', () => {
       const exists = vi.fn((p: string) => p.endsWith('Cargo.toml'));
       const result = detectProjectLanguages('/project', exists);
       expect(result).toContain('rust');
+    });
+
+    it('should detect Kotlin projects', () => {
+      const exists = vi.fn((p: string) => p.endsWith('build.gradle.kts'));
+      const result = detectProjectLanguages('/project', exists);
+      expect(result).toContain('kotlin');
+    });
+
+    it('should detect Swift projects', () => {
+      const exists = vi.fn((p: string) => p.endsWith('Package.swift'));
+      const result = detectProjectLanguages('/project', exists);
+      expect(result).toContain('swift');
     });
 
     it('should detect multiple languages', () => {

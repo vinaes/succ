@@ -117,6 +117,35 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
     args: [],
     tier: 2,
   },
+
+  kotlin: {
+    name: 'Kotlin Language Server',
+    languages: ['kotlin'],
+    rootMarkers: ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts', 'pom.xml'],
+    install: {
+      type: 'binary',
+      repo: 'fwcd/kotlin-language-server',
+      asset: 'server',
+    },
+    command: 'kotlin-language-server',
+    args: [],
+    tier: 2,
+  },
+
+  swift: {
+    name: 'SourceKit-LSP',
+    languages: ['swift'],
+    rootMarkers: ['Package.swift', '*.xcodeproj', '*.xcworkspace'],
+    install: {
+      type: 'runtime',
+      check: 'swift --version',
+      installCmd: 'xcode-select --install',
+      hint: 'Swift toolchain required. Install Xcode or Swift from https://swift.org/download',
+    },
+    command: 'sourcekit-lsp',
+    args: [],
+    tier: 2,
+  },
 };
 
 /**
