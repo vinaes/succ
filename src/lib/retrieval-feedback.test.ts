@@ -112,12 +112,8 @@ describe('retrieval-feedback', () => {
         .mockReturnValueOnce({ total: 100, unique_mems: 25, total_used: 60 })
         .mockReturnValueOnce({ count: 5 });
       mockAll
-        .mockReturnValueOnce([
-          { memoryId: 1, useRate: 0.9, totalRecalls: 10 },
-        ])
-        .mockReturnValueOnce([
-          { memoryId: 2, useRate: 0.1, totalRecalls: 10 },
-        ]);
+        .mockReturnValueOnce([{ memoryId: 1, useRate: 0.9, totalRecalls: 10 }])
+        .mockReturnValueOnce([{ memoryId: 2, useRate: 0.1, totalRecalls: 10 }]);
 
       const summary = getRecallSummary();
       expect(summary.totalEvents).toBe(100);
@@ -172,9 +168,7 @@ describe('retrieval-feedback', () => {
 
   describe('getNeverUsedMemories', () => {
     it('should return never-used memories', () => {
-      mockAll.mockReturnValueOnce([
-        { memoryId: 5, totalRecalls: 8, lastRecalled: '2026-03-01' },
-      ]);
+      mockAll.mockReturnValueOnce([{ memoryId: 5, totalRecalls: 8, lastRecalled: '2026-03-01' }]);
 
       const result = getNeverUsedMemories(3, 50);
       expect(result).toHaveLength(1);

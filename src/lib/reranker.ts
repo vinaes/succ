@@ -65,10 +65,9 @@ async function initReranker(): Promise<void> {
       const modelPath = await resolveModelPath(model);
 
       // Create session with GPU fallback
-      const config2 = getConfig();
       const providerResult = detectExecutionProvider(process.platform, {
-        gpu_enabled: config2.gpu_enabled,
-        gpu_device: config2.gpu_device,
+        gpu_enabled: config.gpu_enabled,
+        gpu_device: config.gpu_device,
       });
       for (const provider of providerResult.fallbackChain) {
         try {
@@ -79,8 +78,10 @@ async function initReranker(): Promise<void> {
           });
           logInfo('reranker', `Cross-encoder loaded with provider: ${provider}`);
           return;
-        } catch {
-          // Try next provider
+        } catch (err) {
+          logWarn('reranker', `Provider ${provider} failed, trying next`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 

@@ -31,11 +31,41 @@ import {
 function setupMockGraph() {
   // A simple chain: 1 -- 2 -- 3 -- 4, with a branch: 2 -- 5
   vi.mocked(getAllMemoriesForExport).mockResolvedValue([
-    { id: 1, content: 'Memory one', type: 'learning', tags: [], created_at: new Date().toISOString() },
-    { id: 2, content: 'Memory two', type: 'decision', tags: [], created_at: new Date().toISOString() },
-    { id: 3, content: 'Memory three', type: 'learning', tags: [], created_at: new Date().toISOString() },
-    { id: 4, content: 'Memory four', type: 'learning', tags: [], created_at: new Date().toISOString() },
-    { id: 5, content: 'Memory five', type: 'context', tags: [], created_at: new Date().toISOString() },
+    {
+      id: 1,
+      content: 'Memory one',
+      type: 'learning',
+      tags: [],
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      content: 'Memory two',
+      type: 'decision',
+      tags: [],
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      content: 'Memory three',
+      type: 'learning',
+      tags: [],
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 4,
+      content: 'Memory four',
+      type: 'learning',
+      tags: [],
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 5,
+      content: 'Memory five',
+      type: 'context',
+      tags: [],
+      created_at: new Date().toISOString(),
+    },
   ] as any);
 
   vi.mocked(getAllMemoryLinksForExport).mockResolvedValue([

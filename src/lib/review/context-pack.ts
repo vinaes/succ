@@ -73,11 +73,7 @@ export async function generateReviewContext(
     generateLLMSummary?: boolean;
   } = {}
 ): Promise<ReviewContextPack> {
-  const {
-    maxRelatedSymbols = 10,
-    maxMemories = 10,
-    generateLLMSummary = true,
-  } = options;
+  const { maxRelatedSymbols = 10, maxMemories = 10, generateLLMSummary = true } = options;
 
   const projectRoot = getProjectRoot();
 
@@ -192,9 +188,7 @@ async function findRelatedSymbols(
 
         for (const r of searchResults) {
           // Skip files that are already in the diff
-          const inDiff = parsed.files.some(
-            (f) => f.to === r.file_path || f.from === r.file_path
-          );
+          const inDiff = parsed.files.some((f) => f.to === r.file_path || f.from === r.file_path);
           if (!inDiff && r.symbol_name) {
             results.push({
               file: r.file_path,
@@ -285,14 +279,11 @@ async function getRecentHistory(
 
   for (const filePath of files) {
     try {
-      const log = execSync(
-        `git log --oneline -5 -- "${filePath}"`,
-        {
-          cwd: projectRoot,
-          encoding: 'utf-8',
-          timeout: 10000,
-        }
-      ).trim();
+      const log = execSync(`git log --oneline -5 -- "${filePath}"`, {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        timeout: 10000,
+      }).trim();
 
       if (log) {
         results.push({
@@ -317,21 +308,34 @@ async function generateLLMReview(
 ): Promise<{ summary: string; reviewFocus: string[]; blastRadius: string }> {
   const diffSummary = summarizeDiff(parsed);
 
-  const symbolsSection = changedSymbols.length > 0
-    ? `Changed functions/symbols:\n${changedSymbols.map((s) => `- ${s.file}: ${s.symbol}`).join('\n')}`
-    : 'No function-level changes detected.';
+  const symbolsSection =
+    changedSymbols.length > 0
+      ? `Changed functions/symbols:\n${changedSymbols.map((s) => `- ${s.file}: ${s.symbol}`).join('\n')}`
+      : 'No function-level changes detected.';
 
-  const relatedSection = relatedSymbols.length > 0
-    ? `Related code (not in diff but architecturally connected):\n${relatedSymbols.slice(0, 5).map((s) => `- ${s.file}: ${s.symbol} (${(s.similarity * 100).toFixed(0)}% similar)`).join('\n')}`
-    : '';
+  const relatedSection =
+    relatedSymbols.length > 0
+      ? `Related code (not in diff but architecturally connected):\n${relatedSymbols
+          .slice(0, 5)
+          .map((s) => `- ${s.file}: ${s.symbol} (${(s.similarity * 100).toFixed(0)}% similar)`)
+          .join('\n')}`
+      : '';
 
-  const memorySection = memories.length > 0
-    ? `Relevant past decisions/learnings:\n${memories.slice(0, 5).map((m) => `- [#${m.id}] ${m.content.substring(0, 150)}`).join('\n')}`
-    : '';
+  const memorySection =
+    memories.length > 0
+      ? `Relevant past decisions/learnings:\n${memories
+          .slice(0, 5)
+          .map((m) => `- [#${m.id}] ${m.content.substring(0, 150)}`)
+          .join('\n')}`
+      : '';
 
-  const historySection = history.length > 0
-    ? `Recent git history for changed files:\n${history.slice(0, 5).map((h) => `- ${h.file}: ${h.commits[0]}`).join('\n')}`
-    : '';
+  const historySection =
+    history.length > 0
+      ? `Recent git history for changed files:\n${history
+          .slice(0, 5)
+          .map((h) => `- ${h.file}: ${h.commits[0]}`)
+          .join('\n')}`
+      : '';
 
   const prompt = `You are a senior code reviewer. Analyze this change and produce a structured review context pack.
 

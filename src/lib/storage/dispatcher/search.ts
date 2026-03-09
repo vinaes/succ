@@ -236,40 +236,49 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     since?: Date
   ): Promise<Array<GlobalMemorySearchResult | MemorySearchResult | HybridGlobalMemoryResult>> {
     const lim = limit ?? 10;
+    const fetchLimit = lim * 3; // Overfetch for reranking
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories(
           query,
           queryEmbedding,
-          lim,
+          fetchLimit,
           thresh,
           { tags, since }
         );
-        if (results.length > 0) return results;
+        if (results.length > 0)
+          return rerank(
+            query,
+            results as unknown as (GlobalMemorySearchResult & Rerankable)[],
+            lim
+          );
       } catch (error) {
         this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error);
       }
     }
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.hybridSearchGlobalMemories(
+    if (this.backend === 'postgresql' && this.postgres) {
+      const results = await this.postgres.hybridSearchGlobalMemories(
         query,
         queryEmbedding,
-        lim,
+        fetchLimit,
         thresh,
         tags,
         since
       );
+      return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
+    }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchGlobalMemories(
+    const results = await sqlite.hybridSearchGlobalMemories(
       query,
       queryEmbedding,
-      limit,
+      fetchLimit,
       threshold,
       alpha,
       tags,
       since
     );
+    return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
   }
 
   /** Post-filter code search results by regex and/or symbolType, then trim to limit. */

@@ -32,7 +32,13 @@ export const MEMORY_TYPES = [
 ] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
-export const SOURCE_TYPES = ['human', 'agent', 'canonical_doc', 'imported', 'auto_extracted'] as const;
+export const SOURCE_TYPES = [
+  'human',
+  'agent',
+  'canonical_doc',
+  'imported',
+  'auto_extracted',
+] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
 /**

@@ -175,12 +175,17 @@ function computePPR(
       // Contribution from neighbors
       let neighborContrib = 0;
       graph.forEachNeighbor(node, (neighbor) => {
-        const degree = graph.degree(neighbor);
-        if (degree > 0) {
+        // Use weighted degree (sum of edge weights) for normalization
+        // so high-weight edges contribute proportionally more
+        let weightedDegree = 0;
+        graph.forEachEdge(neighbor, (_edge, attr) => {
+          weightedDegree += (attr.weight as number) ?? 1.0;
+        });
+        if (weightedDegree > 0) {
           const edgeWeight = graph.hasEdge(node, neighbor)
             ? (graph.getEdgeAttribute(graph.edge(node, neighbor)!, 'weight') ?? 1.0)
             : 1.0;
-          neighborContrib += ((scores.get(neighbor) ?? 0) * edgeWeight) / degree;
+          neighborContrib += ((scores.get(neighbor) ?? 0) * edgeWeight) / weightedDegree;
         }
       });
 
@@ -337,41 +342,74 @@ function findArticulationPointsTarjan(graph: Graph): string[] {
   const disc = new Map<string, number>();
   const low = new Map<string, number>();
   const parent = new Map<string, string | null>();
+  const childCount = new Map<string, number>();
   const ap = new Set<string>();
   let time = 0;
 
-  function dfs(u: string): void {
-    disc.set(u, time);
-    low.set(u, time);
+  // Iterative DFS to avoid stack overflow on large graphs
+  function dfsIterative(root: string): void {
+    // Stack stores: [node, neighborIndex, neighbors[]]
+    type Frame = { node: string; idx: number; neighbors: string[] };
+    const stack: Frame[] = [];
+
+    disc.set(root, time);
+    low.set(root, time);
     time++;
-    let children = 0;
+    childCount.set(root, 0);
 
-    graph.forEachNeighbor(u, (v: string) => {
-      if (!disc.has(v)) {
-        children++;
-        parent.set(v, u);
-        dfs(v);
+    const rootNeighbors = graph.neighbors(root);
+    stack.push({ node: root, idx: 0, neighbors: rootNeighbors });
 
-        low.set(u, Math.min(low.get(u)!, low.get(v)!));
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const u = frame.node;
 
-        // Root with 2+ children
-        if (parent.get(u) === null && children > 1) {
-          ap.add(u);
+      if (frame.idx < frame.neighbors.length) {
+        const v = frame.neighbors[frame.idx];
+        frame.idx++;
+
+        if (!disc.has(v)) {
+          // Tree edge
+          parent.set(v, u);
+          childCount.set(u, (childCount.get(u) ?? 0) + 1);
+          disc.set(v, time);
+          low.set(v, time);
+          time++;
+          childCount.set(v, 0);
+
+          const vNeighbors = graph.neighbors(v);
+          stack.push({ node: v, idx: 0, neighbors: vNeighbors });
+        } else if (v !== parent.get(u)) {
+          // Back edge
+          low.set(u, Math.min(low.get(u)!, disc.get(v)!));
         }
-        // Non-root with child that can't reach above
-        if (parent.get(u) !== null && low.get(v)! >= disc.get(u)!) {
-          ap.add(u);
+      } else {
+        // All neighbors processed — pop and update parent
+        stack.pop();
+
+        if (stack.length > 0) {
+          const parentFrame = stack[stack.length - 1];
+          const pu = parentFrame.node;
+
+          low.set(pu, Math.min(low.get(pu)!, low.get(u)!));
+
+          // Root with 2+ children
+          if (parent.get(pu) === null && (childCount.get(pu) ?? 0) > 1) {
+            ap.add(pu);
+          }
+          // Non-root with child that can't reach above
+          if (parent.get(pu) !== null && low.get(u)! >= disc.get(pu)!) {
+            ap.add(pu);
+          }
         }
-      } else if (v !== parent.get(u)) {
-        low.set(u, Math.min(low.get(u)!, disc.get(v)!));
       }
-    });
+    }
   }
 
   graph.forEachNode((node: string) => {
     if (!disc.has(node)) {
       parent.set(node, null);
-      dfs(node);
+      dfsIterative(node);
     }
   });
 
@@ -469,7 +507,7 @@ export async function whyRelated(
 
   const pathNodes = bidirectional(graph, fromKey, toKey);
   if (!pathNodes) {
-    return { connected: false, path: [], distance: Infinity };
+    return { connected: false, path: [], distance: Number.MAX_SAFE_INTEGER };
   }
 
   const path: Array<{ memoryId: number; relation?: string }> = [];

@@ -80,19 +80,14 @@ export function registerReviewTools(server: McpServer) {
 
         // Changed symbols
         if (pack.changedSymbols.length > 0) {
-          const symList = pack.changedSymbols
-            .map((s) => `- ${s.file}: \`${s.symbol}\``)
-            .join('\n');
+          const symList = pack.changedSymbols.map((s) => `- ${s.file}: \`${s.symbol}\``).join('\n');
           sections.push(`### Changed Symbols\n${symList}`);
         }
 
         // Related code
         if (pack.relatedSymbols.length > 0) {
           const relList = pack.relatedSymbols
-            .map(
-              (s) =>
-                `- ${s.file}: \`${s.symbol}\` (${(s.similarity * 100).toFixed(0)}% match)`
-            )
+            .map((s) => `- ${s.file}: \`${s.symbol}\` (${(s.similarity * 100).toFixed(0)}% match)`)
             .join('\n');
           sections.push(`### Related Code (Not in Diff)\n${relList}`);
         }

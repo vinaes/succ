@@ -34,7 +34,7 @@ vi.mock('./ort-session.js', () => ({
 }));
 
 vi.mock('./ort-provider.js', () => ({
-  detectExecutionProvider: vi.fn().mockReturnValue(['cpu']),
+  detectExecutionProvider: vi.fn().mockReturnValue({ provider: 'cpu', fallbackChain: ['cpu'] }),
 }));
 
 vi.mock('./fault-logger.js', () => ({
@@ -109,7 +109,9 @@ describe('reranker', () => {
         resolveModelPath: vi.fn().mockResolvedValue('/mock/model.onnx'),
       }));
       vi.doMock('./ort-provider.js', () => ({
-        detectExecutionProvider: vi.fn().mockReturnValue(['cpu']),
+        detectExecutionProvider: vi
+          .fn()
+          .mockReturnValue({ provider: 'cpu', fallbackChain: ['cpu'] }),
       }));
       vi.doMock('./fault-logger.js', () => ({
         logInfo: vi.fn(),

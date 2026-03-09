@@ -569,6 +569,7 @@ ${relationStats}`;
             const { generateCommunitySummaries } =
               await import('../../lib/graph/community-summaries.js');
             const summResult = await generateCommunitySummaries();
+            invalidateGraphCache();
             return {
               content: [
                 {

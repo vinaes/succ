@@ -146,8 +146,10 @@ Write a concise 2-3 sentence summary that captures the shared theme, key insight
   for (const memId of memberIds) {
     try {
       await createMemoryLink(saveResult.id, memId, 'related');
-    } catch {
-      // Non-critical: link creation failure
+    } catch (err) {
+      logWarn('community-summaries', `Failed to link summary ${saveResult.id} to member ${memId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
