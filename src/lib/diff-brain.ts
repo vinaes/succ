@@ -69,7 +69,7 @@ export function detectChangedFiles(diffRef: string = 'HEAD~1'): DiffAnalysisResu
   let changedFiles: string[] = [];
   try {
     // diffRef is validated by the regex above — safe to pass as argument
-    const output = execFileSync('git', ['diff', '--name-only', diffRef], {
+    const output = execFileSync('git', ['diff', '--name-only', '--diff-filter=d', diffRef], {
       cwd: projectRoot,
       encoding: 'utf-8',
       timeout: 10000,

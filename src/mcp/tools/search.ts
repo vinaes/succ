@@ -42,9 +42,10 @@ function filterByPaths<T extends { file_path: string }>(
     const filePath = r.file_path.replace(/^[a-z]+:/, '').replace(/\\/g, '/');
 
     // Check include patterns (OR: match any)
+    // Normalize backslashes in patterns — minimatch treats \ as escape, not path separator.
     if (includePaths && includePaths.length > 0) {
       const matches = includePaths.some((pattern) =>
-        minimatch(filePath, pattern, { dot: true, matchBase: true })
+        minimatch(filePath, pattern.replace(/\\/g, '/'), { dot: true, matchBase: true })
       );
       if (!matches) return false;
     }
@@ -52,7 +53,7 @@ function filterByPaths<T extends { file_path: string }>(
     // Check exclude patterns (OR: exclude if any match)
     if (excludePaths && excludePaths.length > 0) {
       const excluded = excludePaths.some((pattern) =>
-        minimatch(filePath, pattern, { dot: true, matchBase: true })
+        minimatch(filePath, pattern.replace(/\\/g, '/'), { dot: true, matchBase: true })
       );
       if (excluded) return false;
     }
