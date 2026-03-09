@@ -166,6 +166,16 @@ function computePPR(
     scores.set(node, initScore);
   });
 
+  // Precompute weighted degrees for all nodes (O(E) total, done once)
+  const weightedDegrees = new Map<string, number>();
+  graph.forEachNode((node) => {
+    let wDeg = 0;
+    graph.forEachEdge(node, (_edge, attr) => {
+      wDeg += (attr.weight as number) ?? 1.0;
+    });
+    weightedDegrees.set(node, wDeg);
+  });
+
   // Power iteration
   for (let iter = 0; iter < maxIterations; iter++) {
     const newScores = new Map<string, number>();
@@ -175,17 +185,12 @@ function computePPR(
       // Contribution from neighbors
       let neighborContrib = 0;
       graph.forEachNeighbor(node, (neighbor) => {
-        // Use weighted degree (sum of edge weights) for normalization
-        // so high-weight edges contribute proportionally more
-        let weightedDegree = 0;
-        graph.forEachEdge(neighbor, (_edge, attr) => {
-          weightedDegree += (attr.weight as number) ?? 1.0;
-        });
-        if (weightedDegree > 0) {
+        const wDeg = weightedDegrees.get(neighbor) ?? 0;
+        if (wDeg > 0) {
           const edgeWeight = graph.hasEdge(node, neighbor)
             ? (graph.getEdgeAttribute(graph.edge(node, neighbor)!, 'weight') ?? 1.0)
             : 1.0;
-          neighborContrib += ((scores.get(neighbor) ?? 0) * edgeWeight) / weightedDegree;
+          neighborContrib += ((scores.get(neighbor) ?? 0) * edgeWeight) / wDeg;
         }
       });
 

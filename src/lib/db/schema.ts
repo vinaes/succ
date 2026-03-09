@@ -15,7 +15,10 @@ export function loadSqliteVec(database: Database.Database): boolean {
   try {
     sqliteVec.load(database);
     return true;
-  } catch {
+  } catch (error) {
+    logWarn('schema', 'sqlite-vec extension load failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sqliteVecAvailable = false;
     return false;
   }

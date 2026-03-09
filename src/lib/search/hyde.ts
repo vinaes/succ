@@ -125,11 +125,23 @@ export async function generateHyDE(
 function looksLikeCode(query: string): boolean {
   const codeIndicators = [
     /^(function|const|let|var|class|import|export|def|fn|pub|async|interface|type)\s/,
-    /[{}();=]/,
+    /[{}]/,
     /\.\w+\(/,
     /=>/,
     /^\s*(if|for|while|return|switch|match)\s/,
+    /;\s*$/,
+    /\w+\s*=\s*\w+/,
   ];
 
-  return codeIndicators.some((re) => re.test(query));
+  // Require at least 2 indicators to avoid false positives on NL with parentheses
+  let matches = 0;
+  for (const re of codeIndicators) {
+    if (re.test(query)) matches++;
+    if (matches >= 2) return true;
+  }
+
+  // Single strong indicator (keyword at start) is enough
+  if (codeIndicators[0].test(query)) return true;
+
+  return false;
 }

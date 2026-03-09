@@ -36,6 +36,7 @@ const RERANKER_BATCH_SIZE = 16;
 let rerankerSession: ort.InferenceSession | null = null;
 let rerankerTokenizer: any = null;
 let rerankerInitializing: Promise<void> | null = null;
+let rerankerInitFailed = false; // Don't retry after initialization failure
 
 /**
  * Initialize the cross-encoder reranker session.
@@ -43,6 +44,7 @@ let rerankerInitializing: Promise<void> | null = null;
  */
 async function initReranker(): Promise<void> {
   if (rerankerSession && rerankerTokenizer) return;
+  if (rerankerInitFailed) throw new Error('Reranker initialization previously failed');
 
   // Prevent concurrent initialization
   if (rerankerInitializing) {
@@ -91,6 +93,7 @@ async function initReranker(): Promise<void> {
     } catch (error) {
       rerankerSession = null;
       rerankerTokenizer = null;
+      rerankerInitFailed = true;
       throw error;
     } finally {
       rerankerInitializing = null;
@@ -296,6 +299,7 @@ export async function cleanupReranker(): Promise<void> {
   }
   rerankerTokenizer = null;
   rerankerInitializing = null;
+  rerankerInitFailed = false;
 }
 
 // ============================================================================

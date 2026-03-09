@@ -140,8 +140,10 @@ function installViaRuntime(
   const checkParts = strategy.check.split(/\s+/);
   try {
     execFileSync(checkParts[0], checkParts.slice(1), { stdio: 'pipe', timeout: 5000 });
-  } catch {
-    logWarn('lsp-installer', `Cannot install ${serverName}: ${strategy.hint}`);
+  } catch (error) {
+    logWarn('lsp-installer', `Cannot install ${serverName}: ${strategy.hint}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 

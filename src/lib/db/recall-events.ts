@@ -193,19 +193,24 @@ export function getBoostDataForMemory(memoryId: number): BoostRow {
 export function getBoostDataForMemories(memoryIds: number[]): BoostRow[] {
   if (memoryIds.length === 0) return [];
 
-  // Batch into fixed-size chunks to avoid unbounded cachedPrepare cache growth
+  // Batch into fixed-size chunks — use db.prepare() (uncached) because
+  // the last batch may have fewer placeholders, creating a unique SQL string.
+  // cachedPrepare would leak one entry per unique batch size.
   const BATCH_SIZE = 50;
+  const db = getDb();
   const results: BoostRow[] = [];
 
   for (let i = 0; i < memoryIds.length; i += BATCH_SIZE) {
     const batch = memoryIds.slice(i, i + BATCH_SIZE);
     const placeholders = batch.map(() => '?').join(',');
-    const rows = cachedPrepare(
-      `SELECT memory_id, COUNT(*) as total, SUM(was_used) as used
+    const rows = db
+      .prepare(
+        `SELECT memory_id, COUNT(*) as total, SUM(was_used) as used
        FROM recall_events
        WHERE memory_id IN (${placeholders})
        GROUP BY memory_id`
-    ).all(...batch) as BoostRow[];
+      )
+      .all(...batch) as BoostRow[];
     results.push(...rows);
   }
 

@@ -68,8 +68,8 @@ export function detectChangedFiles(diffRef: string = 'HEAD~1'): DiffAnalysisResu
 
   let changedFiles: string[] = [];
   try {
-    // Use execFileSync with '--' separator to prevent argument injection
-    const output = execFileSync('git', ['diff', '--name-only', '--', diffRef], {
+    // diffRef is validated by the regex above — safe to pass as argument
+    const output = execFileSync('git', ['diff', '--name-only', diffRef], {
       cwd: projectRoot,
       encoding: 'utf-8',
       timeout: 10000,
