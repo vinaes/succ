@@ -28,28 +28,31 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
   let cleaned = 0;
   let errors = 0;
 
-  // Clean up deleted entries — batch all deletes (don't let one failure abort the rest)
-  const deleteResults = await Promise.allSettled(
-    deleted.map(async (filePath) => {
-      await deleteDocumentsByPath(filePath);
-      await deleteFileHash(filePath);
-      return filePath;
-    })
-  );
-  for (const [i, r] of deleteResults.entries()) {
-    if (r.status === 'fulfilled') {
-      details.push(`Removed: ${r.value}`);
-      cleaned++;
-    } else {
-      details.push(
-        `Delete error (${deleted[i]}): ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
-      );
-      errors++;
+  // Clean up deleted entries — bounded concurrency to avoid SQLITE_BUSY
+  const CONCURRENCY = 5;
+  for (let i = 0; i < deleted.length; i += CONCURRENCY) {
+    const chunk = deleted.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map(async (filePath) => {
+        await deleteDocumentsByPath(filePath);
+        await deleteFileHash(filePath);
+        return filePath;
+      })
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        details.push(`Removed: ${r.value}`);
+        cleaned++;
+      } else {
+        details.push(
+          `Delete error: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+        );
+        errors++;
+      }
     }
   }
 
   // Re-index stale files — bounded concurrency (5 at a time)
-  const CONCURRENCY = 5;
   for (let i = 0; i < stale.length; i += CONCURRENCY) {
     const chunk = stale.slice(i, i + CONCURRENCY);
     await Promise.all(
