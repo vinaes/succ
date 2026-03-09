@@ -105,6 +105,9 @@ export async function lateChunkEmbed(
       if (tEnd === 0 && i > 0) return max;
       return Math.max(max, tEnd);
     }, 0);
+    // 0.95 threshold: allow up to 5% character loss from tokenizer rounding
+    // (subword boundaries rarely align exactly with content end). Beyond 5%
+    // the file was genuinely truncated and trailing chunks would be wrong.
     if (lastCoveredChar > 0 && lastCoveredChar < content.length * 0.95) {
       return {
         chunks: [],

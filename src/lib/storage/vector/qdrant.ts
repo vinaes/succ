@@ -25,6 +25,7 @@ import type {
   MemoryType,
   SourceType,
 } from '../types.js';
+import { SOURCE_TYPES } from '../types.js';
 import { DependencyError } from '../../errors.js';
 
 // Lazy-load qdrant client
@@ -1313,14 +1314,7 @@ export class QdrantVectorStore implements VectorStore {
       source_type: (() => {
         const raw = asNullableString(payload.source_type);
         if (raw === null) return null;
-        const valid: SourceType[] = [
-          'human',
-          'agent',
-          'canonical_doc',
-          'imported',
-          'auto_extracted',
-        ];
-        return (valid as string[]).includes(raw) ? (raw as SourceType) : null;
+        return (SOURCE_TYPES as readonly string[]).includes(raw) ? (raw as SourceType) : null;
       })(),
       created_at: asString(payload.created_at),
       similarity: point.score,

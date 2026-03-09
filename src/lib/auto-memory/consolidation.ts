@@ -100,7 +100,7 @@ export async function consolidateAutoMemories(options?: {
       const ra = find(a);
       const rb = find(b);
       if (ra === rb) return;
-      // Attach lower rank to higher rank; ties go to higher access_count
+      // Union by rank: attach lower-rank tree under higher-rank root
       const rankA = rankMap.get(ra) ?? 0;
       const rankB = rankMap.get(rb) ?? 0;
       if (rankA < rankB) {
@@ -136,6 +136,9 @@ export async function consolidateAutoMemories(options?: {
         }
       }
     }
+
+    // Free embedding vectors — no longer needed after similarity comparisons
+    embedCache.clear();
 
     // Pass 2: within each group elect the survivor (highest access_count, then lowest id),
     // then collect the rest for deletion.

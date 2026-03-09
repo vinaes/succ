@@ -236,8 +236,11 @@ export class LspClient {
         }
       });
       this.fileWatchers.set(uri, watcher);
-    } catch {
+    } catch (error) {
       // Non-fatal: if we can't watch, the document just won't auto-refresh
+      logWarn('lsp-client', `Failed to watch file ${filePath}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

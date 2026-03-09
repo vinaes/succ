@@ -204,8 +204,11 @@ export class NativeOrtSession {
         max_length: this.maxLength,
         return_offsets_mapping: true,
       });
-    } catch {
+    } catch (error) {
       // Some tokenizer backends throw on unknown options; retry without it.
+      logWarn('ort-session', 'Tokenizer does not support return_offsets_mapping, using fallback', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       encoded = this.tokenizer([text], {
         truncation: true,
         max_length: this.maxLength,

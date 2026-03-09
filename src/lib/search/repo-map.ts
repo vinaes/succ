@@ -35,6 +35,22 @@ export interface RepoMapResult {
   totalSymbols: number;
 }
 
+// Normalize plural aliases → singular to match SymbolType values
+const SYMBOL_ALIAS_MAP: Record<string, string> = {
+  functions: 'function',
+  methods: 'method',
+  classes: 'class',
+  interfaces: 'interface',
+  types: 'type_alias',
+  type_aliases: 'type_alias',
+  enums: 'enum',
+  structs: 'struct',
+  traits: 'trait',
+  modules: 'module',
+  variables: 'variable',
+  constants: 'constant',
+};
+
 // ============================================================================
 // Generation
 // ============================================================================
@@ -67,22 +83,7 @@ export async function generateRepoMap(
   const maxSymbols = options?.maxSymbolsPerFile ?? 10;
   const includeGlobs = options?.include;
 
-  // Normalize plural aliases → singular to match SymbolType values
-  const symbolAliasMap: Record<string, string> = {
-    functions: 'function',
-    methods: 'method',
-    classes: 'class',
-    interfaces: 'interface',
-    types: 'type_alias',
-    type_aliases: 'type_alias',
-    enums: 'enum',
-    structs: 'struct',
-    traits: 'trait',
-    modules: 'module',
-    variables: 'variable',
-    constants: 'constant',
-  };
-  const symbolTypesFilter = options?.symbolTypes?.map((t) => symbolAliasMap[t] ?? t);
+  const symbolTypesFilter = options?.symbolTypes?.map((t) => SYMBOL_ALIAS_MAP[t] ?? t);
 
   // Default exclude patterns
   const defaultExcludes = [

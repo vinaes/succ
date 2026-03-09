@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'fs';
+import { minimatch } from 'minimatch';
 
 // ============================================================================
 // Types
@@ -178,10 +179,8 @@ export function detectProjectLanguages(
 
       if (marker.includes('*')) {
         // Glob marker — check whether any file in rootPath matches the pattern.
-        // We only support simple "*.ext" wildcards at the root level.
         const entries = readdirSync(rootPath);
-        const pattern = globToRegExp(marker);
-        if (entries.some((name) => pattern.test(name))) {
+        if (entries.some((name) => minimatch(name, marker, { dot: true, matchBase: true }))) {
           found = true;
         }
       } else {
@@ -206,15 +205,4 @@ function defaultReaddirSync(dirPath: string): string[] {
   } catch {
     return [];
   }
-}
-
-/**
- * Convert a simple glob pattern (e.g. "*.csproj") to a RegExp.
- * Only handles leading/trailing "*" wildcards at the root level.
- */
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters
-    .replace(/\*/g, '.*'); // convert * to .*
-  return new RegExp(`^${escaped}$`);
 }
