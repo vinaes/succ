@@ -16,6 +16,7 @@ import * as path from 'path';
 import { logInfo, logWarn } from '../fault-logger.js';
 import { getProjectRoot } from '../config.js';
 import { callLLM } from '../llm.js';
+import { EXTENSION_TO_LANGUAGE } from '../tree-sitter/types.js';
 
 // ============================================================================
 // Types
@@ -428,7 +429,14 @@ Summary:`;
 export function inferSummaryLevel(query: string): SummaryLevel {
   const lower = query.toLowerCase();
 
-  // Specific symbol name check first (camelCase, snake_case) — most precise signal
+  // File path detection — tokens containing a recognized code extension route to file scope
+  const tokens = query.split(/\s+/);
+  for (const token of tokens) {
+    const ext = path.extname(token).slice(1).toLowerCase(); // strip leading dot
+    if (ext && ext in EXTENSION_TO_LANGUAGE) return 'file';
+  }
+
+  // Specific symbol name check (camelCase, snake_case) — precise signal
   if (/[a-z][A-Z]/.test(query) || /[a-zA-Z]{2,}_[a-zA-Z]{2,}/.test(query)) return 'file';
 
   // Directory-level indicators (checked before repo to handle "describe this folder")

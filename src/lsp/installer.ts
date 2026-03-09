@@ -185,8 +185,31 @@ function installViaRuntime(
     timeout: 300000,
   });
 
+  // Record runtime install in manifest so listInstalledServers() can find it
+  recordRuntimeInstall(serverName, strategy);
+
   logInfo('lsp-installer', `Successfully installed ${serverName}`);
   return true;
+}
+
+/**
+ * Record a runtime install in a manifest file under the server directory.
+ * This makes runtime installs visible to listInstalledServers() and
+ * allows uninstallServer() to know the install type.
+ */
+function recordRuntimeInstall(
+  serverName: string,
+  strategy: Extract<InstallStrategy, { type: 'runtime' }>
+): void {
+  const serverDir = getServerPath(serverName);
+  fs.mkdirSync(serverDir, { recursive: true });
+  const manifest = {
+    type: 'runtime',
+    installedAt: new Date().toISOString(),
+    check: strategy.check,
+    installCmd: strategy.installCmd,
+  };
+  fs.writeFileSync(path.join(serverDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
 
 /**

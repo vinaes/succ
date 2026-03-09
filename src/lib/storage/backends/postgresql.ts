@@ -3678,8 +3678,10 @@ export class PostgresBackend {
       `SELECT
          COUNT(*) as total,
          SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
-         SUM(CASE WHEN EXTRACT(EPOCH FROM (now() - created_at)) / 86400 > 90
-               AND access_count = 0 THEN 1 ELSE 0 END) as stale_unused_90d,
+         SUM(CASE WHEN (
+               (last_accessed IS NOT NULL AND EXTRACT(EPOCH FROM (now() - last_accessed::timestamp)) / 86400 > 90)
+               OR (last_accessed IS NULL AND access_count = 0 AND EXTRACT(EPOCH FROM (now() - created_at)) / 86400 > 90)
+             ) THEN 1 ELSE 0 END) as stale_unused_90d,
          AVG(EXTRACT(EPOCH FROM (now() - created_at)) / 86400) as avg_age_days,
          AVG(access_count) as avg_access
        FROM memories WHERE ${scopeCond}`,

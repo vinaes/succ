@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.4.79",
+  "version": "1.4.80",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -86,6 +86,7 @@
     "graphology-shortest-path": "^2.0.2",
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
+    "minimatch": "^10.2.4",
     "onnxruntime-node": "1.24.1",
     "ora": "^9.3.0",
     "parse-diff": "^0.11.1",
