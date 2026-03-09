@@ -46,7 +46,7 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
 
         // Output as additionalContext - this will be injected into the agent's context
         const { json, exitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
-          additionalContext: `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`
+          additionalContext: `<compact-fallback reason="SessionStart output may have been lost">\n${pendingContext}\n</compact-fallback>`,
         });
         if (json && Object.keys(json).length > 0) {
           console.log(JSON.stringify(json));
@@ -104,7 +104,8 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
 
       try {
         if (fs.existsSync(cooldownFile)) {
-          promptsSinceLastSuggestion = parseInt(fs.readFileSync(cooldownFile, 'utf8').trim(), 10) || 0;
+          promptsSinceLastSuggestion =
+            parseInt(fs.readFileSync(cooldownFile, 'utf8').trim(), 10) || 0;
         }
       } catch {
         // intentionally empty
@@ -135,12 +136,18 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
 
               const suggestionContext = `<skill-suggestions hint="Use /${suggestions[0].name} to invoke">\n${lines.join('\n')}\n</skill-suggestions>`;
 
-              log(`Suggesting ${suggestions.length} skill(s): ${suggestions.map(s => s.name).join(', ')}`);
+              log(
+                `Suggesting ${suggestions.length} skill(s): ${suggestions.map((s) => s.name).join(', ')}`
+              );
 
               // Output as additionalContext
-              const { json: sugJson, exitCode: sugExitCode } = adapter.formatOutput(agent, 'UserPromptSubmit', {
-                additionalContext: suggestionContext
-              });
+              const { json: sugJson, exitCode: sugExitCode } = adapter.formatOutput(
+                agent,
+                'UserPromptSubmit',
+                {
+                  additionalContext: suggestionContext,
+                }
+              );
               if (sugJson && Object.keys(sugJson).length > 0) {
                 console.log(JSON.stringify(sugJson));
               }
@@ -151,7 +158,9 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
             }
           }
         } catch (err) {
-          log(`Skill suggestion error: ${err.message || err}${err.cause ? ' | cause: ' + (err.cause.message || err.cause) : ''} | port=${daemonPort}`);
+          log(
+            `Skill suggestion error: ${err.message || err}${err.cause ? ' | cause: ' + (err.cause.message || err.cause) : ''} | port=${daemonPort}`
+          );
         }
       } else {
         // Cooldown not passed, increment counter

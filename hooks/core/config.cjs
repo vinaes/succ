@@ -30,8 +30,14 @@ function mergeConfig(target, source) {
   for (const key of Object.keys(source)) {
     const sv = source[key];
     const tv = target[key];
-    if (sv !== null && typeof sv === 'object' && !Array.isArray(sv) &&
-        tv !== null && typeof tv === 'object' && !Array.isArray(tv)) {
+    if (
+      sv !== null &&
+      typeof sv === 'object' &&
+      !Array.isArray(sv) &&
+      tv !== null &&
+      typeof tv === 'object' &&
+      !Array.isArray(tv)
+    ) {
       // Both sides are plain objects — shallow-merge one level deeper
       target[key] = Object.assign({}, tv, sv);
     } else {
@@ -56,7 +62,7 @@ function mergeConfig(target, source) {
 function loadMergedConfig(projectDir) {
   const configPaths = [
     path.join(os.homedir(), '.succ', 'config.json'), // global first
-    path.join(projectDir, '.succ', 'config.json'),   // project overrides
+    path.join(projectDir, '.succ', 'config.json'), // project overrides
   ];
 
   let merged = {};

@@ -40,7 +40,7 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
       body: JSON.stringify({
         session_id: sessionId,
         transcript_path: transcriptPath,
-        run_reflection: !isServiceSession,  // Don't run reflection for service sessions
+        run_reflection: !isServiceSession, // Don't run reflection for service sessions
       }),
       signal: AbortSignal.timeout(5000),
     });

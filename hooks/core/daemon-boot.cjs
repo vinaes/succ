@@ -79,7 +79,10 @@ function startDaemon(projectDir, logFn) {
   });
   daemon.on('exit', (code) => {
     if (code && code !== 0) {
-      if (logFn) logFn(`[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`);
+      if (logFn)
+        logFn(
+          `[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`
+        );
     }
   });
   daemon.unref();
@@ -98,7 +101,7 @@ async function ensureDaemon(projectDir, logFn) {
   const succDir = path.join(projectDir, '.succ');
 
   let port = getDaemonPort(succDir);
-  if (port && await checkDaemon(port)) {
+  if (port && (await checkDaemon(port))) {
     return { port };
   }
 
@@ -108,9 +111,9 @@ async function ensureDaemon(projectDir, logFn) {
 
   // Poll for daemon to become ready (max 3 seconds = 30 × 100ms)
   for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
     port = getDaemonPort(succDir);
-    if (port && await checkDaemon(port)) {
+    if (port && (await checkDaemon(port))) {
       if (logFn) logFn(`[daemon] Started on port ${port}`);
       return { port };
     }

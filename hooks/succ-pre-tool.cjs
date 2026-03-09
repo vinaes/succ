@@ -734,7 +734,9 @@ async function fetchHookRules(succDir, toolName, toolInput) {
 }
 
 function formatFileContext(memories, fileName) {
-  const lines = memories.map((m) => `- [${escapeXml(m.type || 'observation')}] ${sanitize(m.content, 200)}`);
+  const lines = memories.map(
+    (m) => `- [${escapeXml(m.type || 'observation')}] ${sanitize(m.content, 200)}`
+  );
   return `<file-context file="${sanitizeFileName(fileName)}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
 }
 
