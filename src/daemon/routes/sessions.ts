@@ -16,10 +16,15 @@ import {
   type RouteMap,
 } from './types.js';
 
+/** Sanitize session ID to prevent path traversal. */
+function safeSessionId(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+}
+
 /** Path for persisting pre-compact stats (survives session unregister + daemon restart). */
 function preCompactStatsPath(sessionId: string): string {
   const tmpDir = path.join(getSuccDir(), '.tmp');
-  return path.join(tmpDir, `session-${sessionId}-pre-compact.json`);
+  return path.join(tmpDir, `session-${safeSessionId(sessionId)}-pre-compact.json`);
 }
 
 export function sessionRoutes(ctx: RouteContext): RouteMap {

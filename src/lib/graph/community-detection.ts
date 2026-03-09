@@ -265,29 +265,31 @@ export async function detectCommunities(
 ): Promise<CommunityResult> {
   const { minCommunitySize = 2, tagPrefix = 'community' } = options;
 
+  let detectLouvain: typeof import('./graphology-bridge.js')['detectLouvainCommunities'];
   try {
-    const { detectLouvainCommunities } = await import('./graphology-bridge.js');
-    const louvainResult = await detectLouvainCommunities(minCommunitySize);
-
-    // Apply community tags (same as LP path) so Louvain results are persisted
-    await applyCommunityTags(louvainResult.communities, tagPrefix);
-
-    // Map LouvainCommunity[] to CommunityResult format
-    return {
-      communities: louvainResult.communities.map((c) => ({
-        id: c.id,
-        size: c.size,
-        members: c.members,
-      })),
-      isolated: louvainResult.isolated,
-      iterations: 1, // Louvain converges internally; report 1 pass
-    };
+    ({ detectLouvainCommunities: detectLouvain } = await import('./graphology-bridge.js'));
   } catch (err) {
     logWarn('community-detection', 'Louvain unavailable, falling back to Label Propagation', {
       error: err instanceof Error ? err.message : String(err),
     });
     return detectCommunitiesLP(options);
   }
+
+  const louvainResult = await detectLouvain(minCommunitySize);
+
+  // Apply community tags (same as LP path) so Louvain results are persisted
+  await applyCommunityTags(louvainResult.communities, tagPrefix);
+
+  // Map LouvainCommunity[] to CommunityResult format
+  return {
+    communities: louvainResult.communities.map((c) => ({
+      id: c.id,
+      size: c.size,
+      members: c.members,
+    })),
+    isolated: louvainResult.isolated,
+    iterations: 1, // Louvain converges internally; report 1 pass
+  };
 }
 
 /**

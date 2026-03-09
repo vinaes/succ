@@ -112,7 +112,7 @@ function walkBrainDir(baseDir: string, currentDir: string, docs: BrainDoc[]): vo
     const fullPath = path.join(currentDir, entry.name);
 
     if (entry.isDirectory()) {
-      if (!entry.name.startsWith('.')) {
+      if (!entry.name.startsWith('.') || entry.name === '.meta') {
         walkBrainDir(baseDir, fullPath, docs);
       }
     } else if (entry.isFile() && entry.name.endsWith('.md')) {

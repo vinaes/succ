@@ -82,7 +82,7 @@ function refineTypeSymbol(nodeType?: string): SymbolType {
   if (!nodeType) return 'type_alias';
   if (nodeType.includes('enum')) return 'enum';
   if (nodeType.includes('struct')) return 'struct';
-  if (nodeType.includes('namespace')) return 'module';
+  if (nodeType.includes('namespace') || nodeType === 'internal_module') return 'module';
   return 'type_alias';
 }
 

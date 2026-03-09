@@ -57,7 +57,7 @@ process.stdin.on('end', async () => {
       return;
     }
 
-    const sessionId = hookInput.session_id || 'unknown';
+    const sessionId = (hookInput.session_id || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
     const transcriptPath = hookInput.transcript_path;
 
     log(
@@ -98,6 +98,7 @@ process.stdin.on('end', async () => {
         continue;
       }
 
+      if (!entry || typeof entry !== 'object') continue;
       const msgContent = entry.message && entry.message.content;
       if (!msgContent) continue;
 

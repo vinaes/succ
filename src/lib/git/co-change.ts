@@ -143,14 +143,16 @@ export async function getCoChangesForFile(
   minCooccurrence: number = 2,
   limit: number = 10
 ): Promise<CoChangeForFile> {
+  // Normalize to repo-relative forward-slash path for comparison with git output
+  const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
   const result = await analyzeCoChanges(maxCommits, minCooccurrence);
 
   const cochanges: Array<{ path: string; count: number; score: number }> = [];
 
   for (const pair of result.pairs) {
-    if (pair.fileA === filePath) {
+    if (pair.fileA === normalized) {
       cochanges.push({ path: pair.fileB, count: pair.count, score: pair.score });
-    } else if (pair.fileB === filePath) {
+    } else if (pair.fileB === normalized) {
       cochanges.push({ path: pair.fileA, count: pair.count, score: pair.score });
     }
   }

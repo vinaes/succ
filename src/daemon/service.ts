@@ -507,7 +507,7 @@ function checkShutdown(): void {
   }
 }
 
-export function shutdownDaemon(): void {
+export async function shutdownDaemon(): Promise<void> {
   log('[daemon] Shutting down...');
 
   if (idleWatcher) {
@@ -525,9 +525,9 @@ export function shutdownDaemon(): void {
 
   processRegistry.killAll();
 
-  closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
+  await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
-  cleanupReranker().catch(() => {});
+  await cleanupReranker().catch((err) => log(`[shutdown] Reranker cleanup failed: ${err}`));
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();
