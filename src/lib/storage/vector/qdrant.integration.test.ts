@@ -57,19 +57,28 @@ async function deleteCollectionsViaApi(names: string[]): Promise<void> {
 
 /**
  * Clean up stale test collections from previous crashed runs.
- * Deletes any collection matching `succ_test_*` that is NOT from this run.
+ * Only deletes collections older than 1 hour (based on timestamp in prefix)
+ * to avoid interfering with parallel test runs.
  */
 async function cleanupStaleTestCollections(): Promise<void> {
   try {
     const resp = await fetch(`${QDRANT_URL}/collections`);
     if (!resp.ok) return;
     const data = (await resp.json()) as { result: { collections: Array<{ name: string }> } };
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
     const stale = data.result.collections
       .map((c) => c.name)
-      .filter((name) => name.startsWith('succ_test_') && !name.startsWith(TEST_PREFIX));
+      .filter((name) => {
+        if (!name.startsWith('succ_test_')) return false;
+        if (name.startsWith(TEST_PREFIX)) return false;
+        // Extract timestamp from prefix: succ_test_<timestamp>_<rand>_<suffix>
+        const tsMatch = name.match(/^succ_test_(\d+)_/);
+        if (!tsMatch) return true; // Can't parse — treat as stale
+        return parseInt(tsMatch[1], 10) < oneHourAgo;
+      });
 
     if (stale.length > 0) {
-      console.log(`Cleaning up ${stale.length} stale test collections from previous runs`);
+      console.log(`Cleaning up ${stale.length} stale test collections (>1h old)`);
       await deleteCollectionsViaApi(stale);
     }
   } catch {
@@ -85,7 +94,8 @@ describe('Qdrant Vector Store Integration', async () => {
     return;
   }
 
-  // Always clean up stale collections before starting, even if this run fails later
+  // Clean up stale collections from previous crashed runs (only >1h old
+  // to avoid interfering with parallel test runs)
   await cleanupStaleTestCollections();
 
   let store: QdrantVectorStore;

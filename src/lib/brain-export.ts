@@ -259,8 +259,12 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
   // Table of contents
   lines.push('## Table of Contents');
   lines.push('');
+  const anchorCounts = new Map<string, number>();
   for (const doc of docs) {
-    const anchor = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    let anchor = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const count = anchorCounts.get(anchor) ?? 0;
+    anchorCounts.set(anchor, count + 1);
+    if (count > 0) anchor = `${anchor}-${count}`;
     lines.push(`- [${doc.title}](#${anchor})`);
   }
   lines.push('');

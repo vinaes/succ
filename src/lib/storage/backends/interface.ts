@@ -299,13 +299,13 @@ export interface StorageBackend {
   /**
    * Get memory health metrics (staleness, access patterns).
    */
-  getMemoryHealth(): Promise<{
+  getMemoryHealth(): {
     total: number;
     never_accessed: number;
     stale_unused_90d: number;
     avg_age_days: number;
     avg_access: number;
-  }>;
+  };
 
   /**
    * Increment memory access count.
