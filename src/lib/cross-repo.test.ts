@@ -38,16 +38,23 @@ describe('cross-repo', () => {
     existsSyncMock.mockImplementation((p: unknown) => {
       const s = String(p).replace(/\\/g, '/');
       if (s === '/projects') return true;
-      if (s.includes('myapp/.succ/succ.db')) return true;
-      if (s.includes('myapp/.succ')) return true;
+      if (s === '/projects/myapp/.succ') return true;
+      if (s === '/projects/myapp/.succ/succ.db') return true;
       return false;
     });
 
-    readdirSyncMock.mockReturnValue([
-      { name: 'myapp', isDirectory: () => true, isFile: () => false },
-      { name: 'other', isDirectory: () => true, isFile: () => false },
-      { name: '.hidden', isDirectory: () => true, isFile: () => false },
-    ]);
+    readdirSyncMock.mockImplementation((p: unknown) => {
+      const s = String(p).replace(/\\/g, '/');
+      if (s === '/projects') {
+        return [
+          { name: 'myapp', isDirectory: () => true, isFile: () => false },
+          { name: 'other', isDirectory: () => true, isFile: () => false },
+          { name: '.hidden', isDirectory: () => true, isFile: () => false },
+        ];
+      }
+      // Depth 2: no sub-entries for child directories
+      return [];
+    });
 
     const projects = discoverProjects(['/projects']);
 
@@ -63,7 +70,12 @@ describe('cross-repo', () => {
   });
 
   it('should handle fs errors gracefully', () => {
-    existsSyncMock.mockReturnValue(true);
+    existsSyncMock.mockImplementation((p: unknown) => {
+      const s = String(p).replace(/\\/g, '/');
+      // Search path exists but is not itself a succ project
+      if (s === '/projects') return true;
+      return false;
+    });
     readdirSyncMock.mockImplementation(() => {
       throw new Error('Permission denied');
     });

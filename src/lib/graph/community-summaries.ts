@@ -96,11 +96,14 @@ export async function generateCommunitySummaries(
 }
 
 async function summarizeCommunity(community: LouvainCommunity): Promise<number | null> {
+  // All member IDs — used for linking the summary node to every community member
+  const allMemberIds = community.members;
+
   // Gather member content (limited to prevent prompt overflow)
   const memberContents: string[] = [];
-  const memberIds = community.members.slice(0, MAX_MEMORIES_PER_PROMPT);
+  const promptSampleIds = allMemberIds.slice(0, MAX_MEMORIES_PER_PROMPT);
 
-  for (const memId of memberIds) {
+  for (const memId of promptSampleIds) {
     const mem = await getMemoryById(memId);
     if (mem) {
       const truncated =
@@ -142,8 +145,8 @@ Write a concise 2-3 sentence summary that captures the shared theme, key insight
     sourceType: 'auto_extracted',
   });
 
-  // Link the summary to its member memories
-  for (const memId of memberIds) {
+  // Link the summary to ALL community member memories (not just the prompt sample)
+  for (const memId of allMemberIds) {
     try {
       await createMemoryLink(saveResult.id, memId, 'related');
     } catch (err) {

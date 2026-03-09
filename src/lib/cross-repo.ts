@@ -61,27 +61,31 @@ export function discoverProjects(searchPaths?: string[]): CrossRepoProject[] {
   for (const searchPath of paths) {
     if (!fs.existsSync(searchPath)) continue;
 
+    // Check if searchPath itself is a succ project (e.g. ~/code is a mono-repo root)
+    checkProjectDir(searchPath, path.basename(searchPath), seen, projects);
+
     try {
       const entries = fs.readdirSync(searchPath, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         if (entry.name.startsWith('.')) continue;
 
-        const projectRoot = path.join(searchPath, entry.name);
-        const succDir = path.join(projectRoot, '.succ');
+        const depth1Root = path.join(searchPath, entry.name);
 
-        if (seen.has(projectRoot)) continue;
-        seen.add(projectRoot);
+        // Depth 1: direct child (e.g. ~/code/myrepo)
+        checkProjectDir(depth1Root, entry.name, seen, projects);
 
-        const initialized = fs.existsSync(succDir) && fs.existsSync(path.join(succDir, 'succ.db'));
-
-        if (initialized) {
-          projects.push({
-            name: entry.name,
-            rootPath: projectRoot,
-            succDir,
-            initialized,
-          });
+        // Depth 2: org/repo layout (e.g. ~/code/org/repo)
+        try {
+          const subEntries = fs.readdirSync(depth1Root, { withFileTypes: true });
+          for (const subEntry of subEntries) {
+            if (!subEntry.isDirectory()) continue;
+            if (subEntry.name.startsWith('.')) continue;
+            const depth2Root = path.join(depth1Root, subEntry.name);
+            checkProjectDir(depth2Root, subEntry.name, seen, projects);
+          }
+        } catch {
+          // Ignore unreadable subdirectories
         }
       }
     } catch (error) {
@@ -105,6 +109,27 @@ export function listProjects(searchPaths?: string[]): CrossRepoProject[] {
 // ============================================================================
 // Internal
 // ============================================================================
+
+/**
+ * Check if a directory is a succ-initialized project and add it to the list.
+ * Avoids double-adding via the `seen` set.
+ */
+function checkProjectDir(
+  projectRoot: string,
+  name: string,
+  seen: Set<string>,
+  projects: CrossRepoProject[]
+): void {
+  if (seen.has(projectRoot)) return;
+  seen.add(projectRoot);
+
+  const succDir = path.join(projectRoot, '.succ');
+  const initialized = fs.existsSync(succDir) && fs.existsSync(path.join(succDir, 'succ.db'));
+
+  if (initialized) {
+    projects.push({ name, rootPath: projectRoot, succDir, initialized });
+  }
+}
 
 function getDefaultSearchPaths(): string[] {
   const home = os.homedir();

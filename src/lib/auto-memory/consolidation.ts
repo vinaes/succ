@@ -12,7 +12,7 @@ import { deleteMemoriesByIds } from '../storage/index.js';
 import {
   getAutoExtractedMemories,
   promoteMemoryConfidence,
-  pruneUnusedAutoMemories,
+  collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
 } from '../db/auto-memory.js';
 import { cosineSimilarity } from '../embeddings.js';
@@ -185,9 +185,14 @@ export async function consolidateAutoMemories(options?: {
       result.promoted++;
     }
 
-    // Step 3: Prune old unused auto-extracted memories
+    // Step 3: Prune old unused auto-extracted memories.
+    // Collect IDs via SQL, then delete through the storage dispatcher so that
+    // Qdrant vector deletion is also triggered (avoids orphaned vectors).
     if (maxUnusedDays > 0) {
-      result.pruned = pruneUnusedAutoMemories(maxUnusedDays);
+      const pruneIds = collectPruneableAutoMemoryIds(maxUnusedDays);
+      if (pruneIds.length > 0) {
+        result.pruned = await deleteMemoriesByIds(pruneIds);
+      }
     }
 
     logInfo(

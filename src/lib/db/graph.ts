@@ -469,21 +469,25 @@ export function getMemoryLinksAsOf(
 } {
   const asOfStr = asOfDate.toISOString();
 
-  const outgoing = cachedPrepare(`
+  const outgoing = (
+    cachedPrepare(`
       SELECT * FROM memory_links
       WHERE source_id = ?
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+  ).map(parseLink);
 
-  const incoming = cachedPrepare(`
+  const incoming = (
+    cachedPrepare(`
       SELECT * FROM memory_links
       WHERE target_id = ?
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+  ).map(parseLink);
 
   return { outgoing, incoming };
 }

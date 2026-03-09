@@ -61,14 +61,28 @@ export async function pprEnhancedRerank(
   semanticResults: Array<{ memoryId: number; similarity: number }>,
   options?: PPRSearchOptions
 ): Promise<PPRSearchResult[]> {
-  const {
-    semanticWeight = 0.5,
-    pprWeight = 0.3,
-    centralityWeight = 0.1,
-    feedbackWeight = 0.1,
-    alpha = 0.85,
-    limit = 20,
-  } = options ?? {};
+  const raw = options ?? {};
+
+  // Validate and clamp numeric options — reject non-finite / negative values.
+  const clampWeight = (v: number | undefined, def: number) => {
+    const n = v ?? def;
+    return Number.isFinite(n) && n >= 0 ? n : def;
+  };
+  const clampAlpha = (v: number | undefined) => {
+    const n = v ?? 0.85;
+    return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.85;
+  };
+  const clampLimit = (v: number | undefined) => {
+    const n = v ?? 20;
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
+  };
+
+  const semanticWeight = clampWeight(raw.semanticWeight, 0.5);
+  const pprWeight = clampWeight(raw.pprWeight, 0.3);
+  const centralityWeight = clampWeight(raw.centralityWeight, 0.1);
+  const feedbackWeight = clampWeight(raw.feedbackWeight, 0.1);
+  const alpha = clampAlpha(raw.alpha);
+  const limit = clampLimit(raw.limit);
 
   if (semanticResults.length === 0) return [];
 

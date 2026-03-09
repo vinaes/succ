@@ -43,7 +43,13 @@ process.stdin.on('end', async () => {
     const hookInput = adapter.normalizeInput(agent, 'PreCompact', rawInput);
 
     // Resolve project dir
-    const projectDir = (hookInput.cwd || process.cwd()).replace(/\\/g, '/');
+    let projectDir = (hookInput.cwd || process.cwd()).replace(/\\/g, '/');
+
+    // Windows path fix: Claude passes /c/... paths; normalize back to C:/...
+    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
+      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+    }
+
     const succDir = path.join(projectDir, '.succ');
 
     if (!fs.existsSync(succDir)) {
@@ -54,7 +60,10 @@ process.stdin.on('end', async () => {
     const sessionId = hookInput.session_id || 'unknown';
     const transcriptPath = hookInput.transcript_path;
 
-    log(succDir, `PreCompact fired: session=${sessionId}, trigger=${hookInput.trigger || 'unknown'}`);
+    log(
+      succDir,
+      `PreCompact fired: session=${sessionId}, trigger=${hookInput.trigger || 'unknown'}`
+    );
 
     if (!transcriptPath || !fs.existsSync(transcriptPath)) {
       log(succDir, `No transcript at ${transcriptPath}`);
@@ -65,7 +74,15 @@ process.stdin.on('end', async () => {
     // ── Inline session analysis (fast, no ESM imports) ─────────────
 
     const content = fs.readFileSync(transcriptPath, 'utf8');
-    const totals = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0, other: 0, total: 0 };
+    const totals = {
+      text: 0,
+      tool_use: 0,
+      tool_result: 0,
+      thinking: 0,
+      image: 0,
+      other: 0,
+      total: 0,
+    };
     const toolCounts = {}; // { name: { calls, inputChars, resultChars } }
     const toolNameById = {}; // { id: name }
 
@@ -75,7 +92,11 @@ process.stdin.on('end', async () => {
       if (!trimmed) continue;
 
       let entry;
-      try { entry = JSON.parse(trimmed); } catch { continue; }
+      try {
+        entry = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
 
       const msgContent = entry.message && entry.message.content;
       if (!msgContent) continue;
@@ -108,9 +129,12 @@ process.stdin.on('end', async () => {
             // Track per-tool stats
             if (block.name) {
               if (block.id) toolNameById[block.id] = block.name;
-              if (!toolCounts[block.name]) toolCounts[block.name] = { calls: 0, inputChars: 0, resultChars: 0 };
+              if (!toolCounts[block.name])
+                toolCounts[block.name] = { calls: 0, inputChars: 0, resultChars: 0 };
               toolCounts[block.name].calls++;
-              toolCounts[block.name].inputChars += block.input ? JSON.stringify(block.input).length : 0;
+              toolCounts[block.name].inputChars += block.input
+                ? JSON.stringify(block.input).length
+                : 0;
             }
             break;
 
@@ -165,8 +189,10 @@ process.stdin.on('end', async () => {
       .sort((a, b) => b.tokens - a.tokens)
       .slice(0, 10);
 
-    const strippableTokens = tokenTotals.tool_use + tokenTotals.tool_result + tokenTotals.thinking + tokenTotals.image;
-    const strippablePercent = tokenTotals.total > 0 ? ((strippableTokens / tokenTotals.total) * 100).toFixed(1) : '0.0';
+    const strippableTokens =
+      tokenTotals.tool_use + tokenTotals.tool_result + tokenTotals.thinking + tokenTotals.image;
+    const strippablePercent =
+      tokenTotals.total > 0 ? ((strippableTokens / tokenTotals.total) * 100).toFixed(1) : '0.0';
 
     // ── Save stats ────────────────────────────────────────────────
 
@@ -186,8 +212,17 @@ process.stdin.on('end', async () => {
     const statsFile = path.join(tmpDir, `pre-compact-stats-${sessionId}.json`);
     fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2), 'utf8');
 
-    log(succDir, `Saved pre-compact stats: ${tokenTotals.total} total tokens, ${strippablePercent}% trimmable`);
-    log(succDir, `Top tools: ${topTools.slice(0, 3).map(t => `${t.name}:${t.tokens}`).join(', ')}`);
+    log(
+      succDir,
+      `Saved pre-compact stats: ${tokenTotals.total} total tokens, ${strippablePercent}% trimmable`
+    );
+    log(
+      succDir,
+      `Top tools: ${topTools
+        .slice(0, 3)
+        .map((t) => `${t.name}:${t.tokens}`)
+        .join(', ')}`
+    );
 
     // ── Notify daemon (fire-and-forget) ──────────────────────────
 
@@ -200,7 +235,9 @@ process.stdin.on('end', async () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(stats),
           signal: AbortSignal.timeout(2000),
-        }).catch(() => { /* fire and forget */ });
+        }).catch(() => {
+          /* fire and forget */
+        });
       }
     } catch (e) {
       log(succDir, `Daemon notify failed: ${e.message || e}`);
@@ -211,9 +248,14 @@ process.stdin.on('end', async () => {
   } catch (err) {
     // Fail-open: never block compaction
     try {
-      const projectDir = (JSON.parse(input).cwd || process.cwd()).replace(/\\/g, '/');
+      let projectDir = (JSON.parse(input).cwd || process.cwd()).replace(/\\/g, '/');
+      if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
+        projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+      }
       log(path.join(projectDir, '.succ'), `PreCompact error: ${err.message || err}`);
-    } catch { /* last-resort catch — logging itself failed, nothing we can do */ }
+    } catch {
+      /* last-resort catch — logging itself failed, nothing we can do */
+    }
     process.exit(0);
   }
 });

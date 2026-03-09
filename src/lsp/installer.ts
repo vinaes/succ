@@ -21,9 +21,38 @@ export function getServersDir(): string {
   return path.join(os.homedir(), '.succ', 'lsp-servers');
 }
 
+/**
+ * Validate a server name to prevent path traversal.
+ * Allows only alphanumeric characters, hyphens, underscores, and dots.
+ * Rejects absolute paths, path separators, and `..` components.
+ */
+export function validateServerName(serverName: string): void {
+  if (!serverName || serverName.length === 0) {
+    throw new Error('Server name must not be empty');
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(serverName)) {
+    throw new Error(
+      `Invalid server name "${serverName}": only alphanumeric characters, hyphens, underscores, and dots are allowed`
+    );
+  }
+  // Reject dot-only names and names containing '..' components
+  if (serverName === '.' || serverName === '..' || serverName.includes('..')) {
+    throw new Error(`Invalid server name "${serverName}": path traversal not allowed`);
+  }
+}
+
 /** Get install path for a specific server */
 export function getServerPath(serverName: string): string {
-  return path.join(getServersDir(), serverName);
+  validateServerName(serverName);
+  const resolved = path.resolve(getServersDir(), serverName);
+  // Guard: ensure the resolved path stays inside the managed directory
+  if (
+    !resolved.startsWith(path.resolve(getServersDir()) + path.sep) &&
+    resolved !== path.resolve(getServersDir())
+  ) {
+    throw new Error(`Server path "${resolved}" escapes the managed directory`);
+  }
+  return resolved;
 }
 
 /** Get the binary path for a server after installation */

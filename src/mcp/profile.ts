@@ -66,7 +66,7 @@ export function gateAction(toolName: string, action: string): CallToolResult | n
         text:
           `Action "${action}" requires "${requiredTier}" profile (current: "${resolvedProfile}").\n\n` +
           `To enable:\n  succ_config(action="set", key="tool_profile", value="${requiredTier}")\n\n` +
-          `Available profiles: core (8 tools), standard (12 tools), full (15 tools)`,
+          `Available profiles: core (8 tools), standard (12 tools), full (14 tools)`,
       },
     ],
     isError: true,

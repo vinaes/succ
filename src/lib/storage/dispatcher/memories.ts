@@ -41,6 +41,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const validFrom = options?.validFrom;
     const validUntil = options?.validUntil;
     const confidence = options?.confidence ?? (qualityScore != null ? qualityScore : 0.5);
+    // Default to 'human' — the primary caller is the MCP succ_remember tool (user-facing).
+    // Internal callers (auto-memory, indexing) pass sourceType explicitly.
     const sourceType = options?.sourceType ?? 'human';
 
     // Auto-correction: detect similar (but not duplicate) memories in 0.82-0.92 range

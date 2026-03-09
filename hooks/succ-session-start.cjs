@@ -66,7 +66,7 @@ process.stdin.on('end', async () => {
     }
 
     // Load config settings (project config overrides global, but both are checked)
-    let includeCoAuthoredBy = true;   // default: true
+    let includeCoAuthoredBy = true; // default: true
     let communicationAutoAdapt = true; // default: true
     let communicationTrackHistory = false; // default: false
     let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
@@ -90,8 +90,12 @@ process.stdin.on('end', async () => {
           }
           // Check for OpenRouter API key: llm.api_key, llm.embeddings.api_key, or web_search.api_key
           if (!hasOpenRouterKey) {
-            const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
-            if (keys.some(k => typeof k === 'string' && k.startsWith('sk-or-'))) {
+            const keys = [
+              config.llm?.api_key,
+              config.llm?.embeddings?.api_key,
+              config.web_search?.api_key,
+            ];
+            if (keys.some((k) => typeof k === 'string' && k.startsWith('sk-or-'))) {
               hasOpenRouterKey = true;
             }
           }
@@ -212,12 +216,16 @@ Examples:
 **succ_prd** action="export" [prd_id="prd_xxx"] — Obsidian Mermaid export
 </prd>
 
-${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
+${
+  hasOpenRouterKey
+    ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 **succ_web** action="quick" query="..." — cheap & fast, simple facts
 **succ_web** action="search" query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
 **succ_web** action="deep" query="..." — multi-step research (30-120s, 30+ sources)
 **succ_web** action="history" [tool_name="..."] [limit=20] — past searches and costs
-</web-search>` : ''}
+</web-search>`
+    : ''
+}
 
 <debug hint="Structured debugging with hypothesis testing. Sessions in .succ/debugs/.">
 **succ_debug** action="create|hypothesis|instrument|result|resolve|abandon|status|list|log|show_log|detect_lang|gen_log"
@@ -236,8 +244,12 @@ ${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 | Multi-step tasks, research | succ-general | general-purpose agent |
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
-| Web page fetch | succ_fetch | WebFetch |${hasOpenRouterKey ? `
-| Web search | succ_web(action="quick") / succ_web(action="search") | WebSearch / Brave |` : ''}
+| Web page fetch | succ_fetch | WebFetch |${
+      hasOpenRouterKey
+        ? `
+| Web search | succ_web(action="quick") / succ_web(action="search") | WebSearch / Brave |`
+        : ''
+    }
 
 Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
 
@@ -306,8 +318,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         // Phase 1: Find and inline Architecture Overview (compact extract)
         const knowledgeDir = path.join(brainDir, 'knowledge');
         if (fs.existsSync(knowledgeDir)) {
-          const archFiles = fs.readdirSync(knowledgeDir)
-            .filter(f => /architect/i.test(f) && f.endsWith('.md'))
+          const archFiles = fs
+            .readdirSync(knowledgeDir)
+            .filter((f) => /architect/i.test(f) && f.endsWith('.md'))
             .sort(); // 00_Architecture.md first
           if (archFiles.length > 0) {
             const archContent = fs.readFileSync(path.join(knowledgeDir, archFiles[0]), 'utf8');
@@ -316,7 +329,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             // Extract from start to second "---" or "## Tech Stack" — whichever comes first
             // This gives us Overview + Core Mission (~15-20 lines)
             const overviewEnd = body.search(/\n---\n|\n## Tech Stack|\n## Directory/);
-            const overview = overviewEnd > 0 ? body.slice(0, overviewEnd).trim() : body.slice(0, 1500).trim();
+            const overview =
+              overviewEnd > 0 ? body.slice(0, overviewEnd).trim() : body.slice(0, 1500).trim();
             if (overview) {
               archParts.push(overview);
             }
@@ -380,7 +394,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         }
 
         if (archParts.length > 0) {
-          contextParts.push(`<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`);
+          contextParts.push(
+            `<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`
+          );
         }
       } catch {
         // intentionally empty — brain vault scan failed, not critical
@@ -390,7 +406,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // Check if this is a compact event (after /compact)
     const isCompactEvent = hookInput.source === 'compact';
 
-    log(succDir, `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`);
+    log(
+      succDir,
+      `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`
+    );
 
     // Precomputed Context from previous session (only on fresh start, not compact)
     if (!isCompactEvent) {
@@ -399,7 +418,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         try {
           const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
           if (precomputedContent) {
-            contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
+            contextParts.push(
+              '<previous-session>\n' + precomputedContent + '\n</previous-session>'
+            );
 
             // Archive the file after loading
             const archiveDir = path.join(succDir, '.context-archive');
@@ -412,8 +433,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
             // Cleanup old archives (keep last 10)
             try {
-              const archives = fs.readdirSync(archiveDir)
-                .filter(f => f.startsWith('context-') && f.endsWith('.md'))
+              const archives = fs
+                .readdirSync(archiveDir)
+                .filter((f) => f.startsWith('context-') && f.endsWith('.md'))
                 .sort()
                 .reverse();
               for (const oldArchive of archives.slice(10)) {
@@ -437,8 +459,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // ensureDaemon already verified the port is alive, so no need to re-check
     if (daemonPort && process.env.CLAUDE_ENV_FILE) {
       try {
-        fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
-          `export SUCC_DAEMON_PORT=${daemonPort}\n`);
+        fs.appendFileSync(process.env.CLAUDE_ENV_FILE, `export SUCC_DAEMON_PORT=${daemonPort}\n`);
         log(succDir, `Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
       } catch (err) {
         log(succDir, `Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
@@ -475,11 +496,38 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const stats = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
           const bt = stats.tokenTotals || {};
 
-          // Estimate post-compact size from transcript (if available)
+          // Estimate post-compact token count from transcript (if available).
+          // beforeTotal is derived from content char counts (chars / 4 = tokens).
+          // To keep units comparable we read the post-compact JSONL, count its
+          // content chars the same way (JSON.stringify each message.content),
+          // then divide by 4. Falling back to byte-based estimation is avoided
+          // because UTF-8 multi-byte characters inflate byte counts vs char counts.
           let postTokens = 0;
           if (hookInput.transcript_path && fs.existsSync(hookInput.transcript_path)) {
-            const postBytes = fs.statSync(hookInput.transcript_path).size;
-            postTokens = Math.ceil(postBytes / 4); // rough: 1 byte ≈ 1 char ≈ 0.25 tokens
+            try {
+              const postContent = fs.readFileSync(hookInput.transcript_path, 'utf8');
+              let postChars = 0;
+              for (const line of postContent.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                  const entry = JSON.parse(trimmed);
+                  const msgContent = entry.message && entry.message.content;
+                  if (typeof msgContent === 'string') {
+                    postChars += msgContent.length;
+                  } else if (Array.isArray(msgContent)) {
+                    postChars += JSON.stringify(msgContent).length;
+                  }
+                } catch {
+                  /* skip malformed lines */
+                }
+              }
+              postTokens = Math.ceil(postChars / 4);
+            } catch {
+              // Fallback: byte count is an overestimate but acceptable for display
+              const postBytes = fs.statSync(hookInput.transcript_path).size;
+              postTokens = Math.ceil(postBytes / 4);
+            }
           }
 
           const beforeTotal = bt.total || 0;
@@ -487,7 +535,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const pct = beforeTotal > 0 ? ((freed / beforeTotal) * 100).toFixed(1) : '0.0';
 
           // Format K helper
-          const fk = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0);
+          const fk = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0));
 
           const statsLines = [];
           statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
@@ -501,21 +549,27 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(f).padStart(8)}`);
           }
           statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
-          statsLines.push(`  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(freed).padStart(8)}`);
+          statsLines.push(
+            `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(freed).padStart(8)}`
+          );
 
           // Top tools
-          const topTools = (stats.topTools || []).slice(0, 5).filter(t => t.tokens > 0);
+          const topTools = (stats.topTools || []).slice(0, 5).filter((t) => t.tokens > 0);
           if (topTools.length > 0) {
             statsLines.push('');
             statsLines.push('  Top tools trimmed:');
-            statsLines.push('  ' + topTools.map(t => `${t.name}: ${fk(t.tokens)}`).join(' | '));
+            statsLines.push('  ' + topTools.map((t) => `${t.name}: ${fk(t.tokens)}`).join(' | '));
           }
 
           contextParts.push(`<compact-stats>\n${statsLines.join('\n')}\n</compact-stats>`);
           log(succDir, `Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
 
           // Cleanup stats file
-          try { fs.unlinkSync(statsFile); } catch (e) { log(succDir, `Failed to cleanup stats file: ${e.message || e}`); }
+          try {
+            fs.unlinkSync(statsFile);
+          } catch (e) {
+            log(succDir, `Failed to cleanup stats file: ${e.message || e}`);
+          }
         }
       } catch (err) {
         log(succDir, `Failed to read compact stats: ${err.message || err}`);
@@ -536,7 +590,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         if (response.ok) {
           const result = await response.json();
           if (result.success && result.briefing) {
-            contextParts.push(`<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`);
+            contextParts.push(
+              `<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`
+            );
             log(succDir, `Briefing generated: ${result.briefing.length} chars`);
           } else {
             log(succDir, `Briefing failed: ${result.error || 'no briefing returned'}`);
@@ -577,7 +633,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
               const reason = m.is_invariant ? 'invariant' : `corrected x${m.correction_count}`;
               return `#${m.id} [${type}] (${reason}) ${preview}${m.content.length > 100 ? '...' : ''}`;
             });
-            contextParts.push(`<pinned-memories count="${displayPinned.length}" total="${allPinned.length}" hint="Tier 1: always loaded, high confidence">\n${lines.join('\n')}\n</pinned-memories>`);
+            contextParts.push(
+              `<pinned-memories count="${displayPinned.length}" total="${allPinned.length}" hint="Tier 1: always loaded, high confidence">\n${lines.join('\n')}\n</pinned-memories>`
+            );
           }
         }
       } catch {
@@ -601,7 +659,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
               const type = m.type || 'obs';
               return `#${m.id} [${type}] ${preview}${m.content.length > 50 ? '...' : ''}`;
             });
-            contextParts.push(`<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`);
+            contextParts.push(
+              `<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`
+            );
           }
         }
       } catch {
@@ -621,7 +681,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const mems = status.memories || 0;
           const code = status.codeChunks || 0;
           if (docs > 0 || mems > 0 || code > 0) {
-            contextParts.push(`<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`);
+            contextParts.push(
+              `<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`
+            );
           }
         }
       } catch {
@@ -638,7 +700,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
       if (json && Object.keys(json).length > 0) {
         console.log(JSON.stringify(json));
       }
-      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
+      log(
+        succDir,
+        `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`
+      );
       if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
     } else {
       log(succDir, `No context parts to output`);
@@ -647,14 +712,20 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // Register session with daemon
     if (daemonPort) {
       const transcriptPath = hookInput.transcript_path || '';
-      const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : `session-${Date.now()}`;
+      const sessionId = transcriptPath
+        ? path.basename(transcriptPath, '.jsonl')
+        : `session-${Date.now()}`;
       // isServiceSession already defined above
 
       try {
         await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, is_service: isServiceSession }),
+          body: JSON.stringify({
+            session_id: sessionId,
+            transcript_path: transcriptPath,
+            is_service: isServiceSession,
+          }),
           signal: AbortSignal.timeout(3000),
         });
       } catch {
@@ -663,7 +734,6 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
 
     process.exit(0);
-
   } catch {
     // intentionally empty
     process.exit(0);

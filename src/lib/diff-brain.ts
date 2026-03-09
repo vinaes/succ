@@ -123,6 +123,12 @@ function findAffectedBrainDocs(sourceFiles: string[], projectRoot: string): stri
   for (const srcFile of sourceFiles) {
     // Convention: brain docs are named after the directory they describe
     const dir = path.dirname(srcFile);
+
+    // path.dirname returns '.' for root-level files (e.g. 'index.ts').
+    // In that case there is no meaningful directory-level brain doc to check.
+    if (dir === '.') continue;
+
+    // Use forward slashes for consistent splitting across platforms
     const parts = dir.split('/');
 
     // Check for brain docs at each directory level

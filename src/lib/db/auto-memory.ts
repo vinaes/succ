@@ -28,11 +28,13 @@ export function getAutoExtractedMemories(): AutoMemoryRow[] {
 
 /**
  * Promote a memory's confidence to 0.7.
+ * Only updates the confidence value — source_type is intentionally left unchanged
+ * so that non-auto memories are not relabelled.
  */
 export function promoteMemoryConfidence(memoryId: number): void {
   try {
     cachedPrepare(
-      `UPDATE memories SET confidence = 0.7, source_type = 'auto_extracted'
+      `UPDATE memories SET confidence = 0.7
        WHERE id = ? AND (confidence IS NULL OR confidence < 0.7)`
     ).run(memoryId);
   } catch (error) {
@@ -43,23 +45,26 @@ export function promoteMemoryConfidence(memoryId: number): void {
 }
 
 /**
- * Prune old unused auto-extracted memories.
+ * Collect IDs of old unused auto-extracted memories eligible for pruning.
+ *
+ * Returns IDs only — callers are responsible for deletion so that the storage
+ * dispatcher (including Qdrant vector deletion) is invoked correctly.
  */
-export function pruneUnusedAutoMemories(maxUnusedDays: number): number {
+export function collectPruneableAutoMemoryIds(maxUnusedDays: number): number[] {
   try {
-    const result = cachedPrepare(
-      `DELETE FROM memories
+    const rows = cachedPrepare(
+      `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
        AND access_count = 0
        AND created_at < datetime('now', '-' || ? || ' days')`
-    ).run(maxUnusedDays);
+    ).all(maxUnusedDays) as Array<{ id: number }>;
 
-    return result.changes;
+    return rows.map((r) => r.id);
   } catch (error) {
-    logWarn('auto-memory-db', `Failed to prune unused auto memories`, {
+    logWarn('auto-memory-db', `Failed to collect pruneable auto memories`, {
       error: error instanceof Error ? error.message : String(error),
     });
-    return 0;
+    return [];
   }
 }
 

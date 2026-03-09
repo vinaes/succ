@@ -15,24 +15,41 @@ import pagerank from 'graphology-metrics/centrality/pagerank';
 import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
 import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
+import { getProjectRoot } from '../config.js';
 import { logInfo } from '../fault-logger.js';
 
 // ============================================================================
 // Graph Cache
 // ============================================================================
 
-let cachedGraph: Graph | null = null;
-let cacheTimestamp = 0;
+interface GraphCacheEntry {
+  graph: Graph;
+  timestamp: number;
+}
+
+// Cache keyed by project root path so different projects never share a cached graph.
+const graphCache = new Map<string, GraphCacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Safe project key — falls back to '__default__' when no project is configured. */
+function safeProjectKey(): string {
+  try {
+    return getProjectRoot();
+  } catch {
+    return '__default__';
+  }
+}
 
 /**
  * Get or build the in-memory graphology graph from storage.
- * Caches the graph for CACHE_TTL_MS to avoid repeated DB reads.
+ * Caches the graph per-project for CACHE_TTL_MS to avoid repeated DB reads.
  */
 export async function getGraph(forceRefresh = false): Promise<Graph> {
+  const projectKey = safeProjectKey();
   const now = Date.now();
-  if (cachedGraph && !forceRefresh && now - cacheTimestamp < CACHE_TTL_MS) {
-    return cachedGraph;
+  const cached = graphCache.get(projectKey);
+  if (cached && !forceRefresh && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.graph;
   }
 
   const graph = new Graph({ multi: false, type: 'undirected' });
@@ -74,8 +91,7 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
     }
   }
 
-  cachedGraph = graph;
-  cacheTimestamp = now;
+  graphCache.set(projectKey, { graph, timestamp: now });
 
   logInfo('graphology', `Graph loaded: ${graph.order} nodes, ${graph.size} edges`);
 
@@ -83,11 +99,11 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
 }
 
 /**
- * Invalidate the graph cache (call after link mutations).
+ * Invalidate the graph cache for the current project (call after link mutations).
  */
 export function invalidateGraphCache(): void {
-  cachedGraph = null;
-  cacheTimestamp = 0;
+  const projectKey = safeProjectKey();
+  graphCache.delete(projectKey);
 }
 
 // ============================================================================
