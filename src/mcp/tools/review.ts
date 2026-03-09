@@ -141,7 +141,7 @@ export function registerReviewTools(server: McpServer) {
           content: [
             {
               type: 'text' as const,
-              text: `Error generating review context: ${error.message}`,
+              text: `Error generating review context: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,

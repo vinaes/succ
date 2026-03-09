@@ -43,7 +43,7 @@ export interface ObservabilityDashboard {
   /** Index freshness */
   indexFreshness: {
     totalDocuments: number;
-    totalCodeChunks: number;
+    totalCodeFiles: number;
     lastIndexedAt: string | null;
   };
   /** Token savings from RAG */
@@ -186,14 +186,14 @@ export async function getDashboard(): Promise<ObservabilityDashboard> {
 
   let indexFreshness = {
     totalDocuments: 0,
-    totalCodeChunks: 0,
+    totalCodeFiles: 0,
     lastIndexedAt: null as string | null,
   };
   try {
     const [docStats, codeCount] = await Promise.all([getStats(), getCodeFileCount()]);
     indexFreshness = {
       totalDocuments: docStats.total_documents,
-      totalCodeChunks: codeCount,
+      totalCodeFiles: codeCount,
       lastIndexedAt: docStats.last_indexed,
     };
   } catch (e) {
@@ -262,7 +262,7 @@ export function formatDashboard(dashboard: ObservabilityDashboard): string {
   const idx = dashboard.indexFreshness;
   lines.push('Index Freshness:');
   lines.push(`  Documents: ${idx.totalDocuments}`);
-  lines.push(`  Code chunks: ${idx.totalCodeChunks}`);
+  lines.push(`  Code files: ${idx.totalCodeFiles}`);
   lines.push(`  Last indexed: ${idx.lastIndexedAt ?? 'never'}`);
 
   lines.push('');

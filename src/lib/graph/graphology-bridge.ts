@@ -297,7 +297,7 @@ export async function detectLouvainCommunities(
 
 /**
  * Find shortest path between two memories using Dijkstra.
- * Edge weights are inverted (1/weight) so stronger connections = shorter path.
+ * Edge weights are used directly by Dijkstra (lower weight = shorter path).
  *
  * @returns Path as array of memory IDs, or null if no path exists
  */

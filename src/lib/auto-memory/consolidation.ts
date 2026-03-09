@@ -166,9 +166,9 @@ export async function consolidateAutoMemories(options?: {
     }
 
     if (toDelete.length > 0) {
-      await deleteMemoriesByIds(toDelete);
-      // Increment only after the delete succeeds so the count stays accurate on failure
-      result.merged = toDelete.length;
+      // deleteMemoriesByIds returns actual count (may differ from toDelete.length
+      // if pinned memories are filtered out by the storage dispatcher)
+      result.merged = await deleteMemoriesByIds(toDelete);
     }
 
     // Step 2: Promote high-usage memories (skip any that were just deleted)
