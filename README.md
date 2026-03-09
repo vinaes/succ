@@ -68,6 +68,7 @@ succ analyze
 | **File-Linked Memories** | Link memories to files; auto-recalled when editing those files |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 13-language instrumentation |
+| **Session Surgeon** | Auto compact stats, trim tool content/thinking/images, manual compact with chain integrity |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
 | **Team Mode** | Parallel task execution with git worktrees |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
@@ -161,6 +162,9 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ daemon <action>` | Manage unified daemon |
 | `succ prd generate` | Generate PRD from feature description |
 | `succ prd run` | Execute PRD tasks with quality gates |
+| `succ session analyze` | Token breakdown by type and tool name |
+| `succ session trim` | Trim tool content from session transcript |
+| `succ session compact` | Manual compact with dialogue summary |
 | `succ status` | Show index statistics |
 
 <details>
@@ -189,6 +193,10 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ prd status [id]` | Show PRD status and tasks |
 | `succ prd archive [id]` | Archive a PRD |
 | `succ prd export [id]` | Export PRD workflow to Obsidian (Mermaid diagrams) |
+| `succ session trim` | Trim tool content from session (with tool filter, input/result-only modes) |
+| `succ session trim-thinking` | Trim thinking blocks only |
+| `succ session trim-all` | Trim all strippable content (tools, thinking, images) |
+| `succ session compact` | Manual compact with dialogue summary and chain integrity |
 | `succ clear` | Clear index and/or memories |
 | `succ benchmark` | Run performance benchmarks |
 | `succ migrate` | Migrate data between storage backends |

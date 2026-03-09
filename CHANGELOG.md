@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP review tool** — `succ_review` for code review via MCP
 - **Bridge edges** — cross-graph edges connecting code graph and memory graph
 - **Co-change analysis** — git log mining to detect files frequently changed together
+- **Session surgeon** — session analyzer (token breakdown by type + tool name, cut points) and surgeon (trim tool content, thinking, images; manual compact with UUID chain integrity). PreCompact hook auto-saves stats, SessionStart displays before/after delta table after compact. CLI: `succ session analyze|trim|trim-thinking|trim-all|compact`
 
 ### Changed
 - `generateHyDE()` uses tree-sitter AST parsing instead of regex heuristics for code detection — more accurate, zero false positives on natural language

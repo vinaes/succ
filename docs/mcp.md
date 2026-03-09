@@ -356,6 +356,7 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 | **Web search history** | — | `succ_web action="history"` | Light: search cost/usage audit |
 | **Web fetch** | — | `succ_fetch` | Light: fetch + convert via md.succ.ai |
 | **Session tools** | `succ session-summary`, `succ precompute-context` | — | Heavy: processes transcripts |
+| **Session surgeon** | `succ session analyze\|trim\|trim-thinking\|trim-all\|compact` | — | Heavy: session analysis, trim, compact |
 
 ### Design Principles
 
