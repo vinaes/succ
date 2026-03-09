@@ -177,7 +177,7 @@ function parseCommitLog(log: string): string[][] {
     const files = block
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith('commit '));
+      .filter((l) => l.length > 0);
 
     if (files.length > 0 && files.length <= 50) {
       // Skip huge commits (merges, initial commits)

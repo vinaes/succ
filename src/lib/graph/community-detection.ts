@@ -319,7 +319,10 @@ async function applyCommunityTags(
         ? (() => {
             try {
               return JSON.parse(mem.tags);
-            } catch {
+            } catch (error) {
+              logWarn('community-detection', 'Failed to parse memory tags in applyCommunityTags', {
+                error: error instanceof Error ? error.message : String(error),
+              });
               return [];
             }
           })()

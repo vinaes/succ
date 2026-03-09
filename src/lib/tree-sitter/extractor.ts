@@ -317,7 +317,7 @@ export async function extractInterfaces(
 }
 
 /**
- * Extract only type definitions (type aliases, enums, structs).
+ * Extract only type definitions (type aliases, enums, structs, modules/namespaces).
  */
 export async function extractTypes(
   tree: Tree,
@@ -325,7 +325,9 @@ export async function extractTypes(
   language: string
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
-  return symbols.filter((s) => s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct');
+  return symbols.filter(
+    (s) => s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct' || s.type === 'module'
+  );
 }
 
 /**

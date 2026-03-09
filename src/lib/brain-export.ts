@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createRequire } from 'module';
-import { getSuccDir } from './config.js';
+import { getSuccDir, getProjectRoot } from './config.js';
 import { logInfo, logWarn } from './fault-logger.js';
 
 const require = createRequire(import.meta.url);
@@ -370,7 +370,7 @@ function createSnapshot(docs: BrainDoc[]): BrainSnapshot {
 
   return {
     exportedAt: new Date().toISOString(),
-    projectRoot: process.cwd(),
+    projectRoot: getProjectRoot() ?? process.cwd(),
     version: getPackageVersion(),
     documents: docs,
     stats: {

@@ -489,7 +489,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
     // Read pre-compact stats (saved by succ-pre-compact.cjs hook) and display delta
     if (isCompactEvent && !isServiceSession) {
-      const sessionId = hookInput.session_id || 'unknown';
+      const sessionId = (hookInput.session_id || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
       const statsFile = path.join(succDir, '.tmp', `pre-compact-stats-${sessionId}.json`);
       try {
         if (fs.existsSync(statsFile)) {
