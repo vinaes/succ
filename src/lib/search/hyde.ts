@@ -12,6 +12,7 @@
 import { callLLM } from '../llm.js';
 import { getEmbedding, getEmbeddings } from '../embeddings.js';
 import { logInfo, logWarn } from '../fault-logger.js';
+import { parseCode } from '../tree-sitter/index.js';
 
 // ============================================================================
 // Types
@@ -52,8 +53,8 @@ export async function generateHyDE(
   query: string,
   numHypotheticals: number = 3
 ): Promise<HyDEResult> {
-  // Quick heuristic: if query looks like code already, skip HyDE
-  if (looksLikeCode(query)) {
+  // Use tree-sitter AST to detect if query is already code — skip HyDE if so
+  if (await looksLikeCodeAST(query)) {
     const embedding = await getEmbedding(query);
     return { embedding, hypotheticals: [], used: false };
   }
@@ -118,30 +119,47 @@ export async function generateHyDE(
   }
 }
 
+// Languages to try when checking if a query is code
+const CODE_DETECT_LANGUAGES = ['typescript', 'python', 'go', 'rust'] as const;
+
 /**
- * Heuristic to detect if a query already looks like code.
- * If so, HyDE is unnecessary — just embed directly.
+ * Detect if a query is code using tree-sitter AST parsing.
+ *
+ * Tries parsing the query as several common languages. If any language
+ * produces a clean AST (no ERROR nodes), the query is code.
+ * Falls back to false if tree-sitter is unavailable.
  */
-function looksLikeCode(query: string): boolean {
-  const codeIndicators = [
-    /^(function|const|let|var|class|import|export|def|fn|pub|async|interface|type)\s/,
-    /[{}]/,
-    /\.\w+\(/,
-    /=>/,
-    /^\s*(if|for|while|return|switch|match)\s/,
-    /;\s*$/,
-    /\w+\s*=\s*\w+/,
-  ];
+async function looksLikeCodeAST(query: string): Promise<boolean> {
+  // Short strings (< 10 chars) are unlikely to be meaningful code
+  if (query.length < 10) return false;
 
-  // Require at least 2 indicators to avoid false positives on NL with parentheses
-  let matches = 0;
-  for (const re of codeIndicators) {
-    if (re.test(query)) matches++;
-    if (matches >= 2) return true;
+  for (const lang of CODE_DETECT_LANGUAGES) {
+    try {
+      const tree = await parseCode(query, lang);
+      if (!tree) continue;
+
+      try {
+        const root = tree.rootNode;
+        // Clean parse with at least one named child = definitely code
+        if (!root.hasError && root.namedChildCount > 0) {
+          return true;
+        }
+        // Mostly clean: few errors relative to named children = likely code
+        if (root.namedChildCount >= 2) {
+          const errorNodes = root.descendantsOfType('ERROR');
+          if (errorNodes.length / root.namedChildCount < 0.3) {
+            return true;
+          }
+        }
+      } finally {
+        tree.delete();
+      }
+    } catch (err) {
+      logWarn('hyde', `Tree-sitter parse failed for ${lang}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
-
-  // Single strong indicator (keyword at start) is enough
-  if (codeIndicators[0].test(query)) return true;
 
   return false;
 }
