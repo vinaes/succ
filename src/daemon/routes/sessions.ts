@@ -111,5 +111,33 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       }
       return { sessions, count: manager.count(includeService) };
     },
+
+    'POST /api/hooks/pre-compact': async (body) => {
+      const stats = body as Record<string, unknown>;
+      // Payload size guard — pre-compact stats should be small
+      const payloadSize = JSON.stringify(stats).length;
+      if (payloadSize > 64_000) {
+        ctx.log(`[pre-compact] Rejected oversized payload: ${payloadSize} bytes`);
+        return { success: false, error: 'payload too large' };
+      }
+      const sessionId = (stats.sessionId as string) || 'unknown';
+      const manager = requireSessionManager(ctx);
+      const session = manager.get(sessionId);
+      if (session) {
+        (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
+        ctx.log(`[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`);
+      } else {
+        ctx.log(`[pre-compact] Session ${sessionId} not found, stats not stored`);
+      }
+      return { success: true };
+    },
+
+    'GET /api/session/stats': async (_body, searchParams) => {
+      const sessionId = searchParams.get('session_id') || '';
+      if (!sessionId) return { error: 'session_id required' };
+      const manager = requireSessionManager(ctx);
+      const session = manager.get(sessionId) as (SessionState & { preCompactStats?: unknown }) | null;
+      return { stats: session?.preCompactStats || null };
+    },
   };
 }

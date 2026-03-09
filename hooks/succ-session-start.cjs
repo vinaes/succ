@@ -466,6 +466,62 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
       }
     }
 
+    // Read pre-compact stats (saved by succ-pre-compact.cjs hook) and display delta
+    if (isCompactEvent && !isServiceSession) {
+      const sessionId = hookInput.session_id || 'unknown';
+      const statsFile = path.join(succDir, '.tmp', `pre-compact-stats-${sessionId}.json`);
+      try {
+        if (fs.existsSync(statsFile)) {
+          const stats = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
+          const bt = stats.tokenTotals || {};
+
+          // Estimate post-compact size from transcript (if available)
+          let postTokens = 0;
+          if (hookInput.transcript_path && fs.existsSync(hookInput.transcript_path)) {
+            const postBytes = fs.statSync(hookInput.transcript_path).size;
+            postTokens = Math.ceil(postBytes / 4); // rough: 1 byte ≈ 1 char ≈ 0.25 tokens
+          }
+
+          const beforeTotal = bt.total || 0;
+          const freed = beforeTotal - postTokens;
+          const pct = beforeTotal > 0 ? ((freed / beforeTotal) * 100).toFixed(1) : '0.0';
+
+          // Format K helper
+          const fk = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0);
+
+          const statsLines = [];
+          statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
+          statsLines.push('');
+          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'Freed'.padStart(8)}`);
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
+            const val = bt[key] || 0;
+            if (val === 0) continue;
+            const f = key === 'text' ? 0 : val;
+            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(f).padStart(8)}`);
+          }
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          statsLines.push(`  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(freed).padStart(8)}`);
+
+          // Top tools
+          const topTools = (stats.topTools || []).slice(0, 5).filter(t => t.tokens > 0);
+          if (topTools.length > 0) {
+            statsLines.push('');
+            statsLines.push('  Top tools trimmed:');
+            statsLines.push('  ' + topTools.map(t => `${t.name}: ${fk(t.tokens)}`).join(' | '));
+          }
+
+          contextParts.push(`<compact-stats>\n${statsLines.join('\n')}\n</compact-stats>`);
+          log(succDir, `Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
+
+          // Cleanup stats file
+          try { fs.unlinkSync(statsFile); } catch { /* ok */ }
+        }
+      } catch (err) {
+        log(succDir, `Failed to read compact stats: ${err.message || err}`);
+      }
+    }
+
     // Generate compact briefing (slow operation - may timeout)
     // Even if this times out, we have the compact-pending fallback above
     if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {

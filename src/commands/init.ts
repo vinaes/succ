@@ -286,6 +286,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
       'succ-user-prompt.cjs',
       'succ-post-tool.cjs',
       'succ-pre-tool.cjs',
+      'succ-pre-compact.cjs',
     ];
 
     for (const hookFile of hooksToCreate) {
@@ -483,6 +484,13 @@ export async function init(options: InitOptions = {}): Promise<void> {
               ? httpHook('pre-tool', 10, 'succ: checking rules...')
               : cmdHook('succ-pre-tool.cjs', 10, 'succ: checking rules...'),
           ],
+        },
+      ],
+
+      // PreCompact — command-only (Claude Code limitation)
+      PreCompact: [
+        {
+          hooks: [cmdHook('succ-pre-compact.cjs', 5, 'succ: analyzing session...')],
         },
       ],
 

@@ -531,6 +531,64 @@ program
     });
   });
 
+// ── Session Surgery ──────────────────────────────────────────────────
+
+const sessionCmd = program.command('session').description('Session analysis and surgery (trim context, analyze tokens, compact)');
+
+sessionCmd
+  .command('analyze [path]')
+  .description('Analyze session token breakdown — types, tools, cut points')
+  .action(async (path: string | undefined) => {
+    const { sessionAnalyze } = await import('./commands/session.js');
+    return sessionAnalyze(path);
+  });
+
+sessionCmd
+  .command('trim [path]')
+  .description('Trim tool content from session JSONL')
+  .option('--tools <names>', 'Only trim named tools (comma-separated)')
+  .option('--only-inputs', 'Only clear tool_use inputs')
+  .option('--only-results', 'Only clear tool_result content')
+  .option('--keep-last-lines <n>', 'Keep last N lines of results', parseInt)
+  .option('--dry-run', 'Report only, no changes')
+  .option('--no-backup', 'Skip .bak creation')
+  .action(async (path: string | undefined, options: Record<string, unknown>) => {
+    const { sessionTrim } = await import('./commands/session.js');
+    return sessionTrim(path, options as Parameters<typeof sessionTrim>[1]);
+  });
+
+sessionCmd
+  .command('trim-thinking [path]')
+  .description('Trim thinking blocks from session JSONL')
+  .option('--dry-run', 'Report only, no changes')
+  .option('--no-backup', 'Skip .bak creation')
+  .action(async (path: string | undefined, options: Record<string, unknown>) => {
+    const { sessionTrimThinking } = await import('./commands/session.js');
+    return sessionTrimThinking(path, options as Parameters<typeof sessionTrimThinking>[1]);
+  });
+
+sessionCmd
+  .command('trim-all [path]')
+  .description('Trim all strippable content (tools, thinking, images)')
+  .option('--dry-run', 'Report only, no changes')
+  .option('--no-backup', 'Skip .bak creation')
+  .action(async (path: string | undefined, options: Record<string, unknown>) => {
+    const { sessionTrimAll } = await import('./commands/session.js');
+    return sessionTrimAll(path, options as Parameters<typeof sessionTrimAll>[1]);
+  });
+
+sessionCmd
+  .command('compact [path]')
+  .description('Compact session before position N — summarize old, keep recent')
+  .requiredOption('--before <n>', 'Chain position to compact before', parseInt)
+  .option('--dry-run', 'Report only, no changes')
+  .option('--no-backup', 'Skip .bak creation')
+  .option('--output <path>', 'Output file path (default: auto-generated)')
+  .action(async (path: string | undefined, options: Record<string, unknown>) => {
+    const { sessionCompact } = await import('./commands/session.js');
+    return sessionCompact(path, options as Parameters<typeof sessionCompact>[1]);
+  });
+
 program
   .command('train-bpe', { hidden: true })
   .description('Train BPE vocabulary from indexed code')
