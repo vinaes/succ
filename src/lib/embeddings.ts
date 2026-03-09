@@ -26,6 +26,10 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   'Xenova/bge-base-en-v1.5': 768,
   'Xenova/bge-large-en-v1.5': 1024,
   'Xenova/multilingual-e5-large': 1024,
+  'jinaai/jina-embeddings-v2-base-code': 768,
+  'jinaai/jina-embeddings-v2-base-en': 768,
+  'jinaai/jina-embeddings-v2-small-en': 512,
+  'nomic-ai/nomic-embed-code': 768,
   'openai/text-embedding-3-small': 1536,
   'openai/text-embedding-3-large': 3072,
   'openai/text-embedding-ada-002': 1536,
@@ -37,6 +41,27 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   'mistralai/codestral-embed-2505': 3072,
   'google/gemini-embedding-001': 3072,
 };
+
+// Known model max token lengths (for tokenizer truncation)
+// Models not listed here default to 128 tokens
+const MODEL_MAX_LENGTHS: Record<string, number> = {
+  'jinaai/jina-embeddings-v2-base-code': 8192,
+  'jinaai/jina-embeddings-v2-base-en': 8192,
+  'jinaai/jina-embeddings-v2-small-en': 8192,
+  'nomic-ai/nomic-embed-code': 8192,
+  'Xenova/bge-large-en-v1.5': 512,
+  'Xenova/bge-base-en-v1.5': 512,
+  'Xenova/bge-small-en-v1.5': 512,
+  'baai/bge-m3': 8192,
+};
+
+/**
+ * Get max token length for a model (for tokenizer truncation).
+ * Returns the model-specific limit, or 128 for unknown models.
+ */
+export function getModelMaxLength(model: string): number {
+  return MODEL_MAX_LENGTHS[model] ?? 128;
+}
 
 // Default timeout for API requests (30 seconds)
 const API_TIMEOUT_MS = 30000;
@@ -213,7 +238,7 @@ function getEmbeddingModel(): string {
  * Auto-detects GPU provider per platform: DirectML (Windows), CoreML (macOS arm64),
  * CUDA (Linux), CPU (all). Uses onnxruntime-node for 4-17x speedup over WASM.
  */
-async function getNativeSession(): Promise<NativeOrtSession> {
+export async function getNativeSession(): Promise<NativeOrtSession> {
   if (!nativeSession) {
     const config = getConfigWithOverride();
     const embeddingModel = getEmbeddingModel();
@@ -237,6 +262,7 @@ async function getNativeSession(): Promise<NativeOrtSession> {
     nativeSession = new NativeOrtSession({
       model: embeddingModel,
       providers: providerResult.fallbackChain,
+      maxLength: getModelMaxLength(embeddingModel),
     });
 
     try {

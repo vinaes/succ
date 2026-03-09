@@ -19,6 +19,8 @@ export interface NativeOrtSessionConfig {
   model: string;
   providers?: string[];
   numThreads?: number;
+  /** Max token length for tokenizer truncation (default: model-specific or 128) */
+  maxLength?: number;
 }
 
 export class NativeOrtSession {
@@ -27,12 +29,14 @@ export class NativeOrtSession {
   private model: string;
   private providers: string[];
   private numThreads: number;
+  private maxLength: number;
   private activeProvider: string = 'cpu';
 
   constructor(config: NativeOrtSessionConfig) {
     this.model = config.model;
     this.providers = config.providers || ['cpu'];
     this.numThreads = config.numThreads ?? 1;
+    this.maxLength = config.maxLength ?? 128;
   }
 
   async init(): Promise<void> {
@@ -80,7 +84,7 @@ export class NativeOrtSession {
     const encoded = this.tokenizer(texts, {
       padding: true,
       truncation: true,
-      max_length: 128,
+      max_length: this.maxLength,
     });
 
     const batchSize = encoded.input_ids.dims[0];
@@ -121,6 +125,98 @@ export class NativeOrtSession {
       seqLen,
       hiddenDim
     );
+  }
+
+  /**
+   * Run inference and return raw per-token hidden states (before pooling).
+   * Used by late chunking to pool embeddings per AST chunk boundaries.
+   *
+   * @returns { hiddenStates, attentionMask, seqLen, hiddenDim } for each text
+   */
+  async embedRaw(
+    text: string
+  ): Promise<{
+    hiddenStates: Float32Array;
+    attentionMask: any;
+    seqLen: number;
+    hiddenDim: number;
+  }> {
+    if (!this.session || !this.tokenizer) {
+      throw new DependencyError('Session not initialized. Call init() first.');
+    }
+
+    // Tokenize single text
+    const encoded = this.tokenizer([text], {
+      padding: true,
+      truncation: true,
+      max_length: this.maxLength,
+    });
+
+    const seqLen = encoded.input_ids.dims[1];
+
+    // Convert to ORT int64 tensors
+    const inputIds = toBigInt64Tensor(encoded.input_ids.data, [1, seqLen]);
+    const attentionMask = toBigInt64Tensor(encoded.attention_mask.data, [1, seqLen]);
+
+    const feeds: Record<string, ort.Tensor> = {
+      input_ids: inputIds,
+      attention_mask: attentionMask,
+    };
+
+    if (this.session.inputNames.includes('token_type_ids')) {
+      feeds.token_type_ids = new ort.Tensor('int64', new BigInt64Array(seqLen), [1, seqLen]);
+    }
+
+    const results = await this.session.run(feeds);
+
+    const outputKey =
+      'last_hidden_state' in results ? 'last_hidden_state' : this.session.outputNames[0];
+    const output = results[outputKey];
+    const hiddenDim = output.dims[output.dims.length - 1];
+
+    return {
+      hiddenStates: output.data as Float32Array,
+      attentionMask: encoded.attention_mask.data,
+      seqLen,
+      hiddenDim,
+    };
+  }
+
+  /**
+   * Tokenize text and return token offsets (character positions).
+   * Used by late chunking to map AST chunk boundaries to token positions.
+   */
+  getTokenOffsets(text: string): Array<[number, number]> {
+    if (!this.tokenizer) {
+      throw new DependencyError('Session not initialized. Call init() first.');
+    }
+
+    // Pass as array for consistent behavior with embedRaw() (2D tensor output)
+    const encoded = this.tokenizer([text], {
+      truncation: true,
+      max_length: this.maxLength,
+      return_offsets_mapping: true,
+    });
+
+    // offsets_mapping: [[start, end], ...] for each token
+    const offsets: Array<[number, number]> = [];
+    if (encoded.offsets_mapping?.data) {
+      const data = encoded.offsets_mapping.data;
+      for (let i = 0; i < data.length; i += 2) {
+        offsets.push([Number(data[i]), Number(data[i + 1])]);
+      }
+    } else {
+      // Fallback: estimate from token count and text length
+      const tokenCount = encoded.input_ids.dims[encoded.input_ids.dims.length - 1];
+      const charPerToken = Math.ceil(text.length / Math.max(tokenCount, 1));
+      for (let i = 0; i < tokenCount; i++) {
+        const start = i * charPerToken;
+        const end = Math.min((i + 1) * charPerToken, text.length);
+        offsets.push([start, end]);
+      }
+    }
+
+    return offsets;
   }
 
   get provider(): string {
