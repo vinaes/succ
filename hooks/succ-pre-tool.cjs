@@ -852,7 +852,7 @@ process.stdin.on('end', async () => {
       if (fileGuardResult) {
         // In bypass mode with trustAgentPermissions: downgrade to context warning
         if (trustBypass) {
-          contextParts.push(`<security-warning type="file-guard">[succ file guard — bypassed] ${escapeXml(fileGuardResult.reason)}</security-warning>`);
+          contextParts.push(`<security-warning type="file-guard">[succ file guard — bypassed] ${sanitize(fileGuardResult.reason, 300)}</security-warning>`);
         } else {
           const result =
             fileGuardResult.mode === 'ask'
@@ -923,7 +923,7 @@ process.stdin.on('end', async () => {
       if (dangerousResult) {
         // In bypass mode with trustAgentPermissions: downgrade to context warning
         if (trustBypass) {
-          contextParts.push(`<security-warning type="command-safety">[succ guard — bypassed] ${escapeXml(dangerousResult.reason)}</security-warning>`);
+          contextParts.push(`<security-warning type="command-safety">[succ guard — bypassed] ${sanitize(dangerousResult.reason, 300)}</security-warning>`);
         } else {
           const result =
             dangerousResult.mode === 'ask'

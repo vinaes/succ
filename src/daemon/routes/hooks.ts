@@ -370,11 +370,10 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             const destLabel =
               channel === 'file_write' && filePath ? quickFileLabel(filePath) : undefined;
             const actionId = `${channel}:step${ifcState.outboundStepCount}`;
-            const ifcSecConfig = getConfig().security;
             const wdResult = checkWriteDown(ifcState, channel, {
               destinationLabel: destLabel,
               actionId,
-              stepLimits: ifcSecConfig?.ifc?.stepLimits,
+              stepLimits: secConfig?.ifc?.stepLimits,
             });
 
             if (wdResult.action === 'deny') {
@@ -1052,8 +1051,12 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               ctx.log(
                 `[hooks/permission] Safety guard bypassed (trustAgentPermissions): ${dangerResult.reason}`
               );
-              // Allow through — agent has full permissions
-              return {};
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PermissionRequest',
+                  additionalContext: `<security-warning type="command-safety">[succ guard — bypassed] ${sanitizeForContext(dangerResult.reason, 300)}</security-warning>`,
+                },
+              };
             }
             ctx.log(`[hooks/permission] Safety guard denied: ${dangerResult.reason}`);
             return {
@@ -1091,7 +1094,12 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             ctx.log(
               `[hooks/permission] Hook-rule #${topRule.id} deny bypassed (trustAgentPermissions)`
             );
-            return {}; // pass-through
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                additionalContext: `<security-warning>[succ rule #${topRule.id} — bypassed] ${sanitizeForContext(topRule.content, 300)}</security-warning>`,
+              },
+            };
           }
           ctx.log(`[hooks/permission] Auto-denied ${toolName} by rule #${topRule.id}`);
           return {
