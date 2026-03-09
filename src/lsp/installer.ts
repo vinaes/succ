@@ -2,7 +2,7 @@
  * LSP Auto-Installer — downloads and installs LSP servers on demand.
  *
  * Install location: ~/.succ/lsp-servers/<name>/
- * Security: npm --ignore-scripts, binary SHA256 verification.
+ * Security: npm --ignore-scripts, server name validation.
  */
 
 import { execFileSync } from 'child_process';
@@ -80,8 +80,9 @@ export function getServerBinaryPath(serverName: string, command: string): string
 export function isServerInstalled(serverName: string, command: string): boolean {
   const binaryPath = getServerBinaryPath(serverName, command);
 
-  // Check if it's in our managed directory
-  if (binaryPath.startsWith(getServersDir())) {
+  // Check if it's in our managed directory (append sep to avoid matching siblings)
+  const serversDir = getServersDir() + path.sep;
+  if (binaryPath.startsWith(serversDir)) {
     return fs.existsSync(binaryPath);
   }
 

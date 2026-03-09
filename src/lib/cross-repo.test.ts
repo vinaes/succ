@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 import type * as fs from 'fs';
 
 vi.mock('./fault-logger.js', () => ({
@@ -35,17 +36,21 @@ describe('cross-repo', () => {
   });
 
   it('should discover succ-initialized projects', () => {
+    // path.resolve normalizes '/projects' to platform-specific absolute path
+    const root = path.resolve('/projects');
+    const myappRoot = path.join(root, 'myapp');
+
     existsSyncMock.mockImplementation((p: unknown) => {
-      const s = String(p).replace(/\\/g, '/');
-      if (s === '/projects') return true;
-      if (s === '/projects/myapp/.succ') return true;
-      if (s === '/projects/myapp/.succ/succ.db') return true;
+      const s = String(p);
+      if (s === root) return true;
+      if (s === path.join(myappRoot, '.succ')) return true;
+      if (s === path.join(myappRoot, '.succ', 'succ.db')) return true;
       return false;
     });
 
     readdirSyncMock.mockImplementation((p: unknown) => {
-      const s = String(p).replace(/\\/g, '/');
-      if (s === '/projects') {
+      const s = String(p);
+      if (s === root) {
         return [
           { name: 'myapp', isDirectory: () => true, isFile: () => false },
           { name: 'other', isDirectory: () => true, isFile: () => false },
@@ -70,10 +75,10 @@ describe('cross-repo', () => {
   });
 
   it('should handle fs errors gracefully', () => {
+    const root = path.resolve('/projects');
     existsSyncMock.mockImplementation((p: unknown) => {
-      const s = String(p).replace(/\\/g, '/');
       // Search path exists but is not itself a succ project
-      if (s === '/projects') return true;
+      if (String(p) === root) return true;
       return false;
     });
     readdirSyncMock.mockImplementation(() => {

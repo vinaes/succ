@@ -31,16 +31,18 @@ export function getAutoExtractedMemories(): AutoMemoryRow[] {
  * Only updates the confidence value — source_type is intentionally left unchanged
  * so that non-auto memories are not relabelled.
  */
-export function promoteMemoryConfidence(memoryId: number): void {
+export function promoteMemoryConfidence(memoryId: number): boolean {
   try {
-    cachedPrepare(
+    const result = cachedPrepare(
       `UPDATE memories SET confidence = 0.7
        WHERE id = ? AND (confidence IS NULL OR confidence < 0.7)`
     ).run(memoryId);
+    return result.changes > 0;
   } catch (error) {
     logWarn('auto-memory-db', `Failed to promote memory #${memoryId}`, {
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 

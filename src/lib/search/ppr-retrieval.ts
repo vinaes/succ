@@ -122,15 +122,16 @@ export async function pprEnhancedRerank(
   }
 
   // Step 4: Normalize scores (avoid spread for large maps — stack overflow risk)
-  let maxSemantic = 0.001;
+  // Use 0 as initial max — if all values are 0, normalization yields 0 (no signal)
+  let maxSemantic = 0;
   for (const r of semanticResults) {
     if (r.similarity > maxSemantic) maxSemantic = r.similarity;
   }
-  let maxPPR = 0.001;
+  let maxPPR = 0;
   for (const v of pprScores.values()) {
     if (v > maxPPR) maxPPR = v;
   }
-  let maxCentrality = 0.001;
+  let maxCentrality = 0;
   for (const v of centralityScores.values()) {
     if (v > maxCentrality) maxCentrality = v;
   }
@@ -142,9 +143,9 @@ export async function pprEnhancedRerank(
   const results: PPRSearchResult[] = [];
 
   for (const memoryId of candidates) {
-    const semantic = (semanticMap.get(memoryId) ?? 0) / maxSemantic;
-    const ppr = (pprScores.get(memoryId) ?? 0) / maxPPR;
-    const centrality = (centralityScores.get(memoryId) ?? 0) / maxCentrality;
+    const semantic = maxSemantic > 0 ? (semanticMap.get(memoryId) ?? 0) / maxSemantic : 0;
+    const ppr = maxPPR > 0 ? (pprScores.get(memoryId) ?? 0) / maxPPR : 0;
+    const centrality = maxCentrality > 0 ? (centralityScores.get(memoryId) ?? 0) / maxCentrality : 0;
     const feedback = feedbackFactors.get(memoryId) ?? 1.0;
 
     // Combine scores (weights: semantic + ppr + centrality = linear blend)

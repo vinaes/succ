@@ -49,8 +49,8 @@ export async function consolidateAutoMemories(options?: {
   /** Max unused days before pruning (default: 90) */
   maxUnusedDays?: number;
 }): Promise<ConsolidationResult> {
-  const mergeThreshold = options?.mergeThreshold ?? 0.92;
-  const promotionAccesses = options?.promotionAccesses ?? 5;
+  const mergeThreshold = Math.max(0.5, Math.min(1.0, options?.mergeThreshold ?? 0.92));
+  const promotionAccesses = Math.max(1, options?.promotionAccesses ?? 5);
   const maxUnusedDays = options?.maxUnusedDays ?? 90;
 
   const result: ConsolidationResult = {
@@ -130,6 +130,9 @@ export async function consolidateAutoMemories(options?: {
         }
         const jEmbed = embedCache.get(memJ.id)!;
 
+        // Skip dimension mismatch (can happen after embedding model change)
+        if (iEmbed.length !== jEmbed.length) continue;
+
         const similarity = cosineSimilarity(iEmbed, jEmbed);
         if (similarity >= mergeThreshold) {
           union(memI.id, memJ.id);
@@ -181,8 +184,9 @@ export async function consolidateAutoMemories(options?: {
     );
 
     for (const mem of toPromote) {
-      promoteMemoryConfidence(mem.id);
-      result.promoted++;
+      if (promoteMemoryConfidence(mem.id)) {
+        result.promoted++;
+      }
     }
 
     // Step 3: Prune old unused auto-extracted memories.

@@ -121,14 +121,15 @@ function findAffectedBrainDocs(sourceFiles: string[], projectRoot: string): stri
   const affected: string[] = [];
 
   for (const srcFile of sourceFiles) {
-    // Convention: brain docs are named after the directory they describe
-    const dir = path.dirname(srcFile);
+    // Convention: brain docs are named after the directory they describe.
+    // Use path.posix.dirname to preserve forward slashes from git output
+    // (path.dirname on Windows normalizes to backslashes).
+    const dir = path.posix.dirname(srcFile);
 
-    // path.dirname returns '.' for root-level files (e.g. 'index.ts').
+    // path.posix.dirname returns '.' for root-level files (e.g. 'index.ts').
     // In that case there is no meaningful directory-level brain doc to check.
     if (dir === '.') continue;
 
-    // Use forward slashes for consistent splitting across platforms
     const parts = dir.split('/');
 
     // Check for brain docs at each directory level

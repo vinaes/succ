@@ -65,6 +65,7 @@ export interface MemoryWithLinks extends Memory {
     weight: number;
     valid_from: string | null;
     valid_until: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
   incoming_links: Array<{
     source_id: number;
@@ -72,6 +73,7 @@ export interface MemoryWithLinks extends Memory {
     weight: number;
     valid_from: string | null;
     valid_until: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
 }
 
@@ -213,6 +215,7 @@ export function getMemoryWithLinks(
       weight: l.weight,
       valid_from: l.valid_from,
       valid_until: l.valid_until,
+      metadata: l.metadata ?? null,
     })),
     incoming_links: links.incoming.filter(filterLink).map((l) => ({
       source_id: l.source_id,
@@ -220,6 +223,7 @@ export function getMemoryWithLinks(
       weight: l.weight,
       valid_from: l.valid_from,
       valid_until: l.valid_until,
+      metadata: l.metadata ?? null,
     })),
   };
 }

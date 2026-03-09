@@ -58,7 +58,9 @@ export function discoverProjects(searchPaths?: string[]): CrossRepoProject[] {
   const projects: CrossRepoProject[] = [];
   const seen = new Set<string>();
 
-  for (const searchPath of paths) {
+  for (const rawPath of paths) {
+    // Resolve to absolute path for consistent dedup and stable rootPath values
+    const searchPath = path.resolve(rawPath);
     if (!fs.existsSync(searchPath)) continue;
 
     // Check if searchPath itself is a succ project (e.g. ~/code is a mono-repo root)
