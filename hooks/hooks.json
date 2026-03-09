@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-session-start.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-stop-reflection.cjs\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-session-end.cjs\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-user-prompt.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-post-tool.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings --no-deprecation \"${CLAUDE_PLUGIN_ROOT}/hooks/succ-pre-tool.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

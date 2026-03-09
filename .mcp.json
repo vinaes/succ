@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "succ": {
+      "command": "node",
+      "args": [
+        "--no-warnings",
+        "--no-deprecation",
+        "${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js",
+        "--project",
+        "${cwd}"
+      ],
+      "env": {
+        "SUCC_PROJECT_ROOT": "${cwd}"
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.4.45",
+  "version": "1.4.53",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -28,8 +28,8 @@
   },
   "scripts": {
     "clean:dist": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
-    "build": "npm run clean:dist && prettier --check src/ && eslint src/ && tsc",
-    "build:compile": "npm run clean:dist && tsc",
+    "build": "npm run clean:dist && prettier --check src/ && eslint src/ && tsc && npm run generate:plugin-manifest",
+    "build:compile": "npm run clean:dist && tsc && npm run generate:plugin-manifest",
     "dev": "tsx src/cli.ts",
     "test": "vitest",
     "test:storage": "vitest --run src/lib/storage/",
@@ -44,8 +44,9 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
+    "generate:plugin-manifest": "node --input-type=module -e \"import('./dist/lib/plugin-manifest.js').then(m => m.writePluginManifest())\"",
     "prepare": "npm run build:compile",
-    "prepublishOnly": "npm run build && npm run lint"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "claude",
@@ -120,7 +121,10 @@
     "!dist/**/*.integration.*",
     "!dist/**/test-backends.*",
     "hooks",
-    "agents"
+    "agents",
+    ".claude-plugin",
+    ".mcp.json",
+    "skills"
   ],
   "engines": {
     "node": ">=20.0.0"

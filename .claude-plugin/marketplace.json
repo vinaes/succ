@@ -1,0 +1,28 @@
+{
+  "name": "vinaes",
+  "owner": {
+    "name": "vinaes",
+    "email": "mindpalace@succ.ai"
+  },
+  "metadata": {
+    "description": "Persistent memory, semantic search, knowledge graph for AI coding assistants"
+  },
+  "plugins": [
+    {
+      "name": "succ",
+      "source": {
+        "source": "npm",
+        "package": "@vinaes/succ"
+      },
+      "description": "Persistent memory, semantic search, knowledge graph for AI coding assistants",
+      "category": "developer-tools",
+      "keywords": [
+        "memory",
+        "rag",
+        "semantic-search",
+        "mcp",
+        "knowledge-graph"
+      ]
+    }
+  ]
+}
