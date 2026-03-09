@@ -87,12 +87,19 @@ export async function consolidateAutoMemories(options?: {
     }
 
     // Only include items whose embedding dimension matches the majority.
-    // We determine the expected dimension from the first non-empty embedding.
-    let expectedDim: number | null = null;
+    // Count dimensions to find the most common one (handles model switches).
+    const dimCounts = new Map<number, number>();
     for (const vec of embeds.values()) {
       if (vec.length > 0) {
-        expectedDim = vec.length;
-        break;
+        dimCounts.set(vec.length, (dimCounts.get(vec.length) ?? 0) + 1);
+      }
+    }
+    let expectedDim: number | null = null;
+    let maxCount = 0;
+    for (const [dim, count] of dimCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        expectedDim = dim;
       }
     }
 

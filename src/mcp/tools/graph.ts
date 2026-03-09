@@ -267,6 +267,7 @@ ${relationStats}`;
             const { createProximityLinks } =
               await import('../../lib/graph/contextual-proximity.js');
             const result = await createProximityLinks({ minCooccurrence: 2 });
+            invalidateGraphCache();
             return {
               content: [
                 {
@@ -343,6 +344,7 @@ ${relationStats}`;
             const result = await graphCleanup({
               pruneThreshold: threshold,
             });
+            invalidateGraphCache();
             return {
               content: [
                 {

@@ -252,7 +252,8 @@ export function formatDashboard(dashboard: ObservabilityDashboard): string {
   const mh = dashboard.memoryHealth;
   lines.push('Memory Health:');
   lines.push(`  Total: ${mh.total}`);
-  lines.push(`  Never accessed: ${mh.neverAccessed} (${(mh.staleRatio * 100).toFixed(1)}% stale)`);
+  const neverAccessedRatio = mh.total > 0 ? mh.neverAccessed / mh.total : 0;
+  lines.push(`  Never accessed: ${mh.neverAccessed} (${(neverAccessedRatio * 100).toFixed(1)}%)`);
   lines.push(`  Avg age: ${mh.avgAge} days`);
   lines.push(`  Avg access count: ${mh.avgAccessCount}`);
 

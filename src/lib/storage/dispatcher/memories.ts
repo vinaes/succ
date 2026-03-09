@@ -40,7 +40,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const qualityFactors = options?.qualityFactors;
     const validFrom = options?.validFrom;
     const validUntil = options?.validUntil;
-    const confidence = options?.confidence ?? (qualityScore != null ? qualityScore : 0.5);
+    const confidence = options?.confidence ?? 0.5;
     // No default — DB layers default to 'human'. Callers should pass explicitly.
     const sourceType = options?.sourceType;
 
@@ -95,6 +95,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             createdAt: new Date().toISOString(),
             validFrom,
             validUntil,
+            confidence,
+            sourceType,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -128,6 +130,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             createdAt: new Date().toISOString(),
             validFrom,
             validUntil,
+            confidence,
+            sourceType,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);

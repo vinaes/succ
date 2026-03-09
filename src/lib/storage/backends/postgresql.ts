@@ -995,7 +995,9 @@ export class PostgresBackend {
 
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
-             access_count, last_accessed, valid_from, valid_until, created_at
+             access_count, last_accessed, correction_count, is_invariant,
+             priority_score, valid_from, valid_until, confidence, source_type,
+             created_at
       FROM memories WHERE id = ANY($1)`;
     const params: unknown[] = [ids];
     let idx = 2;
@@ -1789,8 +1791,9 @@ export class PostgresBackend {
 
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
-             access_count, last_accessed, valid_from, valid_until, created_at,
-             1 - (embedding <=> $1) as similarity
+             access_count, last_accessed, correction_count, is_invariant,
+             priority_score, valid_from, valid_until, confidence, source_type,
+             created_at, 1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
         AND invalidated_by IS NULL

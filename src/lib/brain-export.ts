@@ -149,13 +149,14 @@ function parseBrainDoc(
   let frontmatter: Record<string, unknown> = {};
   let body = content;
 
-  // Parse YAML frontmatter
-  if (content.startsWith('---\n')) {
-    const endIdx = content.indexOf('\n---\n', 4);
+  // Parse YAML frontmatter (handle both LF and CRLF line endings)
+  const normalized = content.replace(/\r\n/g, '\n');
+  if (normalized.startsWith('---\n')) {
+    const endIdx = normalized.indexOf('\n---\n', 4);
     if (endIdx !== -1) {
-      const fmBlock = content.substring(4, endIdx);
+      const fmBlock = normalized.substring(4, endIdx);
       frontmatter = parseSimpleYaml(fmBlock);
-      body = content.substring(endIdx + 5);
+      body = normalized.substring(endIdx + 5);
     }
   }
 

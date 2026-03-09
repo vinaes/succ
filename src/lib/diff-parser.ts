@@ -223,7 +223,11 @@ function mapFile(raw: parseDiff.File): DiffFile {
     isNew: from === '/dev/null',
     isDeleted: to === '/dev/null',
     isRenamed: from !== to && from !== '/dev/null' && to !== '/dev/null',
-    isBinary: raw.chunks.length === 0 && raw.additions === 0 && raw.deletions === 0,
+    isBinary:
+      raw.chunks.length === 0 &&
+      raw.additions === 0 &&
+      raw.deletions === 0 &&
+      from !== '/dev/null',
   };
 }
 

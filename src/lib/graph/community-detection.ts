@@ -263,11 +263,14 @@ export async function detectCommunitiesLP(
 export async function detectCommunities(
   options: { maxIterations?: number; minCommunitySize?: number; tagPrefix?: string } = {}
 ): Promise<CommunityResult> {
-  const { minCommunitySize = 2 } = options;
+  const { minCommunitySize = 2, tagPrefix = 'community' } = options;
 
   try {
     const { detectLouvainCommunities } = await import('./graphology-bridge.js');
     const louvainResult = await detectLouvainCommunities(minCommunitySize);
+
+    // Apply community tags (same as LP path) so Louvain results are persisted
+    await applyCommunityTags(louvainResult.communities, tagPrefix);
 
     // Map LouvainCommunity[] to CommunityResult format
     return {
@@ -284,6 +287,55 @@ export async function detectCommunities(
       error: err instanceof Error ? err.message : String(err),
     });
     return detectCommunitiesLP(options);
+  }
+}
+
+/**
+ * Apply community tags to memories based on detection results.
+ * Removes old tags with the given prefix and adds new ones.
+ */
+async function applyCommunityTags(
+  communities: Array<{ id: number; members: number[] }>,
+  tagPrefix: string
+): Promise<void> {
+  const tagPattern = `${tagPrefix}:`;
+  const allMemories = await getAllMemoriesForExport();
+
+  // Build a member→community lookup
+  const memberToCommunity = new Map<number, number>();
+  for (const c of communities) {
+    for (const memId of c.members) {
+      memberToCommunity.set(memId, c.id);
+    }
+  }
+
+  for (const mem of allMemories) {
+    const communityId = memberToCommunity.get(mem.id);
+    let tags = Array.isArray(mem.tags)
+      ? mem.tags
+      : typeof mem.tags === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(mem.tags);
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+
+    // Remove old community tags
+    const oldLen = tags.length;
+    tags = tags.filter((t: string) => !t.startsWith(tagPattern));
+
+    // Add new community tag if assigned
+    if (communityId != null) {
+      tags.push(`${tagPrefix}:${communityId}`);
+    }
+
+    // Only write if tags actually changed
+    if (tags.length !== oldLen || communityId != null) {
+      await updateMemoryTags(mem.id, tags);
+    }
   }
 }
 

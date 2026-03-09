@@ -794,6 +794,18 @@ export function initGlobalDb(database: Database.Database): void {
     // expected: column already exists
   }
 
+  // Migration: add provenance columns to global memories
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
+  } catch {
+    // expected: column already exists
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`).run();
+  } catch {
+    // expected: column already exists
+  }
+
   // Migration: add invalidated_by column for soft-delete during consolidation
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();

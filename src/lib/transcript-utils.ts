@@ -67,7 +67,10 @@ export function parseJSONL(content: string): TranscriptEntry[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      entries.push(JSON.parse(trimmed) as TranscriptEntry);
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        entries.push(parsed as TranscriptEntry);
+      }
     } catch (e) {
       logWarn('transcript-utils', `Skipping malformed JSONL line: ${e}`);
     }
@@ -86,7 +89,11 @@ export function getTextContent(content: TranscriptContent): string {
   if (Array.isArray(content)) {
     return content
       .filter((block): block is ContentBlock & { text: string } => {
-        return block?.type === 'text' && typeof block.text === 'string';
+        return (
+          block != null &&
+          typeof block.text === 'string' &&
+          (block.type === 'text' || block.type === undefined)
+        );
       })
       .map((block) => block.text)
       .join(' ');
