@@ -146,7 +146,11 @@ function fixWindowsPath(cwd: string): string {
 function succExists(cwd: string): boolean {
   try {
     return fs.existsSync(path.join(cwd, '.succ'));
-  } catch {
+  } catch (err) {
+    logWarn(
+      'hooks',
+      `succExists check failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+    );
     return false;
   }
 }
@@ -528,8 +532,12 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         return {};
-      } catch {
-        return {}; // fail-open
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `pre-tool handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
+        return {};
       }
     },
 
@@ -800,7 +808,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               } else if (typeof parsed === 'string') {
                 text = parsed;
               }
-            } catch {
+            } catch (err) {
+              logWarn(
+                'hooks',
+                `Task output JSON parse failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+              );
               text = typeof rawToolOutput === 'string' ? rawToolOutput : '';
             }
 
@@ -839,19 +851,29 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                     await saveMemory(bullet.text, embedding, bullet.tags, 'memory-md-sync', {
                       type: 'observation',
                     });
-                  } catch {
-                    // fail-open per bullet
+                  } catch (err) {
+                    logWarn(
+                      'hooks',
+                      `Memory bullet save failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+                    );
                   }
                 })
               );
-            } catch {
-              // fail-open — file may not exist
+            } catch (err) {
+              logWarn(
+                'hooks',
+                `MEMORY.md sync failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+              );
             }
           }
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `post-tool handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -872,8 +894,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (sessionId && ctx.sessionManager) {
           try {
             ctx.sessionManager.activity(sessionId, 'user_prompt');
-          } catch {
-            // session not registered
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Session activity update failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -898,8 +923,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 },
               };
             }
-          } catch {
-            // fail-open
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Compact-pending fallback failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -907,7 +935,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         // TODO: port skill suggestion logic when full HTTP migration is complete
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `user-prompt handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -926,13 +958,20 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (sessionId && ctx.sessionManager) {
           try {
             ctx.sessionManager.activity(sessionId, 'stop');
-          } catch {
-            // session not registered
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Session activity update failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `stop handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1017,7 +1056,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
 
         // 'ask' and 'inject' — pass-through to user dialog
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `permission handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1063,7 +1106,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `subagent-stop handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1136,8 +1183,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               const ts = new Date().toISOString().replace(/[:.]/g, '-');
               fs.renameSync(precomputedPath, path.join(archiveDir, `context-${ts}.md`));
             }
-          } catch {
-            // intentionally empty
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Precomputed context archive failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -1212,7 +1262,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         flushBudgets();
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `session-end handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1252,7 +1306,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         })();
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `task-completed handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },

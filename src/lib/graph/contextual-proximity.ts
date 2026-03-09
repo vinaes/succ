@@ -124,15 +124,23 @@ export async function createProximityLinks(
   // Find max count for weight normalization
   const maxCount = Math.max(1, ...filtered.map((p) => p.count));
 
+  // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls)
+  const uniqueIds = [...new Set(filtered.flatMap((p) => [p.node_1, p.node_2]))];
+  const linkResults = await Promise.all(uniqueIds.map((id) => getMemoryLinks(id)));
+  const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>>>();
+  for (let i = 0; i < uniqueIds.length; i++) {
+    linksById.set(uniqueIds[i], linkResults[i]);
+  }
+
   let created = 0;
   let skipped = 0;
 
   for (const pair of filtered) {
-    // Check if any link already exists between these two memories
-    const linksA = await getMemoryLinks(pair.node_1);
+    // Check if any link already exists between these two memories (using pre-fetched data)
+    const linksA = linksById.get(pair.node_1);
     const hasLink =
-      linksA.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
-      linksA.incoming?.some((l: any) => l.source_id === pair.node_2);
+      linksA?.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
+      linksA?.incoming?.some((l: any) => l.source_id === pair.node_2);
 
     if (hasLink) {
       skipped++;

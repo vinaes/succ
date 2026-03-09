@@ -27,44 +27,54 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
   let reindexed = 0;
   let errors = 0;
 
-  // Clean up deleted entries
-  for (const filePath of deleted) {
-    await deleteDocumentsByPath(filePath);
-    await deleteFileHash(filePath);
-    details.push(`Removed: ${filePath}`);
-  }
+  // Clean up deleted entries — batch all deletes in parallel
+  await Promise.all(
+    deleted.map(async (filePath) => {
+      await deleteDocumentsByPath(filePath);
+      await deleteFileHash(filePath);
+      details.push(`Removed: ${filePath}`);
+    })
+  );
 
-  // Re-index stale files
-  for (const dbPath of stale) {
-    const isCode = dbPath.startsWith('code:');
-    const relativePath = isCode ? dbPath.slice(5) : dbPath;
-    const normalized = relativePath.split(/[\\/]/).join(path.sep);
-    const absolutePath = path.resolve(projectRoot, normalized);
+  // Re-index stale files — bounded concurrency (5 at a time)
+  const CONCURRENCY = 5;
+  for (let i = 0; i < stale.length; i += CONCURRENCY) {
+    const chunk = stale.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (dbPath) => {
+        const isCode = dbPath.startsWith('code:');
+        const relativePath = isCode ? dbPath.slice(5) : dbPath;
+        const normalized = relativePath.split(/[\\/]/).join(path.sep);
+        const absolutePath = path.resolve(projectRoot, normalized);
 
-    try {
-      if (isCode) {
-        const result = await indexCodeFile(absolutePath, { force: true });
-        if (result.success && !result.skipped) {
-          details.push(`Reindexed (code): ${relativePath}`);
-          reindexed++;
-        } else if (result.error) {
-          details.push(`Error: ${relativePath} — ${result.error}`);
+        try {
+          if (isCode) {
+            const result = await indexCodeFile(absolutePath, { force: true });
+            if (result.success && !result.skipped) {
+              details.push(`Reindexed (code): ${relativePath}`);
+              reindexed++;
+            } else if (result.error) {
+              details.push(`Error: ${relativePath} — ${result.error}`);
+              errors++;
+            }
+          } else {
+            const result = await indexDocFile(absolutePath, { force: true });
+            if (result.success && !result.skipped) {
+              details.push(`Reindexed (doc): ${relativePath}`);
+              reindexed++;
+            } else if (result.error) {
+              details.push(`Error: ${relativePath} — ${result.error}`);
+              errors++;
+            }
+          }
+        } catch (err) {
+          details.push(
+            `Error: ${relativePath} — ${err instanceof Error ? err.message : String(err)}`
+          );
           errors++;
         }
-      } else {
-        const result = await indexDocFile(absolutePath, { force: true });
-        if (result.success && !result.skipped) {
-          details.push(`Reindexed (doc): ${relativePath}`);
-          reindexed++;
-        } else if (result.error) {
-          details.push(`Error: ${relativePath} — ${result.error}`);
-          errors++;
-        }
-      }
-    } catch (err: any) {
-      details.push(`Error: ${relativePath} — ${err.message}`);
-      errors++;
-    }
+      })
+    );
   }
 
   return { reindexed, cleaned: deleted.length, errors, total, details };
