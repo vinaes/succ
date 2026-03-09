@@ -328,12 +328,63 @@ This passes `think: true` to Ollama's native API, which enables proper content o
 
 ---
 
+## Autonomous Mode (`trustAgentPermissions`)
+
+When an AI agent runs with bypassed permissions (e.g. Claude Code `--dangerously-skip-permissions`), succ's security guards can block autonomous operations like `git commit` after reading sensitive files.
+
+The `trustAgentPermissions` option downgrades blocking decisions (deny/ask) to non-blocking context warnings, allowing autonomous operation while keeping the agent informed about security concerns.
+
+### What changes
+
+| Guard | Normal mode | With `trustAgentPermissions` |
+|-------|-------------|------------------------------|
+| Command safety (60+ patterns) | Deny/ask | Context warning |
+| File operation guard | Deny/ask | Context warning |
+| IFC write-down (*-property) | Deny/ask | Context warning |
+| Exfiltration URL blocklist | Ask | Context warning |
+| Hook rules (deny/ask) | Deny/ask | Context warning |
+| Guardrails code policy | Deny (critical), ask (high) | Context warning |
+
+### What stays ON (always)
+
+| Guard | Reason |
+|-------|--------|
+| Injection detection (all 3 tiers) | Protects the agent from prompt injection / hijacking |
+| Content sanitization | Non-blocking, cleans input |
+| Sensitive auto-redact | Non-blocking, redacts secrets |
+| IFC label tracking | Tracks sensitivity, just doesn't enforce |
+| Post-tool secret scanning | Warning only, no blocking |
+
+### Activation
+
+Requires **both** conditions:
+1. Config: `security.trustAgentPermissions: true`
+2. Agent sends `permission_mode: "bypassPermissions"` (automatic with `--dangerously-skip-permissions`)
+
+```json
+{
+  "security": {
+    "trustAgentPermissions": true
+  }
+}
+```
+
+### Security model
+
+- `permission_mode` is stored in session IFC state at session-start (trusted source of truth)
+- Subsequent requests validate against the stored session value, not per-request body
+- Unknown/invalid permission mode values are ignored (whitelist validation)
+- All bypassed decisions are still logged to daemon output and injected as `<security-warning>` context
+
+---
+
 ## Configuration Reference
 
 ```json
 {
   "security": {
     "enabled": true,
+    "trustAgentPermissions": false,
 
     "fileGuard": {
       "mode": "deny"
@@ -379,6 +430,7 @@ This passes `think: true` to Ollama's native API, which enables proper content o
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `security.enabled` | boolean | `true` | Master toggle for all security features |
+| `security.trustAgentPermissions` | boolean | `false` | Downgrade deny/ask to warnings when agent bypasses permissions |
 | `security.fileGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | File operation guard mode |
 | `security.ifc.enabled` | boolean | `true` | Enable Bell-LaPadula IFC |
 | `security.ifc.compartments` | string[] | all 4 | Active compartments |

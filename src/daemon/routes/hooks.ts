@@ -1262,7 +1262,14 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const ifcState = createSessionIFC();
         // Store permission mode from session start (trusted source of truth)
         const startPermMode = (body as Record<string, unknown>)?.permission_mode;
-        if (typeof startPermMode === 'string') {
+        const VALID_PERMISSION_MODES = [
+          'default',
+          'plan',
+          'acceptEdits',
+          'dontAsk',
+          'bypassPermissions',
+        ];
+        if (typeof startPermMode === 'string' && VALID_PERMISSION_MODES.includes(startPermMode)) {
           ifcState.permissionMode = startPermMode;
         }
         ifcStates.set(sessionId, ifcState);

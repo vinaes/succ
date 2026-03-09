@@ -1888,6 +1888,7 @@ Multi-layered security system with injection detection, information flow control
 {
   "security": {
     "enabled": true,
+    "trustAgentPermissions": false,
     "fileGuard": { "mode": "deny" },
     "ifc": {
       "enabled": true,
@@ -1914,6 +1915,7 @@ Multi-layered security system with injection detection, information flow control
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `security.enabled` | boolean | `true` | Master toggle for all security features |
+| `security.trustAgentPermissions` | boolean | `false` | Downgrade deny/ask to warnings when agent bypasses permissions (e.g. `--dangerously-skip-permissions`). See [security.md](./security.md#autonomous-mode-trustagentpermissions) |
 | `security.fileGuard.mode` | `"deny"` \| `"ask"` \| `"off"` | `"deny"` | File operation guard mode for sensitive files (.pem, .key, .env) |
 | `security.ifc.enabled` | boolean | `true` | Enable Bell-LaPadula information flow control |
 | `security.ifc.compartments` | string[] | all 4 | Active compartments: secrets, credentials, pii, internal_infra |
