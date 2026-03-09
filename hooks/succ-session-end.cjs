@@ -12,8 +12,10 @@
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { log: _log } = require('./core/log.cjs');
 
 adapter.runHook('session-end', async ({ hookInput, succDir }) => {
+  const log = (msg) => _log(succDir, 'session-end', msg);
   const daemonPort = getDaemonPort(succDir);
   if (!daemonPort) {
     process.exit(0);
@@ -37,7 +39,7 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
   // Tell daemon to unregister and process session
   // Daemon will handle transcript parsing, summarization, and memory saving asynchronously
   try {
-    await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
+    const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -47,8 +49,11 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
       }),
       signal: AbortSignal.timeout(5000),
     });
-  } catch {
-    // Daemon communication failed, exit anyway
+    if (!res.ok) {
+      log(`Unregister failed: ${res.status} ${res.statusText} for session ${sessionId}`);
+    }
+  } catch (err) {
+    log(`Daemon communication failed: ${err.message || err}`);
   }
 
   process.exit(0);

@@ -25,6 +25,7 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
   const { stale, deleted, total } = await getStaleFiles(projectRoot);
   const details: string[] = [];
   let reindexed = 0;
+  let cleaned = 0;
   let errors = 0;
 
   // Clean up deleted entries — batch all deletes (don't let one failure abort the rest)
@@ -35,12 +36,13 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
       return filePath;
     })
   );
-  for (const r of deleteResults) {
+  for (const [i, r] of deleteResults.entries()) {
     if (r.status === 'fulfilled') {
       details.push(`Removed: ${r.value}`);
+      cleaned++;
     } else {
       details.push(
-        `Delete error: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+        `Delete error (${deleted[i]}): ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
       );
       errors++;
     }
@@ -87,7 +89,7 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
     );
   }
 
-  return { reindexed, cleaned: deleted.length, errors, total, details };
+  return { reindexed, cleaned, errors, total, details };
 }
 
 /**

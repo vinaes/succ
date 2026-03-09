@@ -460,14 +460,14 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
       if (response.ok) {
         const data = await response.json();
         const allPinned = data.results || [];
+        // Track ALL pinned IDs for dedup with recent (including filtered-out observations)
+        for (const m of allPinned) pinnedIds.add(m.id);
         // Display only non-observation pinned, sorted by priority, top 10
         const displayPinned = allPinned
           .filter((m) => m.type !== 'observation')
           .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
           .slice(0, 10);
         if (displayPinned.length > 0) {
-          // Track ALL pinned IDs for dedup with recent (including filtered-out observations)
-          for (const m of allPinned) pinnedIds.add(m.id);
           const lines = displayPinned.map((m) => {
             const preview = m.content.slice(0, 100).replace(/\n/g, ' ');
             const type = m.type || 'obs';
@@ -534,7 +534,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
   // Output context
   if (contextParts.length > 0) {
-    let additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
+    // Sanitize closing wrapper tags from dynamic content to prevent XML injection
+    // (e.g. a stored memory or soul.md containing literal "</session>" would break the envelope)
+    const body = contextParts.join('\n\n').replace(/<\/session>/gi, '&lt;/session&gt;');
+    let additionalContext = `<session project="${projectName}">\n${body}\n</session>`;
     // Strip Claude-only sections for non-Claude agents
     additionalContext = adapter.adaptContext(agent, additionalContext);
     const { json, exitCode } = adapter.formatOutput(agent, 'SessionStart', { additionalContext });
