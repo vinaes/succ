@@ -133,9 +133,7 @@ export class NativeOrtSession {
    *
    * @returns { hiddenStates, attentionMask, seqLen, hiddenDim } for each text
    */
-  async embedRaw(
-    text: string
-  ): Promise<{
+  async embedRaw(text: string): Promise<{
     hiddenStates: Float32Array;
     attentionMask: any;
     seqLen: number;

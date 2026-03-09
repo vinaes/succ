@@ -123,7 +123,13 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
   kotlin: {
     name: 'Kotlin Language Server',
     languages: ['kotlin'],
-    rootMarkers: ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts', 'pom.xml'],
+    rootMarkers: [
+      'build.gradle',
+      'build.gradle.kts',
+      'settings.gradle',
+      'settings.gradle.kts',
+      'pom.xml',
+    ],
     install: {
       type: 'binary',
       repo: 'fwcd/kotlin-language-server',

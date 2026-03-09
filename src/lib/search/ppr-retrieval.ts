@@ -74,7 +74,7 @@ export async function pprEnhancedRerank(
 
   // Step 1: Get PPR scores seeded from semantic results
   const seedIds = semanticResults.map((r) => r.memoryId);
-  let pprScores: Map<number, number> = new Map();
+  const pprScores: Map<number, number> = new Map();
   try {
     const pprResults = await personalizedPageRank(seedIds, limit * 2, alpha);
     for (const { memoryId, score } of pprResults) {

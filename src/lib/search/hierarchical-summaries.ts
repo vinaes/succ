@@ -151,7 +151,8 @@ function extractExportedSymbols(content: string, ext: string): string[] {
 
 async function summarizeFile(file: FileInfo): Promise<string> {
   const truncated = file.content.slice(0, MAX_FILE_CONTENT_CHARS);
-  const symbolList = file.symbols.length > 0 ? `\nExported symbols: ${file.symbols.join(', ')}` : '';
+  const symbolList =
+    file.symbols.length > 0 ? `\nExported symbols: ${file.symbols.join(', ')}` : '';
 
   const prompt = `Summarize this source file in 2-3 sentences. Focus on its purpose, what it provides, and its role in the project. Be specific about functionality, not generic.
 

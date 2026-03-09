@@ -10,10 +10,9 @@
  * 6. Graceful degradation: LSP unavailable → return null
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import { LspClient, type LspLocation } from './client.js';
-import { LSP_SERVERS, detectProjectLanguages, type LspServerConfig } from './servers.js';
+import { LSP_SERVERS } from './servers.js';
 import { installServer, isServerInstalled, getServerBinaryPath } from './installer.js';
 import { logInfo, logWarn } from '../lib/fault-logger.js';
 
@@ -179,16 +178,16 @@ export async function shutdownAll(): Promise<void> {
 
   // Also await any in-flight initializations and shut down the resulting clients
   const initializingShutdowns = Array.from(initializing.entries()).map(async ([key, promise]) => {
-    let client: LspClient | null = null;
+    let initClient: LspClient | null;
     try {
-      client = await promise;
+      initClient = await promise;
     } catch {
       // Initialization failed — no client to shut down
       return;
     }
-    if (!client) return;
+    if (!initClient) return;
     try {
-      await client.shutdown();
+      await initClient.shutdown();
     } catch (error) {
       logWarn('lsp-manager', `Failed to shutdown in-flight client ${key}`, {
         error: error instanceof Error ? error.message : String(error),

@@ -125,7 +125,9 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       const session = manager.get(sessionId);
       if (session) {
         (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
-        ctx.log(`[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`);
+        ctx.log(
+          `[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`
+        );
       } else {
         ctx.log(`[pre-compact] Session ${sessionId} not found, stats not stored`);
       }
@@ -136,7 +138,9 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       const sessionId = searchParams.get('session_id') || '';
       if (!sessionId) return { error: 'session_id required' };
       const manager = requireSessionManager(ctx);
-      const session = manager.get(sessionId) as (SessionState & { preCompactStats?: unknown }) | null;
+      const session = manager.get(sessionId) as
+        | (SessionState & { preCompactStats?: unknown })
+        | null;
       return { stats: session?.preCompactStats || null };
     },
   };

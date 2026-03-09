@@ -533,7 +533,9 @@ program
 
 // ── Session Surgery ──────────────────────────────────────────────────
 
-const sessionCmd = program.command('session').description('Session analysis and surgery (trim context, analyze tokens, compact)');
+const sessionCmd = program
+  .command('session')
+  .description('Session analysis and surgery (trim context, analyze tokens, compact)');
 
 sessionCmd
   .command('analyze [path]')

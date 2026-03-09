@@ -24,8 +24,6 @@ import {
   HoverRequest,
   type InitializeParams,
   type InitializeResult,
-  type TextDocumentIdentifier,
-  type Position,
   type Location,
   type LocationLink,
   type Hover,

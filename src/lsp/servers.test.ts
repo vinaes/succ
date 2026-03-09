@@ -43,7 +43,7 @@ describe('LSP servers', () => {
     });
 
     it('all servers should have required fields', () => {
-      for (const [key, config] of Object.entries(LSP_SERVERS)) {
+      for (const [, config] of Object.entries(LSP_SERVERS)) {
         expect(config.name).toBeTruthy();
         expect(config.languages.length).toBeGreaterThan(0);
         expect(config.rootMarkers.length).toBeGreaterThan(0);

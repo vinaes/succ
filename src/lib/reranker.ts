@@ -13,8 +13,6 @@ import { resolveModelPath } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
 import { getConfig } from './config.js';
 import { logInfo, logWarn } from './fault-logger.js';
-import type { HybridSearchResult } from './storage/types.js';
-
 /** Minimal interface for results that can be reranked */
 export interface Rerankable {
   content: string;

@@ -12,7 +12,7 @@ import {
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 
-function makeUserEntry(text: string, position?: number): TranscriptEntry {
+function makeUserEntry(text: string, _position?: number): TranscriptEntry {
   return {
     type: 'user',
     message: { role: 'user', content: [{ type: 'text', text }] },

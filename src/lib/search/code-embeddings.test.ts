@@ -20,9 +20,7 @@ vi.mock('../fault-logger.js', () => ({
 }));
 
 vi.mock('../ort-provider.js', () => ({
-  detectExecutionProvider: vi
-    .fn()
-    .mockReturnValue({ provider: 'cpu', fallbackChain: ['cpu'] }),
+  detectExecutionProvider: vi.fn().mockReturnValue({ provider: 'cpu', fallbackChain: ['cpu'] }),
 }));
 
 import { getModelDimension, getModelMaxLength } from '../embeddings.js';
