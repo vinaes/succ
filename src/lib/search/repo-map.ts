@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { logInfo, logWarn } from '../fault-logger.js';
+import { EXTENSION_TO_LANGUAGE } from '../tree-sitter/types.js';
 import { getProjectRoot } from '../config.js';
 
 // ============================================================================
@@ -78,29 +79,13 @@ export async function generateRepoMap(
 
   const excludeSet = new Set([...defaultExcludes, ...(options?.exclude ?? [])]);
 
-  // Walk the directory tree
+  // Walk the directory tree — use tree-sitter's EXTENSION_TO_LANGUAGE as the canonical
+  // set of code extensions (30+ extensions, single source of truth)
   const entries: RepoMapEntry[] = [];
-  const extensions = new Set([
-    '.ts',
-    '.tsx',
-    '.js',
-    '.jsx',
-    '.py',
-    '.go',
-    '.rs',
-    '.rb',
-    '.java',
-    '.kt',
-    '.cs',
-    '.cpp',
-    '.c',
-    '.h',
-    '.vue',
-    '.svelte',
-  ]);
+  const codeExtensions = new Set(Object.keys(EXTENSION_TO_LANGUAGE).map((e) => `.${e}`));
 
   try {
-    await walkDir(root, excludeSet, extensions, entries, maxSymbols);
+    await walkDir(root, excludeSet, codeExtensions, entries, maxSymbols);
   } catch (error) {
     logWarn('repo-map', 'Error walking directory', {
       error: error instanceof Error ? error.message : String(error),
