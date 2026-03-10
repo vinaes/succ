@@ -1,5 +1,5 @@
 /**
- * MCP Indexing tool — succ_index with actions: doc, code, analyze, refresh, symbols
+ * MCP Indexing tool — succ_index with actions: doc, code, analyze, refresh, symbols, scan
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -12,17 +12,21 @@ export function registerIndexingTools(server: McpServer) {
     'succ_index',
     {
       description:
-        'Index files, analyze source code, refresh stale indexes, or extract AST symbols.\n\nExamples:\n- Index doc: succ_index(action="doc", file="docs/api.md")\n- Index code: succ_index(action="code", file="src/auth.ts")\n- Analyze: succ_index(action="analyze", file="src/server.ts")\n- Refresh stale: succ_index(action="refresh")\n- Symbols: succ_index(action="symbols", file="src/auth.ts", type="function")',
+        'Index files, analyze source code, refresh stale indexes, extract AST symbols, or scan all project code.\n\nExamples:\n- Index doc: succ_index(action="doc", file="docs/api.md")\n- Index code: succ_index(action="code", file="src/auth.ts")\n- Analyze: succ_index(action="analyze", file="src/server.ts")\n- Refresh stale: succ_index(action="refresh")\n- Symbols: succ_index(action="symbols", file="src/auth.ts", type="function")\n- Scan all code: succ_index(action="scan")\n- Scan subdir: succ_index(action="scan", path="src/features")',
       inputSchema: {
         action: z
-          .enum(['doc', 'code', 'analyze', 'refresh', 'symbols'])
+          .enum(['doc', 'code', 'analyze', 'refresh', 'symbols', 'scan'])
           .describe(
-            'doc = index documentation file, code = index source code file, analyze = generate brain vault docs, refresh = reindex stale/deleted files, symbols = extract AST symbols'
+            'doc = index documentation file, code = index source code file, analyze = generate brain vault docs, refresh = reindex stale/deleted files, symbols = extract AST symbols, scan = discover and index all project code files'
           ),
         file: z
           .string()
           .optional()
           .describe('File path (required for doc, code, analyze, symbols)'),
+        path: z
+          .string()
+          .optional()
+          .describe('Subdirectory to scope scan (for scan action, e.g. "src/features")'),
         force: z
           .boolean()
           .optional()
@@ -46,7 +50,7 @@ export function registerIndexingTools(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async ({ action, file, force, mode, type, project_path }) => {
+    async ({ action, file, force, mode, type, path: scanPath, project_path }) => {
       await applyProjectPath(project_path);
 
       if (['doc', 'code', 'analyze', 'symbols'].includes(action) && !file) {
@@ -311,6 +315,40 @@ export function registerIndexingTools(server: McpServer) {
               content: [
                 { type: 'text' as const, text: `Error extracting symbols: ${error.message}` },
               ],
+              isError: true,
+            };
+          }
+        }
+
+        case 'scan': {
+          try {
+            const { scanCode } = await import('../../commands/scan-code.js');
+            const result = await scanCode({ filterPath: scanPath, force });
+
+            const lines = [
+              `Scanned: ${result.totalScanned} files (source: ${result.source})`,
+              `Code files: ${result.totalCode}`,
+              `Indexed: ${result.indexed} (${result.newCount} new, ${result.updatedCount} updated)`,
+              `Unchanged: ${result.unchanged}`,
+              `Chunks generated: ${result.chunks}`,
+            ];
+
+            if (result.skippedSize > 0) lines.push(`Skipped (too large): ${result.skippedSize}`);
+            if (result.skippedIgnore > 0)
+              lines.push(`Skipped (.succignore): ${result.skippedIgnore}`);
+            if (result.errors > 0) {
+              lines.push(`Errors: ${result.errors}`);
+              for (const detail of result.errorDetails.slice(0, 10)) {
+                lines.push(`  - ${detail}`);
+              }
+            }
+
+            return {
+              content: [{ type: 'text' as const, text: lines.join('\n') }],
+            };
+          } catch (error: any) {
+            return {
+              content: [{ type: 'text' as const, text: `Error during scan: ${error.message}` }],
               isError: true,
             };
           }

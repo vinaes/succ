@@ -128,6 +128,15 @@ export interface SuccConfig {
   tool_profile?: 'auto' | 'core' | 'standard' | 'full';
   // Auto memory extraction settings (session-end fact extraction + periodic consolidation)
   auto_memory?: AutoMemoryConfig;
+  // Indexing settings (scan action)
+  indexing?: IndexingConfig;
+}
+
+export interface IndexingConfig {
+  /** Maximum file size in KB to index during scan (default: 500) */
+  max_file_size_kb?: number;
+  /** Concurrency limit for parallel file indexing (default: 3) */
+  concurrency?: number;
 }
 
 /**

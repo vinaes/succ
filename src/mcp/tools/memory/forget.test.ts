@@ -8,6 +8,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
   deleteMemory: vi.fn(async () => true),
   deleteMemoriesOlderThan: vi.fn(async () => 3),
   deleteMemoriesByTag: vi.fn(async () => 2),
+  setMemoryInvariant: vi.fn(async () => {}),
   closeDb: vi.fn(),
 }));
 
@@ -17,7 +18,7 @@ vi.mock('../../helpers.js', () => ({
   parseRelativeDate: vi.fn(() => new Date('2026-01-01T00:00:00.000Z')),
 }));
 
-import { deleteMemory, getMemoryById } from '../../../lib/storage/index.js';
+import { deleteMemory, getMemoryById, setMemoryInvariant } from '../../../lib/storage/index.js';
 import { registerForgetTool } from './forget.js';
 
 type ToolHandler = (args: Record<string, any>) => Promise<any>;
@@ -59,5 +60,41 @@ describe('forget tool module', () => {
     expect(getMemoryById).toHaveBeenCalledWith(42);
     expect(deleteMemory).toHaveBeenCalledWith(42);
     expect(result.content[0].text).toContain('Forgot memory 42');
+  });
+
+  it('returns error when deleting pinned memory without force', async () => {
+    const pinnedError = new Error('Memory is pinned');
+    pinnedError.name = 'PinnedMemoryError';
+    vi.mocked(deleteMemory).mockRejectedValueOnce(pinnedError);
+
+    const { server, handlers } = createMockServer();
+    registerForgetTool(server as any);
+    const handler = handlers.get('succ_forget')!;
+
+    const result = await handler({ id: 42, project_path: '/tmp/project' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('pinned');
+    expect(result.content[0].text).toContain('force=true');
+    expect(setMemoryInvariant).not.toHaveBeenCalled();
+  });
+
+  it('force-deletes pinned memory by unpinning first', async () => {
+    const pinnedError = new Error('Memory is pinned');
+    pinnedError.name = 'PinnedMemoryError';
+    vi.mocked(deleteMemory)
+      .mockRejectedValueOnce(pinnedError) // first attempt: pinned
+      .mockResolvedValueOnce(true); // retry after unpin: success
+
+    const { server, handlers } = createMockServer();
+    registerForgetTool(server as any);
+    const handler = handlers.get('succ_forget')!;
+
+    const result = await handler({ id: 42, force: true, project_path: '/tmp/project' });
+
+    expect(setMemoryInvariant).toHaveBeenCalledWith(42, false);
+    expect(deleteMemory).toHaveBeenCalledTimes(2);
+    expect(result.content[0].text).toContain('Force-deleted pinned memory 42');
+    expect(result.isError).toBeUndefined();
   });
 });
