@@ -46,6 +46,7 @@ export interface CategorizeResult {
   modifiedCount: number;
   unchangedCount: number;
   readErrors: number;
+  readErrorDetails: string[];
 }
 
 export interface ScanResult {
@@ -104,10 +105,8 @@ export function loadIgnorePatterns(projectRoot: string): string[] {
       .map((line) => line.trim())
       .filter((line) => line.length > 0 && !line.startsWith('#'));
   } catch (e: any) {
-    if (e?.code !== 'ENOENT') {
-      logWarn('scan-code', `Failed to read .succignore: ${e}`);
-    }
-    return [];
+    if (e?.code === 'ENOENT') return [];
+    throw new Error(`Failed to read ${ignorePath}: ${e?.message ?? e}`);
   }
 }
 
@@ -200,10 +199,14 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
       continue;
     }
 
-    // Filter by size
+    // Filter by size; use lstatSync to avoid following symlinks (path traversal risk)
     const absolutePath = path.resolve(projectRoot, relativePath);
     try {
-      const stat = fs.statSync(absolutePath);
+      const stat = fs.lstatSync(absolutePath);
+      if (stat.isSymbolicLink()) {
+        logWarn('scan-code', `Skipping symlinked file: ${relativePath}`);
+        continue;
+      }
       if (stat.size > maxFileSizeKb * 1024) {
         skippedSize++;
         continue;
@@ -267,6 +270,7 @@ export async function categorizeFiles(
   let modifiedCount = 0;
   let unchangedCount = 0;
   let readErrors = 0;
+  const readErrorDetails: string[] = [];
 
   for (const absolutePath of files) {
     const relativePath = path.relative(projectRoot, absolutePath).replace(/\\/g, '/');
@@ -293,6 +297,8 @@ export async function categorizeFiles(
     } catch (e) {
       logWarn('scan-code', `Failed to read ${absolutePath}: ${e}`);
       readErrors++;
+      const rel = path.relative(projectRoot, absolutePath).replace(/\\/g, '/');
+      readErrorDetails.push(`${rel}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
 
@@ -305,7 +311,7 @@ export async function categorizeFiles(
     }
   }
 
-  return { toIndex, newCount, modifiedCount, unchangedCount, readErrors };
+  return { toIndex, newCount, modifiedCount, unchangedCount, readErrors, readErrorDetails };
 }
 
 // ============================================================================
@@ -367,7 +373,7 @@ export async function scanCode(options: {
       unchanged: category.unchangedCount,
       chunks: 0,
       errors: category.readErrors,
-      errorDetails: [],
+      errorDetails: category.readErrorDetails,
       skippedSize: discovery.skippedSize,
       skippedExtension: discovery.skippedExtension,
       skippedIgnore: discovery.skippedIgnore,
@@ -428,7 +434,7 @@ export async function scanCode(options: {
     unchanged: category.unchangedCount,
     chunks: totalChunks,
     errors: errors + category.readErrors,
-    errorDetails,
+    errorDetails: [...errorDetails, ...category.readErrorDetails],
     skippedSize: discovery.skippedSize,
     skippedExtension: discovery.skippedExtension,
     skippedIgnore: discovery.skippedIgnore,

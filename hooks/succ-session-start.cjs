@@ -53,6 +53,13 @@ process.stdin.on('end', async () => {
     const hookInput = adapter.normalizeInput(agent, rawInput);
     let projectDir = hookInput.cwd || process.cwd();
 
+    // Canonical session identifiers — derived once, used consistently throughout
+    // canonicalSessionId matches pre-compact hook's derivation (session_id-based)
+    const transcriptPath = hookInput.transcript_path || '';
+    const canonicalSessionId = (hookInput.session_id || 'unknown')
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .slice(0, 128);
+
     // Windows path fix
     if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
       projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
@@ -489,20 +496,18 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
     // Read pre-compact stats (saved by succ-pre-compact.cjs hook) and display delta
     if (isCompactEvent && !isServiceSession) {
-      const sessionId = (hookInput.session_id || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
-      const statsFile = path.join(succDir, '.tmp', `pre-compact-stats-${sessionId}.json`);
+      const statsFile = path.join(succDir, '.tmp', `pre-compact-stats-${canonicalSessionId}.json`);
       try {
         if (fs.existsSync(statsFile)) {
           const stats = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
           const bt = stats.tokenTotals || {};
 
           // Estimate post-compact token count from transcript (if available).
-          // beforeTotal is derived from content char counts (chars / 4 = tokens).
-          // To keep units comparable we read the post-compact JSONL, count its
-          // content chars the same way (JSON.stringify each message.content),
-          // then divide by 4. Falling back to byte-based estimation is avoided
-          // because UTF-8 multi-byte characters inflate byte counts vs char counts.
-          let postTokens = 0;
+          // null = transcript not available; skip delta display to avoid bogus "100% freed".
+          // When the transcript exists, chars/4 keeps units comparable to pre-compact counts.
+          // Falling back to byte-based estimation is avoided because UTF-8 multi-byte
+          // characters inflate byte counts vs char counts.
+          let postTokens = /** @type {number|null} */ (null);
           const postByType = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0 };
           if (hookInput.transcript_path && fs.existsSync(hookInput.transcript_path)) {
             try {
@@ -566,40 +571,43 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             }
           }
 
-          const beforeTotal = bt.total || 0;
-          const freed = beforeTotal - postTokens;
-          const pct = beforeTotal > 0 ? ((freed / beforeTotal) * 100).toFixed(1) : '0.0';
+          // Only display delta if post-compact tokens were actually measured
+          if (postTokens !== null) {
+            const beforeTotal = bt.total || 0;
+            const freed = beforeTotal - postTokens;
+            const pct = beforeTotal > 0 ? ((freed / beforeTotal) * 100).toFixed(1) : '0.0';
 
-          // Format K helper
-          const fk = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0));
+            // Format K helper
+            const fk = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0));
 
-          const statsLines = [];
-          statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
-          statsLines.push('');
-          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
-          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
-          for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
-            const val = bt[key] || 0;
-            const aVal = postByType[key] || 0;
-            const f = val - aVal;
-            if (val === 0 && f === 0) continue;
-            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
-          }
-          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
-          statsLines.push(
-            `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(postTokens).padStart(8)} ${fk(freed).padStart(8)}`
-          );
-
-          // Top tools
-          const topTools = (stats.topTools || []).slice(0, 5).filter((t) => t.tokens > 0);
-          if (topTools.length > 0) {
+            const statsLines = [];
+            statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
             statsLines.push('');
-            statsLines.push('  Top tools trimmed:');
-            statsLines.push('  ' + topTools.map((t) => `${t.name}: ${fk(t.tokens)}`).join(' | '));
-          }
+            statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+            statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+            for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
+              const val = bt[key] || 0;
+              const aVal = postByType[key] || 0;
+              const f = val - aVal;
+              if (val === 0 && f === 0) continue;
+              statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
+            }
+            statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+            statsLines.push(
+              `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(postTokens).padStart(8)} ${fk(freed).padStart(8)}`
+            );
 
-          contextParts.push(`<compact-stats>\n${statsLines.join('\n')}\n</compact-stats>`);
-          log(succDir, `Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
+            // Top tools
+            const topTools = (stats.topTools || []).slice(0, 5).filter((t) => t.tokens > 0);
+            if (topTools.length > 0) {
+              statsLines.push('');
+              statsLines.push('  Top tools trimmed:');
+              statsLines.push('  ' + topTools.map((t) => `${t.name}: ${fk(t.tokens)}`).join(' | '));
+            }
+
+            contextParts.push(`<compact-stats>\n${statsLines.join('\n')}\n</compact-stats>`);
+            log(succDir, `Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
+          }
 
           // Cleanup stats file
           try {
@@ -748,10 +756,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
     // Register session with daemon
     if (daemonPort) {
-      const transcriptPath = hookInput.transcript_path || '';
-      const sessionId = transcriptPath
-        ? path.basename(transcriptPath, '.jsonl')
-        : `session-${Date.now()}`;
+      // transcriptPath and canonicalSessionId derived early — reuse here for consistency
       // isServiceSession already defined above
 
       try {
@@ -759,7 +764,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            session_id: sessionId,
+            session_id: canonicalSessionId,
             transcript_path: transcriptPath,
             is_service: isServiceSession,
           }),
