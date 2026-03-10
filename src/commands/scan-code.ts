@@ -147,7 +147,7 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
   let source: 'git' | 'walk';
 
   try {
-    const output = execFileSync('git', ['ls-files', '--cached'], {
+    const output = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
       cwd: projectRoot,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
@@ -380,25 +380,32 @@ export async function scanCode(options: {
 
   const tasks = category.toIndex.map((filePath) =>
     limiter(async () => {
-      const result = await indexCodeFile(filePath, { force: true });
-      processed++;
+      try {
+        const result = await indexCodeFile(filePath, { force: true });
+        processed++;
 
-      if (processed % 50 === 0) {
-        logInfo('scan-code', `Progress: ${processed}/${category.toIndex.length} files`);
-      }
+        if (processed % 50 === 0) {
+          logInfo('scan-code', `Progress: ${processed}/${category.toIndex.length} files`);
+        }
 
-      if (result.success && !result.skipped) {
-        indexed++;
-        totalChunks += result.chunks ?? 0;
-      } else if (!result.success) {
+        if (result.success && !result.skipped) {
+          indexed++;
+          totalChunks += result.chunks ?? 0;
+        } else if (!result.success) {
+          errors++;
+          const relative = path.relative(projectRoot, filePath);
+          errorDetails.push(`${relative}: ${result.error ?? 'unknown error'}`);
+        }
+      } catch (error: any) {
+        processed++;
         errors++;
         const relative = path.relative(projectRoot, filePath);
-        errorDetails.push(`${relative}: ${result.error ?? 'unknown error'}`);
+        errorDetails.push(`${relative}: ${error?.message ?? 'unknown error'}`);
       }
     })
   );
 
-  await Promise.allSettled(tasks);
+  await Promise.all(tasks);
 
   logInfo(
     'scan-code',

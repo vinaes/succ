@@ -485,7 +485,9 @@ export async function compactBefore(
   // Determine output path
   const outputPath =
     options.outputPath ||
-    filePath.replace(/\.jsonl$/, `-compact-${newSessionId.slice(0, 8)}.jsonl`);
+    (filePath.endsWith('.jsonl')
+      ? filePath.replace(/\.jsonl$/, `-compact-${newSessionId.slice(0, 8)}.jsonl`)
+      : `${filePath}-compact-${newSessionId.slice(0, 8)}.jsonl`);
 
   const result: CompactResult = {
     preCutMessages: preCut.length,

@@ -291,7 +291,12 @@ export async function findMemoriesForCode(
       // Check link metadata for the code path
       const meta = l.metadata as Partial<BridgeEdgeMetadata> | undefined;
       if (meta?.code_path) {
-        return meta.code_path === codePath || codePath.endsWith(meta.code_path);
+        if (meta.code_path === codePath) return true;
+        // Suffix match only on path boundary (preceded by /)
+        return (
+          codePath.endsWith(meta.code_path) &&
+          codePath[codePath.length - meta.code_path.length - 1] === '/'
+        );
       }
       // No metadata — fall back to content check
       return mem.content.includes(codePath);

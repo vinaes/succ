@@ -43,25 +43,25 @@ export function insertRecallEventsBatch(
     similarityScore: number | null;
   }>
 ): void {
-  const db = getDb();
-  const stmt = db.prepare(
-    `INSERT INTO recall_events (memory_id, query, was_used, rank_position, similarity_score)
-     VALUES (?, ?, ?, ?, ?)`
-  );
-
-  const transaction = db.transaction(() => {
-    for (const event of events) {
-      stmt.run(
-        event.memoryId,
-        event.query,
-        event.wasUsed ? 1 : 0,
-        event.rankPosition,
-        event.similarityScore
-      );
-    }
-  });
-
   try {
+    const db = getDb();
+    const stmt = db.prepare(
+      `INSERT INTO recall_events (memory_id, query, was_used, rank_position, similarity_score)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+
+    const transaction = db.transaction(() => {
+      for (const event of events) {
+        stmt.run(
+          event.memoryId,
+          event.query,
+          event.wasUsed ? 1 : 0,
+          event.rankPosition,
+          event.similarityScore
+        );
+      }
+    });
+
     transaction();
   } catch (error) {
     logWarn('recall-events', 'Failed to insert recall events batch', {
