@@ -235,14 +235,6 @@ function buildToolResultIndex(entries: TranscriptEntry[]): Map<string, number> {
         index.set(tuid, (index.get(tuid) || 0) + chars);
       }
     }
-
-    // Process top-level tool events (tool_name + tool_result)
-    if (entry.tool_name && entry.tool_result !== undefined) {
-      const resultStr = JSON.stringify(entry.tool_result);
-      // Use tool_name as key since top-level events don't have tool_use_id
-      const key = `__toplevel__${entry.tool_name}`;
-      index.set(key, (index.get(key) || 0) + resultStr.length);
-    }
   }
 
   return index;
