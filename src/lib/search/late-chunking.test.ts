@@ -165,6 +165,10 @@ describe('late-chunking', () => {
         expect(mag).toBeCloseTo(1.0, 1);
       }
 
+      // getTokenOffsets should have been called with the full content to map
+      // chunk boundaries to token positions (the core of late chunking)
+      expect(mockSession.getTokenOffsets).toHaveBeenCalledWith(content);
+
       // Chunks from different code spans should produce different embeddings
       const emb0 = result.chunks[0].embedding;
       const emb1 = result.chunks[1].embedding;

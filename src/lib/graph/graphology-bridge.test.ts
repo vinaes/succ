@@ -188,6 +188,16 @@ describe('graphology-bridge', () => {
       const result = await detectLouvainCommunities();
       expect(result.communities).toBeDefined();
       expect(Array.isArray(result.communities)).toBe(true);
+      // Should produce at least 1 community for a connected 5-node graph
+      expect(result.communities.length).toBeGreaterThanOrEqual(1);
+      // All 5 nodes should be accounted for (in communities or isolated)
+      const communityMemberCount = result.communities.reduce((sum, c) => sum + c.size, 0);
+      expect(communityMemberCount + result.isolated).toBe(5);
+      // Each community should have size >= 2 (the default minSize)
+      for (const c of result.communities) {
+        expect(c.members.length).toBeGreaterThanOrEqual(2);
+        expect(c.size).toBe(c.members.length);
+      }
       // Modularity should be a number
       expect(typeof result.modularity).toBe('number');
     });

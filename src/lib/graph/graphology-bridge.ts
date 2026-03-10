@@ -312,8 +312,21 @@ export async function detectLouvainCommunities(
 // ============================================================================
 
 /**
+ * Convert edge similarity weight (higher = stronger relation) to distance
+ * cost (lower = closer) for Dijkstra. Avoids zero/negative costs.
+ */
+function similarityToDistance(_edge: string, attr: Record<string, unknown>): number {
+  const w = (attr.weight as number) ?? 1.0;
+  // Clamp to [0.01, 1] to avoid division by zero or negative costs
+  const clamped = Math.max(0.01, Math.min(1.0, w));
+  return 1.0 / clamped;
+}
+
+/**
  * Find shortest path between two memories using Dijkstra.
- * Edge weights are used directly by Dijkstra (lower weight = shorter path).
+ * Edge weights in the graph represent similarity/strength (higher = stronger).
+ * Dijkstra needs cost/distance (lower = closer), so weights are inverted
+ * via 1/weight before path-finding.
  *
  * @returns Path as array of memory IDs, or null if no path exists
  */
@@ -329,10 +342,10 @@ export async function shortestPath(
     return null;
   }
 
-  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, 'weight');
+  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, similarityToDistance);
   if (!pathNodes || pathNodes.length === 0) return null;
 
-  // Calculate total weight
+  // Calculate total original weight (similarity, not distance)
   let totalWeight = 0;
   for (let i = 0; i < pathNodes.length - 1; i++) {
     const edge = graph.edge(pathNodes[i], pathNodes[i + 1]);
@@ -542,7 +555,7 @@ export async function whyRelated(
     return null;
   }
 
-  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, 'weight');
+  const pathNodes = dijkstraBidirectional(graph, fromKey, toKey, similarityToDistance);
   if (!pathNodes || pathNodes.length === 0) {
     return { connected: false, path: [], distance: Number.MAX_SAFE_INTEGER };
   }

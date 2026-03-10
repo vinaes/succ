@@ -106,9 +106,9 @@ function extractExportedSymbols(content: string, ext: string): string[] {
 
   if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
     const patterns = [
-      /export\s+(?:async\s+)?function\s+(\w+)/g,
+      /export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)/g,
       /export\s+(?:const|let|var)\s+(\w+)/g,
-      /export\s+class\s+(\w+)/g,
+      /export\s+(?:default\s+)?class\s+(\w+)/g,
       /export\s+interface\s+(\w+)/g,
       /export\s+type\s+(\w+)/g,
       /export\s+enum\s+(\w+)/g,

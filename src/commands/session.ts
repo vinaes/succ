@@ -24,7 +24,7 @@ import {
 // ── Path resolution ──────────────────────────────────────────────────
 
 /** Find the most recent .jsonl session file if no path given. */
-async function resolveSessionPath(pathArg: string | undefined): Promise<string> {
+async function resolveSessionPath(pathArg: string | undefined, subcommand?: string): Promise<string> {
   if (pathArg) return resolve(pathArg);
 
   // Try to find most recent JSONL in ~/.claude/projects/
@@ -59,16 +59,17 @@ async function resolveSessionPath(pathArg: string | undefined): Promise<string> 
     logWarn('session', `Could not read ~/.claude/projects/: ${e}`);
   }
 
+  const cmd = subcommand ? `succ session ${subcommand}` : 'succ session <subcommand>';
   throw new Error(
-    'No session path provided and no sessions found.\n' +
-      'Usage: succ session <subcommand> <path-to-session.jsonl>'
+    `No session path provided and no sessions found.\n` +
+      `Usage: ${cmd} <path-to-session.jsonl>`
   );
 }
 
 // ── Commands ─────────────────────────────────────────────────────────
 
 export async function sessionAnalyze(pathArg: string | undefined): Promise<void> {
-  const filePath = await resolveSessionPath(pathArg);
+  const filePath = await resolveSessionPath(pathArg, 'analyze');
   const analysis = await analyzeSessionFile(filePath);
   console.log(formatAnalysisReport(analysis, filePath));
 }

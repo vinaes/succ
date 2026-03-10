@@ -1,7 +1,8 @@
 /**
- * LSP Auto-Installer — downloads and installs LSP servers on demand.
+ * LSP Auto-Installer — installs LSP servers on demand via npm or runtime tools.
  *
  * Install location: ~/.succ/lsp-servers/<name>/
+ * Strategies: npm (Tier 1), runtime (Tier 2). Binary download (Tier 3) is defined but not yet implemented.
  * Security: npm --ignore-scripts, server name validation.
  */
 

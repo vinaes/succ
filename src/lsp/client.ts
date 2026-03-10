@@ -97,6 +97,12 @@ export class LspClient {
       cwd: this.options.rootPath,
     });
 
+    // Handle spawn failures (e.g. command not found, ENOENT)
+    this.process.on('error', (err) => {
+      logWarn('lsp-client', `Failed to spawn ${this.options.command}: ${err.message}`);
+      this.cleanup();
+    });
+
     if (!this.process.stdout || !this.process.stdin) {
       // Spawned but streams unavailable — clean up immediately
       this.cleanup();

@@ -38,8 +38,9 @@ function filterByPaths<T extends { file_path: string }>(
   excludePaths?: string[]
 ): T[] {
   return results.filter((r) => {
-    // Strip storage prefix (e.g. "code:") and normalize path separators
-    const filePath = r.file_path.replace(/^[a-z]+:/, '').replace(/\\/g, '/');
+    // Strip storage prefix (e.g. "code:", "doc:") and normalize path separators.
+    // Use an explicit prefix list to avoid accidentally stripping Windows drive letters (e.g. "c:").
+    const filePath = r.file_path.replace(/^(?:code|doc|memory):/, '').replace(/\\/g, '/');
 
     // Check include patterns (OR: match any)
     // Normalize backslashes in patterns — minimatch treats \ as escape, not path separator.

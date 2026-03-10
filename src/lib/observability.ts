@@ -29,8 +29,10 @@ export interface LatencyMetric {
 }
 
 export interface ObservabilityDashboard {
-  /** Average query latency by operation type (last 24h) */
+  /** Average query latency by operation type (last 24h, capped at latencyBufferSize samples) */
   queryLatency: Array<{ operation: string; avgMs: number; p95Ms: number; count: number }>;
+  /** Max number of latency samples retained in the ring buffer */
+  latencyBufferSize: number;
   /** Memory health metrics */
   memoryHealth: {
     total: number;
@@ -58,7 +60,11 @@ export interface ObservabilityDashboard {
 // Latency Tracking
 // ============================================================================
 
-// Circular ring buffer for recent latency metrics (no DB dependency)
+// Circular ring buffer for recent latency metrics (no DB dependency).
+// Note: The buffer holds at most MAX_BUFFER_SIZE entries. High-throughput
+// workloads may exceed this within 24h, causing older samples to be evicted
+// before the 24h latency window expires. Increase the buffer size if you
+// need full 24h coverage under sustained high query rates.
 const MAX_BUFFER_SIZE = 1000;
 const latencyRing: Array<LatencyMetric | null> = new Array(MAX_BUFFER_SIZE).fill(null);
 let ringWriteIdx = 0;
@@ -219,6 +225,7 @@ export async function getDashboard(): Promise<ObservabilityDashboard> {
 
   return {
     queryLatency,
+    latencyBufferSize: MAX_BUFFER_SIZE,
     memoryHealth,
     indexFreshness,
     tokenSavings,
@@ -235,7 +242,8 @@ export function formatDashboard(dashboard: ObservabilityDashboard): string {
   lines.push('');
 
   // Query latency
-  lines.push('Query Latency (24h):');
+  lines.push(`Query Latency (24h, buffer=${dashboard.latencyBufferSize}):`);
+
   if (dashboard.queryLatency.length === 0) {
     lines.push('  No queries recorded');
   } else {

@@ -2,7 +2,7 @@
 /**
  * succ MCP Server
  *
- * 14 consolidated MCP tools:
+ * 15 consolidated MCP tools:
  * - succ_search, succ_search_code: Semantic search
  * - succ_remember, succ_recall, succ_forget: Memory management
  * - succ_dead_end: Record failed approaches
@@ -14,6 +14,7 @@
  * - succ_prd: PRD pipeline (actions: generate/list/status/run/export)
  * - succ_web: Web search (actions: quick/search/deep/history)
  * - succ_debug: Structured debugging (12 actions)
+ * - succ_review: Review context pack from git diff
  *
  * Tool profiles: auto (detect by client), core (8), standard (12), full (15)
  * Configure via: succ_config(action="set", key="tool_profile", value="auto|core|standard|full")

@@ -75,6 +75,11 @@ export interface VectorStore {
   deleteMemoryVector(id: number): Promise<void>;
 
   /**
+   * Delete multiple memory vectors by IDs (batch).
+   */
+  deleteMemoryVectors(ids: number[]): Promise<void>;
+
+  /**
    * Search for similar memories.
    */
   searchMemories(query: number[], limit: number, threshold: number): Promise<VectorSearchResult[]>;

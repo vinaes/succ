@@ -135,6 +135,9 @@ describe('co-change', () => {
       // Average should be between 0.4 and 1.0
       expect(result.pairs[0].recencyWeight).toBeGreaterThan(0.4);
       expect(result.pairs[0].recencyWeight).toBeLessThanOrEqual(1.0);
+      // The old commit (index 2) should drag the average below 1.0,
+      // proving the recency boost gives recent commits more weight
+      expect(result.pairs[0].recencyWeight).toBeLessThan(1.0);
     });
   });
 

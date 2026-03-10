@@ -47,7 +47,7 @@ describe('API versioning', () => {
     expect(keys.filter((k) => k.includes('/api/status'))).toHaveLength(2);
   });
 
-  it('should not overwrite pre-existing versioned route', () => {
+  it('should overwrite pre-existing versioned route with auto-generated alias', () => {
     const originalHandler = async () => ({ source: 'original' });
     const versionedHandler = async () => ({ source: 'v1-explicit' });
     const routes: RouteMap = {
@@ -56,10 +56,11 @@ describe('API versioning', () => {
     };
 
     const versioned = addVersionedRoutes(routes);
-    // The spread { ...routes, ...versioned } means the auto-generated alias
-    // overwrites the pre-existing one. This test documents that behavior.
+    // Original unversioned route should be preserved
     expect(versioned['GET /api/status']).toBe(originalHandler);
-    expect(versioned['GET /v1/api/status']).toBeDefined();
+    // Auto-generated alias overwrites the pre-existing versioned route
+    // because { ...routes, ...versioned } spreads versioned last
+    expect(versioned['GET /v1/api/status']).toBe(originalHandler);
   });
 
   it('API_VERSION should be v1', () => {

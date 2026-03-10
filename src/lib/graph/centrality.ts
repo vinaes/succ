@@ -105,7 +105,11 @@ export async function updateCentralityScores(): Promise<{ updated: number }> {
   let count = 0;
   for (const [memId, score] of pageRankScores) {
     const normalized = maxScore > 0 ? score / maxScore : 0;
-    // Store raw PageRank score + normalized value
+    // Note: the DB column is named `degree` (from original degree centrality)
+    // but we repurpose it to store the raw PageRank score. Only
+    // `normalized_degree` (0-1 range) is read by consumers
+    // (getCentralityScores), so the raw column's semantics don't affect
+    // downstream behavior.
     await upsertCentralityScore(memId, score, normalized);
     count++;
   }

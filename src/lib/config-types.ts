@@ -124,7 +124,7 @@ export interface SuccConfig {
   // Error reporting (brain-faults.log + webhook + sentry)
   error_reporting?: ErrorReportingConfig;
   // Tool profile: controls which MCP tools are registered
-  // auto (detect by client, default) | core (8 tools) | standard (12 tools) | full (14 tools)
+  // auto (detect by client, default) | core (8 tools) | standard (12 tools) | full (15 tools)
   tool_profile?: 'auto' | 'core' | 'standard' | 'full';
   // Auto memory extraction settings (session-end fact extraction + periodic consolidation)
   auto_memory?: AutoMemoryConfig;

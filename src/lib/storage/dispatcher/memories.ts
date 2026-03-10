@@ -356,6 +356,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
                     ? mem.validUntil.toISOString()
                     : mem.validUntil
                   : null,
+                confidence: mem.confidence ?? null,
+                sourceType: mem.sourceType ?? null,
               },
             };
           });
@@ -412,17 +414,69 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
   }
 
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.deleteMemoriesOlderThan(date);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.deleteMemoriesOlderThan(date);
+    // Collect affected IDs before deletion for Qdrant vector cleanup
+    let affectedIds: number[] = [];
+    if (this.hasQdrant()) {
+      if (this.backend === 'postgresql' && this.postgres) {
+        const all = await this.postgres.getAllMemoriesForRetention();
+        affectedIds = all.filter((m) => new Date(m.created_at) < date).map((m) => m.id);
+      } else {
+        const sqlite = await this.getSqliteFns();
+        const all = sqlite.getAllMemoriesForRetention();
+        affectedIds = all.filter((m) => new Date(m.created_at) < date).map((m) => m.id);
+      }
+    }
+
+    let deleted: number;
+    if (this.backend === 'postgresql' && this.postgres) {
+      deleted = await this.postgres.deleteMemoriesOlderThan(date);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      deleted = sqlite.deleteMemoriesOlderThan(date);
+    }
+
+    // Clean up Qdrant vectors for deleted memories
+    if (deleted > 0 && affectedIds.length > 0 && this.hasQdrant()) {
+      try {
+        await this.qdrant!.deleteMemoryVectors(affectedIds);
+      } catch (err) {
+        logWarn('storage', `Qdrant vector cleanup failed for ${affectedIds.length} old memories`, {
+          error: String(err),
+        });
+      }
+    }
+
+    return deleted;
   }
 
   async deleteMemoriesByTag(tag: string): Promise<number> {
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.deleteMemoriesByTag(tag);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.deleteMemoriesByTag(tag);
+    // Collect affected IDs before deletion for Qdrant vector cleanup
+    let affectedIds: number[] = [];
+    if (this.hasQdrant()) {
+      const matching = await this.getMemoriesByTag(tag, 100_000);
+      affectedIds = matching.map((m) => m.id);
+    }
+
+    let deleted: number;
+    if (this.backend === 'postgresql' && this.postgres) {
+      deleted = await this.postgres.deleteMemoriesByTag(tag);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      deleted = sqlite.deleteMemoriesByTag(tag);
+    }
+
+    // Clean up Qdrant vectors for deleted memories
+    if (deleted > 0 && affectedIds.length > 0 && this.hasQdrant()) {
+      try {
+        await this.qdrant!.deleteMemoryVectors(affectedIds);
+      } catch (err) {
+        logWarn('storage', `Qdrant vector cleanup failed for ${affectedIds.length} tagged memories`, {
+          error: String(err),
+        });
+      }
+    }
+
+    return deleted;
   }
 
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
@@ -430,10 +484,27 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     // Filter out pinned memories (Tier 1 immutability)
     const safeIds = await this._filterOutPinned(ids);
     if (safeIds.length === 0) return 0;
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.deleteMemoriesByIds(safeIds);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.deleteMemoriesByIds(safeIds);
+
+    let deleted: number;
+    if (this.backend === 'postgresql' && this.postgres) {
+      deleted = await this.postgres.deleteMemoriesByIds(safeIds);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      deleted = sqlite.deleteMemoriesByIds(safeIds);
+    }
+
+    // Clean up Qdrant vectors for deleted memories
+    if (deleted > 0 && this.hasQdrant()) {
+      try {
+        await this.qdrant!.deleteMemoryVectors(safeIds);
+      } catch (err) {
+        logWarn('storage', `Qdrant vector batch delete failed for ${safeIds.length} memories`, {
+          error: String(err),
+        });
+      }
+    }
+
+    return deleted;
   }
 
   async searchMemoriesAsOf(
