@@ -106,14 +106,17 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
       return;
     }
 
+    // Batch-invalidate all memories in parallel (mirrors --apply path's batch delete)
+    const results = await Promise.allSettled(
+      analysis.delete.map((m) => invalidateMemory(m.memoryId, 0)) // 0 = system cleanup, no superseder
+    );
     let invalidated = 0;
-    for (const m of analysis.delete) {
-      try {
-        await invalidateMemory(m.memoryId, 0); // 0 = system cleanup, no superseder
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
         invalidated++;
-      } catch (err) {
+      } else {
         logWarn('retention', 'Failed to invalidate memory during cleanup', {
-          error: err instanceof Error ? err.message : String(err),
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
         });
       }
     }

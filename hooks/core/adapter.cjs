@@ -45,9 +45,21 @@ function detectAgent(stdinJson) {
     // Copilot: has separate bash/powershell fields in config, uses toolInput (camelCase)
     if ('toolInput' in stdinJson && 'hookEvent' in stdinJson) return 'copilot';
     // Cursor: uses event (camelCase), no hookSpecificOutput convention
-    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event.length > 0 && stdinJson.event[0] === stdinJson.event[0].toLowerCase()) return 'cursor';
+    if (
+      'event' in stdinJson &&
+      typeof stdinJson.event === 'string' &&
+      stdinJson.event.length > 0 &&
+      stdinJson.event[0] === stdinJson.event[0].toLowerCase()
+    )
+      return 'cursor';
     // Gemini: uses event (PascalCase)
-    if ('event' in stdinJson && typeof stdinJson.event === 'string' && stdinJson.event.length > 0 && stdinJson.event[0] === stdinJson.event[0].toUpperCase()) return 'gemini';
+    if (
+      'event' in stdinJson &&
+      typeof stdinJson.event === 'string' &&
+      stdinJson.event.length > 0 &&
+      stdinJson.event[0] === stdinJson.event[0].toUpperCase()
+    )
+      return 'gemini';
   }
 
   return 'claude';
@@ -61,29 +73,54 @@ function detectAgent(stdinJson) {
  */
 const TOOL_MAP = {
   cursor: {
-    shell: 'Bash', Shell: 'Bash', terminal: 'Bash',
-    edit: 'Edit', file_edit: 'Edit',
-    write: 'Write', file_write: 'Write', create_file: 'Write',
-    read: 'Read', file_read: 'Read', view: 'Read',
-    grep: 'Grep', search: 'Grep',
-    glob: 'Glob', list_files: 'Glob',
-    task: 'Task', agent: 'Task',
+    shell: 'Bash',
+    Shell: 'Bash',
+    terminal: 'Bash',
+    edit: 'Edit',
+    file_edit: 'Edit',
+    write: 'Write',
+    file_write: 'Write',
+    create_file: 'Write',
+    read: 'Read',
+    file_read: 'Read',
+    view: 'Read',
+    grep: 'Grep',
+    search: 'Grep',
+    glob: 'Glob',
+    list_files: 'Glob',
+    task: 'Task',
+    agent: 'Task',
   },
   copilot: {
-    bash: 'Bash', shell: 'Bash', terminal: 'Bash',
-    edit: 'Edit', editFile: 'Edit',
-    write: 'Write', createFile: 'Write',
-    view: 'Read', readFile: 'Read', read: 'Read',
+    bash: 'Bash',
+    shell: 'Bash',
+    terminal: 'Bash',
+    edit: 'Edit',
+    editFile: 'Edit',
+    write: 'Write',
+    createFile: 'Write',
+    view: 'Read',
+    readFile: 'Read',
+    read: 'Read',
     grep: 'Grep',
     glob: 'Glob',
   },
   gemini: {
-    bash: 'Bash', shell: 'Bash',
-    FileEdit: 'Edit', editFile: 'Edit', edit: 'Edit',
-    FileWrite: 'Write', writeFile: 'Write', write: 'Write',
-    FileRead: 'Read', readFile: 'Read', read: 'Read',
-    grep: 'Grep', search: 'Grep',
-    glob: 'Glob', listFiles: 'Glob',
+    bash: 'Bash',
+    shell: 'Bash',
+    FileEdit: 'Edit',
+    editFile: 'Edit',
+    edit: 'Edit',
+    FileWrite: 'Write',
+    writeFile: 'Write',
+    write: 'Write',
+    FileRead: 'Read',
+    readFile: 'Read',
+    read: 'Read',
+    grep: 'Grep',
+    search: 'Grep',
+    glob: 'Glob',
+    listFiles: 'Glob',
   },
 };
 
@@ -116,22 +153,27 @@ function normalizeInput(agent, stdinJson) {
 
   if (agent === 'cursor') {
     // Cursor uses camelCase: toolName, toolInput, toolOutput, etc.
-    if (stdinJson.toolName !== undefined) normalized.tool_name = mapToolName('cursor', stdinJson.toolName);
+    if (stdinJson.toolName !== undefined)
+      normalized.tool_name = mapToolName('cursor', stdinJson.toolName);
     if (stdinJson.toolInput !== undefined) normalized.tool_input = stdinJson.toolInput;
     if (stdinJson.toolOutput !== undefined) normalized.tool_output = stdinJson.toolOutput;
     if (stdinJson.toolError !== undefined) normalized.tool_error = stdinJson.toolError;
     if (stdinJson.userPrompt !== undefined) normalized.prompt = stdinJson.userPrompt;
-    if (stdinJson.message !== undefined && !normalized.prompt) normalized.prompt = stdinJson.message;
+    if (stdinJson.message !== undefined && !normalized.prompt)
+      normalized.prompt = stdinJson.message;
     if (stdinJson.sessionId !== undefined) normalized.session_id = stdinJson.sessionId;
-    if (stdinJson.transcriptPath !== undefined) normalized.transcript_path = stdinJson.transcriptPath;
+    if (stdinJson.transcriptPath !== undefined)
+      normalized.transcript_path = stdinJson.transcriptPath;
     // Cursor may use workingDirectory or cwd
-    if (stdinJson.workingDirectory !== undefined && !normalized.cwd) normalized.cwd = stdinJson.workingDirectory;
+    if (stdinJson.workingDirectory !== undefined && !normalized.cwd)
+      normalized.cwd = stdinJson.workingDirectory;
   }
 
   if (agent === 'copilot') {
     // Copilot: toolInput (camelCase), hookEvent instead of hookEventName
     // CRITICAL: Copilot sends toolArgs as a double-encoded JSON string
-    if (stdinJson.toolName !== undefined) normalized.tool_name = mapToolName('copilot', stdinJson.toolName);
+    if (stdinJson.toolName !== undefined)
+      normalized.tool_name = mapToolName('copilot', stdinJson.toolName);
     if (stdinJson.toolInput !== undefined) normalized.tool_input = stdinJson.toolInput;
     // Copilot toolArgs is a JSON string — parse it to get native object
     if (stdinJson.toolArgs !== undefined && typeof stdinJson.toolArgs === 'string') {
@@ -146,18 +188,21 @@ function normalizeInput(agent, stdinJson) {
     if (stdinJson.hookEvent !== undefined) normalized.hookEventName = stdinJson.hookEvent;
     if (stdinJson.userPrompt !== undefined) normalized.prompt = stdinJson.userPrompt;
     if (stdinJson.sessionId !== undefined) normalized.session_id = stdinJson.sessionId;
-    if (stdinJson.workingDirectory !== undefined && !normalized.cwd) normalized.cwd = stdinJson.workingDirectory;
+    if (stdinJson.workingDirectory !== undefined && !normalized.cwd)
+      normalized.cwd = stdinJson.workingDirectory;
   }
 
   if (agent === 'gemini') {
     // Gemini uses PascalCase event names but otherwise similar to Claude
-    if (stdinJson.toolName !== undefined) normalized.tool_name = mapToolName('gemini', stdinJson.toolName);
+    if (stdinJson.toolName !== undefined)
+      normalized.tool_name = mapToolName('gemini', stdinJson.toolName);
     if (stdinJson.toolInput !== undefined) normalized.tool_input = stdinJson.toolInput;
     if (stdinJson.toolOutput !== undefined) normalized.tool_output = stdinJson.toolOutput;
     if (stdinJson.toolError !== undefined) normalized.tool_error = stdinJson.toolError;
     if (stdinJson.userPrompt !== undefined) normalized.prompt = stdinJson.userPrompt;
     if (stdinJson.sessionId !== undefined) normalized.session_id = stdinJson.sessionId;
-    if (stdinJson.workingDirectory !== undefined && !normalized.cwd) normalized.cwd = stdinJson.workingDirectory;
+    if (stdinJson.workingDirectory !== undefined && !normalized.cwd)
+      normalized.cwd = stdinJson.workingDirectory;
   }
 
   return normalized;
@@ -253,7 +298,10 @@ function formatOutput(agent, hookEvent, result) {
   if (agent === 'copilot') {
     if (result.deny) {
       return {
-        json: { permissionDecision: 'deny', permissionDecisionReason: result.denyReason || 'Blocked by succ' },
+        json: {
+          permissionDecision: 'deny',
+          permissionDecisionReason: result.denyReason || 'Blocked by succ',
+        },
         exitCode: 0,
       };
     }
@@ -335,6 +383,73 @@ function adaptContext(agent, context) {
   return adapted.trim();
 }
 
+// ─── Hook Runner ─────────────────────────────────────────────────────
+
+/**
+ * Run a hook with standard boilerplate handled automatically.
+ *
+ * Handles:
+ *   - Reading stdin as JSON
+ *   - detectAgent() + normalizeInput()
+ *   - Windows /c/... → C:/... path fix for projectDir
+ *   - Checking .succ/ exists (exits 0 if not — hook is a no-op)
+ *   - Wrapping everything in try/catch (exits 0 on any error — fail-open)
+ *
+ * The callback receives { agent, hookInput, projectDir, succDir } and is
+ * responsible for all hook-specific logic including calling process.exit().
+ *
+ * @param {string} hookName - Human-readable name used in error messages
+ * @param {function({ agent, hookInput, projectDir, succDir }): Promise<void>} callback
+ */
+function runHook(hookName, callback) {
+  const fs = require('fs');
+  const path = require('path');
+
+  let input = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('readable', () => {
+    let chunk;
+    while ((chunk = process.stdin.read()) !== null) {
+      input += chunk;
+    }
+  });
+
+  process.stdin.on('end', async () => {
+    try {
+      const rawInput = JSON.parse(input);
+      const agent = detectAgent(rawInput);
+      const hookInput = normalizeInput(agent, rawInput);
+      let projectDir = hookInput.cwd || process.cwd();
+
+      // Windows path fix: /c/Users/... → C:/Users/...
+      if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
+        projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+      }
+
+      let succDir = path.join(projectDir, '.succ');
+
+      // Worktree-aware resolution: if .succ/ missing, check if we're in a git worktree
+      if (!fs.existsSync(succDir)) {
+        try {
+          const { resolveSuccDir } = require('./worktree.cjs');
+          const resolved = resolveSuccDir(projectDir);
+          if (!resolved) {
+            process.exit(0);
+          }
+          succDir = resolved;
+        } catch {
+          process.exit(0);
+        }
+      }
+
+      await callback({ agent, hookInput, projectDir, succDir });
+    } catch {
+      // Fail-open: never crash the hook, always let the tool call proceed
+      process.exit(0);
+    }
+  });
+}
+
 // ─── Exports ─────────────────────────────────────────────────────────
 
 module.exports = {
@@ -343,5 +458,6 @@ module.exports = {
   mapToolName,
   formatOutput,
   adaptContext,
+  runHook,
   TOOL_MAP,
 };

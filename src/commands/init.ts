@@ -942,9 +942,12 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
     console.log('  The daemon starts automatically with Claude Code sessions.');
     console.log('  Other editors: succ setup cursor | windsurf | continue');
     console.log('  Check status anytime: succ daemon status\n');
-  } catch (error: any) {
+  } catch (error) {
     // Handle Ctrl+C gracefully
-    if (error?.name === 'ExitPromptError' || error?.message?.includes('closed')) {
+    if (
+      error instanceof Error &&
+      (error.name === 'ExitPromptError' || error.message?.includes('closed'))
+    ) {
       console.log('\n\n  Setup cancelled.\n');
       process.exit(0);
     }
@@ -994,9 +997,11 @@ function addMcpServer(_projectRoot: string): 'added' | 'exists' | 'failed' {
     // Write config
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));
     return 'added';
-  } catch (error: any) {
+  } catch (error) {
     logWarn('init', `Failed to add MCP server to ${claudeConfigPath}`, { error: String(error) });
-    console.warn(`  Warning: Failed to add MCP server to ${claudeConfigPath}: ${error.message}`);
+    console.warn(
+      `  Warning: Failed to add MCP server to ${claudeConfigPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
     logWarn('init', 'You can add it manually: succ init --force');
     console.warn('  You can add it manually: succ init --force');
     return 'failed';

@@ -3,6 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
+
+/** Normalize path for comparison — resolves 8.3 short names on Windows */
+function normPath(p: string): string {
+  // fs.realpathSync.native resolves 8.3 short names on Windows; .realpathSync does not
+  const resolved = fs.realpathSync.native ? fs.realpathSync.native(p) : fs.realpathSync(p);
+  return resolved.toLowerCase();
+}
 import {
   isGitWorktree,
   resolveMainRepoRoot,
@@ -92,9 +99,7 @@ describe('worktree-detect (e2e with real git)', () => {
     const result = resolveMainRepoRoot(worktreePath);
     expect(result).not.toBeNull();
     // Normalize paths for comparison (resolve symlinks, case, etc.)
-    expect(fs.realpathSync(result!).toLowerCase()).toBe(
-      fs.realpathSync(mainRepo).toLowerCase()
-    );
+    expect(normPath(result!)).toBe(normPath(mainRepo));
   });
 
   it('returns null for non-git directory', () => {
@@ -187,9 +192,7 @@ describe('worktree-detect (e2e with real git)', () => {
     expect(cjs.isGitWorktree(worktreePath)).toBe(true);
     const cjsMainRoot = cjs.resolveMainRepoRoot(worktreePath);
     expect(cjsMainRoot).not.toBeNull();
-    expect(fs.realpathSync(cjsMainRoot!).toLowerCase()).toBe(
-      fs.realpathSync(mainRepo).toLowerCase()
-    );
+    expect(normPath(cjsMainRoot!)).toBe(normPath(mainRepo));
 
     const cjsSucc = cjs.resolveSuccDir(worktreePath);
     expect(cjsSucc).not.toBeNull();

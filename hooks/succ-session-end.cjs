@@ -9,89 +9,53 @@
  * All heavy lifting is done by daemon after hook exits.
  */
 
-const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
+const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { log: _log } = require('./core/log.cjs');
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    input += chunk;
+adapter.runHook('session-end', async ({ hookInput, succDir }) => {
+  const log = (msg) => _log(succDir, 'session-end', msg);
+  const daemonPort = getDaemonPort(succDir);
+  if (!daemonPort) {
+    log('Daemon port unavailable — skipping session unregister/reflection');
+    process.exit(0);
   }
-});
 
-process.stdin.on('end', async () => {
+  // Get session info — fall back to hookInput.session_id when transcript_path is absent
+  // (session-start registers a synthetic session_id in that case)
+  const transcriptPath = hookInput.transcript_path || '';
+  const sessionId = transcriptPath
+    ? path.basename(transcriptPath, '.jsonl')
+    : hookInput.session_id || null;
+
+  if (!sessionId) {
+    process.exit(0);
+  }
+
+  // Skip reflection for service sessions (internal Claude calls from succ)
+  // This prevents infinite loop: session-end -> processSessionEnd -> runClaudeCLI -> session-end -> ...
+  const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+  // Tell daemon to unregister and process session
+  // Daemon will handle transcript parsing, summarization, and memory saving asynchronously
   try {
-    const rawInput = JSON.parse(input);
-    const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, rawInput);
-    let projectDir = hookInput.cwd || process.cwd();
-
-    // Windows path fix
-    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
-      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
+    const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+        run_reflection: !isServiceSession, // Don't run reflection for service sessions
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      log(`Unregister failed: ${res.status} ${res.statusText} for session ${sessionId}`);
     }
-
-    // Skip if succ is not initialized (worktree-aware: resolve and capture path)
-    let succDir = path.join(projectDir, '.succ');
-    if (!fs.existsSync(succDir)) {
-      const resolved = resolveWorktreeSuccDir(projectDir);
-      if (!resolved) {
-        process.exit(0);
-      }
-      succDir = resolved;
-    }
-
-    // Read daemon port
-    const portFile = path.join(succDir, '.tmp', 'daemon.port');
-    let daemonPort = null;
-    try {
-      if (fs.existsSync(portFile)) {
-        daemonPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-      }
-    } catch {
-      // intentionally empty
-    }
-
-    if (!daemonPort) {
-      process.exit(0);
-    }
-
-    // Get session info
-    const transcriptPath = hookInput.transcript_path || '';
-    const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
-
-    if (!sessionId) {
-      process.exit(0);
-    }
-
-    // Skip reflection for service sessions (internal Claude calls from succ)
-    // This prevents infinite loop: session-end -> processSessionEnd -> runClaudeCLI -> session-end -> ...
-    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
-
-    // Tell daemon to unregister and process session
-    // Daemon will handle transcript parsing, summarization, and memory saving asynchronously
-    try {
-      await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          transcript_path: transcriptPath,
-          run_reflection: !isServiceSession,  // Don't run reflection for service sessions
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
-    } catch {
-      // Daemon communication failed, exit anyway
-    }
-
-    process.exit(0);
-  } catch {
-    // intentionally empty
-    process.exit(0);
+  } catch (err) {
+    log(`Daemon communication failed: ${err.message || err}`);
   }
+
+  process.exit(0);
 });

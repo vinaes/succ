@@ -481,10 +481,7 @@ export function initVecTables(database: Database.Database): void {
     } else if (!vecMemoriesMigrated) {
       // Legacy table: created before migration-flag mechanism was added.
       // Recreate with current dimensions — old embeddings are likely wrong dims.
-      logWarn(
-        'sqlite-vec',
-        `vec_memories missing migration flag — recreating with ${dims} dims`
-      );
+      logWarn('sqlite-vec', `vec_memories missing migration flag — recreating with ${dims} dims`);
       needsMemoriesMigration = true;
       memoriesDimChange = true;
     }
@@ -580,10 +577,7 @@ export function initVecTables(database: Database.Database): void {
     } else if (!vecDocumentsMigrated) {
       // Legacy table: created before migration-flag mechanism was added.
       // Recreate with current dimensions — old embeddings are likely wrong dims.
-      logWarn(
-        'sqlite-vec',
-        `vec_documents missing migration flag — recreating with ${dims} dims`
-      );
+      logWarn('sqlite-vec', `vec_documents missing migration flag — recreating with ${dims} dims`);
       needsDocumentsMigration = true;
       documentsDimChange = true;
     }
@@ -817,12 +811,18 @@ export function initGlobalVecTable(database: Database.Database): void {
   let dimChange = false;
   if (vecMemoriesExists) {
     if (vecMigrated && Number(vecMigrated.value) !== dims) {
-      logWarn('sqlite-vec', `global vec_memories dimension change: ${vecMigrated.value} -> ${dims}. Recreating.`);
+      logWarn(
+        'sqlite-vec',
+        `global vec_memories dimension change: ${vecMigrated.value} -> ${dims}. Recreating.`
+      );
       needsMigration = true;
       dimChange = true;
     } else if (!vecMigrated) {
       // Legacy table: recreate with current dimensions
-      logWarn('sqlite-vec', `global vec_memories missing migration flag — recreating with ${dims} dims`);
+      logWarn(
+        'sqlite-vec',
+        `global vec_memories missing migration flag — recreating with ${dims} dims`
+      );
       needsMigration = true;
       dimChange = true;
     }

@@ -70,8 +70,8 @@ export function registerForgetTool(server: McpServer): void {
               ],
               isError: true,
             };
-          } catch (err: any) {
-            if (err?.name === 'PinnedMemoryError') {
+          } catch (err) {
+            if (err instanceof Error && err.name === 'PinnedMemoryError') {
               return {
                 content: [
                   {

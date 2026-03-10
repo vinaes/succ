@@ -86,10 +86,11 @@ async function generateViaClaude(context: string, prompt: string): Promise<strin
   const fullPrompt = `${context}\n\n---\n\n${prompt}`;
   try {
     return await spawnClaudeCLI(fullPrompt, { tools: '', model: 'haiku', timeout: 30000 });
-  } catch (err: any) {
-    logError('soul', `Claude CLI error:: ${err.message}`, err instanceof Error ? err : undefined);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logError('soul', `Claude CLI error:: ${msg}`, err instanceof Error ? err : undefined);
 
-    console.error('Claude CLI error:', err.message);
+    console.error('Claude CLI error:', msg);
     return '';
   }
 }

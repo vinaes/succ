@@ -288,8 +288,8 @@ export async function benchmarkQuality(
             scoreWithApi(content, ollamaUrl, model)
           );
           allResults.push(ollamaResult);
-        } catch (error: any) {
-          console.log(`  ⚠ Error: ${error.message}`);
+        } catch (error) {
+          console.log(`  ⚠ Error: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -318,8 +318,8 @@ export async function benchmarkQuality(
             scoreWithApi(content, apiUrl, model, apiKey)
           );
           allResults.push(apiResult);
-        } catch (error: any) {
-          console.log(`  ⚠ Error: ${error.message}`);
+        } catch (error) {
+          console.log(`  ⚠ Error: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }

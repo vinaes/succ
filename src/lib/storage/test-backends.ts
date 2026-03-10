@@ -69,15 +69,17 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
   console.log('Test 1: SQLite + sqlite-vec (default)');
   console.log('========================================');
 
+  const savedIds: number[] = [];
+  let dbModule: Awaited<typeof import('../db/index.js')> | null = null;
+
   try {
-    const { closeDb, saveMemory, searchMemories, getMemoryStats, deleteMemory } =
-      await import('../db/index.js');
+    dbModule = await import('../db/index.js');
+    const { saveMemory, searchMemories, getMemoryStats, deleteMemory } = dbModule;
     const { getEmbedding } = await import('../embeddings.js');
 
     // Save test memories
     console.log('\nSaving test memories...');
     const saveStart = performance.now();
-    const savedIds: number[] = [];
 
     for (let i = 0; i < TEST_MEMORIES.length; i++) {
       const m = TEST_MEMORIES[i];
@@ -114,8 +116,6 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
       await deleteMemory(id);
     }
 
-    closeDb();
-
     return {
       name: 'SQLite + sqlite-vec',
       status: 'pass',
@@ -123,13 +123,20 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: stats.total_memories,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'SQLite + sqlite-vec',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
+  } finally {
+    try {
+      dbModule?.closeDb();
+    } catch {
+      // cleanup best-effort
+    }
   }
 }
 
@@ -142,11 +149,15 @@ async function testPostgresPgvector(): Promise<BackendTestResult> {
   console.log('Test 2: PostgreSQL + pgvector');
   console.log('========================================');
 
+  let backend: Awaited<
+    ReturnType<typeof import('./backends/postgresql.js').createPostgresBackend>
+  > | null = null;
+
   try {
     const { createPostgresBackend } = await import('./backends/postgresql.js');
     const { getEmbedding } = await import('../embeddings.js');
 
-    const backend = createPostgresBackend({
+    backend = createPostgresBackend({
       backend: 'postgresql',
       postgresql: {
         connection_string: 'postgresql://succ:succ_test_password@localhost:5433/succ',
@@ -190,8 +201,6 @@ async function testPostgresPgvector(): Promise<BackendTestResult> {
       await backend.deleteMemory(id);
     }
 
-    await backend.close();
-
     return {
       name: 'PostgreSQL + pgvector',
       status: 'pass',
@@ -199,13 +208,20 @@ async function testPostgresPgvector(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: recent.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'PostgreSQL + pgvector',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
+  } finally {
+    try {
+      await backend?.close();
+    } catch {
+      // cleanup best-effort
+    }
   }
 }
 
@@ -218,6 +234,13 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
   console.log('Test 3: PostgreSQL + Qdrant');
   console.log('========================================');
 
+  let backend: Awaited<
+    ReturnType<typeof import('./backends/postgresql.js').createPostgresBackend>
+  > | null = null;
+  let vectorStore: Awaited<
+    ReturnType<typeof import('./vector/qdrant.js').createQdrantVectorStore>
+  > | null = null;
+
   try {
     // Check Qdrant availability
     const qdrantResponse = await fetch('http://localhost:6333/');
@@ -229,14 +252,14 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
     const { createQdrantVectorStore } = await import('./vector/qdrant.js');
     const { getEmbedding } = await import('../embeddings.js');
 
-    const backend = createPostgresBackend({
+    backend = createPostgresBackend({
       backend: 'postgresql',
       postgresql: {
         connection_string: 'postgresql://succ:succ_test_password@localhost:5433/succ',
       },
     });
 
-    const vectorStore = createQdrantVectorStore({
+    vectorStore = createQdrantVectorStore({
       backend: 'postgresql',
       vector: 'qdrant',
       qdrant: {
@@ -291,9 +314,6 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
       await vectorStore.deleteMemoryVector(id);
     }
 
-    await backend.close();
-    await vectorStore.close();
-
     return {
       name: 'PostgreSQL + Qdrant',
       status: 'pass',
@@ -301,13 +321,25 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: savedIds.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'PostgreSQL + Qdrant',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
+  } finally {
+    try {
+      await backend?.close();
+    } catch {
+      // cleanup best-effort
+    }
+    try {
+      await vectorStore?.close();
+    } catch {
+      // cleanup best-effort
+    }
   }
 }
 
@@ -320,6 +352,11 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
   console.log('Test 4: SQLite + Qdrant');
   console.log('========================================');
 
+  let dbModule: Awaited<typeof import('../db/index.js')> | null = null;
+  let vectorStore: Awaited<
+    ReturnType<typeof import('./vector/qdrant.js').createQdrantVectorStore>
+  > | null = null;
+
   try {
     // Check Qdrant availability
     const qdrantResponse = await fetch('http://localhost:6333/');
@@ -327,11 +364,12 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       return { name: 'SQLite + Qdrant', status: 'skip', error: 'Qdrant not available' };
     }
 
-    const { closeDb, saveMemory, deleteMemory, getMemoryById } = await import('../db/index.js');
+    dbModule = await import('../db/index.js');
+    const { saveMemory, deleteMemory, getMemoryById } = dbModule;
     const { createQdrantVectorStore } = await import('./vector/qdrant.js');
     const { getEmbedding } = await import('../embeddings.js');
 
-    const vectorStore = createQdrantVectorStore({
+    vectorStore = createQdrantVectorStore({
       backend: 'sqlite',
       vector: 'qdrant',
       qdrant: {
@@ -389,9 +427,6 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       await vectorStore.deleteMemoryVector(id);
     }
 
-    closeDb();
-    await vectorStore.close();
-
     return {
       name: 'SQLite + Qdrant',
       status: 'pass',
@@ -399,13 +434,25 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
       memorySearchMs: searchMs,
       memoryCount: savedIds.length,
     };
-  } catch (error: any) {
-    console.error(`  Error: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`  Error: ${msg}`);
     return {
       name: 'SQLite + Qdrant',
       status: 'fail',
-      error: error.message,
+      error: msg,
     };
+  } finally {
+    try {
+      dbModule?.closeDb();
+    } catch {
+      // cleanup best-effort
+    }
+    try {
+      await vectorStore?.close();
+    } catch {
+      // cleanup best-effort
+    }
   }
 }
 

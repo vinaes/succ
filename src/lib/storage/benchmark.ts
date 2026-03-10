@@ -169,8 +169,8 @@ async function benchmarkPostgres() {
     // Cleanup
     await backend.clearDocuments();
     await backend.close();
-  } catch (error: any) {
-    console.log(`  Skipped: ${error.message}`);
+  } catch (error) {
+    console.log(`  Skipped: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -233,8 +233,8 @@ async function benchmarkQdrant() {
     const client = (store as any).client;
     await client.deleteCollection('succ_bench_documents').catch(() => {});
     await store.close();
-  } catch (error: any) {
-    console.log(`  Skipped: ${error.message}`);
+  } catch (error) {
+    console.log(`  Skipped: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

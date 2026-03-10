@@ -61,14 +61,20 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
   const raw = calculateDegreeCentrality(links);
   const normalized = normalizeCentrality(raw);
 
-  let count = 0;
-  for (const [memId, deg] of raw) {
-    const norm = normalized.get(memId) ?? 0;
-    await upsertCentralityScore(memId, deg, norm);
-    count++;
+  const entries = Array.from(raw.entries()).map(([memId, deg]) => ({
+    memId,
+    degree: deg,
+    normalized: normalized.get(memId) ?? 0,
+  }));
+
+  // Chunk writes to avoid unbounded fan-out on large graphs
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+    const chunk = entries.slice(i, i + CHUNK_SIZE);
+    await Promise.all(chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized)));
   }
 
-  return { updated: count };
+  return { updated: entries.length };
 }
 
 /**

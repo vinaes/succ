@@ -52,7 +52,14 @@ function resolveMainRepoRoot(worktreeDir) {
       windowsHide: true,
     }).trim();
 
-    return path.dirname(path.resolve(worktreeDir, gitCommonDir));
+    let mainRoot = path.dirname(path.resolve(worktreeDir, gitCommonDir));
+    // On Windows, git may return 8.3 short paths — normalize to long paths
+    try {
+      mainRoot = fs.realpathSync.native(mainRoot);
+    } catch {
+      /* keep as-is */
+    }
+    return mainRoot;
   } catch {
     // Fallback: parse .git file
     try {
@@ -61,9 +68,18 @@ function resolveMainRepoRoot(worktreeDir) {
       if (match) {
         const gitDir = path.resolve(worktreeDir, match[1].trim());
         // gitDir = /main-repo/.git/worktrees/<name> → go up 3 levels
-        return path.resolve(gitDir, '..', '..', '..');
+        let fallbackRoot = path.resolve(gitDir, '..', '..', '..');
+        // Normalize 8.3 short names on Windows (same as happy-path above)
+        try {
+          fallbackRoot = fs.realpathSync.native(fallbackRoot);
+        } catch {
+          /* keep as-is */
+        }
+        return fallbackRoot;
       }
-    } catch { /* intentionally empty */ }
+    } catch {
+      /* intentionally empty */
+    }
     return null;
   }
 }

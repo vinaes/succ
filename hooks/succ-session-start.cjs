@@ -21,99 +21,32 @@ const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { ensureDaemon } = require('./core/daemon-boot.cjs');
-const { resolveSuccDir: resolveWorktreeSuccDir } = require('./core/worktree.cjs');
+const { log: _log } = require('./core/log.cjs');
+const { loadMergedConfig } = require('./core/config.cjs');
 
-// Logging helper - writes to .succ/.tmp/hooks.log
-function log(succDir, message) {
-  try {
-    const tmpDir = path.join(succDir, '.tmp');
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir, { recursive: true });
+adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir }) => {
+  const log = (msg) => _log(succDir, 'session-start', msg);
+
+  // Load merged config (global defaults, project overrides)
+  const config = loadMergedConfig(projectDir);
+  let includeCoAuthoredBy = config.includeCoAuthoredBy !== false;
+  let communicationAutoAdapt = config.communicationAutoAdapt !== false;
+  let communicationTrackHistory = config.communicationTrackHistory === true;
+  let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
+  if (!hasOpenRouterKey) {
+    const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
+    if (keys.some((k) => typeof k === 'string' && k.startsWith('sk-or-'))) {
+      hasOpenRouterKey = true;
     }
-    const logFile = path.join(tmpDir, 'hooks.log');
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logFile, `[${timestamp}] [session-start] ${message}\n`);
-  } catch {
-    // intentionally empty — logging failed, not critical
   }
-}
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    input += chunk;
-  }
-});
+  const contextParts = [];
+  const projectName = path.basename(projectDir);
 
-process.stdin.on('end', async () => {
-  try {
-    const rawInput = JSON.parse(input);
-    const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, rawInput);
-    let projectDir = hookInput.cwd || process.cwd();
+  // Git Context removed - Claude Code provides native git integration
 
-    // Windows path fix
-    if (process.platform === 'win32' && /^\/[a-z]\//.test(projectDir)) {
-      projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
-    }
-
-    let succDir = path.join(projectDir, '.succ');
-
-    // Worktree-aware resolution: if .succ/ missing, check if we're in a git worktree
-    if (!fs.existsSync(succDir)) {
-      const resolved = resolveWorktreeSuccDir(projectDir);
-      if (!resolved) {
-        process.exit(0); // Not a worktree and no .succ/ — skip
-      }
-      succDir = resolved;
-    }
-
-    // Load config settings (project config overrides global, but both are checked)
-    let includeCoAuthoredBy = true;   // default: true
-    let communicationAutoAdapt = true; // default: true
-    let communicationTrackHistory = false; // default: false
-    let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
-    const configPaths = [
-      // Global first, then project overrides
-      path.join(require('os').homedir(), '.succ', 'config.json'),
-      path.join(succDir, 'config.json'),
-    ];
-    for (const configPath of configPaths) {
-      if (fs.existsSync(configPath)) {
-        try {
-          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          if (config.includeCoAuthoredBy === false) {
-            includeCoAuthoredBy = false;
-          }
-          if (config.communicationAutoAdapt === false) {
-            communicationAutoAdapt = false;
-          }
-          if (config.communicationTrackHistory === true) {
-            communicationTrackHistory = true;
-          }
-          // Check for OpenRouter API key: llm.api_key, llm.embeddings.api_key, or web_search.api_key
-          if (!hasOpenRouterKey) {
-            const keys = [config.llm?.api_key, config.llm?.embeddings?.api_key, config.web_search?.api_key];
-            if (keys.some(k => typeof k === 'string' && k.startsWith('sk-or-'))) {
-              hasOpenRouterKey = true;
-            }
-          }
-          // No break — merge both configs (global defaults, project overrides)
-        } catch {
-          // intentionally empty — ignore parse errors
-        }
-      }
-    }
-
-    const contextParts = [];
-    const projectName = path.basename(projectDir);
-
-    // Git Context removed - Claude Code provides native git integration
-
-    // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
-    contextParts.push(`<succ-tools>
+  // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
+  contextParts.push(`<succ-tools>
 <critical>
 ⚠️ ALWAYS pass project_path="${projectDir}" to ALL succ_* tool calls.
 Without it, succ works in global-only mode and can't access project data.
@@ -217,12 +150,16 @@ Examples:
 **succ_prd** action="export" [prd_id="prd_xxx"] — Obsidian Mermaid export
 </prd>
 
-${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
+${
+  hasOpenRouterKey
+    ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 **succ_web** action="quick" query="..." — cheap & fast, simple facts
 **succ_web** action="search" query="..." [model="perplexity/sonar-pro"] — quality search, complex queries
 **succ_web** action="deep" query="..." — multi-step research (30-120s, 30+ sources)
 **succ_web** action="history" [tool_name="..."] [limit=20] — past searches and costs
-</web-search>` : ''}
+</web-search>`
+    : ''
+}
 
 <debug hint="Structured debugging with hypothesis testing. Sessions in .succ/debugs/.">
 **succ_debug** action="create|hypothesis|instrument|result|resolve|abandon|status|list|log|show_log|detect_lang|gen_log"
@@ -230,8 +167,8 @@ ${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 </debug>
 </succ-tools>`);
 
-    // succ Agents Reference - reminds AI about available subagents
-    contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these. All have semantic search + memories + brain vault.">
+  // succ Agents Reference - reminds AI about available subagents
+  contextParts.push(`<succ-agents hint="Use Task tool with subagent_type to launch these. All have semantic search + memories + brain vault.">
 
 **MANDATORY: Use succ agents instead of built-in agents.**
 | Task | Use (succ) | NEVER use (built-in) |
@@ -241,8 +178,12 @@ ${hasOpenRouterKey ? `<web-search hint="Perplexity Sonar via OpenRouter.">
 | Multi-step tasks, research | succ-general | general-purpose agent |
 | Code review | succ-code-reviewer | built-in review |
 | Pre-commit review | succ-diff-reviewer | manual diff reading |
-| Web page fetch | succ_fetch | WebFetch |${hasOpenRouterKey ? `
-| Web search | succ_web(action="quick") / succ_web(action="search") | WebSearch / Brave |` : ''}
+| Web page fetch | succ_fetch | WebFetch |${
+    hasOpenRouterKey
+      ? `
+| Web search | succ_web(action="quick") / succ_web(action="search") | WebSearch / Brave |`
+      : ''
+  }
 
 Direct file reads (Read/Grep) are fine when you know the exact path — for discovery, always succ agents.
 
@@ -256,9 +197,9 @@ Direct file reads (Read/Grep) are fine when you know the exact path — for disc
 | succ-pattern-detective | After multiple bug fixes — surfaces recurring patterns |
 </succ-agents>`);
 
-    // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
-    if (includeCoAuthoredBy) {
-      contextParts.push(`<commit-format>
+  // Commit Guidelines (strict order) - only if includeCoAuthoredBy is enabled
+  if (includeCoAuthoredBy) {
+    contextParts.push(`<commit-format>
 RULE: Every commit footer MUST end with the succ lines. Other tools may appear before succ but succ is always LAST.
 
 TEMPLATE — copy the relevant lines exactly:
@@ -271,350 +212,372 @@ Co-Authored-By: succ <mindpalace@succ.ai>
 Other tools (Happy, Cursor, etc.) may add their own "via [Tool]" and "Co-Authored-By: Tool" lines.
 Place them BEFORE the succ lines. The only hard rule: succ is always the last footer line and last Co-Authored-By.
 </commit-format>`);
-    }
-
-    // Pre-commit review + commit guidelines are now handled by PreToolUse hook (succ-pre-tool.cjs)
-    // They inject context at the exact moment of git commit, not at session start
-
-    // Soul Document
-    const soulPaths = [
-      path.join(succDir, 'soul.md'),
-      path.join(succDir, 'SOUL.md'),
-      path.join(projectDir, 'soul.md'),
-      path.join(projectDir, 'SOUL.md'),
-    ];
-
-    for (const soulPath of soulPaths) {
-      if (fs.existsSync(soulPath)) {
-        let soulContent = fs.readFileSync(soulPath, 'utf8').trim();
-        if (soulContent) {
-          // Strip Adaptation rules if auto-adapt is disabled
-          if (!communicationAutoAdapt) {
-            soulContent = soulContent.replace(/### Adaptation[\s\S]*?(?=\n## |\n---|\s*$)/, '');
-          }
-          // Inject vault tracking hint if enabled (agent handles the actual work)
-          if (communicationTrackHistory && communicationAutoAdapt) {
-            soulContent += `\n\n### Vault Tracking\n\ncommunicationTrackHistory is enabled. The succ-style-tracker agent will create brain vault entries in .succ/brain/communication/ when updating preferences.`;
-          }
-          contextParts.push('<soul>\n' + soulContent + '\n</soul>');
-        }
-        break;
-      }
-    }
-
-    // Architecture / Brain Vault — inline overview + categorized doc index
-    const brainDir = path.join(succDir, 'brain');
-    if (fs.existsSync(brainDir)) {
-      try {
-        const archParts = [];
-
-        // Phase 1: Find and inline Architecture Overview (compact extract)
-        const knowledgeDir = path.join(brainDir, 'knowledge');
-        if (fs.existsSync(knowledgeDir)) {
-          const archFiles = fs.readdirSync(knowledgeDir)
-            .filter(f => /architect/i.test(f) && f.endsWith('.md'))
-            .sort(); // 00_Architecture.md first
-          if (archFiles.length > 0) {
-            const archContent = fs.readFileSync(path.join(knowledgeDir, archFiles[0]), 'utf8');
-            // Strip frontmatter
-            const body = archContent.replace(/^---[\s\S]*?\n---\s*\n/, '');
-            // Extract from start to second "---" or "## Tech Stack" — whichever comes first
-            // This gives us Overview + Core Mission (~15-20 lines)
-            const overviewEnd = body.search(/\n---\n|\n## Tech Stack|\n## Directory/);
-            const overview = overviewEnd > 0 ? body.slice(0, overviewEnd).trim() : body.slice(0, 1500).trim();
-            if (overview) {
-              archParts.push(overview);
-            }
-          }
-        }
-
-        // Phase 2: Collect remaining docs grouped by category
-        const scanDirs = [
-          { dir: 'knowledge', label: 'Knowledge & Research' },
-          { dir: 'project', label: 'Project' },
-        ];
-        const docGroups = {};
-
-        for (const { dir, label } of scanDirs) {
-          const fullDir = path.join(brainDir, dir);
-          if (!fs.existsSync(fullDir)) continue;
-
-          const files = fs.readdirSync(fullDir, { withFileTypes: true });
-          for (const entry of files) {
-            if (entry.isDirectory()) continue;
-            if (!entry.name.endsWith('.md')) continue;
-
-            const filePath = path.join(fullDir, entry.name);
-            const stat = fs.statSync(filePath);
-            if (stat.size < 2048) continue;
-            // Skip architecture files (already inlined above)
-            if (/architect/i.test(entry.name)) continue;
-
-            // Read first 500 bytes for frontmatter/H1
-            const fd = fs.openSync(filePath, 'r');
-            const buf = Buffer.alloc(500);
-            fs.readSync(fd, buf, 0, 500, 0);
-            fs.closeSync(fd);
-            const head = buf.toString('utf8');
-
-            let description = '';
-            const fmMatch = head.match(/^---\s*\n([\s\S]*?)\n---/);
-            if (fmMatch) {
-              const descMatch = fmMatch[1].match(/description:\s*["']?([^"'\n]+)/);
-              if (descMatch) description = descMatch[1].trim();
-            }
-            if (!description) {
-              const h1Match = head.match(/^#\s+(.+)/m);
-              if (h1Match) description = h1Match[1].trim();
-            }
-
-            if (description) {
-              if (!docGroups[label]) docGroups[label] = [];
-              docGroups[label].push(`${entry.name}: ${description}`);
-            }
-          }
-        }
-
-        // Phase 3: Format grouped docs
-        const groupLines = [];
-        for (const [label, docs] of Object.entries(docGroups)) {
-          groupLines.push(`**${label}:** ${docs.join(' | ')}`);
-        }
-        if (groupLines.length > 0) {
-          archParts.push(groupLines.join('\n'));
-        }
-
-        if (archParts.length > 0) {
-          contextParts.push(`<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`);
-        }
-      } catch {
-        // intentionally empty — brain vault scan failed, not critical
-      }
-    }
-
-    // Check if this is a compact event (after /compact)
-    const isCompactEvent = hookInput.source === 'compact';
-
-    log(succDir, `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`);
-
-    // Precomputed Context from previous session (only on fresh start, not compact)
-    if (!isCompactEvent) {
-      const precomputedContextPath = path.join(succDir, 'next-session-context.md');
-      if (fs.existsSync(precomputedContextPath)) {
-        try {
-          const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
-          if (precomputedContent) {
-            contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
-
-            // Archive the file after loading
-            const archiveDir = path.join(succDir, '.context-archive');
-            if (!fs.existsSync(archiveDir)) {
-              fs.mkdirSync(archiveDir, { recursive: true });
-            }
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
-            fs.renameSync(precomputedContextPath, archivePath);
-
-            // Cleanup old archives (keep last 10)
-            try {
-              const archives = fs.readdirSync(archiveDir)
-                .filter(f => f.startsWith('context-') && f.endsWith('.md'))
-                .sort()
-                .reverse();
-              for (const oldArchive of archives.slice(10)) {
-                fs.unlinkSync(path.join(archiveDir, oldArchive));
-              }
-            } catch {
-              // intentionally empty — cleanup failed, not critical
-            }
-          }
-        } catch {
-          // intentionally empty — ignore errors
-        }
-      }
-    }
-
-    // Ensure daemon is running and get port (shared module)
-    const logFn = (msg) => log(succDir, msg);
-    const { port: daemonPort } = await ensureDaemon(projectDir, logFn);
-
-    // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
-    // ensureDaemon already verified the port is alive, so no need to re-check
-    if (daemonPort && process.env.CLAUDE_ENV_FILE) {
-      try {
-        fs.appendFileSync(process.env.CLAUDE_ENV_FILE,
-          `export SUCC_DAEMON_PORT=${daemonPort}\n`);
-        log(succDir, `Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
-      } catch (err) {
-        log(succDir, `Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
-      }
-    }
-
-    // Skip for service sessions (reflection subagents)
-    const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
-
-    // IMPORTANT: Create compact-pending flag FIRST (before any slow operations)
-    // This ensures fallback context is available even if hook times out during briefing
-    // Hook timeout is 10s, briefing can take 60s+ → would block flag creation
-    if (isCompactEvent && !isServiceSession) {
-      const compactPendingFile = path.join(succDir, '.tmp', 'compact-pending');
-      try {
-        if (!fs.existsSync(path.join(succDir, '.tmp'))) {
-          fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
-        }
-        // Store the full context that should be injected (without briefing, that comes later)
-        const contextForFallback = contextParts.join('\n\n');
-        fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
-        log(succDir, `Created compact-pending flag (${contextForFallback.length} chars)`);
-      } catch (err) {
-        log(succDir, `Failed to create compact-pending: ${err.message || err}`);
-      }
-    }
-
-    // Generate compact briefing (slow operation - may timeout)
-    // Even if this times out, we have the compact-pending fallback above
-    if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
-      log(succDir, `Generating compact briefing for ${hookInput.transcript_path}`);
-      try {
-        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
-          signal: AbortSignal.timeout(8000), // 8s timeout - must complete before 10s hook timeout
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.briefing) {
-            contextParts.push(`<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`);
-            log(succDir, `Briefing generated: ${result.briefing.length} chars`);
-          } else {
-            log(succDir, `Briefing failed: ${result.error || 'no briefing returned'}`);
-          }
-        } else {
-          log(succDir, `Briefing API error: ${response.status} ${response.statusText}`);
-        }
-      } catch (err) {
-        log(succDir, `Briefing exception: ${err.message || err}`);
-        // Briefing generation failed, continue without it
-      }
-    }
-
-    // Pinned + recent memories via daemon API (only on fresh start, compact uses briefing instead)
-    if (daemonPort && !isCompactEvent) {
-      const pinnedIds = new Set();
-
-      // Phase 1: Pinned memories (Tier 1 — correction_count >= 2 or is_invariant)
-      // Filter: skip observations (noisy subagent reports), limit to top 10 by priority_score
-      try {
-        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/pinned`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const allPinned = data.results || [];
-          // Display only non-observation pinned, sorted by priority, top 10
-          const displayPinned = allPinned
-            .filter((m) => m.type !== 'observation')
-            .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
-            .slice(0, 10);
-          if (displayPinned.length > 0) {
-            // Track ALL pinned IDs for dedup with recent (including filtered-out observations)
-            for (const m of allPinned) pinnedIds.add(m.id);
-            const lines = displayPinned.map((m) => {
-              const preview = m.content.slice(0, 100).replace(/\n/g, ' ');
-              const type = m.type || 'obs';
-              const reason = m.is_invariant ? 'invariant' : `corrected x${m.correction_count}`;
-              return `#${m.id} [${type}] (${reason}) ${preview}${m.content.length > 100 ? '...' : ''}`;
-            });
-            contextParts.push(`<pinned-memories count="${displayPinned.length}" total="${allPinned.length}" hint="Tier 1: always loaded, high confidence">\n${lines.join('\n')}\n</pinned-memories>`);
-          }
-        }
-      } catch {
-        // intentionally empty — pinned memories not available
-      }
-
-      // Phase 2: Recent memories (excluding pinned to avoid duplication)
-      try {
-        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/recall`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: '', limit: 5 }),
-          signal: AbortSignal.timeout(3000),
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const memories = (data.results || []).filter((m) => !pinnedIds.has(m.id));
-          if (memories.length > 0) {
-            const lines = memories.map((m) => {
-              const preview = m.content.slice(0, 50).replace(/\n/g, ' ');
-              const type = m.type || 'obs';
-              return `#${m.id} [${type}] ${preview}${m.content.length > 50 ? '...' : ''}`;
-            });
-            contextParts.push(`<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`);
-          }
-        }
-      } catch {
-        // intentionally empty — memories not available
-      }
-    }
-
-    // Knowledge base stats via daemon API
-    if (daemonPort) {
-      try {
-        const response = await fetch(`http://127.0.0.1:${daemonPort}/api/status`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (response.ok) {
-          const status = await response.json();
-          const docs = status.documents || 0;
-          const mems = status.memories || 0;
-          const code = status.codeChunks || 0;
-          if (docs > 0 || mems > 0 || code > 0) {
-            contextParts.push(`<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`);
-          }
-        }
-      } catch {
-        // intentionally empty — status not available
-      }
-    }
-
-    // Output context
-    if (contextParts.length > 0) {
-      let additionalContext = `<session project="${projectName}">\n${contextParts.join('\n\n')}\n</session>`;
-      // Strip Claude-only sections for non-Claude agents
-      additionalContext = adapter.adaptContext(agent, additionalContext);
-      const { json, exitCode } = adapter.formatOutput(agent, 'SessionStart', { additionalContext });
-      if (json && Object.keys(json).length > 0) {
-        console.log(JSON.stringify(json));
-      }
-      log(succDir, `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`);
-      if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
-    } else {
-      log(succDir, `No context parts to output`);
-    }
-
-    // Register session with daemon
-    if (daemonPort) {
-      const transcriptPath = hookInput.transcript_path || '';
-      const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : `session-${Date.now()}`;
-      // isServiceSession already defined above
-
-      try {
-        await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, is_service: isServiceSession }),
-          signal: AbortSignal.timeout(3000),
-        });
-      } catch {
-        // intentionally empty — registration failed, continue anyway
-      }
-    }
-
-    process.exit(0);
-
-  } catch {
-    // intentionally empty
-    process.exit(0);
   }
+
+  // Pre-commit review + commit guidelines are now handled by PreToolUse hook (succ-pre-tool.cjs)
+  // They inject context at the exact moment of git commit, not at session start
+
+  // Soul Document
+  const soulPaths = [
+    path.join(succDir, 'soul.md'),
+    path.join(succDir, 'SOUL.md'),
+    path.join(projectDir, 'soul.md'),
+    path.join(projectDir, 'SOUL.md'),
+  ];
+
+  for (const soulPath of soulPaths) {
+    if (fs.existsSync(soulPath)) {
+      let soulContent = fs.readFileSync(soulPath, 'utf8').trim();
+      if (soulContent) {
+        // Strip Adaptation rules if auto-adapt is disabled
+        if (!communicationAutoAdapt) {
+          soulContent = soulContent.replace(/### Adaptation[\s\S]*?(?=\n## |\n---|\s*$)/, '');
+        }
+        // Inject vault tracking hint if enabled (agent handles the actual work)
+        if (communicationTrackHistory && communicationAutoAdapt) {
+          soulContent += `\n\n### Vault Tracking\n\ncommunicationTrackHistory is enabled. The succ-style-tracker agent will create brain vault entries in .succ/brain/communication/ when updating preferences.`;
+        }
+        contextParts.push('<soul>\n' + soulContent + '\n</soul>');
+      }
+      break;
+    }
+  }
+
+  // Architecture / Brain Vault — inline overview + categorized doc index
+  const brainDir = path.join(succDir, 'brain');
+  if (fs.existsSync(brainDir)) {
+    try {
+      const archParts = [];
+
+      // Phase 1: Find and inline Architecture Overview (compact extract)
+      const knowledgeDir = path.join(brainDir, 'knowledge');
+      if (fs.existsSync(knowledgeDir)) {
+        const archFiles = fs
+          .readdirSync(knowledgeDir)
+          .filter((f) => /architect/i.test(f) && f.endsWith('.md'))
+          .sort(); // 00_Architecture.md first
+        if (archFiles.length > 0) {
+          const archContent = fs.readFileSync(path.join(knowledgeDir, archFiles[0]), 'utf8');
+          // Strip frontmatter
+          const body = archContent.replace(/^---[\s\S]*?\n---\s*\n/, '');
+          // Extract from start to second "---" or "## Tech Stack" — whichever comes first
+          // This gives us Overview + Core Mission (~15-20 lines)
+          const overviewEnd = body.search(/\n---\n|\n## Tech Stack|\n## Directory/);
+          const overview =
+            overviewEnd > 0 ? body.slice(0, overviewEnd).trim() : body.slice(0, 1500).trim();
+          if (overview) {
+            archParts.push(overview);
+          }
+        }
+      }
+
+      // Phase 2: Collect remaining docs grouped by category
+      const scanDirs = [
+        { dir: 'knowledge', label: 'Knowledge & Research' },
+        { dir: 'project', label: 'Project' },
+      ];
+      const docGroups = {};
+
+      for (const { dir, label } of scanDirs) {
+        const fullDir = path.join(brainDir, dir);
+        if (!fs.existsSync(fullDir)) continue;
+
+        const files = fs.readdirSync(fullDir, { withFileTypes: true });
+        for (const entry of files) {
+          if (entry.isDirectory()) continue;
+          if (!entry.name.endsWith('.md')) continue;
+
+          const filePath = path.join(fullDir, entry.name);
+          const stat = fs.statSync(filePath);
+          if (stat.size < 2048) continue;
+          // Skip architecture files (already inlined above)
+          if (/architect/i.test(entry.name)) continue;
+
+          // Read first 500 bytes for frontmatter/H1
+          const fd = fs.openSync(filePath, 'r');
+          const buf = Buffer.alloc(500);
+          fs.readSync(fd, buf, 0, 500, 0);
+          fs.closeSync(fd);
+          const head = buf.toString('utf8');
+
+          let description = '';
+          const fmMatch = head.match(/^---\s*\n([\s\S]*?)\n---/);
+          if (fmMatch) {
+            const descMatch = fmMatch[1].match(/description:\s*["']?([^"'\n]+)/);
+            if (descMatch) description = descMatch[1].trim();
+          }
+          if (!description) {
+            const h1Match = head.match(/^#\s+(.+)/m);
+            if (h1Match) description = h1Match[1].trim();
+          }
+
+          if (description) {
+            if (!docGroups[label]) docGroups[label] = [];
+            docGroups[label].push(`${entry.name}: ${description}`);
+          }
+        }
+      }
+
+      // Phase 3: Format grouped docs
+      const groupLines = [];
+      for (const [label, docs] of Object.entries(docGroups)) {
+        groupLines.push(`**${label}:** ${docs.join(' | ')}`);
+      }
+      if (groupLines.length > 0) {
+        archParts.push(groupLines.join('\n'));
+      }
+
+      if (archParts.length > 0) {
+        contextParts.push(
+          `<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`
+        );
+      }
+    } catch {
+      // intentionally empty — brain vault scan failed, not critical
+    }
+  }
+
+  // Check if this is a compact event (after /compact)
+  const isCompactEvent = hookInput.source === 'compact';
+
+  log(
+    `source=${hookInput.source}, isCompact=${isCompactEvent}, session=${hookInput.session_id || 'unknown'}`
+  );
+
+  // Precomputed Context from previous session (only on fresh start, not compact)
+  if (!isCompactEvent) {
+    const precomputedContextPath = path.join(succDir, 'next-session-context.md');
+    if (fs.existsSync(precomputedContextPath)) {
+      try {
+        const precomputedContent = fs.readFileSync(precomputedContextPath, 'utf8').trim();
+        if (precomputedContent) {
+          contextParts.push('<previous-session>\n' + precomputedContent + '\n</previous-session>');
+
+          // Archive the file after loading
+          const archiveDir = path.join(succDir, '.context-archive');
+          if (!fs.existsSync(archiveDir)) {
+            fs.mkdirSync(archiveDir, { recursive: true });
+          }
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const archivePath = path.join(archiveDir, `context-${timestamp}.md`);
+          fs.renameSync(precomputedContextPath, archivePath);
+
+          // Cleanup old archives (keep last 10)
+          try {
+            const archives = fs
+              .readdirSync(archiveDir)
+              .filter((f) => f.startsWith('context-') && f.endsWith('.md'))
+              .sort()
+              .reverse();
+            for (const oldArchive of archives.slice(10)) {
+              fs.unlinkSync(path.join(archiveDir, oldArchive));
+            }
+          } catch {
+            // intentionally empty — cleanup failed, not critical
+          }
+        }
+      } catch {
+        // intentionally empty — ignore errors
+      }
+    }
+  }
+
+  // Ensure daemon is running and get port (shared module)
+  const { port: daemonPort } = await ensureDaemon(projectDir, log);
+
+  // Propagate daemon port to Bash environment via CLAUDE_ENV_FILE
+  // ensureDaemon already verified the port is alive, so no need to re-check
+  if (daemonPort && process.env.CLAUDE_ENV_FILE) {
+    try {
+      fs.appendFileSync(process.env.CLAUDE_ENV_FILE, `export SUCC_DAEMON_PORT=${daemonPort}\n`);
+      log(`Wrote SUCC_DAEMON_PORT=${daemonPort} to CLAUDE_ENV_FILE`);
+    } catch (err) {
+      log(`Failed to write CLAUDE_ENV_FILE: ${err.message || err}`);
+    }
+  }
+
+  // Skip for service sessions (reflection subagents)
+  const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
+
+  // IMPORTANT: Create compact-pending flag FIRST (before any slow operations)
+  // This ensures fallback context is available even if hook times out during briefing
+  // Hook timeout is 10s, briefing can take 60s+ → would block flag creation
+  if (isCompactEvent && !isServiceSession) {
+    const compactPendingFile = path.join(succDir, '.tmp', 'compact-pending');
+    try {
+      if (!fs.existsSync(path.join(succDir, '.tmp'))) {
+        fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
+      }
+      // Store the full context that should be injected (without briefing, that comes later)
+      const contextForFallback = adapter.adaptContext(agent, contextParts.join('\n\n'));
+      fs.writeFileSync(compactPendingFile, contextForFallback, 'utf8');
+      log(`Created compact-pending flag (${contextForFallback.length} chars)`);
+    } catch (err) {
+      log(`Failed to create compact-pending: ${err.message || err}`);
+    }
+  }
+
+  // Generate compact briefing (slow operation - may timeout)
+  // Even if this times out, we have the compact-pending fallback above
+  if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
+    log(`Generating compact briefing for ${hookInput.transcript_path}`);
+    try {
+      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
+        signal: AbortSignal.timeout(8000), // 8s timeout - must complete before 10s hook timeout
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.briefing) {
+          contextParts.push(
+            `<session-briefing source="compact">\n${result.briefing}\n</session-briefing>`
+          );
+          log(`Briefing generated: ${result.briefing.length} chars`);
+        } else {
+          log(`Briefing failed: ${result.error || 'no briefing returned'}`);
+        }
+      } else {
+        log(`Briefing API error: ${response.status} ${response.statusText}`);
+      }
+    } catch (err) {
+      log(`Briefing exception: ${err.message || err}`);
+      // Briefing generation failed, continue without it
+    }
+  }
+
+  // Pinned + recent memories via daemon API (only on fresh start, compact uses briefing instead)
+  if (daemonPort && !isCompactEvent) {
+    const pinnedIds = new Set();
+
+    // Phase 1: Pinned memories (Tier 1 — correction_count >= 2 or is_invariant)
+    // Filter: skip observations (noisy subagent reports), limit to top 10 by priority_score
+    try {
+      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/pinned`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const allPinned = data.results || [];
+        // Track ALL pinned IDs for dedup with recent (including filtered-out observations)
+        for (const m of allPinned) pinnedIds.add(m.id);
+        // Display only non-observation pinned, sorted by priority, top 10
+        const displayPinned = allPinned
+          .filter((m) => m.type !== 'observation')
+          .sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0))
+          .slice(0, 10);
+        if (displayPinned.length > 0) {
+          const lines = displayPinned.map((m) => {
+            const preview = m.content.slice(0, 100).replace(/\n/g, ' ');
+            const type = m.type || 'obs';
+            const reason = m.is_invariant ? 'invariant' : `corrected x${m.correction_count}`;
+            return `#${m.id} [${type}] (${reason}) ${preview}${m.content.length > 100 ? '...' : ''}`;
+          });
+          contextParts.push(
+            `<pinned-memories count="${displayPinned.length}" total="${allPinned.length}" hint="Tier 1: always loaded, high confidence">\n${lines.join('\n')}\n</pinned-memories>`
+          );
+        }
+      }
+    } catch {
+      // intentionally empty — pinned memories not available
+    }
+
+    // Phase 2: Recent memories (excluding pinned to avoid duplication)
+    try {
+      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/recall`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: '', limit: 5 }),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const memories = (data.results || []).filter((m) => !pinnedIds.has(m.id));
+        if (memories.length > 0) {
+          const lines = memories.map((m) => {
+            const preview = m.content.slice(0, 50).replace(/\n/g, ' ');
+            const type = m.type || 'obs';
+            return `#${m.id} [${type}] ${preview}${m.content.length > 50 ? '...' : ''}`;
+          });
+          contextParts.push(
+            `<recent-memories count="${memories.length}" hint="Use succ_recall for details">\n${lines.join('\n')}\n</recent-memories>`
+          );
+        }
+      }
+    } catch {
+      // intentionally empty — memories not available
+    }
+  }
+
+  // Knowledge base stats via daemon API
+  if (daemonPort) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/status`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (response.ok) {
+        const status = await response.json();
+        const docs = status.documents || 0;
+        const mems = status.memories || 0;
+        const code = status.codeChunks || 0;
+        if (docs > 0 || mems > 0 || code > 0) {
+          contextParts.push(
+            `<knowledge-base docs="${docs}" memories="${mems}" code-chunks="${code}" />`
+          );
+        }
+      }
+    } catch {
+      // intentionally empty — status not available
+    }
+  }
+
+  // Output context
+  if (contextParts.length > 0) {
+    // Sanitize closing wrapper tags from dynamic content to prevent XML injection
+    // (e.g. a stored memory or soul.md containing literal "</session>" would break the envelope)
+    const body = contextParts.join('\n\n').replace(/<\/session>/gi, '&lt;/session&gt;');
+    let additionalContext = `<session project="${projectName}">\n${body}\n</session>`;
+    // Strip Claude-only sections for non-Claude agents
+    additionalContext = adapter.adaptContext(agent, additionalContext);
+    const { json, exitCode } = adapter.formatOutput(agent, 'SessionStart', { additionalContext });
+    if (json && Object.keys(json).length > 0) {
+      console.log(JSON.stringify(json));
+    }
+    log(
+      `Output additionalContext: ${additionalContext.length} chars, parts=${contextParts.length}, agent=${agent}`
+    );
+    if (exitCode) process.exit(exitCode); // non-zero = deny (Cursor/Gemini); 0 falls through to session registration
+  } else {
+    log(`No context parts to output`);
+  }
+
+  // Register session with daemon
+  if (daemonPort) {
+    const transcriptPath = hookInput.transcript_path || '';
+    const sessionId = transcriptPath
+      ? path.basename(transcriptPath, '.jsonl')
+      : hookInput.session_id || `session-${Date.now()}`;
+    // isServiceSession already defined above
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          transcript_path: transcriptPath,
+          is_service: isServiceSession,
+        }),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) {
+        log(`Session register failed: ${res.status} ${res.statusText} session=${sessionId}`);
+      }
+    } catch (err) {
+      log(`Session register error for ${sessionId}: ${err.message || err}`);
+    }
+  }
+
+  process.exit(0);
 });

@@ -8,7 +8,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { isGlobalOnlyMode } from '../../lib/config.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 import {
   generateSessionId,
   ensureDebugsDir,
@@ -22,20 +27,11 @@ import {
 import { detectLanguage, generateLogStatement } from '../../lib/debug/types.js';
 import type { DebugSession, Hypothesis, DebugLanguage } from '../../lib/debug/types.js';
 
-function requireProject(): {
-  content: Array<{ type: 'text'; text: string }>;
-  isError: true;
-} | null {
+function requireProject(): ReturnType<typeof createErrorResponse> | null {
   if (isGlobalOnlyMode()) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: 'Debug sessions require a project with .succ/ initialized. Run `succ init` first.',
-        },
-      ],
-      isError: true,
-    };
+    return createErrorResponse(
+      'Debug sessions require a project with .succ/ initialized. Run `succ init` first.'
+    );
   }
   return null;
 }
@@ -135,12 +131,7 @@ export function registerDebugTools(server: McpServer) {
         switch (action) {
           case 'create': {
             if (!params.bug_description) {
-              return {
-                content: [
-                  { type: 'text' as const, text: 'bug_description is required for create' },
-                ],
-                isError: true,
-              };
+              return createErrorResponse('bug_description is required for create');
             }
             ensureDebugsDir();
             const id = generateSessionId();
@@ -162,26 +153,16 @@ export function registerDebugTools(server: McpServer) {
             };
             saveSession(session);
             appendSessionLog(id, `Session created: ${params.bug_description.substring(0, 100)}`);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Debug session created: ${id}\nBug: ${params.bug_description}\nLanguage: ${lang}\nReproduction: ${params.reproduction_command ?? '(not set)'}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Debug session created: ${id}\nBug: ${params.bug_description}\nLanguage: ${lang}\nReproduction: ${params.reproduction_command ?? '(not set)'}`
+            );
           }
 
           case 'hypothesis': {
             const session = getSession(params.session_id);
             if (!session) return noSession();
             if (!params.description) {
-              return {
-                content: [
-                  { type: 'text' as const, text: 'description is required for hypothesis' },
-                ],
-                isError: true,
-              };
+              return createErrorResponse('description is required for hypothesis');
             }
             const h: Hypothesis = {
               id: session.hypotheses.length + 1,
@@ -194,24 +175,16 @@ export function registerDebugTools(server: McpServer) {
             session.hypotheses.push(h);
             saveSession(session);
             appendSessionLog(session.id, `Hypothesis #${h.id} (${h.confidence}): ${h.description}`);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Hypothesis #${h.id} added (${h.confidence}):\n  ${h.description}\n  Evidence: ${h.evidence}\n  Test: ${h.test}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Hypothesis #${h.id} added (${h.confidence}):\n  ${h.description}\n  Evidence: ${h.evidence}\n  Test: ${h.test}`
+            );
           }
 
           case 'instrument': {
             const session = getSession(params.session_id);
             if (!session) return noSession();
             if (!params.file_path) {
-              return {
-                content: [{ type: 'text' as const, text: 'file_path is required for instrument' }],
-                isError: true,
-              };
+              return createErrorResponse('file_path is required for instrument');
             }
             const existing = session.instrumented_files.find((f) => f.path === params.file_path);
             if (existing) {
@@ -227,33 +200,20 @@ export function registerDebugTools(server: McpServer) {
               session.id,
               `Instrumented: ${params.file_path} lines=${(params.lines ?? []).join(',')}`
             );
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Instrumented ${params.file_path} at lines [${(params.lines ?? []).join(', ')}]\nTotal instrumented files: ${session.instrumented_files.length}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Instrumented ${params.file_path} at lines [${(params.lines ?? []).join(', ')}]\nTotal instrumented files: ${session.instrumented_files.length}`
+            );
           }
 
           case 'result': {
             const session = getSession(params.session_id);
             if (!session) return noSession();
             if (params.hypothesis_id == null) {
-              return {
-                content: [{ type: 'text' as const, text: 'hypothesis_id is required for result' }],
-                isError: true,
-              };
+              return createErrorResponse('hypothesis_id is required for result');
             }
             const h = session.hypotheses.find((x) => x.id === params.hypothesis_id);
             if (!h) {
-              return {
-                content: [
-                  { type: 'text' as const, text: `Hypothesis #${params.hypothesis_id} not found` },
-                ],
-                isError: true,
-              };
+              return createErrorResponse(`Hypothesis #${params.hypothesis_id} not found`);
             }
             h.result = params.confirmed ? 'confirmed' : 'refuted';
             h.logs = params.logs;
@@ -265,7 +225,7 @@ export function registerDebugTools(server: McpServer) {
             if (!params.confirmed) {
               text += `\n\nConsider recording as dead_end:\n  succ_dead_end(approach="${h.description}", why_failed="<reason>", tags=["debug"])`;
             }
-            return { content: [{ type: 'text' as const, text }] };
+            return createToolResponse(text);
           }
 
           case 'resolve': {
@@ -280,14 +240,9 @@ export function registerDebugTools(server: McpServer) {
             appendSessionLog(session.id, `RESOLVED: ${params.root_cause ?? 'unknown'}`);
             const confirmed = session.hypotheses.filter((h) => h.result === 'confirmed').length;
             const refuted = session.hypotheses.filter((h) => h.result === 'refuted').length;
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Debug session ${session.id} resolved.\nRoot cause: ${params.root_cause ?? 'not specified'}\nFix: ${params.fix_description ?? 'not specified'}\nFiles: ${(params.files_modified ?? []).join(', ') || 'none'}\nHypotheses: ${confirmed} confirmed, ${refuted} refuted, ${session.hypotheses.length} total\nIterations: ${session.iteration}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Debug session ${session.id} resolved.\nRoot cause: ${params.root_cause ?? 'not specified'}\nFix: ${params.fix_description ?? 'not specified'}\nFiles: ${(params.files_modified ?? []).join(', ') || 'none'}\nHypotheses: ${confirmed} confirmed, ${refuted} refuted, ${session.hypotheses.length} total\nIterations: ${session.iteration}`
+            );
           }
 
           case 'abandon': {
@@ -296,9 +251,7 @@ export function registerDebugTools(server: McpServer) {
             session.status = 'abandoned';
             saveSession(session);
             appendSessionLog(session.id, 'Session abandoned');
-            return {
-              content: [{ type: 'text' as const, text: `Session ${session.id} abandoned.` }],
-            };
+            return createToolResponse(`Session ${session.id} abandoned.`);
           }
 
           case 'status': {
@@ -329,80 +282,63 @@ export function registerDebugTools(server: McpServer) {
             }
             if (session.root_cause) lines.push(`Root cause: ${session.root_cause}`);
             if (session.fix_description) lines.push(`Fix: ${session.fix_description}`);
-            return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+            return createToolResponse(lines.join('\n'));
           }
 
           case 'list': {
             const sessions = listSessions(params.include_resolved);
             if (sessions.length === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: params.include_resolved
-                      ? 'No debug sessions found.'
-                      : 'No active debug sessions. Use action="list" include_resolved=true to see all.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                params.include_resolved
+                  ? 'No debug sessions found.'
+                  : 'No active debug sessions. Use action="list" include_resolved=true to see all.'
+              );
             }
             const lines = sessions.map(
               (s) =>
                 `${s.id} [${s.status}] ${s.language} iter=${s.iteration} hypotheses=${s.hypothesis_count} — ${s.bug_description}`
             );
-            return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+            return createToolResponse(lines.join('\n'));
           }
 
           case 'log': {
             const session = getSession(params.session_id);
             if (!session) return noSession();
             if (!params.entry) {
-              return {
-                content: [{ type: 'text' as const, text: 'entry is required for log' }],
-                isError: true,
-              };
+              return createErrorResponse('entry is required for log');
             }
             appendSessionLog(session.id, params.entry);
-            return {
-              content: [{ type: 'text' as const, text: `Log appended to session ${session.id}` }],
-            };
+            return createToolResponse(`Log appended to session ${session.id}`);
           }
 
           case 'show_log': {
             const session = getSession(params.session_id);
             if (!session) return noSession();
             const log = loadSessionLog(session.id);
-            return { content: [{ type: 'text' as const, text: log || '(empty log)' }] };
+            return createToolResponse(log || '(empty log)');
           }
 
           case 'detect_lang': {
             if (!params.file_path) {
-              return {
-                content: [{ type: 'text' as const, text: 'file_path is required for detect_lang' }],
-                isError: true,
-              };
+              return createErrorResponse('file_path is required for detect_lang');
             }
             const lang = detectLanguage(params.file_path);
-            return { content: [{ type: 'text' as const, text: `${params.file_path} → ${lang}` }] };
+            return createToolResponse(`${params.file_path} → ${lang}`);
           }
 
           case 'gen_log': {
             const lang: DebugLanguage = (params.language as DebugLanguage) ?? 'unknown';
             const stmt = generateLogStatement(lang, params.tag ?? 'debug', params.value ?? 'value');
-            return { content: [{ type: 'text' as const, text: stmt }] };
+            return createToolResponse(stmt);
           }
 
           default:
-            return {
-              content: [{ type: 'text' as const, text: `Unknown action: ${action}` }],
-              isError: true,
-            };
+            return createErrorResponse(`Unknown action: ${action}`);
         }
-      } catch (error: any) {
-        return {
-          content: [{ type: 'text' as const, text: `Debug tool error: ${error.message}` }],
-          isError: true,
-        };
+      } catch (error) {
+        return createErrorResponse(
+          `Debug tool error: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
   );
@@ -419,10 +355,5 @@ function getSession(sessionId?: string): DebugSession | null {
 }
 
 function noSession() {
-  return {
-    content: [
-      { type: 'text' as const, text: 'No active debug session. Use action="create" to start one.' },
-    ],
-    isError: true,
-  };
+  return createErrorResponse('No active debug session. Use action="create" to start one.');
 }

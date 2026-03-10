@@ -14,7 +14,12 @@ import {
   type OpenRouterSearchResponse,
   type ChatMessage,
 } from '../../lib/llm.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 import { gateAction } from '../profile.js';
 import {
   recordWebSearch,
@@ -187,8 +192,8 @@ async function saveResultToMemory(
       return '\n_Similar result already in memory._';
     }
     return `\n_Saved to memory (id: ${result.id})._`;
-  } catch (err: any) {
-    return `\n_Failed to save to memory: ${err.message}_`;
+  } catch (err) {
+    return `\n_Failed to save to memory: ${err instanceof Error ? err.message : String(err)}_`;
   }
 }
 
@@ -261,47 +266,26 @@ export function registerWebSearchTools(server: McpServer) {
 
       // Shared validation for search actions
       if (['quick', 'search', 'deep'].includes(action) && !query) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `"query" is required for action="${action}"`,
-            },
-          ],
-          isError: true,
-        };
+        return createErrorResponse(`"query" is required for action="${action}"`);
       }
 
       switch (action) {
         case 'quick': {
           if (!isApiConfigured()) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")'
+            );
           }
 
           const wsConfig = getWebSearchConfig();
           if (!wsConfig.enabled) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")'
+            );
           }
 
           const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-          if (budgetError)
-            return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+          if (budgetError) return createErrorResponse(budgetError);
 
           try {
             const messages: ChatMessage[] = [];
@@ -347,44 +331,30 @@ export function registerWebSearchTools(server: McpServer) {
               );
             }
 
-            return { content: [{ type: 'text' as const, text }] };
-          } catch (error: any) {
-            return {
-              content: [{ type: 'text' as const, text: `Quick search failed: ${error.message}` }],
-              isError: true,
-            };
+            return createToolResponse(text);
+          } catch (error) {
+            return createErrorResponse(
+              `Quick search failed: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
         case 'search': {
           if (!isApiConfigured()) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")'
+            );
           }
 
           const wsConfig = getWebSearchConfig();
           if (!wsConfig.enabled) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")'
+            );
           }
 
           const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-          if (budgetError)
-            return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+          if (budgetError) return createErrorResponse(budgetError);
 
           const effectiveModel = model || wsConfig.model;
 
@@ -431,44 +401,30 @@ export function registerWebSearchTools(server: McpServer) {
               );
             }
 
-            return { content: [{ type: 'text' as const, text }] };
-          } catch (error: any) {
-            return {
-              content: [{ type: 'text' as const, text: `Web search failed: ${error.message}` }],
-              isError: true,
-            };
+            return createToolResponse(text);
+          } catch (error) {
+            return createErrorResponse(
+              `Web search failed: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
         case 'deep': {
           if (!isApiConfigured()) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'API key not configured. Set OPENROUTER_API_KEY environment variable or run:\nsucc_config(action="set", key="llm.api_key", value="sk-or-...")'
+            );
           }
 
           const wsConfig = getWebSearchConfig();
           if (!wsConfig.enabled) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")',
-                },
-              ],
-              isError: true,
-            };
+            return createErrorResponse(
+              'Web search is disabled. Enable with: succ_config(action="set", key="web_search.enabled", value="true")'
+            );
           }
 
           const budgetError = await checkBudget(wsConfig.daily_budget_usd);
-          if (budgetError)
-            return { content: [{ type: 'text' as const, text: budgetError }], isError: true };
+          if (budgetError) return createErrorResponse(budgetError);
 
           try {
             const messages: ChatMessage[] = [];
@@ -517,12 +473,11 @@ export function registerWebSearchTools(server: McpServer) {
               );
             }
 
-            return { content: [{ type: 'text' as const, text }] };
-          } catch (error: any) {
-            return {
-              content: [{ type: 'text' as const, text: `Deep research failed: ${error.message}` }],
-              isError: true,
-            };
+            return createToolResponse(text);
+          } catch (error) {
+            return createErrorResponse(
+              `Deep research failed: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
@@ -570,30 +525,18 @@ export function registerWebSearchTools(server: McpServer) {
               lines.push('\n_No search records found matching filters._');
             }
 
-            return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
-          } catch (error: any) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to retrieve search history: ${error.message}`,
-                },
-              ],
-              isError: true,
-            };
+            return createToolResponse(lines.join('\n'));
+          } catch (error) {
+            return createErrorResponse(
+              `Failed to retrieve search history: ${error instanceof Error ? error.message : String(error)}`
+            );
           }
         }
 
         default: {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Unknown action "${action}". Valid actions: quick, search, deep, history`,
-              },
-            ],
-            isError: true,
-          };
+          return createErrorResponse(
+            `Unknown action "${action}". Valid actions: quick, search, deep, history`
+          );
         }
       }
     }

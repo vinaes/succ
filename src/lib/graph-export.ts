@@ -136,8 +136,11 @@ export function scheduleAutoExport(): void {
     if (agentsMdConfig?.enabled) {
       import('./agents-md-generator.js')
         .then((mod) => mod.writeAgentsMd())
-        .catch(() => {
-          /* Silently ignore AGENTS.md errors */
+        .catch((err) => {
+          logWarn(
+            'graph-export',
+            `AGENTS.md generation failed: ${err instanceof Error ? err.message : String(err)}`
+          );
         });
     }
   }, EXPORT_DEBOUNCE_MS);
