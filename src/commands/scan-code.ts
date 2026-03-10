@@ -118,11 +118,11 @@ export function isIgnored(relativePath: string, patterns: string[]): boolean {
   let ignored = false;
   for (const pattern of patterns) {
     if (pattern.startsWith('!')) {
-      if (minimatch(relativePath, pattern.slice(1))) {
+      if (minimatch(relativePath, pattern.slice(1), { dot: true })) {
         ignored = false;
       }
     } else {
-      if (minimatch(relativePath, pattern)) {
+      if (minimatch(relativePath, pattern, { dot: true })) {
         ignored = true;
       }
     }
@@ -238,7 +238,11 @@ function recursiveWalk(dir: string, projectRoot: string): string[] {
   }
 
   for (const entry of entries) {
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, '/');
+      logWarn('scan-code', `Skipping symlinked entry: ${relativePath}`);
+    } else if (entry.isDirectory()) {
       if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
       results.push(...recursiveWalk(path.join(dir, entry.name), projectRoot));
     } else if (entry.isFile()) {
