@@ -399,12 +399,6 @@ export async function scanCode(options: {
     limiter(async () => {
       try {
         const result = await indexCodeFile(filePath, { force: true });
-        processed++;
-
-        if (processed % 50 === 0) {
-          logInfo('scan-code', `Progress: ${processed}/${category.toIndex.length} files`);
-        }
-
         if (result.success && !result.skipped) {
           indexed++;
           totalChunks += result.chunks ?? 0;
@@ -414,10 +408,14 @@ export async function scanCode(options: {
           errorDetails.push(`${relative}: ${result.error ?? 'unknown error'}`);
         }
       } catch (error: any) {
-        processed++;
         errors++;
         const relative = path.relative(projectRoot, filePath).replace(/\\/g, '/');
         errorDetails.push(`${relative}: ${error?.message ?? 'unknown error'}`);
+      } finally {
+        processed++;
+        if (processed % 50 === 0) {
+          logInfo('scan-code', `Progress: ${processed}/${category.toIndex.length} files`);
+        }
       }
     })
   );

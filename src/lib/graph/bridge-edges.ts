@@ -290,15 +290,14 @@ export async function findMemoriesForCode(
       if (wantRelation && l.relation !== wantRelation) return false;
       // Check link metadata for the code path
       const meta = l.metadata as Partial<BridgeEdgeMetadata> | undefined;
-      if (meta?.code_path) {
-        if (meta.code_path === codePath) return true;
-        // Suffix match only on path boundary (preceded by /)
-        return (
-          codePath.endsWith(meta.code_path) &&
-          codePath[codePath.length - meta.code_path.length - 1] === '/'
-        );
-      }
-      // No metadata — fall back to content check
+      const matchesPath = (stored: string) =>
+        stored === codePath ||
+        (codePath.endsWith(stored) && codePath[codePath.length - stored.length - 1] === '/');
+      // Check single code_path (latest value, kept for backward compat)
+      if (meta?.code_path && matchesPath(meta.code_path)) return true;
+      // Check accumulated code_paths array (populated by PG on-conflict merge)
+      if (Array.isArray(meta?.code_paths) && meta.code_paths.some(matchesPath)) return true;
+      // No metadata match — fall back to content check
       return mem.content.includes(codePath);
     });
 

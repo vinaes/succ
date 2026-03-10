@@ -76,6 +76,8 @@ export class LspClient {
   /** Debounce timers for file change events (Windows fires duplicates) */
   private fileChangeTimers = new Map<string, NodeJS.Timeout>();
   private idleTimer: NodeJS.Timeout | null = null;
+  /** Single-flight guard: if start() is in progress, concurrent callers share this promise */
+  private startingPromise: Promise<InitializeResult> | null = null;
   private readonly idleTimeoutMs: number;
   private readonly options: LspClientOptions;
 
@@ -93,16 +95,33 @@ export class LspClient {
       throw new Error('LSP client already initialized');
     }
 
+    // Single-flight: if a start() is already in progress, return its promise
+    if (this.startingPromise) {
+      return this.startingPromise;
+    }
+
+    this.startingPromise = this._doStart();
+    try {
+      return await this.startingPromise;
+    } finally {
+      this.startingPromise = null;
+    }
+  }
+
+  private async _doStart(): Promise<InitializeResult> {
     // Spawn the server process
-    this.process = spawn(this.options.command, this.options.args, {
+    const child = spawn(this.options.command, this.options.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.options.rootPath,
     });
+    this.process = child;
 
     // Handle spawn failures (e.g. command not found, ENOENT).
     // Reject via spawnErrorPromise so start() doesn't hang on sendRequest.
+    // Bind to child so stale events from an old spawn don't tear down a newer process.
     const spawnErrorPromise = new Promise<never>((_, reject) => {
-      this.process!.on('error', (err) => {
+      child.on('error', (err) => {
+        if (child !== this.process) return; // stale child — ignore
         logWarn('lsp-client', `Failed to spawn ${this.options.command}: ${err.message}`);
         this.spawnError = err;
         this.cleanup();
@@ -110,29 +129,30 @@ export class LspClient {
       });
     });
 
-    if (!this.process.stdout || !this.process.stdin) {
+    if (!child.stdout || !child.stdin) {
       // Spawned but streams unavailable — clean up immediately
       this.cleanup();
       throw new Error('Failed to get stdio streams from LSP server process');
     }
 
     // Capture stderr for diagnostics
-    this.process.stderr?.on('data', (data: Buffer) => {
+    child.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim();
       if (msg) {
         logWarn('lsp-client', `stderr from ${this.options.command}: ${msg.substring(0, 200)}`);
       }
     });
 
-    this.process.on('exit', (code) => {
+    child.on('exit', (code) => {
+      if (child !== this.process) return; // stale child — ignore
       logInfo('lsp-client', `${this.options.command} exited with code ${code}`);
       this.cleanup();
     });
 
     // Create JSON-RPC connection
     this.connection = createProtocolConnection(
-      new StreamMessageReader(this.process.stdout),
-      new StreamMessageWriter(this.process.stdin)
+      new StreamMessageReader(child.stdout),
+      new StreamMessageWriter(child.stdin)
     );
     this.connection.listen();
 

@@ -2182,9 +2182,25 @@ export class PostgresBackend {
     const metadataJson = metadata ? JSON.stringify(metadata) : null;
     const result = await pool.query<{ id: number; xmax: string }>(
       `INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
        ON CONFLICT (source_id, target_id, relation) DO UPDATE
-         SET metadata = COALESCE(EXCLUDED.metadata, memory_links.metadata),
+         SET metadata = CASE
+               WHEN memory_links.metadata IS NULL THEN EXCLUDED.metadata
+               WHEN EXCLUDED.metadata IS NULL THEN memory_links.metadata
+               ELSE memory_links.metadata || EXCLUDED.metadata || jsonb_build_object(
+                 'code_paths',
+                 COALESCE((SELECT jsonb_agg(DISTINCT p)
+                  FROM jsonb_array_elements_text(
+                    COALESCE(memory_links.metadata->'code_paths', '[]'::jsonb) ||
+                    CASE WHEN memory_links.metadata ? 'code_path'
+                         THEN jsonb_build_array(memory_links.metadata->>'code_path')
+                         ELSE '[]'::jsonb END ||
+                    CASE WHEN EXCLUDED.metadata ? 'code_path'
+                         THEN jsonb_build_array(EXCLUDED.metadata->>'code_path')
+                         ELSE '[]'::jsonb END
+                  ) p), '[]'::jsonb)
+               )
+             END,
              weight = EXCLUDED.weight,
              valid_from = COALESCE(EXCLUDED.valid_from, memory_links.valid_from),
              valid_until = COALESCE(EXCLUDED.valid_until, memory_links.valid_until)

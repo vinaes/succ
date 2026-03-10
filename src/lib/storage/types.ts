@@ -348,6 +348,13 @@ export interface MemoryLink {
 export interface BridgeEdgeMetadata {
   /** Code file path this edge references */
   code_path?: string;
+  /**
+   * All code paths accumulated across conflict-merges on the same
+   * (source_id, target_id, relation) row. Populated by the PostgreSQL
+   * upsert; code_path holds the most-recent single path for backward
+   * compatibility.
+   */
+  code_paths?: string[];
   /** Symbol name within the file */
   symbol_name?: string;
   /** Line range [start, end] */
