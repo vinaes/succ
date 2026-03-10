@@ -565,9 +565,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                 postByType[k] = Math.ceil(postByType[k] / 4);
               }
             } catch {
-              // Fallback: byte count is an overestimate but acceptable for display
-              const postBytes = fs.statSync(hookInput.transcript_path).size;
-              postTokens = Math.ceil(postBytes / 4);
+              log(succDir, 'Skipping compact stats delta: failed to analyze post-compact transcript');
+              // postTokens stays null — byte/4 heuristic is not comparable to analyzer-derived totals
             }
           }
 

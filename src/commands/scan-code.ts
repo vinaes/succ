@@ -406,13 +406,13 @@ export async function scanCode(options: {
           totalChunks += result.chunks ?? 0;
         } else if (!result.success) {
           errors++;
-          const relative = path.relative(projectRoot, filePath);
+          const relative = path.relative(projectRoot, filePath).replace(/\\/g, '/');
           errorDetails.push(`${relative}: ${result.error ?? 'unknown error'}`);
         }
       } catch (error: any) {
         processed++;
         errors++;
-        const relative = path.relative(projectRoot, filePath);
+        const relative = path.relative(projectRoot, filePath).replace(/\\/g, '/');
         errorDetails.push(`${relative}: ${error?.message ?? 'unknown error'}`);
       }
     })
