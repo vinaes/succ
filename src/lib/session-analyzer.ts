@@ -85,6 +85,9 @@ export interface SessionAnalysis {
 
 // ── Token estimation ─────────────────────────────────────────────────
 
+/** Fallback char estimate when an image block has no source metadata. */
+const DEFAULT_IMAGE_CHAR_ESTIMATE = 100;
+
 /** Estimate tokens from character count (industry standard: ~4 chars/token). */
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);
@@ -170,7 +173,7 @@ export function classifyContent(
 
       case 'image':
         // Images can be very large (base64). Estimate from source.
-        chars = block.source ? JSON.stringify(block.source).length : 100;
+        chars = block.source ? JSON.stringify(block.source).length : DEFAULT_IMAGE_CHAR_ESTIMATE;
         result.image += chars;
         break;
 

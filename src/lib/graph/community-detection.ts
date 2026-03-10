@@ -77,13 +77,13 @@ function shuffleArray<T>(arr: T[], rng: () => number): void {
  * 2. Iteratively: each node adopts the most frequent weighted label of its neighbors
  * 3. Converges when no labels change
  *
- * @returns Map of nodeId → communityId
+ * @returns Object with labels (nodeId → communityId) and actual iteration count
  */
 export function labelPropagation(
   adjacency: Map<number, Array<{ neighbor: number; weight: number }>>,
   maxIterations: number = 100,
   seed: number = 42
-): Map<number, number> {
+): { labels: Map<number, number>; iterations: number } {
   const rng = mulberry32(seed);
 
   // Initialize: each node is its own community
@@ -93,7 +93,9 @@ export function labelPropagation(
     labels.set(node, node);
   }
 
+  let actualIterations = 0;
   for (let iter = 0; iter < maxIterations; iter++) {
+    actualIterations = iter + 1;
     let changed = false;
 
     // Shuffle nodes for randomized order
@@ -130,7 +132,7 @@ export function labelPropagation(
     if (!changed) break;
   }
 
-  return labels;
+  return { labels, iterations: actualIterations };
 }
 
 /**
@@ -182,8 +184,8 @@ export async function detectCommunitiesLP(
   const adjacency = buildAdjacencyList(links);
 
   // Run Label Propagation
-  const rawLabels = labelPropagation(adjacency, maxIterations);
-  const labels = renumberCommunities(rawLabels);
+  const lpResult = labelPropagation(adjacency, maxIterations);
+  const labels = renumberCommunities(lpResult.labels);
 
   // Group by community
   const communityMap = new Map<number, number[]>();
@@ -261,7 +263,7 @@ export async function detectCommunitiesLP(
     );
   }
 
-  return { communities, isolated, iterations: maxIterations };
+  return { communities, isolated, iterations: lpResult.iterations };
 }
 
 /**

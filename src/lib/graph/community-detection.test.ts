@@ -94,7 +94,7 @@ describe('Community Detection', () => {
       const adj = new Map<number, Array<{ neighbor: number; weight: number }>>();
       adj.set(1, []);
       adj.set(2, []);
-      const labels = labelPropagation(adj);
+      const { labels } = labelPropagation(adj);
       expect(labels.get(1)).not.toBe(labels.get(2));
     });
 
@@ -113,7 +113,7 @@ describe('Community Detection', () => {
         { neighbor: 2, weight: 1 },
       ]);
 
-      const labels = labelPropagation(adj);
+      const { labels } = labelPropagation(adj);
       expect(labels.get(1)).toBe(labels.get(2));
       expect(labels.get(2)).toBe(labels.get(3));
     });
@@ -145,7 +145,7 @@ describe('Community Detection', () => {
         { neighbor: 5, weight: 1 },
       ]);
 
-      const labels = labelPropagation(adj);
+      const { labels } = labelPropagation(adj);
 
       expect(labels.get(1)).toBe(labels.get(2));
       expect(labels.get(2)).toBe(labels.get(3));

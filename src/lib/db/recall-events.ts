@@ -155,7 +155,7 @@ export function getTopPerformers(minRecalls: number = 3, limit: number = 10): Re
      FROM recall_events
      GROUP BY memory_id
      HAVING COUNT(*) >= ?
-     ORDER BY useRate DESC
+     ORDER BY useRate DESC, memory_id ASC
      LIMIT ?`
   ).all(minRecalls, limit) as RecallPerformerRow[];
 }
@@ -177,7 +177,7 @@ export function getWorstPerformers(
      FROM recall_events
      GROUP BY memory_id
      HAVING COUNT(*) >= ?
-     ORDER BY useRate ASC
+     ORDER BY useRate ASC, memory_id ASC
      LIMIT ?`
   ).all(minRecalls, limit) as RecallPerformerRow[];
 }
@@ -250,7 +250,7 @@ export function getNeverUsedMemoryRows(
      FROM recall_events
      GROUP BY memory_id
      HAVING SUM(was_used) = 0 AND COUNT(*) >= ?
-     ORDER BY totalRecalls DESC
+     ORDER BY totalRecalls DESC, memory_id ASC
      LIMIT ?`
   ).all(minRecalls, limit) as Array<{
     memoryId: number;
