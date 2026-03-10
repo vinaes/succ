@@ -46,6 +46,7 @@ import type { HybridSearchResult } from './storage/types.js';
 
 describe('reranker', () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.clearAllMocks();
   });
 

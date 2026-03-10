@@ -15,11 +15,13 @@ vi.mock('child_process', () => ({
 vi.mock('fs', () => ({
   default: {
     readFileSync: vi.fn(),
+    lstatSync: vi.fn(),
     statSync: vi.fn(),
     readdirSync: vi.fn(),
     existsSync: vi.fn(),
   },
   readFileSync: vi.fn(),
+  lstatSync: vi.fn(),
   statSync: vi.fn(),
   readdirSync: vi.fn(),
   existsSync: vi.fn(),
@@ -145,7 +147,7 @@ describe('discoverCodeFiles', () => {
     vi.mocked(execFileSync).mockReturnValue(
       'src/app.ts\nREADME.md\nlogo.png\nsrc/main.py\nMakefile'
     );
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     const result = discoverCodeFiles({ projectRoot: '/project' });
 
@@ -158,9 +160,10 @@ describe('discoverCodeFiles', () => {
 
   it('filters files exceeding max size', () => {
     vi.mocked(execFileSync).mockReturnValue('small.ts\nhuge.ts');
-    vi.mocked(fs.statSync).mockImplementation((p: any) => {
-      if (String(p).includes('huge')) return { size: 600 * 1024 } as any;
-      return { size: 100 * 1024 } as any;
+    vi.mocked(fs.lstatSync).mockImplementation((p: any) => {
+      if (String(p).includes('huge'))
+        return { size: 600 * 1024, isSymbolicLink: () => false } as any;
+      return { size: 100 * 1024, isSymbolicLink: () => false } as any;
     });
 
     const result = discoverCodeFiles({ projectRoot: '/project', maxFileSizeKb: 500 });
@@ -171,7 +174,7 @@ describe('discoverCodeFiles', () => {
 
   it('filters by path prefix', () => {
     vi.mocked(execFileSync).mockReturnValue('src/a.ts\nsrc/b.ts\nlib/c.ts\ntest/d.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     const result = discoverCodeFiles({ projectRoot: '/project', filterPath: 'src' });
 
@@ -181,7 +184,7 @@ describe('discoverCodeFiles', () => {
 
   it('applies .succignore patterns', () => {
     vi.mocked(execFileSync).mockReturnValue('src/a.ts\ngenerated/b.ts\nsrc/c.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     const result = discoverCodeFiles({
       projectRoot: '/project',
@@ -194,7 +197,10 @@ describe('discoverCodeFiles', () => {
 
   it('falls back to recursive walk for non-git projects', () => {
     vi.mocked(execFileSync).mockImplementation(() => {
-      throw new Error('not a git repository');
+      throw Object.assign(new Error('not a git repository'), {
+        status: 128,
+        stderr: 'fatal: not a git repository',
+      });
     });
 
     // Mock readdirSync for recursive walk
@@ -202,20 +208,45 @@ describe('discoverCodeFiles', () => {
       const d = String(dir);
       if (d === '/project') {
         return [
-          { name: 'src', isDirectory: () => true, isFile: () => false },
-          { name: 'node_modules', isDirectory: () => true, isFile: () => false },
-          { name: 'readme.md', isDirectory: () => false, isFile: () => true },
+          {
+            name: 'src',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: 'node_modules',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: 'readme.md',
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+          },
         ] as any;
       }
       if (d.endsWith('src')) {
         return [
-          { name: 'app.ts', isDirectory: () => false, isFile: () => true },
-          { name: 'util.py', isDirectory: () => false, isFile: () => true },
+          {
+            name: 'app.ts',
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: 'util.py',
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+          },
         ] as any;
       }
       return [];
     });
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     const result = discoverCodeFiles({ projectRoot: '/project' });
 
@@ -235,26 +266,58 @@ describe('discoverCodeFiles', () => {
 
   it('skips default ignore dirs in recursive walk (node_modules, .git, dist)', () => {
     vi.mocked(execFileSync).mockImplementation(() => {
-      throw new Error('not a git repo');
+      throw Object.assign(new Error('not a git repo'), {
+        status: 128,
+        stderr: 'fatal: not a git repository',
+      });
     });
 
     vi.mocked(fs.readdirSync).mockImplementation((dir: any) => {
       const d = String(dir);
       if (d === '/project') {
         return [
-          { name: 'src', isDirectory: () => true, isFile: () => false },
-          { name: 'node_modules', isDirectory: () => true, isFile: () => false },
-          { name: '.git', isDirectory: () => true, isFile: () => false },
-          { name: 'dist', isDirectory: () => true, isFile: () => false },
+          {
+            name: 'src',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: 'node_modules',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: '.git',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
+          {
+            name: 'dist',
+            isDirectory: () => true,
+            isFile: () => false,
+            isSymbolicLink: () => false,
+          },
         ] as any;
       }
       if (d.endsWith('src')) {
-        return [{ name: 'a.ts', isDirectory: () => false, isFile: () => true }] as any;
+        return [
+          {
+            name: 'a.ts',
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+          },
+        ] as any;
       }
       // Should NOT be called for node_modules/.git/dist
-      return [{ name: 'b.ts', isDirectory: () => false, isFile: () => true }] as any;
+      return [
+        { name: 'b.ts', isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false },
+      ] as any;
     });
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     const result = discoverCodeFiles({ projectRoot: '/project' });
 
@@ -344,7 +407,7 @@ describe('scanCode', () => {
   it('returns correct counts for successful scan', async () => {
     // Setup: git returns 5 files, 3 supported extensions
     vi.mocked(execFileSync).mockReturnValue('a.ts\nb.py\nc.md\nd.ts\ne.txt');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
 
     // 2 new, 1 modified (different hash)
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map([['code:d.ts', 'oldhash']]));
@@ -367,7 +430,7 @@ describe('scanCode', () => {
 
   it('handles indexCodeFile failures', async () => {
     vi.mocked(execFileSync).mockReturnValue('a.ts\nb.ts\nc.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
 
     vi.mocked(indexCodeFile)
@@ -387,7 +450,7 @@ describe('scanCode', () => {
   it('uses p-limit with configured concurrency', async () => {
     vi.mocked(getConfig).mockReturnValue({ indexing: { concurrency: 5 } } as any);
     vi.mocked(execFileSync).mockReturnValue('a.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
     vi.mocked(indexCodeFile).mockResolvedValue({ success: true, chunks: 1 });
 
@@ -399,7 +462,7 @@ describe('scanCode', () => {
   it('logs progress every 50 files', async () => {
     const files = Array.from({ length: 120 }, (_, i) => `file${i}.ts`).join('\n');
     vi.mocked(execFileSync).mockReturnValue(files);
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
     vi.mocked(indexCodeFile).mockResolvedValue({ success: true, chunks: 1 });
 
@@ -416,7 +479,7 @@ describe('scanCode', () => {
 
   it('passes force and filterPath through', async () => {
     vi.mocked(execFileSync).mockReturnValue('src/a.ts\nlib/b.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map([['code:src/a.ts', 'hash_12']]));
     vi.mocked(indexCodeFile).mockResolvedValue({ success: true, chunks: 1 });
 
@@ -429,7 +492,7 @@ describe('scanCode', () => {
 
   it('returns early when no files to index', async () => {
     vi.mocked(execFileSync).mockReturnValue('a.ts');
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map([['code:a.ts', 'hash_12']]));
     // readFileSync returns 'file content' (length 12) → hash_12 matches
 
@@ -443,9 +506,10 @@ describe('scanCode', () => {
   it('reads max_file_size_kb from config', async () => {
     vi.mocked(getConfig).mockReturnValue({ indexing: { max_file_size_kb: 200 } } as any);
     vi.mocked(execFileSync).mockReturnValue('small.ts\nbig.ts');
-    vi.mocked(fs.statSync).mockImplementation((p: any) => {
-      if (String(p).includes('big')) return { size: 300 * 1024 } as any;
-      return { size: 100 * 1024 } as any;
+    vi.mocked(fs.lstatSync).mockImplementation((p: any) => {
+      if (String(p).includes('big'))
+        return { size: 300 * 1024, isSymbolicLink: () => false } as any;
+      return { size: 100 * 1024, isSymbolicLink: () => false } as any;
     });
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
     vi.mocked(indexCodeFile).mockResolvedValue({ success: true, chunks: 1 });
@@ -458,12 +522,15 @@ describe('scanCode', () => {
 
   it('reports source as walk for non-git projects', async () => {
     vi.mocked(execFileSync).mockImplementation(() => {
-      throw new Error('not a git repo');
+      throw Object.assign(new Error('not a git repo'), {
+        status: 128,
+        stderr: 'fatal: not a git repository',
+      });
     });
     vi.mocked(fs.readdirSync).mockReturnValue([
-      { name: 'app.ts', isDirectory: () => false, isFile: () => true },
+      { name: 'app.ts', isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false },
     ] as any);
-    vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
     vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
     vi.mocked(indexCodeFile).mockResolvedValue({ success: true, chunks: 1 });
 

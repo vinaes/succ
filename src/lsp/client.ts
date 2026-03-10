@@ -491,9 +491,17 @@ export class LspClient {
 
     return locations.map((loc) => {
       // Use fileURLToPath for correct percent-decoding and platform handling
-      const normalizedPath = loc.uri.startsWith('file://')
-        ? fileURLToPath(loc.uri)
-        : new URL(loc.uri).pathname;
+      let normalizedPath: string;
+      if (loc.uri.startsWith('file://')) {
+        normalizedPath = fileURLToPath(loc.uri);
+      } else {
+        try {
+          normalizedPath = new URL(loc.uri).pathname;
+        } catch (err) {
+          logWarn('lsp-client', `Malformed URI in location result: ${loc.uri}: ${err}`);
+          normalizedPath = loc.uri;
+        }
+      }
 
       return {
         uri: loc.uri,
@@ -526,6 +534,7 @@ export class LspClient {
       '.kt': 'kotlin',
       '.vue': 'vue',
       '.svelte': 'svelte',
+      '.swift': 'swift',
     };
     return map[ext] ?? 'plaintext';
   }

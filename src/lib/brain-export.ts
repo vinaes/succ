@@ -152,11 +152,20 @@ function parseBrainDoc(
   // Parse YAML frontmatter (handle both LF and CRLF line endings)
   const normalized = content.replace(/\r\n/g, '\n');
   if (normalized.startsWith('---\n')) {
-    const endIdx = normalized.indexOf('\n---\n', 4);
+    // Accept '\n---\n' (normal case) or '\n---' at EOF (no trailing newline)
+    let endIdx = normalized.indexOf('\n---\n', 4);
+    let skip = 5;
+    if (endIdx === -1) {
+      const eofIdx = normalized.lastIndexOf('\n---');
+      if (eofIdx > 4 && eofIdx === normalized.length - 4) {
+        endIdx = eofIdx;
+        skip = 4;
+      }
+    }
     if (endIdx !== -1) {
       const fmBlock = normalized.substring(4, endIdx);
       frontmatter = parseSimpleYaml(fmBlock);
-      body = normalized.substring(endIdx + 5);
+      body = normalized.substring(endIdx + skip);
     }
   }
 
@@ -289,9 +298,18 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
     // Strip frontmatter from content for the pack (handle CRLF)
     let body = doc.content.replace(/\r\n/g, '\n');
     if (body.startsWith('---\n')) {
-      const endIdx = body.indexOf('\n---\n', 4);
+      // Accept '\n---\n' (normal case) or '\n---' at EOF (no trailing newline)
+      let endIdx = body.indexOf('\n---\n', 4);
+      let skip = 5;
+      if (endIdx === -1) {
+        const eofIdx = body.lastIndexOf('\n---');
+        if (eofIdx > 4 && eofIdx === body.length - 4) {
+          endIdx = eofIdx;
+          skip = 4;
+        }
+      }
       if (endIdx !== -1) {
-        body = body.substring(endIdx + 5);
+        body = body.substring(endIdx + skip);
       }
     }
     lines.push(body.trim());
@@ -385,10 +403,16 @@ function createSnapshot(docs: BrainDoc[], brainDir?: string): BrainSnapshot {
   }
 
   // Derive projectRoot from brainDir when caller provides an explicit vault path.
-  // Default layout is <projectRoot>/.succ/brain, so go up two levels.
-  const projectRoot = brainDir
-    ? path.resolve(brainDir, '..', '..')
-    : (getProjectRoot() ?? process.cwd());
+  // Only climb two levels when brainDir follows the default <project>/.succ/brain layout;
+  // otherwise use brainDir itself to avoid misidentifying custom/temp vaults.
+  let projectRoot: string;
+  if (brainDir) {
+    const isDefaultLayout =
+      path.basename(brainDir) === 'brain' && path.basename(path.dirname(brainDir)) === '.succ';
+    projectRoot = isDefaultLayout ? path.resolve(brainDir, '..', '..') : brainDir;
+  } else {
+    projectRoot = getProjectRoot() ?? process.cwd();
+  }
 
   return {
     exportedAt: new Date().toISOString(),

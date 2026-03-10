@@ -233,22 +233,29 @@ export async function detectCommunitiesLP(
     memoryTagMap.set(mem.id, tags);
   }
 
-  for (const memId of labels.keys()) {
-    let tags = memoryTagMap.get(memId) ?? [];
+  const BATCH_SIZE = 50;
+  const memIds = [...labels.keys()];
+  for (let i = 0; i < memIds.length; i += BATCH_SIZE) {
+    const batch = memIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map((memId) => {
+        let tags = memoryTagMap.get(memId) ?? [];
 
-    // Remove old community tags
-    tags = tags.filter((t: string) => !t.startsWith(tagPattern));
+        // Remove old community tags
+        tags = tags.filter((t: string) => !t.startsWith(tagPattern));
 
-    // Add new community tag (only if community is large enough)
-    const communityId = labels.get(memId);
-    if (communityId != null) {
-      const members = communityMap.get(communityId);
-      if (members && members.length >= minCommunitySize) {
-        tags.push(`${tagPrefix}:${communityId}`);
-      }
-    }
+        // Add new community tag (only if community is large enough)
+        const communityId = labels.get(memId);
+        if (communityId != null) {
+          const members = communityMap.get(communityId);
+          if (members && members.length >= minCommunitySize) {
+            tags.push(`${tagPrefix}:${communityId}`);
+          }
+        }
 
-    await updateMemoryTags(memId, tags);
+        return updateMemoryTags(memId, tags);
+      })
+    );
   }
 
   return { communities, isolated, iterations: maxIterations };

@@ -51,7 +51,7 @@ export async function consolidateAutoMemories(options?: {
 }): Promise<ConsolidationResult> {
   const mergeThreshold = Math.max(0.5, Math.min(1.0, options?.mergeThreshold ?? 0.92));
   const promotionAccesses = Math.max(1, options?.promotionAccesses ?? 5);
-  const maxUnusedDays = options?.maxUnusedDays ?? 90;
+  const maxUnusedDays = Math.max(1, options?.maxUnusedDays ?? 90);
 
   const result: ConsolidationResult = {
     merged: 0,

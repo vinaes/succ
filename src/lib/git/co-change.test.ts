@@ -185,6 +185,13 @@ describe('co-change', () => {
       expect(result.cochanges).toHaveLength(0);
     });
 
+    it('returns empty cochanges when git log is empty', async () => {
+      mockGitLog('');
+
+      const result = await getCoChangesForFile('src/any.ts', 200, 2, 10);
+      expect(result.cochanges).toHaveLength(0);
+    });
+
     it('should respect limit parameter', async () => {
       const gitLog = [
         '---COMMIT---',

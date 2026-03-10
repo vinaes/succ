@@ -395,7 +395,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
   const settingsPath = path.join(claudeDir, 'settings.json');
   const settingsExisted = fs.existsSync(settingsPath);
 
-  if (!settingsExisted || options.force) {
+  {
+    // Always install/update hooks and settings so re-running `succ init` on an existing
+    // project updates hooks to the latest version. The merge logic inside preserves
+    // existing permissions and any non-succ hooks.
     // Determine hooks path based on installation mode
     // Use $CLAUDE_PROJECT_DIR for portability (works regardless of cwd)
     const hooksPath = useGlobalHooks
@@ -913,11 +916,13 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       console.log('    Run `succ index` and `succ analyze` manually when needed');
     }
 
-    // Save daemon config to target scope.
+    // Daemon settings are always written to the project config, never global.
+    // Background-service toggles are per-project: writing them to the global
+    // config would bleed across unrelated projects.
     // When daemonMode is 'none', explicitly write a disabled block so that
     // mergeAndWriteConfig's additive deep merge does not leave behind any
     // pre-existing daemon.enabled / auto_start values set to true.
-    targetConfig.daemon =
+    newProjectConfig.daemon =
       daemonMode === 'none'
         ? { enabled: false, watch: { auto_start: false }, analyze: { auto_start: false } }
         : daemonConfig;
@@ -966,9 +971,11 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
 
     if (configScope === 'global') {
       mergeAndWriteConfig(globalConfigPath, globalConfigDir, newGlobalConfig);
-    } else {
-      mergeAndWriteConfig(projectConfigPath, projectConfigDir, newProjectConfig);
     }
+    // Always write project config — daemon settings are project-scoped even when
+    // embedding/analyze settings are global. mergeAndWriteConfig is a no-op when
+    // newProjectConfig is empty so this is safe for pure global setups.
+    mergeAndWriteConfig(projectConfigPath, projectConfigDir, newProjectConfig);
 
     // Final message
     console.log('\n┌─────────────────────────────────────────────────────────┐');

@@ -195,12 +195,8 @@ function installViaRuntime(
     return false;
   }
 
-  // Run the install command (split into command + args to avoid shell).
-  // Note: simple whitespace split — does not handle quoted arguments.
-  // Typical LSP install commands (npm install, pip install) don't need quoting.
-  const cmdParts = strategy.installCmd.split(/\s+/);
-  logInfo('lsp-installer', `Installing ${serverName}: ${strategy.installCmd}`);
-  execFileSync(cmdParts[0], cmdParts.slice(1), {
+  logInfo('lsp-installer', `Installing ${serverName}: ${strategy.installCmd.join(' ')}`);
+  execFileSync(strategy.installCmd[0], strategy.installCmd.slice(1), {
     stdio: 'pipe',
     timeout: 300000,
   });

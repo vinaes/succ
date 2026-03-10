@@ -15,7 +15,7 @@ import { minimatch } from 'minimatch';
 export type InstallStrategy =
   | { type: 'npm'; packages: string[] }
   | { type: 'binary'; repo: string; asset: string }
-  | { type: 'runtime'; check: string; installCmd: string; hint: string };
+  | { type: 'runtime'; check: string; installCmd: string[]; hint: string };
 
 export interface LspServerConfig {
   /** Human-readable name */
@@ -84,7 +84,7 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
     install: {
       type: 'runtime',
       check: 'go version',
-      installCmd: 'go install golang.org/x/tools/gopls@latest',
+      installCmd: ['go', 'install', 'golang.org/x/tools/gopls@latest'],
       hint: 'Go runtime required. Install from https://go.dev',
     },
     command: 'gopls',
@@ -113,7 +113,7 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
     install: {
       type: 'runtime',
       check: 'dotnet --version',
-      installCmd: 'dotnet tool install --global csharp-ls',
+      installCmd: ['dotnet', 'tool', 'install', '--global', 'csharp-ls'],
       hint: '.NET SDK required. Install from https://dotnet.microsoft.com',
     },
     command: 'csharp-ls',
@@ -148,7 +148,7 @@ export const LSP_SERVERS: Record<string, LspServerConfig> = {
     install: {
       type: 'runtime',
       check: 'swift --version',
-      installCmd: 'xcode-select --install',
+      installCmd: ['xcode-select', '--install'],
       hint: 'Swift toolchain required. Install Xcode or Swift from https://swift.org/download',
     },
     command: 'sourcekit-lsp',

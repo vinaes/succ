@@ -16,15 +16,18 @@ import {
   type RouteMap,
 } from './types.js';
 
-/** Sanitize session ID to prevent path traversal. */
-function safeSessionId(raw: string): string {
-  return raw.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+/** Strict session ID validator — returns null for IDs that would collide after normalization. */
+const SESSION_ID_RE = /^[A-Za-z0-9_\-]{1,128}$/;
+function validateSessionId(raw: string): string | null {
+  return SESSION_ID_RE.test(raw) ? raw : null;
 }
 
 /** Path for persisting pre-compact stats (survives session unregister + daemon restart). */
 function preCompactStatsPath(sessionId: string): string {
+  const safe = validateSessionId(sessionId);
+  if (!safe) throw new Error(`Invalid session ID: ${sessionId}`);
   const tmpDir = path.join(getSuccDir(), '.tmp');
-  return path.join(tmpDir, `session-${safeSessionId(sessionId)}-pre-compact.json`);
+  return path.join(tmpDir, `session-${safe}-pre-compact.json`);
 }
 
 export function sessionRoutes(ctx: RouteContext): RouteMap {
@@ -138,6 +141,10 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         return { success: false, error: 'payload too large' };
       }
       const sessionId = (stats.sessionId as string) || 'unknown';
+      if (!validateSessionId(sessionId)) {
+        ctx.log(`[pre-compact] Rejected invalid session_id: ${sessionId}`);
+        return { success: false, error: 'invalid session_id' };
+      }
 
       // Persist to disk so stats survive session unregister and daemon restarts
       try {
@@ -166,6 +173,7 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
     'GET /api/session/stats': async (_body, searchParams) => {
       const sessionId = searchParams.get('session_id') || '';
       if (!sessionId) return { error: 'session_id required' };
+      if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
 
       // Fast path: live session in memory
       const manager = requireSessionManager(ctx);
