@@ -77,7 +77,11 @@ export async function extractSymbolsFromFile(
 
 /**
  * Extract AST symbols from source code content (no file read).
- * Returns symbol names only. Non-fatal — returns empty array on parse failure.
+ * Returns symbol names only.
+ *
+ * Silent non-fatal fallbacks (both return `[]`):
+ * - Unknown/unsupported file extension
+ * - Parse failure (tree-sitter grammar unavailable or content unparseable)
  */
 export async function extractSymbolsFromContent(
   content: string,

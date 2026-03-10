@@ -601,7 +601,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             const topTools = (stats.topTools || []).slice(0, 5).filter((t) => t.tokens > 0);
             if (topTools.length > 0) {
               statsLines.push('');
-              statsLines.push('  Top tools trimmed:');
+              statsLines.push('  Top tools (pre-compact):');
               statsLines.push('  ' + topTools.map((t) => `${t.name}: ${fk(t.tokens)}`).join(' | '));
             }
 
