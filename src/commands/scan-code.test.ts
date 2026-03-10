@@ -79,7 +79,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import { getAllFileHashes } from '../lib/storage/index.js';
 import { getConfig } from '../lib/config.js';
-import { indexCodeFile, computeHash } from './index-code.js';
+import { indexCodeFile } from './index-code.js';
 import { logInfo } from '../lib/fault-logger.js';
 import pLimit from 'p-limit';
 
