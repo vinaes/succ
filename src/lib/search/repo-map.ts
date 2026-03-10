@@ -48,6 +48,7 @@ const SYMBOL_ALIAS_MAP: Record<string, string> = {
   modules: 'module',
   variables: 'variable',
   constants: 'constant',
+  impls: 'impl',
 };
 
 // ============================================================================

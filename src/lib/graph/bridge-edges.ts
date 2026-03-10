@@ -169,17 +169,26 @@ export async function createBridgeEdgesForMemory(
 
   // For each code path found, search for other memories that reference it
   for (const ref of codePaths) {
+    let related;
     try {
       // Search for memories mentioning this file path
       const queryEmbed = await getEmbedding(ref.path);
-      const related = await hybridSearchMemories(ref.path, queryEmbed, 10);
+      related = await hybridSearchMemories(ref.path, queryEmbed, 10);
+    } catch (error) {
+      logWarn('bridge-edges', `Failed to search for related memories for ${ref.path}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      errors++;
+      continue;
+    }
 
-      for (const target of related) {
-        if (target.id === memoryId) continue;
+    for (const target of related) {
+      if (target.id === memoryId) continue;
 
-        // Check if target also mentions this code path
-        if (!target.content.includes(ref.path)) continue;
+      // Check if target also mentions this code path
+      if (!target.content.includes(ref.path)) continue;
 
+      try {
         const metadata: BridgeEdgeMetadata = {
           code_path: ref.path,
           symbol_name: ref.symbol,
@@ -196,12 +205,16 @@ export async function createBridgeEdgesForMemory(
         } else {
           skipped++;
         }
+      } catch (error) {
+        logWarn(
+          'bridge-edges',
+          `Failed to create bridge edge for ${ref.path} → memory #${target.id}`,
+          {
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        errors++;
       }
-    } catch (error) {
-      logWarn('bridge-edges', `Failed to create bridge edge for ${ref.path}`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      errors++;
     }
   }
 

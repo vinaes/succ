@@ -311,13 +311,17 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
 
   // Build tool breakdown sorted by total tokens desc
   const toolBreakdown: ToolStats[] = Array.from(toolMap.entries())
-    .map(([name, stats]) => ({
-      name,
-      calls: stats.calls,
-      inputTokens: estimateTokens(stats.inputChars),
-      resultTokens: estimateTokens(stats.resultChars),
-      totalTokens: estimateTokens(stats.inputChars + stats.resultChars),
-    }))
+    .map(([name, stats]) => {
+      const inputTokens = estimateTokens(stats.inputChars);
+      const resultTokens = estimateTokens(stats.resultChars);
+      return {
+        name,
+        calls: stats.calls,
+        inputTokens,
+        resultTokens,
+        totalTokens: inputTokens + resultTokens,
+      };
+    })
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   // Strippable = tool_use + tool_result + thinking + image

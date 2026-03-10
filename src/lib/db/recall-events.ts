@@ -39,7 +39,7 @@ export function insertRecallEventsBatch(
     memoryId: number;
     query: string;
     wasUsed: boolean;
-    rankPosition: number;
+    rankPosition: number | null;
     similarityScore: number | null;
   }>
 ): void {
@@ -142,6 +142,12 @@ export interface RecallPerformerRow {
 }
 
 export function getTopPerformers(minRecalls: number = 3, limit: number = 10): RecallPerformerRow[] {
+  if (!Number.isInteger(minRecalls) || minRecalls < 1) {
+    throw new Error(`minRecalls must be a positive integer, got: ${minRecalls}`);
+  }
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`limit must be a positive integer, got: ${limit}`);
+  }
   return cachedPrepare(
     `SELECT memory_id as memoryId,
             CAST(SUM(was_used) AS REAL) / COUNT(*) as useRate,
@@ -158,6 +164,12 @@ export function getWorstPerformers(
   minRecalls: number = 3,
   limit: number = 10
 ): RecallPerformerRow[] {
+  if (!Number.isInteger(minRecalls) || minRecalls < 1) {
+    throw new Error(`minRecalls must be a positive integer, got: ${minRecalls}`);
+  }
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`limit must be a positive integer, got: ${limit}`);
+  }
   return cachedPrepare(
     `SELECT memory_id as memoryId,
             CAST(SUM(was_used) AS REAL) / COUNT(*) as useRate,
@@ -225,6 +237,12 @@ export function getNeverUsedMemoryRows(
   minRecalls: number = 3,
   limit: number = 50
 ): Array<{ memoryId: number; totalRecalls: number; lastRecalled: string }> {
+  if (!Number.isInteger(minRecalls) || minRecalls < 1) {
+    throw new Error(`minRecalls must be a positive integer, got: ${minRecalls}`);
+  }
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(`limit must be a positive integer, got: ${limit}`);
+  }
   return cachedPrepare(
     `SELECT memory_id as memoryId,
             COUNT(*) as totalRecalls,
