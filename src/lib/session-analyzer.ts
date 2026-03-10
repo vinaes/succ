@@ -149,7 +149,7 @@ export function classifyContent(
         break;
 
       case 'tool_use':
-        chars = block.input ? JSON.stringify(block.input).length : 0;
+        chars = block.input !== undefined ? JSON.stringify(block.input).length : 0;
         // Add the tool name and id overhead
         chars += (block.name || '').length + (block.id || '').length;
         result.tool_use += chars;
@@ -171,11 +171,31 @@ export function classifyContent(
         result.thinking += chars;
         break;
 
-      case 'image':
-        // Images can be very large (base64). Estimate from source.
-        chars = block.source ? JSON.stringify(block.source).length : DEFAULT_IMAGE_CHAR_ESTIMATE;
+      case 'image': {
+        // Images can be very large (base64). Strip raw payload keys before measuring
+        // so we estimate metadata size, not the raw bytes.
+        const PAYLOAD_KEYS = new Set(['data', 'dataUri', 'base64', 'bytes', 'content']);
+        if (block.source && typeof block.source === 'object') {
+          const cleaned: Record<string, unknown> = {};
+          let hadPayload = false;
+          for (const [k, v] of Object.entries(block.source)) {
+            if (PAYLOAD_KEYS.has(k)) {
+              hadPayload = true;
+            } else {
+              cleaned[k] = v;
+            }
+          }
+          const cleanedKeys = Object.keys(cleaned);
+          chars =
+            hadPayload || cleanedKeys.length === 0
+              ? DEFAULT_IMAGE_CHAR_ESTIMATE
+              : JSON.stringify(cleaned).length;
+        } else {
+          chars = DEFAULT_IMAGE_CHAR_ESTIMATE;
+        }
         result.image += chars;
         break;
+      }
 
       default:
         chars = JSON.stringify(block).length;
@@ -196,23 +216,32 @@ function buildToolResultIndex(entries: TranscriptEntry[]): Map<string, number> {
   const index = new Map<string, number>();
 
   for (const entry of entries) {
+    // Process nested message.content blocks
     const content = entry.message?.content;
-    if (!Array.isArray(content)) continue;
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block?.type !== 'tool_result') continue;
+        const tuid = block.tool_use_id;
+        if (!tuid) continue;
 
-    for (const block of content) {
-      if (block?.type !== 'tool_result') continue;
-      const tuid = block.tool_use_id;
-      if (!tuid) continue;
+        let chars = 0;
+        const rc = block.content;
+        if (typeof rc === 'string') {
+          chars = rc.length;
+        } else if (Array.isArray(rc)) {
+          chars = JSON.stringify(rc).length;
+        }
 
-      let chars = 0;
-      const rc = block.content;
-      if (typeof rc === 'string') {
-        chars = rc.length;
-      } else if (Array.isArray(rc)) {
-        chars = JSON.stringify(rc).length;
+        index.set(tuid, (index.get(tuid) || 0) + chars);
       }
+    }
 
-      index.set(tuid, (index.get(tuid) || 0) + chars);
+    // Process top-level tool events (tool_name + tool_result)
+    if (entry.tool_name && entry.tool_result !== undefined) {
+      const resultStr = JSON.stringify(entry.tool_result);
+      // Use tool_name as key since top-level events don't have tool_use_id
+      const key = `__toplevel__${entry.tool_name}`;
+      index.set(key, (index.get(key) || 0) + resultStr.length);
     }
   }
 
@@ -264,7 +293,7 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
       for (const block of content) {
         if (block?.type !== 'tool_use') continue;
         const name = block.name || 'unknown';
-        const inputChars = block.input ? JSON.stringify(block.input).length : 0;
+        const inputChars = block.input !== undefined ? JSON.stringify(block.input).length : 0;
 
         const existing = toolMap.get(name) || { calls: 0, inputChars: 0, resultChars: 0 };
         existing.calls++;
@@ -278,6 +307,26 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
 
         toolMap.set(name, existing);
       }
+    }
+
+    // Process top-level tool events (entries with tool_name/tool_input/tool_result)
+    if (entry.tool_name) {
+      const name = entry.tool_name;
+      const inputChars = entry.tool_input !== undefined ? JSON.stringify(entry.tool_input).length : 0;
+      const resultChars = entry.tool_result !== undefined ? JSON.stringify(entry.tool_result).length : 0;
+
+      // Count chars into totals
+      charTotals.tool_use += inputChars;
+      charTotals.tool_result += resultChars;
+      charTotals.total += inputChars + resultChars;
+      cumulativeChars += inputChars + resultChars;
+
+      // Accumulate into toolBreakdown
+      const existing = toolMap.get(name) || { calls: 0, inputChars: 0, resultChars: 0 };
+      existing.calls++;
+      existing.inputChars += inputChars;
+      existing.resultChars += resultChars;
+      toolMap.set(name, existing);
     }
 
     // Cut point at user messages
@@ -504,14 +553,32 @@ export function formatCompactStats(
   );
   lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
 
-  for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image'] as const) {
+  const expectedKeys: Array<keyof ContentBreakdown> = [
+    'text',
+    'tool_use',
+    'tool_result',
+    'thinking',
+    'image',
+  ];
+  const hasFullAfter =
+    afterBreakdown != null && expectedKeys.every((k) => k in afterBreakdown);
+
+  for (const key of expectedKeys) {
     const bVal = bt[key];
-    const aVal = afterBreakdown ? (afterBreakdown[key] ?? 0) : key === 'text' ? afterTokens : 0;
-    const f = bVal - aVal;
-    if (bVal === 0 && f === 0) continue;
-    lines.push(
-      `  ${key.padEnd(16)} ${fmtK(bVal).padStart(8)} ${fmtK(aVal).padStart(8)} ${fmtK(f).padStart(8)}`
-    );
+    if (hasFullAfter) {
+      const aVal = afterBreakdown[key] ?? 0;
+      const f = bVal - aVal;
+      if (bVal === 0 && f === 0) continue;
+      lines.push(
+        `  ${key.padEnd(16)} ${fmtK(bVal).padStart(8)} ${fmtK(aVal).padStart(8)} ${fmtK(f).padStart(8)}`
+      );
+    } else {
+      // Incomplete breakdown — only show Before column per-type
+      if (bVal === 0) continue;
+      lines.push(
+        `  ${key.padEnd(16)} ${fmtK(bVal).padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)}`
+      );
+    }
   }
 
   lines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);

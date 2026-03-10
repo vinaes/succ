@@ -11,6 +11,22 @@ import { logInfo, logWarn } from '../fault-logger.js';
 // Insert
 // ============================================================================
 
+function validateRecallEventInputs(
+  memoryId: number,
+  rankPosition: number | null,
+  similarityScore: number | null
+): void {
+  if (!Number.isInteger(memoryId) || !Number.isFinite(memoryId)) {
+    throw new Error(`memoryId must be a finite integer, got: ${memoryId}`);
+  }
+  if (rankPosition !== null && (!Number.isInteger(rankPosition) || rankPosition < 1)) {
+    throw new Error(`rankPosition must be null or a positive integer >= 1, got: ${rankPosition}`);
+  }
+  if (similarityScore !== null && !Number.isFinite(similarityScore)) {
+    throw new Error(`similarityScore must be null or a finite number, got: ${similarityScore}`);
+  }
+}
+
 export function insertRecallEvent(
   memoryId: number,
   query: string,
@@ -19,6 +35,7 @@ export function insertRecallEvent(
   similarityScore: number | null
 ): number {
   try {
+    validateRecallEventInputs(memoryId, rankPosition, similarityScore);
     const result = cachedPrepare(
       `INSERT INTO recall_events (memory_id, query, was_used, rank_position, similarity_score)
        VALUES (?, ?, ?, ?, ?)`
@@ -52,6 +69,7 @@ export function insertRecallEventsBatch(
 
     const transaction = db.transaction(() => {
       for (const event of events) {
+        validateRecallEventInputs(event.memoryId, event.rankPosition, event.similarityScore);
         stmt.run(
           event.memoryId,
           event.query,

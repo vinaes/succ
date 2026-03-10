@@ -177,6 +177,8 @@ export async function detectCommunitiesLP(
   const links = await getAllMemoryLinksForExport();
 
   if (links.length === 0) {
+    // Clear any stale community tags from a previous run
+    await applyCommunityTags([], tagPrefix);
     return { communities: [], isolated: 0, iterations: 0 };
   }
 
