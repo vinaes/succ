@@ -576,7 +576,14 @@ export class QdrantVectorStore implements VectorStore {
   async deleteMemoryVectors(ids: number[]): Promise<void> {
     if (ids.length === 0) return;
     const client = await this.getClient();
-    await client.delete(this.collectionName('memories'), { points: ids });
+    // Batch deletes to 1_000 IDs per request — callers can pass up to 100k IDs
+    // (deleteMemoriesByTag TAG_FETCH_LIMIT) which would otherwise create an oversized request
+    const BATCH_SIZE = 1_000;
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      await client.delete(this.collectionName('memories'), {
+        points: ids.slice(i, i + BATCH_SIZE),
+      });
+    }
   }
 
   async searchMemories(

@@ -301,9 +301,9 @@ export async function findMemoriesForCode(
       // Check single code_path (latest value, kept for backward compat)
       if (meta?.code_path && matchesPath(meta.code_path)) return true;
       // Check accumulated code_paths array (populated by PG on-conflict merge)
-      if (Array.isArray(meta?.code_paths) && meta.code_paths.some(matchesPath)) return true;
-      // No metadata match — fall back to content check
-      return mem.content.includes(codePath);
+      // Only metadata matches belong here — content fallback is handled below to
+      // avoid borrowing a relation from an unrelated bridge edge on the same memory
+      return Array.isArray(meta?.code_paths) && meta.code_paths.some(matchesPath);
     });
 
     // Determine relation for this memory

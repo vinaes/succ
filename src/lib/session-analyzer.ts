@@ -290,7 +290,8 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
     }
   }
 
-  // Build token totals
+  // Build token totals — derive total from per-type estimates (not from charTotals.total)
+  // to avoid rounding skew where sum of buckets can exceed an independently-rounded total
   const tokenTotals: ContentBreakdown = {
     text: estimateTokens(charTotals.text),
     tool_use: estimateTokens(charTotals.tool_use),
@@ -298,8 +299,15 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
     thinking: estimateTokens(charTotals.thinking),
     image: estimateTokens(charTotals.image),
     other: estimateTokens(charTotals.other),
-    total: estimateTokens(charTotals.total),
+    total: 0,
   };
+  tokenTotals.total =
+    tokenTotals.text +
+    tokenTotals.tool_use +
+    tokenTotals.tool_result +
+    tokenTotals.thinking +
+    tokenTotals.image +
+    tokenTotals.other;
 
   // Build tool breakdown sorted by total tokens desc
   const toolBreakdown: ToolStats[] = Array.from(toolMap.entries())

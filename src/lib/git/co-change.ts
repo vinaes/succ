@@ -8,6 +8,7 @@
 
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
+import * as path from 'path';
 import { getProjectRoot } from '../config.js';
 import { logInfo, logWarn } from '../fault-logger.js';
 
@@ -143,8 +144,13 @@ export async function getCoChangesForFile(
   minCooccurrence: number = 2,
   limit: number = 10
 ): Promise<CoChangeForFile> {
-  // Normalize to repo-relative forward-slash path for comparison with git output
-  const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  // Normalize to repo-relative forward-slash path for comparison with git output.
+  // If the caller passes an absolute path, convert it to a repo-relative path first
+  // so comparisons against git log output (which always uses relative paths) succeed.
+  const projectRoot = getProjectRoot();
+  const relativized =
+    projectRoot && path.isAbsolute(filePath) ? path.relative(projectRoot, filePath) : filePath;
+  const normalized = relativized.replace(/\\/g, '/').replace(/^\.\//, '');
   const result = await analyzeCoChanges(maxCommits, minCooccurrence);
 
   const cochanges: Array<{ path: string; count: number; score: number }> = [];

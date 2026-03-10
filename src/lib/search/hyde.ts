@@ -83,8 +83,10 @@ export async function generateHyDE(
       return { embedding, hypotheticals: [], used: false };
     }
 
-    // Embed all hypotheticals + the original query
-    const allTexts = [query, ...hypotheticals];
+    // Embed only the hypothetical code snippets — not the original NL query.
+    // Mixing the query back in pulls the averaged vector toward natural-language
+    // space and weakens the code-space bridge HyDE is meant to create.
+    const allTexts = hypotheticals;
     const embeddings = await getEmbeddings(allTexts);
 
     // Average all embeddings

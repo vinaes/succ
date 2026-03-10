@@ -199,26 +199,42 @@ export async function findConsolidationCandidates(
     return []; // Need at least 2 eligible memories
   }
 
-  // Generate all pairs
+  // Generate all pairs — skip cross-dimension pairs (would yield silently truncated
+  // cosine similarity, e.g. comparing 384-dim vs 768-dim after a model change)
   const pairs: Array<[number, number]> = [];
   for (let i = 0; i < memories.length; i++) {
     for (let j = i + 1; j < memories.length; j++) {
-      pairs.push([i, j]);
+      if (memories[i].embedding.length === memories[j].embedding.length) {
+        pairs.push([i, j]);
+      }
     }
   }
 
   // Decide whether to use workers or process sequentially
-  let similarPairs: Array<{ i: number; j: number; similarity: number }>;
+  let similarPairs: Array<{ i: number; j: number; similarity: number }> = [];
 
   if (pairs.length >= MIN_PAIRS_FOR_WORKERS && WORKER_COUNT > 1) {
     // Use worker threads for large datasets
     const embeddings = memories.map((m) => m.embedding);
     similarPairs = await runSimilarityWorkers(embeddings, pairs, similarityThreshold);
   } else {
-    // Process sequentially for small datasets (faster due to no worker overhead)
-    const items = memories.map((m, idx) => ({ id: idx, embedding: m.embedding }));
-    const rawPairs = findSimilarPairs(items, similarityThreshold);
-    similarPairs = rawPairs.map(({ a, b, similarity }) => ({ i: a, j: b, similarity }));
+    // Process sequentially for small datasets — bucket by dimension so
+    // findSimilarPairs never compares vectors of different lengths
+    const dimBuckets = new Map<number, Array<{ idx: number; embedding: number[] }>>();
+    for (let i = 0; i < memories.length; i++) {
+      const dim = memories[i].embedding.length;
+      const bucket = dimBuckets.get(dim) ?? [];
+      bucket.push({ idx: i, embedding: memories[i].embedding });
+      dimBuckets.set(dim, bucket);
+    }
+    for (const bucket of dimBuckets.values()) {
+      if (bucket.length < 2) continue;
+      const items = bucket.map((b) => ({ id: b.idx, embedding: b.embedding }));
+      const bucketPairs = findSimilarPairs(items, similarityThreshold);
+      for (const { a, b, similarity } of bucketPairs) {
+        similarPairs.push({ i: a, j: b, similarity });
+      }
+    }
   }
 
   // Sort by similarity descending and take top candidates
@@ -278,8 +294,20 @@ export async function findConsolidationCandidatesSync(
 
   if (memories.length < 2) return [];
 
-  const items = memories.map((m, idx) => ({ id: idx, embedding: m.embedding }));
-  const rawPairs = findSimilarPairs(items, similarityThreshold);
+  // Bucket by dimension to avoid incorrect cross-dimension comparisons
+  const dimBuckets = new Map<number, Array<{ idx: number; embedding: number[] }>>();
+  for (let i = 0; i < memories.length; i++) {
+    const dim = memories[i].embedding.length;
+    const bucket = dimBuckets.get(dim) ?? [];
+    bucket.push({ idx: i, embedding: memories[i].embedding });
+    dimBuckets.set(dim, bucket);
+  }
+  const rawPairs: Array<{ a: number; b: number; similarity: number }> = [];
+  for (const bucket of dimBuckets.values()) {
+    if (bucket.length < 2) continue;
+    const items = bucket.map((b) => ({ id: b.idx, embedding: b.embedding }));
+    rawPairs.push(...findSimilarPairs(items, similarityThreshold));
+  }
   rawPairs.sort((a, b) => b.similarity - a.similarity);
 
   const candidates: ConsolidationCandidate[] = [];

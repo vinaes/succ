@@ -246,6 +246,9 @@ export function getNeverUsedMemoryRows(
 // ============================================================================
 
 export function deleteOldRecallEvents(olderThanDays: number = 90): number {
+  if (!Number.isInteger(olderThanDays) || olderThanDays < 1) {
+    throw new Error(`olderThanDays must be a positive integer, got: ${olderThanDays}`);
+  }
   try {
     const result = cachedPrepare(
       `DELETE FROM recall_events

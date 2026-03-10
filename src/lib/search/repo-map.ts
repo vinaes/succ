@@ -200,6 +200,11 @@ async function walkDir(
 
     const fullPath = path.join(dir, entry.name);
 
+    if (entry.isSymbolicLink()) {
+      logWarn('repo-map', `Skipping symlinked entry: ${fullPath}`);
+      continue;
+    }
+
     if (entry.isDirectory()) {
       await walkDir(fullPath, excludes, extensions, entries, maxSymbols, symbolTypesFilter);
     } else if (entry.isFile()) {

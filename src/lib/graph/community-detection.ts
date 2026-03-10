@@ -234,7 +234,10 @@ export async function detectCommunitiesLP(
   }
 
   const BATCH_SIZE = 50;
-  const memIds = [...labels.keys()];
+  // Use all memories (not just labels.keys()) so memories that dropped out of the
+  // LP graph (no remaining edges or filtered by minCommunitySize) have their old
+  // community tags cleared — matching Louvain's behaviour of retagging every memory.
+  const memIds = allMemories.map((mem) => mem.id);
   for (let i = 0; i < memIds.length; i += BATCH_SIZE) {
     const batch = memIds.slice(i, i + BATCH_SIZE);
     await Promise.all(
