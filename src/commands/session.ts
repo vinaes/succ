@@ -24,7 +24,10 @@ import {
 // ── Path resolution ──────────────────────────────────────────────────
 
 /** Find the most recent .jsonl session file if no path given. */
-async function resolveSessionPath(pathArg: string | undefined, subcommand?: string): Promise<string> {
+async function resolveSessionPath(
+  pathArg: string | undefined,
+  subcommand?: string
+): Promise<string> {
   if (pathArg) return resolve(pathArg);
 
   // Try to find most recent JSONL in ~/.claude/projects/
@@ -65,8 +68,7 @@ async function resolveSessionPath(pathArg: string | undefined, subcommand?: stri
 
   const cmd = subcommand ? `succ session ${subcommand}` : 'succ session <subcommand>';
   throw new Error(
-    `No session path provided and no sessions found.\n` +
-      `Usage: ${cmd} <path-to-session.jsonl>`
+    `No session path provided and no sessions found.\n` + `Usage: ${cmd} <path-to-session.jsonl>`
   );
 }
 
@@ -177,7 +179,11 @@ export async function sessionCompact(
         'Usage: succ session compact <path-to-session.jsonl> --before <N>'
     );
   }
-  if (!Number.isFinite(options.before) || !Number.isInteger(options.before) || options.before <= 0) {
+  if (
+    !Number.isFinite(options.before) ||
+    !Number.isInteger(options.before) ||
+    options.before <= 0
+  ) {
     throw new Error(`--before must be a positive integer, got: ${options.before}`);
   }
   const filePath = await resolveSessionPath(pathArg);

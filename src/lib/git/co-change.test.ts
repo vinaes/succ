@@ -11,8 +11,10 @@ vi.mock('util', async (importOriginal) => {
   const actual = await importOriginal<typeof import('util')>();
   return {
     ...actual,
-    promisify: (fn: any) =>
-      async (...args: any[]) => fn(...args),
+    promisify:
+      (fn: any) =>
+      async (...args: any[]) =>
+        fn(...args),
   };
 });
 

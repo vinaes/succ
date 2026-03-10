@@ -263,7 +263,10 @@ export function listInstalledServers(): string[] {
     try {
       return fs.statSync(full).isDirectory();
     } catch (e) {
-      logWarn('lsp-installer', `Skipping vanished entry ${entry}: ${e instanceof Error ? e.message : String(e)}`);
+      logWarn(
+        'lsp-installer',
+        `Skipping vanished entry ${entry}: ${e instanceof Error ? e.message : String(e)}`
+      );
       return false;
     }
   });

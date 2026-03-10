@@ -150,9 +150,7 @@ export async function consolidateAutoMemories(options?: {
     // and should still be eligible for promotion. promoteMemoryConfidence
     // returns false for missing IDs, so deleted memories are naturally skipped.
     const toPromote = autoMemories.filter(
-      (m) =>
-        m.access_count >= promotionAccesses &&
-        (m.confidence === null || m.confidence < 0.7)
+      (m) => m.access_count >= promotionAccesses && (m.confidence === null || m.confidence < 0.7)
     );
 
     for (const mem of toPromote) {

@@ -461,7 +461,10 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       const matching = await this.getMemoriesByTag(tag, TAG_FETCH_LIMIT);
       affectedIds = matching.map((m) => m.id);
       if (matching.length >= TAG_FETCH_LIMIT) {
-        logWarn('storage', `Tag "${tag}" has ${TAG_FETCH_LIMIT}+ memories — Qdrant cleanup may be incomplete`);
+        logWarn(
+          'storage',
+          `Tag "${tag}" has ${TAG_FETCH_LIMIT}+ memories — Qdrant cleanup may be incomplete`
+        );
       }
     }
 
@@ -478,9 +481,13 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       try {
         await this.qdrant!.deleteMemoryVectors(affectedIds);
       } catch (err) {
-        logWarn('storage', `Qdrant vector cleanup failed for ${affectedIds.length} tagged memories`, {
-          error: String(err),
-        });
+        logWarn(
+          'storage',
+          `Qdrant vector cleanup failed for ${affectedIds.length} tagged memories`,
+          {
+            error: String(err),
+          }
+        );
       }
     }
 

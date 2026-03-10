@@ -491,7 +491,7 @@ export function formatCompactStats(
 
   for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image'] as const) {
     const bVal = bt[key];
-    const aVal = afterBreakdown ? (afterBreakdown[key] ?? 0) : (key === 'text' ? afterTokens : 0);
+    const aVal = afterBreakdown ? (afterBreakdown[key] ?? 0) : key === 'text' ? afterTokens : 0;
     const f = bVal - aVal;
     if (bVal === 0 && f === 0) continue;
     lines.push(
@@ -526,13 +526,13 @@ function extractPreview(content: string | ContentBlock[] | null | undefined): st
   }
 
   if (Array.isArray(content)) {
-    for (const block of content) {
-      if (block?.type === 'text' && block.text) {
+    for (const block of content as Array<ContentBlock | string>) {
+      if (typeof block !== 'string' && block?.type === 'text' && block.text) {
         return truncate(block.text.replace(/\n/g, ' ').trim(), 100);
       }
       // String blocks (legacy format)
       if (typeof block === 'string') {
-        return truncate((block as string).replace(/\n/g, ' ').trim(), 100);
+        return truncate(block.replace(/\n/g, ' ').trim(), 100);
       }
     }
   }

@@ -41,6 +41,10 @@ export interface CodeReference {
   lineRange?: [number, number];
 }
 
+/**
+ * Represents the set of code paths referenced by a specific memory,
+ * used when bulk-building bridge edges outside of individual memory creation.
+ */
 export interface MemoryCodeLinks {
   memoryId: number;
   codePaths: CodeReference[];
@@ -150,9 +154,10 @@ export function inferBridgeRelation(content: string, tags: string[]): BridgeRela
 export async function createBridgeEdgesForMemory(
   memoryId: number,
   content: string,
-  tags: string[]
+  tags: string[],
+  preExtractedPaths?: CodeReference[]
 ): Promise<BridgeEdgeResult> {
-  const codePaths = extractCodePaths(content);
+  const codePaths = preExtractedPaths ?? extractCodePaths(content);
   if (codePaths.length === 0) {
     return { created: 0, skipped: 0, errors: 0 };
   }
@@ -343,7 +348,7 @@ export async function autoBridgeRecentMemories(limit: number = 100): Promise<Bri
     const codePaths = extractCodePaths(mem.content);
     if (codePaths.length === 0) continue;
 
-    const result = await createBridgeEdgesForMemory(mem.id, mem.content, mem.tags);
+    const result = await createBridgeEdgesForMemory(mem.id, mem.content, mem.tags, codePaths);
     totals.created += result.created;
     totals.skipped += result.skipped;
     totals.errors += result.errors;

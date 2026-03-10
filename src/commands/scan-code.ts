@@ -38,6 +38,8 @@ export interface DiscoverResult {
   skippedPath: number;
   skippedIgnore: number;
   source: 'git' | 'walk';
+  errors: number;
+  errorDetails: string[];
 }
 
 export interface CategorizeResult {
@@ -106,7 +108,7 @@ export function loadIgnorePatterns(projectRoot: string): string[] {
       .filter((line) => line.length > 0 && !line.startsWith('#'));
   } catch (e: any) {
     if (e?.code === 'ENOENT') return [];
-    throw new Error(`Failed to read ${ignorePath}: ${e?.message ?? e}`);
+    throw new Error(`Failed to read ${ignorePath}: ${e?.message ?? e}`, { cause: e });
   }
 }
 
@@ -144,6 +146,7 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
 
   let rawFiles: string[];
   let source: 'git' | 'walk';
+  const discoveryErrors: string[] = [];
 
   try {
     const output = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
@@ -153,9 +156,20 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
     });
     rawFiles = output.split('\n').filter((f) => f.length > 0);
     source = 'git';
-  } catch (e) {
+  } catch (e: any) {
+    // Fall back to directory walk only when git is not installed (ENOENT) or
+    // the directory is not a git repository (exit code 128).  All other git
+    // failures (permission errors, corrupt objects, …) are re-thrown so they
+    // are visible rather than silently falling back to a potentially wrong set
+    // of files.
+    const isNotGit =
+      e?.code === 'ENOENT' ||
+      (e?.status === 128 &&
+        typeof e?.stderr === 'string' &&
+        e.stderr.includes('not a git repository'));
+    if (!isNotGit) throw e;
     logWarn('scan-code', `git ls-files failed, falling back to directory walk: ${e}`);
-    rawFiles = recursiveWalk(projectRoot, projectRoot);
+    rawFiles = recursiveWalk(projectRoot, projectRoot, discoveryErrors);
     source = 'walk';
   }
 
@@ -180,7 +194,10 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
 
     // Filter by path prefix
     if (normalizedFilterPath) {
-      if (!normalized.startsWith(normalizedFilterPath + '/') && normalized !== normalizedFilterPath) {
+      if (
+        !normalized.startsWith(normalizedFilterPath + '/') &&
+        normalized !== normalizedFilterPath
+      ) {
         skippedPath++;
         continue;
       }
@@ -213,27 +230,41 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
       }
     } catch (e) {
       logWarn('scan-code', `Stat failed for ${relativePath}, skipping: ${e}`);
+      discoveryErrors.push(`${normalized}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
 
     files.push(absolutePath);
   }
 
-  return { files, totalScanned, skippedExtension, skippedSize, skippedPath, skippedIgnore, source };
+  return {
+    files,
+    totalScanned,
+    skippedExtension,
+    skippedSize,
+    skippedPath,
+    skippedIgnore,
+    source,
+    errors: discoveryErrors.length,
+    errorDetails: discoveryErrors,
+  };
 }
 
 /**
  * Recursive directory walk with default ignore directories.
  * Returns relative paths (forward slashes).
+ * Unreadable directories are logged and appended to `errors`.
  */
-function recursiveWalk(dir: string, projectRoot: string): string[] {
+function recursiveWalk(dir: string, projectRoot: string, errors: string[]): string[] {
   const results: string[] = [];
 
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
+    const rel = path.relative(projectRoot, dir).replace(/\\/g, '/') || '.';
     logWarn('scan-code', `Cannot read directory ${dir}: ${e}`);
+    errors.push(`${rel}: ${e instanceof Error ? e.message : String(e)}`);
     return results;
   }
 
@@ -244,7 +275,7 @@ function recursiveWalk(dir: string, projectRoot: string): string[] {
       logWarn('scan-code', `Skipping symlinked entry: ${relativePath}`);
     } else if (entry.isDirectory()) {
       if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
-      results.push(...recursiveWalk(path.join(dir, entry.name), projectRoot));
+      results.push(...recursiveWalk(path.join(dir, entry.name), projectRoot, errors));
     } else if (entry.isFile()) {
       const fullPath = path.join(dir, entry.name);
       const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, '/');
@@ -355,8 +386,8 @@ export async function scanCode(options: {
       updatedCount: 0,
       unchanged: 0,
       chunks: 0,
-      errors: 0,
-      errorDetails: [],
+      errors: discovery.errors,
+      errorDetails: discovery.errorDetails,
       skippedSize: discovery.skippedSize,
       skippedExtension: discovery.skippedExtension,
       skippedIgnore: discovery.skippedIgnore,
@@ -376,8 +407,8 @@ export async function scanCode(options: {
       updatedCount: 0,
       unchanged: category.unchangedCount,
       chunks: 0,
-      errors: category.readErrors,
-      errorDetails: category.readErrorDetails,
+      errors: discovery.errors + category.readErrors,
+      errorDetails: [...discovery.errorDetails, ...category.readErrorDetails],
       skippedSize: discovery.skippedSize,
       skippedExtension: discovery.skippedExtension,
       skippedIgnore: discovery.skippedIgnore,
@@ -424,7 +455,7 @@ export async function scanCode(options: {
 
   logInfo(
     'scan-code',
-    `Done: ${indexed} indexed, ${category.newCount} new, ${category.modifiedCount} updated, ${category.unchangedCount} unchanged, ${errors} errors`
+    `Done: ${indexed} indexed, ${category.newCount} new, ${category.modifiedCount} updated, ${category.unchangedCount} unchanged, ${errors + category.readErrors + discovery.errors} errors`
   );
 
   return {
@@ -435,8 +466,8 @@ export async function scanCode(options: {
     updatedCount: category.modifiedCount,
     unchanged: category.unchangedCount,
     chunks: totalChunks,
-    errors: errors + category.readErrors,
-    errorDetails: [...errorDetails, ...category.readErrorDetails],
+    errors: errors + category.readErrors + discovery.errors,
+    errorDetails: [...errorDetails, ...category.readErrorDetails, ...discovery.errorDetails],
     skippedSize: discovery.skippedSize,
     skippedExtension: discovery.skippedExtension,
     skippedIgnore: discovery.skippedIgnore,

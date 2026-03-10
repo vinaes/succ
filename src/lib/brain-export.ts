@@ -263,7 +263,10 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
   const anchorCounts = new Map<string, number>();
   const docAnchors: string[] = [];
   for (const doc of docs) {
-    let anchor = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    let anchor = doc.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
     const count = anchorCounts.get(anchor) ?? 0;
     anchorCounts.set(anchor, count + 1);
     if (count > 0) anchor = `${anchor}-${count}`;

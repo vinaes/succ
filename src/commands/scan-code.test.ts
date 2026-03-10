@@ -142,7 +142,9 @@ describe('discoverCodeFiles', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns only files with supported extensions', () => {
-    vi.mocked(execFileSync).mockReturnValue('src/app.ts\nREADME.md\nlogo.png\nsrc/main.py\nMakefile');
+    vi.mocked(execFileSync).mockReturnValue(
+      'src/app.ts\nREADME.md\nlogo.png\nsrc/main.py\nMakefile'
+    );
     vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
 
     const result = discoverCodeFiles({ projectRoot: '/project' });
@@ -345,9 +347,7 @@ describe('scanCode', () => {
     vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
 
     // 2 new, 1 modified (different hash)
-    vi.mocked(getAllFileHashes).mockResolvedValue(
-      new Map([['code:d.ts', 'oldhash']])
-    );
+    vi.mocked(getAllFileHashes).mockResolvedValue(new Map([['code:d.ts', 'oldhash']]));
 
     // computeHash for readFileSync('file content') returns 'hash_12'
     // 'oldhash' !== 'hash_12' so d.ts is modified
@@ -406,9 +406,11 @@ describe('scanCode', () => {
     await scanCode({});
 
     // Should log progress at 50 and 100
-    const progressCalls = vi.mocked(logInfo).mock.calls.filter(
-      (call) => call[0] === 'scan-code' && String(call[1]).includes('Progress:')
-    );
+    const progressCalls = vi
+      .mocked(logInfo)
+      .mock.calls.filter(
+        (call) => call[0] === 'scan-code' && String(call[1]).includes('Progress:')
+      );
     expect(progressCalls.length).toBe(2);
   });
 

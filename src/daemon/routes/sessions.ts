@@ -146,7 +146,9 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(statsFile, JSON.stringify(stats), 'utf-8');
       } catch (err) {
-        ctx.log(`[pre-compact] Failed to persist stats: ${err instanceof Error ? err.message : err}`);
+        ctx.log(
+          `[pre-compact] Failed to persist stats: ${err instanceof Error ? err.message : err}`
+        );
       }
 
       // Also attach to live session for fast reads during active session

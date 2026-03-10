@@ -925,7 +925,11 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
 
     // Save config to chosen scope — merge with existing to avoid overwriting
     // user-configured fields (storage backend, Qdrant, custom settings, etc.)
-    const mergeAndWriteConfig = (configPath: string, configDir: string, newConfig: Partial<ConfigData>) => {
+    const mergeAndWriteConfig = (
+      configPath: string,
+      configDir: string,
+      newConfig: Partial<ConfigData>
+    ) => {
       if (Object.keys(newConfig).length === 0) return;
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });

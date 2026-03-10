@@ -152,7 +152,12 @@ export {
 } from './auto-memory.js';
 
 // Re-export recall-events functions and types
-export type { RecallStatsRow, RecallSummaryRow, RecallPerformerRow, BoostRow } from './recall-events.js';
+export type {
+  RecallStatsRow,
+  RecallSummaryRow,
+  RecallPerformerRow,
+  BoostRow,
+} from './recall-events.js';
 export {
   insertRecallEvent,
   insertRecallEventsBatch,

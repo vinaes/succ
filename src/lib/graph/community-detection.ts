@@ -265,7 +265,7 @@ export async function detectCommunities(
 ): Promise<CommunityResult> {
   const { minCommunitySize = 2, tagPrefix = 'community' } = options;
 
-  let detectLouvain: typeof import('./graphology-bridge.js')['detectLouvainCommunities'];
+  let detectLouvain: (typeof import('./graphology-bridge.js'))['detectLouvainCommunities'];
   try {
     ({ detectLouvainCommunities: detectLouvain } = await import('./graphology-bridge.js'));
   } catch (err) {

@@ -765,12 +765,14 @@ export async function createMemoryLink(
     vf = optionsOrValidFrom.toISOString();
     vu = validUntil instanceof Date ? validUntil.toISOString() : validUntil;
   } else if (typeof optionsOrValidFrom === 'object' && optionsOrValidFrom !== null) {
-    vf = optionsOrValidFrom.validFrom instanceof Date
-      ? optionsOrValidFrom.validFrom.toISOString()
-      : optionsOrValidFrom.validFrom;
-    vu = optionsOrValidFrom.validUntil instanceof Date
-      ? optionsOrValidFrom.validUntil.toISOString()
-      : optionsOrValidFrom.validUntil;
+    vf =
+      optionsOrValidFrom.validFrom instanceof Date
+        ? optionsOrValidFrom.validFrom.toISOString()
+        : optionsOrValidFrom.validFrom;
+    vu =
+      optionsOrValidFrom.validUntil instanceof Date
+        ? optionsOrValidFrom.validUntil.toISOString()
+        : optionsOrValidFrom.validUntil;
     metadata = optionsOrValidFrom.metadata;
   } else {
     vf = optionsOrValidFrom;

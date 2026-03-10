@@ -166,9 +166,21 @@ describe('reranker', () => {
       const { rerank: rerankSuccess } = await import('./reranker.js');
 
       const input: HybridSearchResult[] = [
-        { file_path: 'a.ts', content: 'least relevant', start_line: 1, end_line: 1, similarity: 0.9 },
+        {
+          file_path: 'a.ts',
+          content: 'least relevant',
+          start_line: 1,
+          end_line: 1,
+          similarity: 0.9,
+        },
         { file_path: 'b.ts', content: 'mid relevant', start_line: 1, end_line: 1, similarity: 0.8 },
-        { file_path: 'c.ts', content: 'most relevant', start_line: 1, end_line: 1, similarity: 0.7 },
+        {
+          file_path: 'c.ts',
+          content: 'most relevant',
+          start_line: 1,
+          end_line: 1,
+          similarity: 0.7,
+        },
       ];
 
       const result = await rerankSuccess('test query', input);

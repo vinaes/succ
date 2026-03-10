@@ -326,7 +326,8 @@ export async function extractTypes(
 ): Promise<SymbolInfo[]> {
   const symbols = await extractSymbols(tree, sourceCode, language);
   return symbols.filter(
-    (s) => s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct' || s.type === 'module'
+    (s) =>
+      s.type === 'type_alias' || s.type === 'enum' || s.type === 'struct' || s.type === 'module'
   );
 }
 

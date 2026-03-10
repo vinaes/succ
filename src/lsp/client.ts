@@ -67,8 +67,6 @@ export class LspClient {
   private process: ChildProcess | null = null;
   private connection: ProtocolConnection | null = null;
   private initialized = false;
-  /** Stores spawn error so start() can reject instead of hanging */
-  private spawnError: Error | null = null;
   /** Tracks open documents: URI → document version counter */
   private openDocuments = new Map<string, number>();
   /** File watchers for open documents to detect external edits */
@@ -123,7 +121,6 @@ export class LspClient {
       child.on('error', (err) => {
         if (child !== this.process) return; // stale child — ignore
         logWarn('lsp-client', `Failed to spawn ${this.options.command}: ${err.message}`);
-        this.spawnError = err;
         this.cleanup();
         reject(err);
       });
