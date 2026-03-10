@@ -318,9 +318,46 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
   const strippablePercent =
     tokenTotals.total > 0 ? (strippableTokens / tokenTotals.total) * 100 : 0;
 
+  // Compute true active chain length by following parentUuid links.
+  // The active chain is the longest path in the parentUuid-linked DAG,
+  // which represents the main conversation thread after any branching/retries.
+  let activeChainLength = 0;
+  if (entries.length > 0) {
+    // Build a lookup map: uuid → entry
+    const byUuid = new Map<string, TranscriptEntry>();
+    for (const e of entries) {
+      if (e.uuid) byUuid.set(e.uuid, e);
+    }
+
+    // Identify terminal entries: those whose uuid is not referenced as any parentUuid
+    const referencedAsParent = new Set<string>();
+    for (const e of entries) {
+      if (e.parentUuid) referencedAsParent.add(e.parentUuid);
+    }
+    const terminals = entries.filter((e) => e.uuid && !referencedAsParent.has(e.uuid));
+
+    // For each terminal, walk parentUuid back to the root, counting chain length
+    for (const terminal of terminals) {
+      let chainLen = 0;
+      const visited = new Set<string>();
+      let current: TranscriptEntry | undefined = terminal;
+      while (current) {
+        const id = current.uuid;
+        if (!id || visited.has(id)) break; // guard against cycles
+        visited.add(id);
+        chainLen++;
+        current = current.parentUuid ? byUuid.get(current.parentUuid) : undefined;
+      }
+      if (chainLen > activeChainLength) activeChainLength = chainLen;
+    }
+
+    // Fallback: if no uuid-linked chain found, use total entry count
+    if (activeChainLength === 0) activeChainLength = entries.length;
+  }
+
   return {
     totalLines: entries.length,
-    activeChainLength: entries.length,
+    activeChainLength,
     charTotals,
     tokenTotals,
     toolBreakdown,
