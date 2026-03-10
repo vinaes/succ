@@ -43,7 +43,7 @@ const MODEL_DIMENSIONS: Record<string, number> = {
 };
 
 // Known model max token lengths (for tokenizer truncation)
-// Models not listed here default to 128 tokens
+// Models not listed here default to 512 tokens
 const MODEL_MAX_LENGTHS: Record<string, number> = {
   'jinaai/jina-embeddings-v2-base-code': 8192,
   'jinaai/jina-embeddings-v2-base-en': 8192,

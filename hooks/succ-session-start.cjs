@@ -503,6 +503,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           // then divide by 4. Falling back to byte-based estimation is avoided
           // because UTF-8 multi-byte characters inflate byte counts vs char counts.
           let postTokens = 0;
+          const postByType = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0 };
           if (hookInput.transcript_path && fs.existsSync(hookInput.transcript_path)) {
             try {
               const postContent = fs.readFileSync(hookInput.transcript_path, 'utf8');
@@ -515,24 +516,37 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                   const msgContent = entry.message && entry.message.content;
                   if (typeof msgContent === 'string') {
                     postChars += msgContent.length;
+                    postByType.text += msgContent.length;
                   } else if (Array.isArray(msgContent)) {
                     // Count per-block chars to match pre-compact estimation
                     for (const block of msgContent) {
                       if (typeof block === 'string') {
                         postChars += block.length;
+                        postByType.text += block.length;
                       } else if (block && block.type === 'text') {
-                        postChars += (block.text || '').length;
+                        const len = (block.text || '').length;
+                        postChars += len;
+                        postByType.text += len;
                       } else if (block && block.type === 'tool_use') {
-                        postChars += block.input ? JSON.stringify(block.input).length : 0;
-                        postChars += (block.name || '').length + (block.id || '').length;
+                        const len = (block.input ? JSON.stringify(block.input).length : 0) +
+                          (block.name || '').length + (block.id || '').length;
+                        postChars += len;
+                        postByType.tool_use += len;
                       } else if (block && block.type === 'tool_result') {
                         const rc = block.content;
-                        if (typeof rc === 'string') postChars += rc.length;
-                        else if (Array.isArray(rc)) postChars += JSON.stringify(rc).length;
+                        let len = 0;
+                        if (typeof rc === 'string') len = rc.length;
+                        else if (Array.isArray(rc)) len = JSON.stringify(rc).length;
+                        postChars += len;
+                        postByType.tool_result += len;
                       } else if (block && block.type === 'thinking') {
-                        postChars += (block.thinking || '').length;
+                        const len = (block.thinking || '').length;
+                        postChars += len;
+                        postByType.thinking += len;
                       } else if (block && block.type === 'image') {
-                        postChars += block.source ? JSON.stringify(block.source).length : 100;
+                        const len = block.source ? JSON.stringify(block.source).length : 100;
+                        postChars += len;
+                        postByType.image += len;
                       }
                     }
                   }
@@ -541,6 +555,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                 }
               }
               postTokens = Math.ceil(postChars / 4);
+              // Convert char counts to token estimates
+              for (const k of Object.keys(postByType)) {
+                postByType[k] = Math.ceil(postByType[k] / 4);
+              }
             } catch {
               // Fallback: byte count is an overestimate but acceptable for display
               const postBytes = fs.statSync(hookInput.transcript_path).size;
@@ -558,17 +576,18 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const statsLines = [];
           statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
           statsLines.push('');
-          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'Freed'.padStart(8)}`);
-          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
             const val = bt[key] || 0;
-            if (val === 0) continue;
-            const f = key === 'text' ? 0 : val;
-            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(f).padStart(8)}`);
+            const aVal = postByType[key] || 0;
+            const f = val - aVal;
+            if (val === 0 && f === 0) continue;
+            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
           }
-          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           statsLines.push(
-            `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(freed).padStart(8)}`
+            `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(postTokens).padStart(8)} ${fk(freed).padStart(8)}`
           );
 
           // Top tools

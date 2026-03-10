@@ -323,7 +323,7 @@ export async function trimAll(
         }
       }
 
-      if (block.type === 'image' && block.source) {
+      if (block.type === 'image' && block.source && block.source.type !== 'trimmed') {
         const sourceLen = JSON.stringify(block.source).length;
         const replacementLen = JSON.stringify({ type: 'trimmed' }).length;
         charsRemoved += Math.max(0, sourceLen - replacementLen);

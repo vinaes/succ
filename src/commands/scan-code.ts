@@ -167,14 +167,21 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
   let skippedIgnore = 0;
   const files: string[] = [];
 
+  // Normalize filterPath once before the loop
+  const normalizedFilterPath = filterPath
+    ? (() => {
+        const f = filterPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+        return f !== '' && f !== '.' ? f : null;
+      })()
+    : null;
+
   for (const relativePath of rawFiles) {
     // Normalize to forward slashes for consistent matching
     const normalized = relativePath.replace(/\\/g, '/');
 
     // Filter by path prefix
-    if (filterPath) {
-      const normalizedFilter = filterPath.replace(/\\/g, '/');
-      if (!normalized.startsWith(normalizedFilter + '/') && normalized !== normalizedFilter) {
+    if (normalizedFilterPath) {
+      if (!normalized.startsWith(normalizedFilterPath + '/') && normalized !== normalizedFilterPath) {
         skippedPath++;
         continue;
       }

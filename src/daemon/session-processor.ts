@@ -286,7 +286,7 @@ async function saveFactsAsMemories(
       }
 
       // Add to batch with auto-extracted provenance
-      const tags = [...fact.tags, 'session-summary', fact.type, 'auto_extracted'];
+      const tags = [...new Set([...fact.tags, 'session-summary', fact.type, 'auto_extracted'])];
       batch.push({
         content,
         embedding,

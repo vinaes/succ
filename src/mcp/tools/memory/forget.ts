@@ -78,24 +78,30 @@ export function registerForgetTool(server: McpServer): void {
           } catch (err: any) {
             if (err?.name === 'PinnedMemoryError') {
               if (force) {
-                // Unpin and retry deletion
+                // Unpin and retry deletion; restore pin if retry fails
                 await setMemoryInvariant(id, false);
-                const retryDeleted = await deleteMemory(id);
-                if (retryDeleted) {
-                  return {
-                    content: [
-                      {
-                        type: 'text' as const,
-                        text: `Force-deleted pinned memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
-                      },
-                    ],
-                  };
+                try {
+                  const retryDeleted = await deleteMemory(id);
+                  if (retryDeleted) {
+                    return {
+                      content: [
+                        {
+                          type: 'text' as const,
+                          text: `Force-deleted pinned memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                        },
+                      ],
+                    };
+                  }
+                } catch (retryErr) {
+                  await setMemoryInvariant(id, true);
+                  throw retryErr;
                 }
+                await setMemoryInvariant(id, true);
                 return {
                   content: [
                     {
                       type: 'text' as const,
-                      text: `Unpinned memory ${id} but failed to delete it`,
+                      text: `Failed to delete pinned memory ${id}; pin was restored`,
                     },
                   ],
                   isError: true,

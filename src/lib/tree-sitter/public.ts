@@ -103,7 +103,7 @@ export async function extractSymbolsFromContent(
     }
 
     const names = symbols.map((s) => s.name);
-    return options?.maxSymbols ? names.slice(0, options.maxSymbols) : names;
+    return options?.maxSymbols !== undefined ? names.slice(0, options.maxSymbols) : names;
   } finally {
     tree.delete();
   }

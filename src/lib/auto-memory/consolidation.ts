@@ -145,11 +145,12 @@ export async function consolidateAutoMemories(options?: {
       result.merged = await deleteMemoriesByIds(toDelete);
     }
 
-    // Step 2: Promote high-usage memories (skip any that were just deleted)
-    const deletedSet = new Set(toDelete);
+    // Step 2: Promote high-usage memories.
+    // Don't use toDelete as exclusion — pinned memories may survive deletion
+    // and should still be eligible for promotion. promoteMemoryConfidence
+    // returns false for missing IDs, so deleted memories are naturally skipped.
     const toPromote = autoMemories.filter(
       (m) =>
-        !deletedSet.has(m.id) &&
         m.access_count >= promotionAccesses &&
         (m.confidence === null || m.confidence < 0.7)
     );

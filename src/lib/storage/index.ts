@@ -753,20 +753,28 @@ export async function createMemoryLink(
   weight?: number,
   optionsOrValidFrom?:
     | string
-    | { validFrom?: string; validUntil?: string; metadata?: Record<string, unknown> },
-  validUntil?: string
+    | Date
+    | { validFrom?: string | Date; validUntil?: string | Date; metadata?: Record<string, unknown> },
+  validUntil?: string | Date
 ): Promise<{ id: number; created: boolean }> {
   const d = await getStorageDispatcher();
   let vf: string | undefined;
   let vu: string | undefined;
   let metadata: Record<string, unknown> | undefined;
-  if (typeof optionsOrValidFrom === 'object') {
-    vf = optionsOrValidFrom.validFrom;
-    vu = optionsOrValidFrom.validUntil;
+  if (optionsOrValidFrom instanceof Date) {
+    vf = optionsOrValidFrom.toISOString();
+    vu = validUntil instanceof Date ? validUntil.toISOString() : validUntil;
+  } else if (typeof optionsOrValidFrom === 'object' && optionsOrValidFrom !== null) {
+    vf = optionsOrValidFrom.validFrom instanceof Date
+      ? optionsOrValidFrom.validFrom.toISOString()
+      : optionsOrValidFrom.validFrom;
+    vu = optionsOrValidFrom.validUntil instanceof Date
+      ? optionsOrValidFrom.validUntil.toISOString()
+      : optionsOrValidFrom.validUntil;
     metadata = optionsOrValidFrom.metadata;
   } else {
     vf = optionsOrValidFrom;
-    vu = validUntil;
+    vu = validUntil instanceof Date ? validUntil.toISOString() : validUntil;
   }
   return d.createMemoryLink(sourceId, targetId, relation, weight, vf, vu, metadata);
 }

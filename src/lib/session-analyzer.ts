@@ -437,7 +437,8 @@ export function formatAnalysisReport(analysis: SessionAnalysis, filePath?: strin
 /** Format a compact stats block for post-compact display. */
 export function formatCompactStats(
   before: Pick<SessionAnalysis, 'tokenTotals' | 'toolBreakdown'>,
-  afterTokens: number
+  afterTokens: number,
+  afterBreakdown?: Partial<ContentBreakdown>
 ): string {
   const bt = before.tokenTotals;
   const freed = bt.total - afterTokens;
@@ -453,8 +454,7 @@ export function formatCompactStats(
 
   for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image'] as const) {
     const bVal = bt[key];
-    // After compact, only text survives (tool content + thinking + images are gone)
-    const aVal = key === 'text' ? afterTokens : 0;
+    const aVal = afterBreakdown ? (afterBreakdown[key] ?? 0) : (key === 'text' ? afterTokens : 0);
     const f = bVal - aVal;
     if (bVal === 0 && f === 0) continue;
     lines.push(

@@ -776,8 +776,8 @@ export function getMemoryHealth(): {
     `SELECT
        COUNT(*) as total,
        SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
-       SUM(CASE WHEN julianday('now') - julianday(created_at) > 90
-             AND access_count = 0 THEN 1 ELSE 0 END) as stale_unused_90d,
+       SUM(CASE WHEN julianday('now') - julianday(COALESCE(last_accessed, created_at)) > 90
+             THEN 1 ELSE 0 END) as stale_unused_90d,
        AVG(julianday('now') - julianday(created_at)) as avg_age_days,
        AVG(access_count) as avg_access
      FROM memories

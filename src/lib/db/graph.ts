@@ -44,7 +44,10 @@ export interface MemoryLink {
 function parseMetadata(raw: string | null | undefined): Record<string, unknown> | null {
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
