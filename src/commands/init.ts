@@ -919,23 +919,47 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
     }
     console.log('');
 
-    // Save config to chosen scope
+    // Save config to chosen scope — merge with existing to avoid overwriting
+    // user-configured fields (storage backend, Qdrant, custom settings, etc.)
+    const mergeAndWriteConfig = (configPath: string, configDir: string, newConfig: Partial<ConfigData>) => {
+      if (Object.keys(newConfig).length === 0) return;
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      let existing: Record<string, any> = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch (e) {
+          logWarn('init', `Failed to parse existing ${configPath}, will overwrite`, {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+      // Deep merge: wizard keys override, but preserve keys not covered by wizard
+      const merged = { ...existing };
+      for (const [key, value] of Object.entries(newConfig)) {
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          merged[key] = { ...(existing[key] ?? {}), ...value };
+          // One level deeper for nested objects (llm.embeddings, llm.analyze, daemon.watch, etc.)
+          for (const [subKey, subValue] of Object.entries(value as Record<string, any>)) {
+            if (typeof subValue === 'object' && subValue !== null && !Array.isArray(subValue)) {
+              merged[key][subKey] = { ...(existing[key]?.[subKey] ?? {}), ...subValue };
+            }
+          }
+        } else {
+          merged[key] = value;
+        }
+      }
+      fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+      const isNew = Object.keys(existing).length === 0;
+      console.log(`  ${isNew ? 'Created' : 'Merged into'}: ${configPath}`);
+    };
+
     if (configScope === 'global') {
-      if (Object.keys(newGlobalConfig).length > 0) {
-        if (!fs.existsSync(globalConfigDir)) {
-          fs.mkdirSync(globalConfigDir, { recursive: true });
-        }
-        fs.writeFileSync(globalConfigPath, JSON.stringify(newGlobalConfig, null, 2));
-        console.log(`  Saved: ${globalConfigPath}`);
-      }
+      mergeAndWriteConfig(globalConfigPath, globalConfigDir, newGlobalConfig);
     } else {
-      if (Object.keys(newProjectConfig).length > 0) {
-        if (!fs.existsSync(projectConfigDir)) {
-          fs.mkdirSync(projectConfigDir, { recursive: true });
-        }
-        fs.writeFileSync(projectConfigPath, JSON.stringify(newProjectConfig, null, 2));
-        console.log(`  Saved: ${projectConfigPath}`);
-      }
+      mergeAndWriteConfig(projectConfigPath, projectConfigDir, newProjectConfig);
     }
 
     // Final message
