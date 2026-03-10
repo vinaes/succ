@@ -259,12 +259,15 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
   // Table of contents
   lines.push('## Table of Contents');
   lines.push('');
+  // Pre-compute deduplicated anchors for each doc (used in both TOC and headings)
   const anchorCounts = new Map<string, number>();
+  const docAnchors: string[] = [];
   for (const doc of docs) {
     let anchor = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const count = anchorCounts.get(anchor) ?? 0;
     anchorCounts.set(anchor, count + 1);
     if (count > 0) anchor = `${anchor}-${count}`;
+    docAnchors.push(anchor);
     lines.push(`- [${doc.title}](#${anchor})`);
   }
   lines.push('');
@@ -272,8 +275,11 @@ export function exportBrainAsMarkdown(outputPath?: string, brainDir?: string): B
   lines.push('');
 
   // Document contents
-  for (const doc of docs) {
-    lines.push(`## ${doc.title}`);
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i];
+    const anchor = docAnchors[i];
+    // Use explicit anchor span for duplicate titles so TOC links land correctly
+    lines.push(`## <span id="${anchor}"></span>${doc.title}`);
     lines.push('');
     lines.push(`*Source: \`${doc.relativePath}\` | Modified: ${doc.modifiedAt}*`);
     lines.push('');

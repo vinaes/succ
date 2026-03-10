@@ -41,9 +41,13 @@ async function resolveSessionPath(pathArg: string | undefined, subcommand?: stri
         for (const file of files) {
           if (!file.endsWith('.jsonl')) continue;
           const filePath = join(dirPath, file);
-          const fileStat = await stat(filePath);
-          if (fileStat.mtimeMs > newest.mtime) {
-            newest = { path: filePath, mtime: fileStat.mtimeMs };
+          try {
+            const fileStat = await stat(filePath);
+            if (fileStat.mtimeMs > newest.mtime) {
+              newest = { path: filePath, mtime: fileStat.mtimeMs };
+            }
+          } catch (e) {
+            logWarn('session', `Skipping unreadable file ${filePath}: ${e}`);
           }
         }
       } catch (e) {
@@ -172,6 +176,9 @@ export async function sessionCompact(
       'A session path is required for compact.\n' +
         'Usage: succ session compact <path-to-session.jsonl> --before <N>'
     );
+  }
+  if (!Number.isFinite(options.before) || !Number.isInteger(options.before) || options.before <= 0) {
+    throw new Error(`--before must be a positive integer, got: ${options.before}`);
   }
   const filePath = await resolveSessionPath(pathArg);
   const result = await compactBefore(filePath, options.before, {

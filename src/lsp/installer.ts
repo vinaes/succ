@@ -61,7 +61,7 @@ export function getServerBinaryPath(serverName: string, command: string): string
   // Validate command to prevent path traversal
   const basename = path.basename(command);
   if (basename !== command || command.includes('..')) {
-    return command; // Fall back to global command for suspicious input
+    throw new Error(`Invalid LSP command "${command}": path traversal not allowed`);
   }
   const serverDir = getServerPath(serverName);
   const npmBin = path.join(serverDir, 'node_modules', '.bin', command);
@@ -195,7 +195,9 @@ function installViaRuntime(
     return false;
   }
 
-  // Run the install command (split into command + args to avoid shell)
+  // Run the install command (split into command + args to avoid shell).
+  // Note: simple whitespace split — does not handle quoted arguments.
+  // Typical LSP install commands (npm install, pip install) don't need quoting.
   const cmdParts = strategy.installCmd.split(/\s+/);
   logInfo('lsp-installer', `Installing ${serverName}: ${strategy.installCmd}`);
   execFileSync(cmdParts[0], cmdParts.slice(1), {
@@ -258,6 +260,11 @@ export function listInstalledServers(): string[] {
 
   return fs.readdirSync(dir).filter((entry) => {
     const full = path.join(dir, entry);
-    return fs.statSync(full).isDirectory();
+    try {
+      return fs.statSync(full).isDirectory();
+    } catch (e) {
+      logWarn('lsp-installer', `Skipping vanished entry ${entry}: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
   });
 }

@@ -414,7 +414,9 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
   }
 
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
-    // Collect affected IDs before deletion for Qdrant vector cleanup
+    // Collect affected IDs before deletion for Qdrant vector cleanup.
+    // Note: TOCTOU gap between ID collection and deletion is acceptable
+    // for bulk retention operations — extra Qdrant deletes are no-ops.
     let affectedIds: number[] = [];
     if (this.hasQdrant()) {
       if (this.backend === 'postgresql' && this.postgres) {
@@ -450,11 +452,17 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
   }
 
   async deleteMemoriesByTag(tag: string): Promise<number> {
-    // Collect affected IDs before deletion for Qdrant vector cleanup
+    // Collect affected IDs before deletion for Qdrant vector cleanup.
+    // Note: TOCTOU gap between ID collection and deletion is acceptable
+    // for bulk retention operations — extra Qdrant deletes are no-ops.
     let affectedIds: number[] = [];
     if (this.hasQdrant()) {
-      const matching = await this.getMemoriesByTag(tag, 100_000);
+      const TAG_FETCH_LIMIT = 100_000;
+      const matching = await this.getMemoriesByTag(tag, TAG_FETCH_LIMIT);
       affectedIds = matching.map((m) => m.id);
+      if (matching.length >= TAG_FETCH_LIMIT) {
+        logWarn('storage', `Tag "${tag}" has ${TAG_FETCH_LIMIT}+ memories — Qdrant cleanup may be incomplete`);
+      }
     }
 
     let deleted: number;

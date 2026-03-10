@@ -147,7 +147,7 @@ describe('graphology-bridge', () => {
       const result = await whyRelated(1, 4);
       expect(result).not.toBeNull();
       expect(result!.connected).toBe(true);
-      expect(result!.distance).toBe(3);
+      expect(result!.distance).toBe(3.0); // Cumulative edge weight (3 edges × 1.0)
       expect(result!.path.length).toBe(4);
     });
 

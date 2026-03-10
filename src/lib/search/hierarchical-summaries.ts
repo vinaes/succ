@@ -223,8 +223,11 @@ export async function generateHierarchicalSummaries(
   const extensions = options?.extensions ?? CODE_EXTENSIONS;
   const excludes = options?.excludes ?? DEFAULT_EXCLUDES;
   const maxFiles = options?.maxFiles ?? 200;
-  const rawConcurrency = options?.concurrency ?? 3;
-  const concurrency = Math.max(1, Math.floor(rawConcurrency));
+  const rawConcurrency = options?.concurrency;
+  const concurrency =
+    typeof rawConcurrency === 'number' && Number.isFinite(rawConcurrency) && rawConcurrency > 0
+      ? Math.floor(rawConcurrency)
+      : 3;
   const includeRepo = options?.includeRepo ?? true;
 
   const summaries: HierarchicalSummary[] = [];
@@ -321,7 +324,13 @@ export async function generateHierarchicalSummaries(
   for (const dirSummary of dirSummaries) {
     // Extract module: first 2 path segments (e.g., "src/lib", "src/mcp")
     const parts = dirSummary.path.split('/');
-    const moduleKey = parts.length >= 2 ? parts.slice(0, 2).join('/') : parts[0];
+    // Guard against root paths creating a cycle with the repo node
+    const moduleKey =
+      dirSummary.path === '.' || dirSummary.path === ''
+        ? '__root__'
+        : parts.length >= 2
+          ? parts.slice(0, 2).join('/')
+          : parts[0];
     const group = moduleGroups.get(moduleKey) ?? [];
     group.push(dirSummary);
     moduleGroups.set(moduleKey, group);
@@ -368,7 +377,7 @@ Summary:`;
   }
 
   // 5. Generate repo-level summary
-  if (includeRepo && moduleSummaries.length >= 2) {
+  if (includeRepo && moduleSummaries.length > 0) {
     try {
       const moduleDescriptions = moduleSummaries
         .map((m) => `- ${m.path} (${m.fileCount} files): ${m.summary}`)

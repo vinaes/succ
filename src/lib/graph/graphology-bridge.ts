@@ -561,6 +561,7 @@ export async function whyRelated(
   }
 
   const path: Array<{ memoryId: number; relation?: string }> = [];
+  let totalWeight = 0;
   for (let i = 0; i < pathNodes.length; i++) {
     const memId = parseInt(pathNodes[i], 10);
     let relation: string | undefined;
@@ -569,6 +570,8 @@ export async function whyRelated(
       const edge = graph.edge(pathNodes[i], pathNodes[i + 1]);
       if (edge) {
         relation = graph.getEdgeAttribute(edge, 'relation');
+        const w = graph.getEdgeAttribute(edge, 'weight') as number;
+        totalWeight += Number.isFinite(w) ? w : 1.0;
       }
     }
 
@@ -578,6 +581,6 @@ export async function whyRelated(
   return {
     connected: true,
     path,
-    distance: pathNodes.length - 1,
+    distance: totalWeight, // Cumulative edge similarity (higher = stronger connection)
   };
 }

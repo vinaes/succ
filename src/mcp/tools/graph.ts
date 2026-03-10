@@ -494,7 +494,7 @@ ${relationStats}`;
               content: [
                 {
                   type: 'text' as const,
-                  text: `Relationship chain (${wrResult.distance} hops):\n${chain}`,
+                  text: `Relationship chain (${wrResult.path.length - 1} hops, strength ${wrResult.distance.toFixed(2)}):\n${chain}`,
                 },
               ],
             };

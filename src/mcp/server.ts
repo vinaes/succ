@@ -192,10 +192,13 @@ process.on('unhandledRejection', (error) => {
     error instanceof Error ? error : new Error(String(error))
   );
   cleanupEmbeddings();
-  cleanupReranker().catch(() => {});
-  closeDb();
-  closeGlobalDb();
-  process.exit(1);
+  cleanupReranker()
+    .catch(() => {})
+    .finally(() => {
+      closeDb();
+      closeGlobalDb();
+      process.exit(1);
+    });
 });
 
 // Idle timeout: exit if no MCP requests for 60 minutes (zombie prevention)

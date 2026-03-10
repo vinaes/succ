@@ -67,6 +67,8 @@ export class LspClient {
   private process: ChildProcess | null = null;
   private connection: ProtocolConnection | null = null;
   private initialized = false;
+  /** Stores spawn error so start() can reject instead of hanging */
+  private spawnError: Error | null = null;
   /** Tracks open documents: URI → document version counter */
   private openDocuments = new Map<string, number>();
   /** File watchers for open documents to detect external edits */
@@ -97,10 +99,15 @@ export class LspClient {
       cwd: this.options.rootPath,
     });
 
-    // Handle spawn failures (e.g. command not found, ENOENT)
-    this.process.on('error', (err) => {
-      logWarn('lsp-client', `Failed to spawn ${this.options.command}: ${err.message}`);
-      this.cleanup();
+    // Handle spawn failures (e.g. command not found, ENOENT).
+    // Reject via spawnErrorPromise so start() doesn't hang on sendRequest.
+    const spawnErrorPromise = new Promise<never>((_, reject) => {
+      this.process!.on('error', (err) => {
+        logWarn('lsp-client', `Failed to spawn ${this.options.command}: ${err.message}`);
+        this.spawnError = err;
+        this.cleanup();
+        reject(err);
+      });
     });
 
     if (!this.process.stdout || !this.process.stdin) {
@@ -149,7 +156,11 @@ export class LspClient {
         initializationOptions: this.options.initializationOptions,
       };
 
-      const result = await this.connection.sendRequest(InitializeRequest.type, initParams);
+      // Race initialization against spawn error to avoid hanging on ENOENT
+      const result = await Promise.race([
+        this.connection.sendRequest(InitializeRequest.type, initParams),
+        spawnErrorPromise,
+      ]);
 
       // Notify initialized
       this.connection.sendNotification('initialized', {});
