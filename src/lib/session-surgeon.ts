@@ -138,7 +138,7 @@ export async function trimToolContent(
       // Trim tool_result content
       if (block.type === 'tool_result' && trimResults) {
         const toolName = block.tool_use_id ? toolNameById.get(block.tool_use_id) : undefined;
-        if (toolFilter && toolName && !toolFilter.has(toolName)) continue;
+        if (toolFilter && (!toolName || !toolFilter.has(toolName))) continue;
 
         const rc = block.content;
         if (typeof rc === 'string' && rc.length > 0) {
@@ -496,6 +496,10 @@ export async function compactBefore(
     sessionId: newSessionId,
     chainVerified,
   };
+
+  if (!chainVerified) {
+    throw new Error(`Compacted session failed UUID chain verification: ${outputPath}`);
+  }
 
   if (!options.dryRun) {
     if (!options.noBackup) {

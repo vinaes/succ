@@ -198,7 +198,9 @@ export function getBoostDataForMemories(memoryIds: number[]): BoostRow[] {
   // cachedPrepare would leak one entry per unique batch size.
   const BATCH_SIZE = 50;
   const db = getDb();
-  const results: BoostRow[] = [];
+  const results = new Map<number, BoostRow>(
+    memoryIds.map((memoryId) => [memoryId, { memory_id: memoryId, total: 0, used: 0 }])
+  );
 
   for (let i = 0; i < memoryIds.length; i += BATCH_SIZE) {
     const batch = memoryIds.slice(i, i + BATCH_SIZE);
@@ -211,10 +213,12 @@ export function getBoostDataForMemories(memoryIds: number[]): BoostRow[] {
        GROUP BY memory_id`
       )
       .all(...batch) as BoostRow[];
-    results.push(...rows);
+    for (const row of rows) {
+      results.set(row.memory_id, row);
+    }
   }
 
-  return results;
+  return memoryIds.map((memoryId) => results.get(memoryId)!);
 }
 
 export function getNeverUsedMemoryRows(

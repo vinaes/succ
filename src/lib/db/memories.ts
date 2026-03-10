@@ -780,7 +780,8 @@ export function getMemoryHealth(): {
              AND access_count = 0 THEN 1 ELSE 0 END) as stale_unused_90d,
        AVG(julianday('now') - julianday(created_at)) as avg_age_days,
        AVG(access_count) as avg_access
-     FROM memories`
+     FROM memories
+     WHERE invalidated_by IS NULL`
   ).get() as
     | {
         total: number;

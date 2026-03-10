@@ -913,10 +913,14 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       console.log('    Run `succ index` and `succ analyze` manually when needed');
     }
 
-    // Save daemon config to target scope
-    if (daemonMode !== 'none') {
-      targetConfig.daemon = daemonConfig;
-    }
+    // Save daemon config to target scope.
+    // When daemonMode is 'none', explicitly write a disabled block so that
+    // mergeAndWriteConfig's additive deep merge does not leave behind any
+    // pre-existing daemon.enabled / auto_start values set to true.
+    targetConfig.daemon =
+      daemonMode === 'none'
+        ? { enabled: false, watch: { auto_start: false }, analyze: { auto_start: false } }
+        : daemonConfig;
     console.log('');
 
     // Save config to chosen scope — merge with existing to avoid overwriting

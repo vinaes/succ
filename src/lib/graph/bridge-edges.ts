@@ -65,7 +65,7 @@ const CODE_EXTENSIONS =
  * - `path/to/file.py`
  */
 const FILE_PATH_PATTERN =
-  /(?:^|[\s`"'(,])((\.{0,2}\/)?(?:[a-zA-Z0-9_.-]+\/)+[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)(?::(\d+))?/gm;
+  /(?:^|[\s`"'(,])((\.{0,2}\/)?(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)(?::(\d+))?/gm;
 
 /**
  * Scan memory content for code file path references.

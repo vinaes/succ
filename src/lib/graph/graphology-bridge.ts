@@ -516,7 +516,7 @@ export async function computeBetweennessCentrality(): Promise<Map<number, number
   if (graph.order === 0) return new Map();
 
   const scores = betweennessCentrality(graph, {
-    getEdgeWeight: 'weight',
+    getEdgeWeight: similarityToDistance,
     normalized: true,
   });
 

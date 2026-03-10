@@ -81,13 +81,13 @@ export async function lateChunkEmbed(
     };
   }
 
-  // 1. Parse into AST chunks
-  const chunks = await chunkCodeAsync(content, filePath);
-  if (chunks.length === 0) {
-    return { chunks: [], usedLateChunking: true };
-  }
-
   try {
+    // 1. Parse into AST chunks
+    const chunks = await chunkCodeAsync(content, filePath);
+    if (chunks.length === 0) {
+      return { chunks: [], usedLateChunking: true };
+    }
+
     const session = await getNativeSession();
 
     // 2. Get token offsets for the full file
