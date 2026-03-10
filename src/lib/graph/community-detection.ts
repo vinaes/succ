@@ -15,6 +15,27 @@ import {
 } from '../storage/index.js';
 
 import { logWarn } from '../fault-logger.js';
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Parse memory tags from storage format (array, JSON string, or undefined). */
+function parseMemoryTags(tags: string[] | string | undefined, context: string): string[] {
+  if (Array.isArray(tags)) return tags;
+  if (typeof tags === 'string') {
+    try {
+      return JSON.parse(tags);
+    } catch (error) {
+      logWarn('community-detection', `Failed to parse memory tags: ${context}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+  return [];
+}
+
 // ============================================================================
 // Adjacency List
 // ============================================================================
@@ -216,25 +237,7 @@ export async function detectCommunitiesLP(
   const allMemories = await getAllMemoriesForExport();
   const memoryTagMap = new Map<number, string[]>();
   for (const mem of allMemories) {
-    const tags = Array.isArray(mem.tags)
-      ? mem.tags
-      : typeof mem.tags === 'string'
-        ? (() => {
-            try {
-              return JSON.parse(mem.tags);
-            } catch (error) {
-              logWarn(
-                'community-detection',
-                'Failed to parse memory tags JSON string for community assignment',
-                {
-                  error: error instanceof Error ? error.message : String(error),
-                }
-              );
-              return [];
-            }
-          })()
-        : [];
-    memoryTagMap.set(mem.id, tags);
+    memoryTagMap.set(mem.id, parseMemoryTags(mem.tags, 'community assignment'));
   }
 
   const BATCH_SIZE = 50;
@@ -331,24 +334,7 @@ async function applyCommunityTags(
     await Promise.all(
       batch.map((mem) => {
         const communityId = memberToCommunity.get(mem.id);
-        let tags = Array.isArray(mem.tags)
-          ? mem.tags
-          : typeof mem.tags === 'string'
-            ? (() => {
-                try {
-                  return JSON.parse(mem.tags);
-                } catch (error) {
-                  logWarn(
-                    'community-detection',
-                    'Failed to parse memory tags in applyCommunityTags',
-                    {
-                      error: error instanceof Error ? error.message : String(error),
-                    }
-                  );
-                  return [];
-                }
-              })()
-            : [];
+        let tags = parseMemoryTags(mem.tags, 'applyCommunityTags');
 
         // Remove old community tags
         const oldLen = tags.length;
@@ -380,27 +366,11 @@ export async function getMemoryCommunity(
   const mem = await getMemoryById(memoryId);
   if (!mem) return null;
 
-  const tags: string[] = Array.isArray(mem.tags)
-    ? mem.tags
-    : typeof mem.tags === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(mem.tags as string);
-          } catch (error) {
-            logWarn(
-              'community-detection',
-              'Failed to parse memory tags JSON string for community lookup',
-              {
-                error: error instanceof Error ? error.message : String(error),
-              }
-            );
-            return [];
-          }
-        })()
-      : [];
+  const tags: string[] = parseMemoryTags(mem.tags, 'community lookup');
 
   const prefix = `${tagPrefix}:`;
   const communityTag = tags.find((t: string) => t.startsWith(prefix));
   if (!communityTag) return null;
-  return parseInt(communityTag.slice(prefix.length), 10);
+  const id = parseInt(communityTag.slice(prefix.length), 10);
+  return Number.isNaN(id) ? null : id;
 }
