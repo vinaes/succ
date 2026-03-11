@@ -53,22 +53,28 @@ succ analyze
 
 | Feature | Description |
 |---------|-------------|
-| **Hybrid Search** | Semantic embeddings + BM25 keyword matching with AST symbol boost |
-| **AST Code Indexing** | Tree-sitter parsing for 21 languages — 13 with full symbol extraction, 8 grammar-only (Swift, Scala, Dart, Bash, Lua, Elixir, Haskell, SQL) |
-| **Brain Vault** | Obsidian-compatible markdown knowledge base |
-| **Persistent Memory** | Decisions, learnings, patterns across sessions |
-| **Cross-Project** | Global memories shared between all projects |
-| **Knowledge Graph** | Link memories, LLM-enriched relations, community detection, centrality |
-| **MCP Native** | 14 consolidated tools — Claude uses succ tools directly |
+| **Hybrid Search** | Semantic embeddings + BM25 keyword matching with cross-encoder reranking and AST symbol boost |
+| **AST Code Indexing** | Tree-sitter parsing for 21 languages — 13 with full symbol extraction, 8 grammar-only |
+| **Code Scanning** | Recursive code discovery and indexing via `succ_index action="scan"` with .succignore support |
+| **Brain Vault** | Obsidian-compatible markdown knowledge base with hierarchical summaries |
+| **Persistent Memory** | Decisions, learnings, patterns across sessions with auto-extraction |
+| **Cross-Project** | Global memories shared between all projects; cross-repo search |
+| **Knowledge Graph** | Directed graph with PPR, SCC, articulation points, bridge edges (code↔memory), LLM-enriched relations |
+| **Graph Algorithms** | Personalized PageRank, Louvain communities, Dijkstra shortest path, betweenness centrality, co-change analysis |
+| **MCP Native** | 15 consolidated tools — Claude uses succ tools directly |
+| **Reranker** | ONNX cross-encoder (ms-marco-MiniLM-L6-v2) for search result post-processing |
+| **HyDE** | Hypothetical Document Embeddings — LLM generates code snippets for NL queries to bridge embedding gap |
+| **Late Chunking** | Long-context embedding with per-AST-chunk pooling for context-aware chunks |
 | **Web Search** | Real-time web search via Perplexity Sonar (quick, quality, deep research) |
-| **Skill Suggestions** | LLM-powered command discovery (opt-in, disabled by default) |
 | **Web Fetch** | Fetch any URL as clean Markdown via md.succ.ai (Readability + Playwright) |
+| **LSP Integration** | Language Server Protocol client for definition, references, hover queries |
 | **Working Memory** | Priority scoring, validity filtering, diversity, pinned memories |
 | **Dynamic Hook Rules** | Save memories that auto-fire as pre-tool rules — inject context, block, ask confirmation, or auto-approve permissions |
 | **File-Linked Memories** | Link memories to files; auto-recalled when editing those files |
 | **Dead-End Tracking** | Record failed approaches to prevent retrying |
 | **Debug Sessions** | Structured debugging with hypothesis testing, 13-language instrumentation |
 | **Session Surgeon** | Auto compact stats, trim tool content/thinking/images, manual compact with chain integrity |
+| **Observability** | Search latency, embedding times, LLM call metrics; retrieval feedback loop |
 | **PRD Pipeline** | Generate PRDs, parse into tasks, execute with quality gates |
 | **Team Mode** | Parallel task execution with git worktrees |
 | **Multi-Backend Storage** | SQLite, PostgreSQL, Qdrant — scale from laptop to cloud |
@@ -81,6 +87,21 @@ succ analyze
 - **PRD Pipeline** — Generate PRDs from feature descriptions, parse into executable tasks, run with Claude Code agent, export workflow to Obsidian (Mermaid Gantt + dependency DAG)
 - **Team Mode** — Parallel task execution using git worktrees; each worker gets an isolated checkout, results merge via cherry-pick
 - **Quality Gates** — Auto-detected (TypeScript, Go, Python, Rust) or custom; run after each task to verify code quality
+- **Graph Algorithms** — Personalized PageRank (PPR) retrieval, Tarjan's SCC, articulation points, Dijkstra shortest path, betweenness centrality, Louvain communities with LLM summaries, bridge edges (code↔memory graph)
+- **Cross-encoder Reranker** — ONNX ms-marco-MiniLM-L6-v2 rescores (query, document) pairs; configurable weight, topK clamping, graceful degradation
+- **HyDE** — Hypothetical Document Embeddings via LLM for natural language → code search; tree-sitter AST code detection
+- **Late Chunking** — Long-context embedding (jina 8192 tokens) with per-AST-chunk pooling for context-aware embeddings
+- **Hierarchical Summaries (RAPTOR-style)** — bottom-up LLM summarization at file → directory → module → repo zoom levels with query routing
+- **Code Scanning** — `succ_index action="scan"` recursively discovers and indexes code files via git ls-files / directory walk with .succignore, size filtering, symlink rejection
+- **Observability** — search latency, embedding times, LLM call metrics; retrieval feedback loop for ranking adjustment
+- **Auto-memory Extraction** — session-end fact extraction via LLM with quality gate + periodic dimension-bucketed consolidation
+- **Cross-repo Search** — search across multiple succ-indexed repositories
+- **Diff-brain Analysis** — LLM-powered diff analysis for brain vault document changes
+- **LSP Integration** — language server protocol client, installer, and server registry (Kotlin + Swift added)
+- **MCP Review Tool** — `succ_review` for code review with blast-radius estimation
+- **Co-change Analysis** — git log mining to detect files frequently changed together
+- **Brain Vault Export** — structured export with metadata
+- **API Versioning** — `/v1/` route prefix aliases for all daemon endpoints
 - **Graph Enrichment** — LLM-classified relations (implements, leads_to, contradicts...), contextual proximity, Label Propagation communities, degree centrality with recall boost
 - **Dead-End Tracking** — Record failed approaches; auto-boosted in recall to prevent retrying
 - **AGENTS.md Auto-Export** — Auto-generate editor instructions from decisions, patterns, dead-ends
@@ -155,6 +176,7 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ codex-chat` | Launch Codex chat with succ briefing/hooks |
 | `succ analyze` | Generate brain vault with Claude agents |
 | `succ index [path]` | Index files for semantic search |
+| `succ scan-code [path]` | Recursive code discovery and indexing |
 | `succ search <query>` | Semantic search in brain vault |
 | `succ remember <content>` | Save to memory |
 | `succ memories` | List and search memories |

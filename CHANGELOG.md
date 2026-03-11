@@ -5,33 +5,43 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.0] - 2026-03-09
+## [1.5.0] - 2026-03-11
 
 ### Added
-- **Cross-encoder reranker** — ONNX-based cross-encoder (ms-marco-MiniLM-L-6-v2) reranks hybrid search results by scoring (query, document) pairs for relevance. Configurable weight, min results, max doc chars. Graceful degradation on failure
-- **HyDE (Hypothetical Document Embeddings)** — generates hypothetical code snippets via LLM for natural language queries, embeds them to bridge the NL↔code embedding gap. Uses tree-sitter AST to detect code queries and skip HyDE
+
+- **Cross-encoder reranker** — ONNX-based cross-encoder (ms-marco-MiniLM-L6-v2) reranks hybrid search results by scoring (query, document) pairs. Configurable weight, min results, max doc chars. Shutdown race guard ensures ONNX cleanup completes even when racing with initialization
+- **HyDE (Hypothetical Document Embeddings)** — generates hypothetical code snippets via LLM for natural language queries, embeds them to bridge the NL↔code embedding gap. Tree-sitter AST code detection (threshold lowered to 3 chars for short expressions like `foo()`)
 - **Late chunking** — embeds full file with long-context model (e.g., jina 8192 tokens), pools per-token hidden states by AST chunk boundaries for context-aware chunk embeddings
 - **Hierarchical summaries (RAPTOR-style)** — bottom-up LLM summarization at file → directory → module → repo zoom levels. Query routing via `inferSummaryLevel()` matches query specificity to the right zoom
-- **Code-specific embedding models** — support for jina-embeddings-v2-base-code (768d, 8192 ctx), nomic-embed-code, BGE-M3 with configurable `max_length` per model
-- **Graph algorithms** — Personalized PageRank (PPR) retrieval, Tarjan's SCC for circular dependency detection, articulation point (bridge) analysis for architectural bottlenecks, community summaries via LLM
+- **Code-specific embedding models** — support for jina-embeddings-v2-base-code (768d, 8192 ctx), nomic-embed-code (32768 ctx), BAAI/bge-m3 with configurable `max_length` per model
+- **Graph algorithms** — Personalized PageRank (PPR) retrieval with correct directed-edge flow, Tarjan's SCC for circular dependency detection, articulation point analysis for architectural bottlenecks, community summaries via LLM. DirectedGraph preserves edge direction for accurate path/centrality computation
 - **Retrieval feedback loop** — tracks search result clicks/usage, adjusts future ranking based on historical relevance signals
 - **Observability pipeline** — structured logging of search latency, embedding times, LLM calls; recall analytics with per-query metrics stored in SQLite
-- **Auto-memory extraction** — session-end fact extraction via LLM with quality gate + periodic consolidation (merge duplicates, promote high-usage)
+- **Auto-memory extraction** — session-end fact extraction via LLM with quality gate + periodic consolidation (dimension-bucketed deduplication handles model switches)
+- **Code scanning** — `succ_index action="scan"` recursively discovers and indexes all code files via git ls-files / directory walk, with .succignore support, size/extension filtering, symlink rejection, and p-limit batch indexing
 - **Repo map** — generates tree-style project structure maps for LLM context
 - **Cross-repo search** — search across multiple succ-indexed repositories
-- **Diff-brain analysis** — LLM-powered diff analysis for brain vault document changes
-- **LSP client infrastructure** — language server protocol client, installer, and server registry for code intelligence
-- **MCP review tool** — `succ_review` for code review via MCP
-- **Bridge edges** — cross-graph edges connecting code graph and memory graph
+- **Diff-brain analysis** — LLM-powered diff analysis for brain vault document changes (handles root-level files correctly)
+- **LSP client infrastructure** — language server protocol client, installer, and server registry for code intelligence (Kotlin + Swift added)
+- **MCP review tool** — `succ_review` for code review via MCP with blast-radius estimation
+- **Bridge edges** — cross-graph edges connecting code graph and memory graph with code_paths JSONB array merge on conflict
 - **Co-change analysis** — git log mining to detect files frequently changed together
-- **Session surgeon** — session analyzer (token breakdown by type + tool name, cut points) and surgeon (trim tool content, thinking, images; manual compact with UUID chain integrity). PreCompact hook auto-saves stats, SessionStart displays before/after delta table after compact. CLI: `succ session analyze|trim|trim-thinking|trim-all|compact`
+- **Session surgeon** — session analyzer (token breakdown by type + tool name, cut points) and surgeon (trim tool content, thinking, images; manual compact with chain integrity verifying all UUIDs and parent pointers). PreCompact hook auto-saves stats, SessionStart displays before/after delta table after compact. CLI: `succ session analyze|trim|trim-thinking|trim-all|compact`
+- **API versioning** — `/v1/` route prefix aliases for all daemon endpoints via `addVersionedRoutes()`
+- **PostgreSQL CHECK constraints** — defense-in-depth constraints on confidence [0,1] (with NaN guard), source_type enum validation, and non-negative link weights for Dijkstra correctness
+- **Brain vault export** — structured export of brain vault with metadata
 
 ### Changed
 - `generateHyDE()` uses tree-sitter AST parsing instead of regex heuristics for code detection — more accurate, zero false positives on natural language
 - `NativeOrtSession` accepts configurable `maxLength` (was hardcoded 128) for long-context embedding models
 - `NativeOrtSession` exports `embedRaw()` for per-token hidden states and `getTokenOffsets()` for token position mapping
-- PPR algorithm precomputes weighted degrees for O(E) total instead of O(E) per neighbor per iteration
-- Reranker uses failure memoization — `rerankerInitFailed` flag prevents retrying initialization on every search call
+- PPR algorithm uses `forEachOutEdge` for degree calculation and `forEachInNeighbor` for score propagation (correct directed-graph semantics)
+- Reranker clamps `topK` to positive integer, `weight` to [0,1], `maxDocChars` to positive; failure memoization prevents retrying initialization on every search call
+- `similarityToDistance` no longer clamps weights > 1.0 — stronger edges correctly produce shorter graph distances for Dijkstra/betweenness
+- Graph cache invalidated after LLM link enrichment in `llm-relations.ts`
+- `succ init` always refreshes hook scripts on rerun (was skipping existing `.cjs` files without `--force`)
+- `succ init` warns when global LLM scope selection is shadowed by stale project-level config overrides
+- `cosineSimilarity()` returns 0 for mismatched vector lengths instead of computing with undefined values
 - `db.prepare()` used instead of `cachedPrepare` for dynamic SQL with variable placeholder counts in recall-events
 
 ### Fixed
@@ -42,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `inferSummaryLevel`: camelCase regex fixed from `/[A-Z][a-z]+[A-Z]/` to `/[a-z][A-Z]/` (matches "hashPassword")
 - `getTokenOffsets`: passes `[text]` (array) for consistency with `embedRaw` 2D tensor output
 - Iterative Tarjan DFS replaces recursive implementation (avoids stack overflow on large graphs)
+- `diff-parser.test.ts`: corrected malformed SAMPLE_DIFF hunk headers and assertion counts
+- `session-surgeon.ts`: `verifyChain` now detects duplicate UUIDs and validates all `parentUuid` pointers
+- `lstatSync` + symlink rejection in file discovery prevents path traversal
+- ReDoS-safe diff header parsing
+- Config JSON parsing validates object shape before merging (guards against null, arrays, primitives)
+- `cleanupReranker()` awaits in-flight initialization before releasing ONNX session
 
 ## [1.4.59] - 2026-03-10 (master backport)
 

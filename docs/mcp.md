@@ -35,13 +35,13 @@ Or if running from source:
 
 ## Available Tools
 
-15 tools (down from 31) — related actions are grouped under a single tool with an `action` parameter.
+15 tools — related actions are grouped under a single tool with an `action` parameter.
 
 | Tool | Actions | Description |
 |------|---------|-------------|
 | `succ_search` | — | Hybrid search in brain vault (BM25 + semantic). Output modes: `full`, `lean` |
 | `succ_search_code` | — | Search indexed code (hybrid BM25 + semantic). Regex/symbol filters. Output modes: `full`, `lean`, `signatures` |
-| `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols` | Index files, refresh stale entries, analyze with LLM, extract AST symbols |
+| `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols`, `scan` | Index files, refresh stale entries, analyze with LLM, extract AST symbols, recursive code scanning |
 | `succ_remember` | — | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
 | `succ_recall` | — | Recall memories (searches both local and global) |
 | `succ_forget` | — | Delete memories by id, age, or tag |
@@ -64,6 +64,7 @@ Or if running from source:
 | `refresh` | _(was `succ_reindex`)_ | Detect stale/deleted entries, re-index modified, clean deleted |
 | `analyze` | _(was `succ_analyze_file`)_ | Analyze a file with LLM, generate brain vault doc |
 | `symbols` | _(was `succ_symbols`)_ | Extract AST symbols via tree-sitter (13 languages) |
+| `scan` | _(new)_ | Recursive code file discovery and indexing via git ls-files / directory walk |
 
 ### succ_link actions
 
