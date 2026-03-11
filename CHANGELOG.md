@@ -5,6 +5,21 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.42] - 2026-03-12
+
+### Added
+
+- **Update notification system** — background version check writes `version-check.json` cache; CLI banner in `succ status` shows available updates; MCP `succ_status` exposes `update_available` field; `succ-session-start` hook injects `<update-available>` instruction into AI context. Respects all opt-out signals: `SUCC_NO_UPDATE_CHECK=1`, `CI=true`, `NO_UPDATE_NOTIFIER=1`, `update_check.enabled: false`. Stale cache from a previous install is detected and discarded (compares installed version against cached `current`)
+- **New config options** — `update_check.enabled` (bool), `update_check.interval_hours` (number, default 24)
+
+### Dependencies
+
+- `pg` bumped 8.18.0 → 8.20.0 (adds `onConnect` pool callback, deprecates internal query queue)
+- `@types/pg` bumped 8.16.0 → 8.18.0
+- `@qdrant/js-client-rest` bumped 1.16.2 → 1.17.0 (adds `listShardKeys`, `clusterTelemetry`, `getOptimizations`, `timeout` param on write ops)
+- `inquirer` bumped 13.2.5 → 13.3.0
+- Production dependencies group patch updates
+
 ## [1.5.0] - 2026-03-11
 
 ### Added
