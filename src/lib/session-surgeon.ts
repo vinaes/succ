@@ -574,12 +574,24 @@ function offsetTs(baseIso: string, ms: number): string {
 
 /** Verify that a chain of entries walks from last to root (null parentUuid). */
 function verifyChain(entries: Record<string, unknown>[]): boolean {
+  // Build UUID index and detect duplicates in one pass
   const uuidIndex = new Map<string, Record<string, unknown>>();
   for (const entry of entries) {
-    if (entry.uuid) uuidIndex.set(entry.uuid as string, entry);
+    if (!entry.uuid) continue;
+    const uuid = entry.uuid as string;
+    if (uuidIndex.has(uuid)) return false; // duplicate UUID
+    uuidIndex.set(uuid, entry);
   }
 
-  // Walk from last entry to root
+  // Validate every entry's parent pointer resolves to a known UUID
+  for (const entry of entries) {
+    const parentUuid = entry.parentUuid as string | null | undefined;
+    if (parentUuid !== null && parentUuid !== undefined) {
+      if (!uuidIndex.has(parentUuid)) return false; // dangling parent reference
+    }
+  }
+
+  // Walk from last entry to root, catching cycles on the primary ancestry path
   let current = entries[entries.length - 1];
   const visited = new Set<string>();
 

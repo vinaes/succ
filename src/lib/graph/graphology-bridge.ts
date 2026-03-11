@@ -9,7 +9,7 @@
  * when links change.
  */
 
-import Graph from 'graphology';
+import Graph, { DirectedGraph } from 'graphology';
 import louvain from 'graphology-communities-louvain';
 import pagerank from 'graphology-metrics/centrality/pagerank.js';
 import betweennessCentrality from 'graphology-metrics/centrality/betweenness.js';
@@ -52,7 +52,11 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
     return cached.graph;
   }
 
-  const graph = new Graph({ multi: false, type: 'undirected' });
+  // Use DirectedGraph so that directional relationships (A→B vs B→A) and
+  // multi-relational edges between the same pair of memories are preserved.
+  // All graph algorithms used here (PageRank, betweenness, Louvain, Dijkstra)
+  // support directed graphs.
+  const graph = new DirectedGraph();
 
   // Load all links
   const links = await getAllMemoryLinksForExport();
@@ -82,9 +86,11 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
       graph.addNode(targetKey, { memoryId: link.target_id });
     }
 
-    // Add edge (skip duplicates for undirected graph)
-    if (!graph.hasEdge(sourceKey, targetKey)) {
-      graph.addEdge(sourceKey, targetKey, {
+    // Add directed edge; skip exact duplicate directed edges (same source, target, relation)
+    // to avoid inflating weights. Multi-relational edges between the same pair
+    // are stored as separate directed edges via DirectedGraph.
+    if (!graph.hasDirectedEdge(sourceKey, targetKey)) {
+      graph.addDirectedEdge(sourceKey, targetKey, {
         weight: link.weight ?? 1.0,
         relation: link.relation ?? 'related',
       });
