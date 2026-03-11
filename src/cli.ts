@@ -907,4 +907,17 @@ function handleFatalError(err: unknown): void {
 process.on('unhandledRejection', handleFatalError);
 process.on('uncaughtException', handleFatalError);
 
+// Fire-and-forget update check (TTY only, stderr, non-blocking)
+if (process.stderr.isTTY && !process.env.CI && !process.env.SUCC_NO_UPDATE_CHECK) {
+  import('./lib/version-check.js')
+    .then(({ checkForUpdate, formatUpdateNotification }) =>
+      checkForUpdate().then((result) => {
+        if (result?.update_available) {
+          process.stderr.write('\n' + formatUpdateNotification(result) + '\n');
+        }
+      })
+    )
+    .catch(() => {});
+}
+
 program.parseAsync().catch(handleFatalError);

@@ -252,6 +252,28 @@ export function registerStatusTools(server: McpServer) {
 
             status.push('', '## Daemons', daemonLines);
 
+            // Update check (read cache only, no network)
+            try {
+              const { getCachedUpdate, getCurrentVersion } =
+                await import('../../lib/version-check.js');
+              const updateResult = getCachedUpdate();
+              if (updateResult?.update_available) {
+                status.push(
+                  '',
+                  '## Update Available',
+                  `  Current: ${updateResult.current}`,
+                  `  Latest:  ${updateResult.latest}`,
+                  `  Run: npm update -g @vinaes/succ`
+                );
+              } else {
+                status.push('', `## Version`, `  ${getCurrentVersion()} (up to date)`);
+              }
+            } catch (error) {
+              logWarn('status', 'Failed to check update cache', {
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+
             const statusText = status.filter(Boolean).join('\n');
 
             return createToolResponse(statusText);

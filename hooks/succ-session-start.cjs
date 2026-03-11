@@ -657,6 +657,53 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
   }
 
+  // Update notification — read cache, inject instruction for AI agent
+  const updateCheckSuppressed =
+    process.env.SUCC_NO_UPDATE_CHECK === '1' ||
+    process.env.CI === 'true' ||
+    process.env.NO_UPDATE_NOTIFIER === '1' ||
+    config.update_check?.enabled === false;
+
+  if (!updateCheckSuppressed) try {
+    const vcPath = path.join(succDir, '.tmp', 'version-check.json');
+    if (fs.existsSync(vcPath)) {
+      const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
+      if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
+        const age = Date.now() - new Date(vc.checked_at).getTime();
+        if (age < 48 * 3600000) {
+          // Guard against stale cache: if the installed version is already >= latest, skip.
+          // This prevents false "update available" notifications after the user upgrades
+          // before the 48h cache expires.
+          const installedVersion = require('../package.json').version;
+          const compareSemver = (a, b) => {
+            const pa = a.split('.').map(Number);
+            const pb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) {
+              const diff = (pa[i] || 0) - (pb[i] || 0);
+              if (diff !== 0) return diff > 0 ? 1 : -1;
+            }
+            return 0;
+          };
+          if (compareSemver(installedVersion, vc.latest) >= 0) {
+            // Already up-to-date — delete the stale cache so the next check rewrites it
+            try { fs.unlinkSync(vcPath); } catch (unlinkErr) {
+              log(`Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`);
+            }
+          } else {
+            contextParts.push(
+              `<update-available>` +
+                `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
+                `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
+                `</update-available>`
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log(`Failed to read version-check cache: ${err.message || err}`);
+  }
+
   // Output context
   if (contextParts.length > 0) {
     // Sanitize closing wrapper tags from dynamic content to prevent XML injection

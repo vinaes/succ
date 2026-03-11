@@ -17,7 +17,7 @@ import {
 } from './types.js';
 
 /** Strict session ID validator — returns null for IDs that would collide after normalization. */
-const SESSION_ID_RE = /^[A-Za-z0-9_\-]{1,128}$/;
+const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 function validateSessionId(raw: string): string | null {
   return SESSION_ID_RE.test(raw) ? raw : null;
 }

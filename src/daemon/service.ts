@@ -326,6 +326,29 @@ export async function routeRequest(
   return handler(body, searchParams);
 }
 
+let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+function scheduleUpdateCheck(logFn: (msg: string) => void): void {
+  // Run once at startup (after short delay to not block init)
+  const runCheck = () => {
+    import('../lib/version-check.js')
+      .then(({ checkForUpdate }) => checkForUpdate())
+      .then((result) => {
+        if (result?.update_available) {
+          logFn(`[update-check] Update available: ${result.current} → ${result.latest}`);
+        }
+      })
+      .catch((err) => {
+        logFn(`[update-check] Failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  };
+
+  setTimeout(runCheck, 5000); // 5s after startup
+  // Re-check every 12 hours (cache TTL is 24h, so this keeps it warm)
+  updateCheckTimer = setInterval(runCheck, 12 * 3600_000);
+  updateCheckTimer.unref(); // Don't prevent process exit
+}
+
 export async function startDaemon(): Promise<{ port: number; pid: number }> {
   if (state?.server) {
     return { port: state.port, pid: process.pid };
@@ -447,6 +470,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   log(`[daemon] Started on port ${port} (pid=${process.pid})`);
 
+  // Background update check — keeps cache warm for MCP-only users
+  scheduleUpdateCheck(log);
+
   if (config.daemon?.watch?.auto_start) {
     const watchConfig = config.daemon.watch;
     await startWatcher(
@@ -509,6 +535,11 @@ function checkShutdown(): void {
 
 export async function shutdownDaemon(): Promise<void> {
   log('[daemon] Shutting down...');
+
+  if (updateCheckTimer) {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
+  }
 
   if (idleWatcher) {
     idleWatcher.stop();
