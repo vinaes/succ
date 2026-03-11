@@ -16,6 +16,8 @@ import {
 
 import { logWarn } from '../fault-logger.js';
 
+const BATCH_SIZE = 50;
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -242,7 +244,6 @@ export async function detectCommunitiesLP(
     memoryTagMap.set(mem.id, parseMemoryTags(mem.tags, 'community assignment'));
   }
 
-  const BATCH_SIZE = 50;
   // Use all memories (not just labels.keys()) so memories that dropped out of the
   // LP graph (no remaining edges or filtered by minCommunitySize) have their old
   // community tags cleared — matching Louvain's behaviour of retagging every memory.
@@ -330,7 +331,6 @@ async function applyCommunityTags(
     }
   }
 
-  const BATCH_SIZE = 50;
   for (let i = 0; i < allMemories.length; i += BATCH_SIZE) {
     const batch = allMemories.slice(i, i + BATCH_SIZE);
     await Promise.all(
