@@ -45,13 +45,15 @@ const MODEL_DIMENSIONS: Record<string, number> = {
 // Known model max token lengths (for tokenizer truncation)
 // Models not listed here default to 512 tokens
 const MODEL_MAX_LENGTHS: Record<string, number> = {
+  'Xenova/all-MiniLM-L6-v2': 256,
+  'Xenova/multilingual-e5-large': 512,
+  'Xenova/bge-large-en-v1.5': 512,
+  'Xenova/bge-base-en-v1.5': 512,
+  'Xenova/bge-small-en-v1.5': 512,
   'jinaai/jina-embeddings-v2-base-code': 8192,
   'jinaai/jina-embeddings-v2-base-en': 8192,
   'jinaai/jina-embeddings-v2-small-en': 8192,
   'nomic-ai/nomic-embed-code': 8192,
-  'Xenova/bge-large-en-v1.5': 512,
-  'Xenova/bge-base-en-v1.5': 512,
-  'Xenova/bge-small-en-v1.5': 512,
   'baai/bge-m3': 8192,
 };
 

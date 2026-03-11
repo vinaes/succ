@@ -304,7 +304,7 @@ export interface LLMConfig {
   reranker?: {
     /** Enable reranking after hybrid search (default: true) */
     enabled?: boolean;
-    /** ONNX cross-encoder model (default: 'cross-encoder/ms-marco-MiniLM-L-6-v2') */
+    /** ONNX cross-encoder model (default: 'cross-encoder/ms-marco-MiniLM-L6-v2') */
     model?: string;
     /** Weight of reranker score vs original score: 0=original only, 1=reranker only (default: 0.7) */
     weight?: number;

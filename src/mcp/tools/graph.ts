@@ -107,10 +107,11 @@ export function registerGraphTools(server: McpServer) {
       project_path,
     }) => {
       await applyProjectPath(project_path);
+      const trimmedFilePath = file_path?.trim() || undefined;
       try {
         switch (action) {
           case 'create': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return createToolResponse(
                 'Both source_id and target_id are required to create a link.'
               );
@@ -127,7 +128,7 @@ export function registerGraphTools(server: McpServer) {
           }
 
           case 'delete': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return createToolResponse(
                 'Both source_id and target_id are required to delete a link.'
               );
@@ -144,7 +145,7 @@ export function registerGraphTools(server: McpServer) {
           }
 
           case 'show': {
-            if (!source_id) {
+            if (source_id == null) {
               return createToolResponse('source_id is required to show a memory with its links.');
             }
 
@@ -319,7 +320,7 @@ ${relationStats}`;
           }
 
           case 'shortest_path': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return {
                 content: [
                   {
@@ -354,7 +355,7 @@ ${relationStats}`;
           }
 
           case 'why_related': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return {
                 content: [
                   {
@@ -494,14 +495,14 @@ ${relationStats}`;
             const { getCoChangesForFile, analyzeCoChanges } =
               await import('../../lib/git/co-change.js');
 
-            if (file_path) {
-              const result = await getCoChangesForFile(file_path);
+            if (trimmedFilePath) {
+              const result = await getCoChangesForFile(trimmedFilePath);
               if (result.cochanges.length === 0) {
                 return {
                   content: [
                     {
                       type: 'text' as const,
-                      text: `No co-change patterns found for "${file_path}". The file may have few commits or mostly changes alone.`,
+                      text: `No co-change patterns found for "${trimmedFilePath}". The file may have few commits or mostly changes alone.`,
                     },
                   ],
                 };
@@ -514,7 +515,7 @@ ${relationStats}`;
                 content: [
                   {
                     type: 'text' as const,
-                    text: `Co-change analysis for "${file_path}":\n\nFiles that frequently change together:\n${lines.join('\n')}`,
+                    text: `Co-change analysis for "${trimmedFilePath}":\n\nFiles that frequently change together:\n${lines.join('\n')}`,
                   },
                 ],
               };
@@ -541,15 +542,15 @@ ${relationStats}`;
             const { findMemoriesForCode, autoBridgeRecentMemories } =
               await import('../../lib/graph/bridge-edges.js');
 
-            if (file_path) {
+            if (trimmedFilePath) {
               // Find memories linked to a specific code path
-              const results = await findMemoriesForCode(file_path);
+              const results = await findMemoriesForCode(trimmedFilePath);
               if (results.length === 0) {
                 return {
                   content: [
                     {
                       type: 'text' as const,
-                      text: `No memories found referencing "${file_path}".`,
+                      text: `No memories found referencing "${trimmedFilePath}".`,
                     },
                   ],
                 };
@@ -563,13 +564,13 @@ ${relationStats}`;
                 content: [
                   {
                     type: 'text' as const,
-                    text: `Memories referencing "${file_path}":\n\n${lines.join('\n')}`,
+                    text: `Memories referencing "${trimmedFilePath}":\n\n${lines.join('\n')}`,
                   },
                 ],
               };
             }
 
-            // No file_path — run auto-bridge scan
+            // No trimmedFilePath — run auto-bridge scan
             const result = await autoBridgeRecentMemories();
             invalidateGraphCache();
             return {

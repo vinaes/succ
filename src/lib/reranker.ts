@@ -1,7 +1,7 @@
 /**
  * Cross-encoder reranker for search result post-processing.
  *
- * Uses an ONNX cross-encoder model (ms-marco-MiniLM-L-6-v2) to score
+ * Uses an ONNX cross-encoder model (ms-marco-MiniLM-L6-v2) to score
  * (query, document) pairs for relevance. Applied after hybrid search
  * (BM25 + vector + RRF) to improve precision.
  *
@@ -22,7 +22,7 @@ export interface Rerankable {
 }
 
 /** Default cross-encoder model — small, fast, good quality */
-const DEFAULT_RERANKER_MODEL = 'cross-encoder/ms-marco-MiniLM-L-6-v2';
+const DEFAULT_RERANKER_MODEL = 'cross-encoder/ms-marco-MiniLM-L6-v2';
 
 /** Max sequence length for cross-encoder input (query + doc tokens) */
 const MAX_SEQ_LENGTH = 512;

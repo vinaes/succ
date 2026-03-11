@@ -573,6 +573,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
 
   // Check if already initialized (after hooks/settings so re-runs always refresh them)
   if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
+    // Always reconcile MCP server config even if DB exists — ensures older installs
+    // or previous failures get the Claude entry added.
+    addMcpServer(projectRoot);
     spinner.succeed('succ hooks/settings refreshed (already initialized).');
     return;
   }

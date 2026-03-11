@@ -37,24 +37,27 @@ function filterByPaths<T extends { file_path: string }>(
   includePaths?: string[],
   excludePaths?: string[]
 ): T[] {
+  // Precompute normalized patterns — minimatch treats \ as escape, not path separator.
+  const normalizedInclude = includePaths?.map((p) => p.replace(/\\/g, '/'));
+  const normalizedExclude = excludePaths?.map((p) => p.replace(/\\/g, '/'));
+
   return results.filter((r) => {
     // Strip storage prefix (e.g. "code:", "doc:") and normalize path separators.
     // Use an explicit prefix list to avoid accidentally stripping Windows drive letters (e.g. "c:").
     const filePath = r.file_path.replace(/^(?:code|doc|memory):/, '').replace(/\\/g, '/');
 
     // Check include patterns (OR: match any)
-    // Normalize backslashes in patterns — minimatch treats \ as escape, not path separator.
-    if (includePaths && includePaths.length > 0) {
-      const matches = includePaths.some((pattern) =>
-        minimatch(filePath, pattern.replace(/\\/g, '/'), { dot: true, matchBase: true })
+    if (normalizedInclude && normalizedInclude.length > 0) {
+      const matches = normalizedInclude.some((pattern) =>
+        minimatch(filePath, pattern, { dot: true, matchBase: true })
       );
       if (!matches) return false;
     }
 
     // Check exclude patterns (OR: exclude if any match)
-    if (excludePaths && excludePaths.length > 0) {
-      const excluded = excludePaths.some((pattern) =>
-        minimatch(filePath, pattern.replace(/\\/g, '/'), { dot: true, matchBase: true })
+    if (normalizedExclude && normalizedExclude.length > 0) {
+      const excluded = normalizedExclude.some((pattern) =>
+        minimatch(filePath, pattern, { dot: true, matchBase: true })
       );
       if (excluded) return false;
     }
