@@ -408,6 +408,57 @@ export class PostgresBackend {
       "ALTER TABLE memories ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'human'"
     );
 
+    // CHECK constraints for provenance columns (defense-in-depth)
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'chk_memories_confidence'
+            AND conrelid = 'memories'::regclass
+        ) THEN
+          UPDATE memories
+            SET confidence = 0.5
+            WHERE confidence IS NULL
+               OR confidence < 0
+               OR confidence > 1
+               OR confidence <> confidence;
+          ALTER TABLE memories
+            ADD CONSTRAINT chk_memories_confidence
+            CHECK (confidence >= 0 AND confidence <= 1 AND confidence = confidence);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'chk_memories_source_type'
+            AND conrelid = 'memories'::regclass
+        ) THEN
+          UPDATE memories
+            SET source_type = 'human'
+            WHERE source_type IS NULL
+               OR source_type NOT IN ('human','agent','canonical_doc','imported','auto_extracted');
+          ALTER TABLE memories
+            ADD CONSTRAINT chk_memories_source_type
+            CHECK (source_type IN ('human','agent','canonical_doc','imported','auto_extracted'));
+        END IF;
+      END $$;
+    `);
+
+    // CHECK constraint for non-negative link weights (required for Dijkstra correctness)
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'chk_memory_links_weight'
+            AND conrelid = 'memory_links'::regclass
+        ) THEN
+          UPDATE memory_links SET weight = GREATEST(weight, 0)
+            WHERE weight < 0;
+          ALTER TABLE memory_links
+            ADD CONSTRAINT chk_memory_links_weight CHECK (weight >= 0);
+        END IF;
+      END $$;
+    `);
+
     // Retrieval feedback table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS recall_events (

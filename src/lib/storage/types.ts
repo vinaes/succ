@@ -117,6 +117,7 @@ export const MEMORY_TYPES = [
 ] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
+// NOTE: PG CHECK constraint chk_memories_source_type must be updated in sync
 export const SOURCE_TYPES = [
   'human',
   'agent',
