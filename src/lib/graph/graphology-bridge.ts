@@ -86,9 +86,10 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
       graph.addNode(targetKey, { memoryId: link.target_id });
     }
 
-    // Add directed edge; skip exact duplicate directed edges (same source, target, relation)
-    // to avoid inflating weights. Multi-relational edges between the same pair
-    // are stored as separate directed edges via DirectedGraph.
+    // Add directed edge; skip if an edge with the same source, target, and relation
+    // already exists to avoid inflating weights. DirectedGraph only supports one edge
+    // per (source, target) pair, so multi-relational A→B edges (same pair, different
+    // relation) are deduplicated here — the first-encountered relation wins.
     if (!graph.hasDirectedEdge(sourceKey, targetKey)) {
       graph.addDirectedEdge(sourceKey, targetKey, {
         weight: link.weight ?? 1.0,
@@ -188,11 +189,13 @@ function computePPR(
     scores.set(node, initScore);
   });
 
-  // Precompute weighted degrees for all nodes (O(E) total, done once)
+  // Precompute weighted out-degrees for all nodes (O(E) total, done once).
+  // In a directed graph, a node distributes its score along its OUT-edges,
+  // so we sum weights over outgoing edges only.
   const weightedDegrees = new Map<string, number>();
   graph.forEachNode((node) => {
     let wDeg = 0;
-    graph.forEachEdge(node, (_edge, attr) => {
+    (graph as DirectedGraph).forEachOutEdge(node, (_edge, attr) => {
       wDeg += (attr.weight as number) ?? 1.0;
     });
     weightedDegrees.set(node, wDeg);
@@ -220,13 +223,18 @@ function computePPR(
     const danglingShare = (alpha * danglingMass) / n;
 
     graph.forEachNode((node) => {
-      // Contribution from neighbors
+      // Contribution from in-neighbors (nodes that have an out-edge pointing TO this node).
+      // PPR formula: score(v) ← sum over u where u→v exists of: score(u) * w(u,v) / outDeg(u)
       let neighborContrib = 0;
-      graph.forEachNeighbor(node, (neighbor) => {
+      (graph as DirectedGraph).forEachInNeighbor(node, (neighbor) => {
         const wDeg = weightedDegrees.get(neighbor) ?? 0;
         if (wDeg > 0) {
-          const edgeWeight = graph.hasEdge(node, neighbor)
-            ? (graph.getEdgeAttribute(graph.edge(node, neighbor)!, 'weight') ?? 1.0)
+          // Edge runs neighbor → node (confirmed by forEachInNeighbor)
+          const edgeWeight = (graph as DirectedGraph).hasDirectedEdge(neighbor, node)
+            ? (graph.getEdgeAttribute(
+                (graph as DirectedGraph).directedEdge(neighbor, node)!,
+                'weight'
+              ) ?? 1.0)
             : 1.0;
           neighborContrib += ((scores.get(neighbor) ?? 0) * edgeWeight) / wDeg;
         }
