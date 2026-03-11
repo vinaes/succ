@@ -47,6 +47,23 @@ describe('API versioning', () => {
     expect(keys.filter((k) => k.includes('/api/status'))).toHaveLength(2);
   });
 
+  it('should not add extra copies when versioned entry already exists in routes', () => {
+    const originalHandler = async () => ({ source: 'original' });
+    const preExistingVersioned = async () => ({ source: 'pre-existing-v1' });
+    const routes: RouteMap = {
+      'GET /api/data': originalHandler,
+      'GET /v1/api/data': preExistingVersioned,
+    };
+
+    const versioned = addVersionedRoutes(routes);
+    const dataKeys = Object.keys(versioned).filter((k) => k.includes('/api/data'));
+
+    // Still exactly 2 — no extra duplicates introduced
+    expect(dataKeys).toHaveLength(2);
+    // Original unversioned route is untouched
+    expect(versioned['GET /api/data']).toBe(originalHandler);
+  });
+
   it('should overwrite pre-existing versioned route with auto-generated alias', () => {
     const originalHandler = async () => ({ source: 'original' });
     const versionedHandler = async () => ({ source: 'v1-explicit' });

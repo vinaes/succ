@@ -133,8 +133,8 @@ These models support late chunking (embed full file, pool by AST boundaries) and
 |-------|------------|------------|-------|
 | `jinaai/jina-embeddings-v2-base-code` | 768 | 8192 | Best for code search, supports late chunking |
 | `jinaai/jina-embeddings-v2-base-en` | 768 | 8192 | Long-context general purpose |
-| `nomic-ai/nomic-embed-code` | 768 | 8192 | Open, ONNX-convertible via optimum-cli |
-| `baai/bge-m3` | 1024 | 8192 | Multilingual, long context |
+| `nomic-ai/nomic-embed-code` | 768 | 32768 | Open, ONNX-convertible via optimum-cli |
+| `BAAI/bge-m3` | 1024 | 8192 | Multilingual, long context |
 
 Code-specific models are recommended for `succ_search_code` when working with large files. Configure via:
 

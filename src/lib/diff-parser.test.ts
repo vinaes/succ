@@ -15,20 +15,22 @@ import {
   getFileChanges,
 } from './diff-parser.js';
 
-// Build diff as array to avoid template literal issues
+// Build diff as array to avoid template literal issues.
+// Hunk headers use accurate old/new line counts so parse-diff can correctly
+// identify chunk boundaries and count additions.
 const SAMPLE_DIFF = [
   'diff --git a/src/main.ts b/src/main.ts',
   'index abc1234..def5678 100644',
   '--- a/src/main.ts',
   '+++ b/src/main.ts',
-  '@@ -10,5 +10,7 @@ function initialize() {',
+  '@@ -10,4 +10,6 @@ function initialize() {',
   '   const config = loadConfig();',
   '+  const logger = createLogger();',
   "+  logger.info('Starting application');",
   '   setupDatabase(config);',
   '   startServer(config);',
   ' }',
-  '@@ -25,3 +27,4 @@ function shutdown() {',
+  '@@ -25,2 +27,3 @@ function shutdown() {',
   '   closeConnections();',
   "+  logger.info('Shutdown complete');",
   ' }',
@@ -57,7 +59,7 @@ describe('diff-parser', () => {
     it('should parse a multi-file diff', () => {
       const result = parseDiffText(SAMPLE_DIFF);
       expect(result.totalFiles).toBe(3);
-      expect(result.totalAdditions).toBe(7);
+      expect(result.totalAdditions).toBe(8);
       expect(result.totalDeletions).toBe(3);
     });
 
@@ -124,7 +126,7 @@ describe('diff-parser', () => {
       const diff = parseDiffText(SAMPLE_DIFF);
       const summary = summarizeDiff(diff);
       expect(summary).toContain('3 file(s) changed');
-      expect(summary).toContain('+7');
+      expect(summary).toContain('+8');
       expect(summary).toContain('-3');
       expect(summary).toContain('src/main.ts');
       expect(summary).toContain('(new)');
@@ -142,7 +144,7 @@ describe('diff-parser', () => {
       const diff = parseDiffText(SAMPLE_DIFF);
       const changes = getFileChanges(diff, 'src/main.ts');
       expect(changes).not.toBeNull();
-      expect(changes!.added.length).toBe(2);
+      expect(changes!.added.length).toBe(3);
       expect(changes!.removed.length).toBe(0);
     });
 
