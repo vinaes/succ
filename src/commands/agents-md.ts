@@ -28,10 +28,11 @@ export async function agentsMd(options: AgentsMdOptions = {}): Promise<void> {
 
     const result = await writeAgentsMd(options.path ? { output_path: options.path } : undefined);
     console.log(`Generated ${result.path} (${result.entries} entries)`);
-  } catch (error: any) {
-    logError('agents-md', `Error generating AGENTS.md: ${error.message}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logError('agents-md', `Error generating AGENTS.md: ${msg}`);
 
-    console.error(`Error generating AGENTS.md: ${error.message}`);
+    console.error(`Error generating AGENTS.md: ${msg}`);
     process.exitCode = 1;
   } finally {
     closeDb();

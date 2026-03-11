@@ -8,6 +8,11 @@
 import { getDb } from './connection.js';
 import { getProjectRoot } from '../config.js';
 
+/** Project ID for DB scoping (forward-slash normalized for cross-platform consistency) */
+function getProjectId(): string {
+  return getProjectRoot().replace(/\\/g, '/');
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -42,7 +47,7 @@ export function upsertSkill(skill: {
   cacheExpires?: string; // ISO date
 }): number {
   const db = getDb();
-  const projectId = skill.source === 'local' ? getProjectRoot().replace(/\\/g, '/') : null;
+  const projectId = skill.source === 'local' ? getProjectId() : null;
 
   const result = db
     .prepare(
@@ -70,7 +75,7 @@ export function upsertSkill(skill: {
  */
 export function getAllSkills(): SkillRow[] {
   const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectId();
   return db
     .prepare(
       `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
@@ -86,7 +91,7 @@ export function getAllSkills(): SkillRow[] {
  */
 export function searchSkills(query: string, limit: number = 10): SkillRow[] {
   const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectId();
   return db
     .prepare(
       `SELECT id, name, description, source, path, usage_count, last_used
@@ -104,7 +109,7 @@ export function searchSkills(query: string, limit: number = 10): SkillRow[] {
  */
 export function getSkillByName(name: string): SkillRow | null {
   const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectId();
   const row = db
     .prepare(
       `SELECT id, name, description, source, path, content, skyll_id, usage_count, last_used
@@ -121,7 +126,7 @@ export function getSkillByName(name: string): SkillRow | null {
  */
 export function trackSkillUsage(name: string): void {
   const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectId();
   db.prepare(
     `UPDATE skills SET usage_count = usage_count + 1, last_used = datetime('now')
      WHERE name = ? AND (project_id = ? OR project_id IS NULL)`
@@ -133,7 +138,7 @@ export function trackSkillUsage(name: string): void {
  */
 export function deleteSkill(name: string): boolean {
   const db = getDb();
-  const projectId = getProjectRoot().replace(/\\/g, '/');
+  const projectId = getProjectId();
   const result = db
     .prepare('DELETE FROM skills WHERE name = ? AND project_id = ?')
     .run(name, projectId);

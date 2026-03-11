@@ -146,7 +146,11 @@ function fixWindowsPath(cwd: string): string {
 function succExists(cwd: string): boolean {
   try {
     return fs.existsSync(path.join(cwd, '.succ'));
-  } catch {
+  } catch (err) {
+    logWarn(
+      'hooks',
+      `succExists check failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+    );
     return false;
   }
 }
@@ -265,8 +269,27 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const contextParts: string[] = [];
         let askReason: string | null = null;
 
+        // Detect bypass permission mode — prefer session-registered value (trusted),
+        // fall back to request body for sessions started before this feature.
+        const sessionId0 = input.session_id;
+        const registeredIfc = sessionId0 ? ifcStates.get(sessionId0) : null;
+        const permissionMode =
+          registeredIfc?.permissionMode ?? (body as Record<string, unknown>)?.permission_mode;
+        const isBypassMode = permissionMode === 'bypassPermissions';
+        const secConfig = getConfig().security;
+        const trustBypass = isBypassMode && secConfig?.trustAgentPermissions === true;
+
         // 0. Injection scan on tool input (Tier 1 + Tier 2 regex + Tier 2.C semantic)
-        const inputToScan = filePath || command || (toolInput.url as string) || '';
+        // Scan all input fields: path, command, url, AND content body
+        const inputParts = [
+          filePath,
+          command,
+          toolInput.url as string,
+          typeof toolInput.content === 'string' && toolInput.content.length < 50000
+            ? toolInput.content
+            : '',
+        ].filter(Boolean);
+        const inputToScan = inputParts.join('\n');
         if (inputToScan) {
           const injectionResult = await detectInjectionAsync(inputToScan);
           if (injectionResult && injectionResult.severity === 'definite') {
@@ -288,13 +311,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const operation = toolName === 'Read' ? 'read' : 'write';
           const fileGuardResult = checkFileOperation(operation, filePath);
           if (fileGuardResult) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: fileGuardResult.mode === 'ask' ? 'ask' : 'deny',
-                permissionDecisionReason: `[succ file guard] ${fileGuardResult.reason}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="file-guard">[succ file guard — bypassed] ${sanitizeForContext(fileGuardResult.reason, 300)}</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: fileGuardResult.mode === 'ask' ? 'ask' : 'deny',
+                  permissionDecisionReason: `[succ file guard] ${fileGuardResult.reason}`,
+                },
+              };
+            }
           }
         }
 
@@ -302,13 +331,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (toolName === 'WebFetch' && toolInput.url) {
           const url = toolInput.url as string;
           if (isExfilUrl(url)) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'ask',
-                permissionDecisionReason: `[succ security] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="exfiltration">[succ security — bypassed] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'ask',
+                  permissionDecisionReason: `[succ security] URL ${sanitizeForContext(url, 200)} is on the exfiltration blocklist.`,
+                },
+              };
+            }
           }
         }
 
@@ -339,7 +374,6 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             const destLabel =
               channel === 'file_write' && filePath ? quickFileLabel(filePath) : undefined;
             const actionId = `${channel}:step${ifcState.outboundStepCount}`;
-            const secConfig = getConfig().security;
             const wdResult = checkWriteDown(ifcState, channel, {
               destinationLabel: destLabel,
               actionId,
@@ -347,16 +381,28 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             });
 
             if (wdResult.action === 'deny') {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PreToolUse',
-                  permissionDecision: 'deny',
-                  permissionDecisionReason: `[succ IFC] ${wdResult.reason}`,
-                },
-              };
+              if (trustBypass) {
+                contextParts.push(
+                  `<security-warning type="ifc">[succ IFC — bypassed] ${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
+                );
+              } else {
+                return {
+                  hookSpecificOutput: {
+                    hookEventName: 'PreToolUse',
+                    permissionDecision: 'deny',
+                    permissionDecisionReason: `[succ IFC] ${wdResult.reason}`,
+                  },
+                };
+              }
             }
             if (wdResult.action === 'ask') {
-              if (!askReason) askReason = `[IFC] ${wdResult.reason}`;
+              if (trustBypass) {
+                contextParts.push(
+                  `<security-warning type="ifc">[succ IFC — bypassed] ${sanitizeForContext(wdResult.reason || '', 300)}</security-warning>`
+                );
+              } else {
+                if (!askReason) askReason = `[IFC] ${wdResult.reason}`;
+              }
             }
             // Step counting moved to PostToolUse — counted only when tool actually runs
             if (wdResult.action === 'warn') {
@@ -384,16 +430,34 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           }
 
           if (rule.action === 'deny') {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: `[succ rule] ${sanitizeForContext(rule.content, 500)}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                wrapSanitized(
+                  'security-warning',
+                  `[succ rule — bypassed] ${sanitizeForContext(rule.content, 500)}`
+                )
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason: `[succ rule] ${sanitizeForContext(rule.content, 500)}`,
+                },
+              };
+            }
           }
           if (rule.action === 'ask' && !askReason) {
-            askReason = sanitizeForContext(rule.content, 500);
+            if (trustBypass) {
+              contextParts.push(
+                wrapSanitized(
+                  'security-warning',
+                  `[succ rule — bypassed] ${sanitizeForContext(rule.content, 500)}`
+                )
+              );
+            } else {
+              askReason = sanitizeForContext(rule.content, 500);
+            }
           }
           if (rule.action === 'inject' || rule.action === 'allow') {
             contextParts.push(wrapSanitized('hook-rule', rule.content));
@@ -427,13 +491,19 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
           const dangerResult = checkDangerous(command, safetyConfig);
           if (dangerResult) {
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: dangerResult.mode === 'ask' ? 'ask' : 'deny',
-                permissionDecisionReason: `[succ guard] ${dangerResult.reason}`,
-              },
-            };
+            if (trustBypass) {
+              contextParts.push(
+                `<security-warning type="command-safety">[succ guard — bypassed] ${sanitizeForContext(dangerResult.reason, 300)}</security-warning>`
+              );
+            } else {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: dangerResult.mode === 'ask' ? 'ask' : 'deny',
+                  permissionDecisionReason: `[succ guard] ${dangerResult.reason}`,
+                },
+              };
+            }
           }
 
           // 4. Git commit guidelines
@@ -454,16 +524,28 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 const critical = policyResult.violations.filter((v) => v.severity === 'critical');
                 const high = policyResult.violations.filter((v) => v.severity === 'high');
                 if (critical.length > 0) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'deny',
-                      permissionDecisionReason: `[succ guardrails] Critical security vulnerabilities detected:\n${sanitizeForContext(formatViolations(critical), 500)}`,
-                    },
-                  };
+                  if (trustBypass) {
+                    contextParts.push(
+                      `<security-warning type="code-policy">[succ guardrails — bypassed] Critical security vulnerabilities:\n${sanitizeForContext(formatViolations(critical), 500)}</security-warning>`
+                    );
+                  } else {
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: 'PreToolUse',
+                        permissionDecision: 'deny',
+                        permissionDecisionReason: `[succ guardrails] Critical security vulnerabilities detected:\n${sanitizeForContext(formatViolations(critical), 500)}`,
+                      },
+                    };
+                  }
                 }
                 if (high.length > 0 && !askReason) {
-                  askReason = `[guardrails] Security issues detected:\n${sanitizeForContext(formatViolations(high), 500)}`;
+                  if (trustBypass) {
+                    contextParts.push(
+                      `<security-warning type="code-policy">[succ guardrails — bypassed] High severity issues:\n${sanitizeForContext(formatViolations(high), 500)}</security-warning>`
+                    );
+                  } else {
+                    askReason = `[guardrails] Security issues detected:\n${sanitizeForContext(formatViolations(high), 500)}`;
+                  }
                 }
                 if (policyResult.violations.length > 0) {
                   contextParts.push(
@@ -528,8 +610,12 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         return {};
-      } catch {
-        return {}; // fail-open
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `pre-tool handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
+        return {};
       }
     },
 
@@ -800,7 +886,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               } else if (typeof parsed === 'string') {
                 text = parsed;
               }
-            } catch {
+            } catch (err) {
+              logWarn(
+                'hooks',
+                `Task output JSON parse failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+              );
               text = typeof rawToolOutput === 'string' ? rawToolOutput : '';
             }
 
@@ -839,19 +929,29 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                     await saveMemory(bullet.text, embedding, bullet.tags, 'memory-md-sync', {
                       type: 'observation',
                     });
-                  } catch {
-                    // fail-open per bullet
+                  } catch (err) {
+                    logWarn(
+                      'hooks',
+                      `Memory bullet save failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+                    );
                   }
                 })
               );
-            } catch {
-              // fail-open — file may not exist
+            } catch (err) {
+              logWarn(
+                'hooks',
+                `MEMORY.md sync failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+              );
             }
           }
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `post-tool handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -872,8 +972,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (sessionId && ctx.sessionManager) {
           try {
             ctx.sessionManager.activity(sessionId, 'user_prompt');
-          } catch {
-            // session not registered
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Session activity update failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -898,8 +1001,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
                 },
               };
             }
-          } catch {
-            // fail-open
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Compact-pending fallback failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -907,7 +1013,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         // TODO: port skill suggestion logic when full HTTP migration is complete
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `user-prompt handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -926,13 +1036,20 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         if (sessionId && ctx.sessionManager) {
           try {
             ctx.sessionManager.activity(sessionId, 'stop');
-          } catch {
-            // session not registered
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Session activity update failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `stop handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -954,6 +1071,14 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             ? (input.tool_input as Record<string, unknown>)
             : {};
 
+        // Detect bypass mode (same logic as pre-tool)
+        const permSessionId = input.session_id;
+        const permIfc = permSessionId ? ifcStates.get(permSessionId) : null;
+        const permMode =
+          permIfc?.permissionMode ?? (body as Record<string, unknown>)?.permission_mode;
+        const permBypass =
+          permMode === 'bypassPermissions' && getConfig().security?.trustAgentPermissions === true;
+
         // Run command safety guard FIRST (deny always wins over allow rules)
         const command = (toolInput.command as string) || '';
         if (command) {
@@ -961,6 +1086,17 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           const safetyConfig = extractSafetyConfig(config.commandSafetyGuard);
           const dangerResult = checkDangerous(command, safetyConfig);
           if (dangerResult && dangerResult.mode === 'deny') {
+            if (permBypass) {
+              ctx.log(
+                `[hooks/permission] Safety guard bypassed (trustAgentPermissions): ${dangerResult.reason}`
+              );
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PermissionRequest',
+                  additionalContext: `<security-warning type="command-safety">[succ guard — bypassed] ${sanitizeForContext(dangerResult.reason, 300)}</security-warning>`,
+                },
+              };
+            }
             ctx.log(`[hooks/permission] Safety guard denied: ${dangerResult.reason}`);
             return {
               hookSpecificOutput: {
@@ -993,6 +1129,17 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         if (topRule.action === 'deny') {
+          if (permBypass) {
+            ctx.log(
+              `[hooks/permission] Hook-rule #${topRule.id} deny bypassed (trustAgentPermissions)`
+            );
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                additionalContext: `<security-warning>[succ rule #${topRule.id} — bypassed] ${sanitizeForContext(topRule.content, 300)}</security-warning>`,
+              },
+            };
+          }
           ctx.log(`[hooks/permission] Auto-denied ${toolName} by rule #${topRule.id}`);
           return {
             hookSpecificOutput: {
@@ -1017,7 +1164,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
 
         // 'ask' and 'inject' — pass-through to user dialog
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `permission handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1063,7 +1214,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         }
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `subagent-stop handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1136,8 +1291,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
               const ts = new Date().toISOString().replace(/[:.]/g, '-');
               fs.renameSync(precomputedPath, path.join(archiveDir, `context-${ts}.md`));
             }
-          } catch {
-            // intentionally empty
+          } catch (err) {
+            logWarn(
+              'hooks',
+              `Precomputed context archive failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
 
@@ -1151,7 +1309,20 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
           ctx.log(`[hooks/session-start] Registered session: ${sessionId}`);
         }
         // Initialize clean IFC state for this session
-        ifcStates.set(sessionId, createSessionIFC());
+        const ifcState = createSessionIFC();
+        // Store permission mode from session start (trusted source of truth)
+        const startPermMode = (body as Record<string, unknown>)?.permission_mode;
+        const VALID_PERMISSION_MODES = [
+          'default',
+          'plan',
+          'acceptEdits',
+          'dontAsk',
+          'bypassPermissions',
+        ];
+        if (typeof startPermMode === 'string' && VALID_PERMISSION_MODES.includes(startPermMode)) {
+          ifcState.permissionMode = startPermMode;
+        }
+        ifcStates.set(sessionId, ifcState);
         // Track fallback IDs for cleanup (prevent memory leak)
         if (!transcriptPath) {
           fallbackSessionIds.add(sessionId);
@@ -1212,7 +1383,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         flushBudgets();
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `session-end handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },
@@ -1252,7 +1427,11 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         })();
 
         return {};
-      } catch {
+      } catch (err) {
+        logWarn(
+          'hooks',
+          `task-completed handler failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
+        );
         return {};
       }
     },

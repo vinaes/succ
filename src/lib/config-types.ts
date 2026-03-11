@@ -744,6 +744,22 @@ export interface OperationAssignment {
 export interface SecurityConfig {
   /** Master toggle for all security features (default: true) */
   enabled?: boolean;
+  /**
+   * Trust the AI agent's own permission mode when it bypasses permissions
+   * (e.g. Claude Code --dangerously-skip-permissions sets permission_mode='bypassPermissions').
+   *
+   * When true AND agent runs with bypassed permissions:
+   * - Command safety guard: deny/ask → context warning
+   * - File operation guard: deny/ask → context warning
+   * - IFC write-down enforcement: deny/ask → context warning
+   * - Exfiltration URL check: deny/ask → context warning
+   *
+   * Injection detection (all tiers) stays ON — it protects the agent from prompt injection.
+   * Content sanitization and sensitive auto-redact stay ON (non-blocking).
+   *
+   * Default: false
+   */
+  trustAgentPermissions?: boolean;
   /** File operation guard mode (default: 'deny') */
   fileGuard?: {
     mode?: 'deny' | 'ask' | 'off';

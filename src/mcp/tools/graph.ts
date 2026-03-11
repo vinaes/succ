@@ -27,7 +27,12 @@ import {
   detectLouvainCommunities,
 } from '../../lib/graph/graphology-bridge.js';
 import { logWarn } from '../../lib/fault-logger.js';
-import { projectPathParam, applyProjectPath } from '../helpers.js';
+import {
+  projectPathParam,
+  applyProjectPath,
+  createToolResponse,
+  createErrorResponse,
+} from '../helpers.js';
 
 export function registerGraphTools(server: McpServer) {
   // Tool: succ_link - Create/manage memory links (knowledge graph)
@@ -106,80 +111,46 @@ export function registerGraphTools(server: McpServer) {
         switch (action) {
           case 'create': {
             if (!source_id || !target_id) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'Both source_id and target_id are required to create a link.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'Both source_id and target_id are required to create a link.'
+              );
             }
 
             const result = await createMemoryLink(source_id, target_id, relation || 'related');
             invalidateGraphCache();
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: result.created
-                    ? `Created link: memory #${source_id} --[${relation || 'related'}]--> memory #${target_id}`
-                    : `Link already exists (id: ${result.id})`,
-                },
-              ],
-            };
+            return createToolResponse(
+              result.created
+                ? `Created link: memory #${source_id} --[${relation || 'related'}]--> memory #${target_id}`
+                : `Link already exists (id: ${result.id})`
+            );
           }
 
           case 'delete': {
             if (!source_id || !target_id) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'Both source_id and target_id are required to delete a link.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'Both source_id and target_id are required to delete a link.'
+              );
             }
 
             const deleted = await deleteMemoryLink(source_id, target_id, relation);
             invalidateGraphCache();
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: deleted
-                    ? `Deleted link between memory #${source_id} and #${target_id}`
-                    : 'No matching link found.',
-                },
-              ],
-            };
+            return createToolResponse(
+              deleted
+                ? `Deleted link between memory #${source_id} and #${target_id}`
+                : 'No matching link found.'
+            );
           }
 
           case 'show': {
             if (!source_id) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'source_id is required to show a memory with its links.',
-                  },
-                ],
-              };
+              return createToolResponse('source_id is required to show a memory with its links.');
             }
 
             const memory = await getMemoryWithLinks(source_id);
             if (!memory) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Memory #${source_id} not found.`,
-                  },
-                ],
-              };
+              return createToolResponse(`Memory #${source_id} not found.`);
             }
 
             const outLinks =
@@ -207,9 +178,7 @@ ${outLinks}
 Incoming links:
 ${inLinks}`;
 
-            return {
-              content: [{ type: 'text' as const, text }],
-            };
+            return createToolResponse(text);
           }
 
           case 'graph': {
@@ -230,9 +199,7 @@ Isolated (no links): ${stats.isolated_memories}
 Links by relation:
 ${relationStats}`;
 
-            return {
-              content: [{ type: 'text' as const, text }],
-            };
+            return createToolResponse(text);
           }
 
           case 'auto': {
@@ -240,27 +207,17 @@ ${relationStats}`;
             const created = await autoLinkSimilarMemories(th, 3);
             invalidateGraphCache();
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Auto-linked similar memories (threshold: ${th}). Created ${created} new links.`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Auto-linked similar memories (threshold: ${th}). Created ${created} new links.`
+            );
           }
 
           case 'enrich': {
             const { enrichExistingLinks } = await import('../../lib/graph/llm-relations.js');
             const result = await enrichExistingLinks({ batchSize: 5 });
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`
+            );
           }
 
           case 'proximity': {
@@ -268,14 +225,9 @@ ${relationStats}`;
               await import('../../lib/graph/contextual-proximity.js');
             const result = await createProximityLinks({ minCooccurrence: 2 });
             invalidateGraphCache();
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`
+            );
           }
 
           case 'communities': {
@@ -283,14 +235,9 @@ ${relationStats}`;
             const summary = result.communities
               .map((c) => `  Community ${c.id}: ${c.size} members`)
               .join('\n');
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Louvain community detection: ${result.communities.length} communities, ${result.isolated} isolated nodes (modularity: ${result.modularity.toFixed(4)}).\n${summary}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Louvain community detection: ${result.communities.length} communities, ${result.isolated} isolated nodes (modularity: ${result.modularity.toFixed(4)}).\n${summary}`
+            );
           }
 
           case 'centrality': {
@@ -311,32 +258,20 @@ ${relationStats}`;
               })
               .join('\n');
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Centrality scores computed for ${prScores.size} memories (cache updated: ${cacheResult.updated}).\n\nTop 10 by PageRank:\n${top10 || '  (no nodes)'}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Centrality scores computed for ${prScores.size} memories (cache updated: ${cacheResult.updated}).\n\nTop 10 by PageRank:\n${top10 || '  (no nodes)'}`
+            );
           }
 
           case 'export': {
             const { exportGraphSilent } = await import('../../lib/graph-export.js');
             const result = await exportGraphSilent('obsidian');
             if (result.memoriesExported === 0) {
-              return {
-                content: [{ type: 'text' as const, text: 'No memories to export.' }],
-              };
+              return createToolResponse('No memories to export.');
             }
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Exported ${result.memoriesExported} memories and ${result.linksExported} links to Obsidian brain vault.`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Exported ${result.memoriesExported} memories and ${result.linksExported} links to Obsidian brain vault.`
+            );
           }
 
           case 'cleanup': {
@@ -345,27 +280,15 @@ ${relationStats}`;
               pruneThreshold: threshold,
             });
             invalidateGraphCache();
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Graph cleanup complete:\n  Pruned: ${result.pruned}\n  Enriched: ${result.enriched}\n  Orphans connected: ${result.orphansConnected}\n  Communities: ${result.communitiesDetected}\n  Centrality updated: ${result.centralityUpdated}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Graph cleanup complete:\n  Pruned: ${result.pruned}\n  Enriched: ${result.enriched}\n  Orphans connected: ${result.orphansConnected}\n  Communities: ${result.communitiesDetected}\n  Centrality updated: ${result.centralityUpdated}`
+            );
           }
 
           case 'explore': {
             const startId = source_id || memory_id;
             if (!startId) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'source_id (or memory_id) is required for explore.',
-                  },
-                ],
-              };
+              return createToolResponse('source_id (or memory_id) is required for explore.');
             }
 
             const connected = await findConnectedMemories(startId, depth);
@@ -373,23 +296,11 @@ ${relationStats}`;
             if (connected.length === 0) {
               const memory = await getMemoryById(startId);
               if (!memory) {
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: `Memory #${startId} not found.`,
-                    },
-                  ],
-                };
+                return createToolResponse(`Memory #${startId} not found.`);
               }
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Memory #${startId} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `Memory #${startId} has no connections within ${depth} hops.\n\nContent: ${memory.content.substring(0, 200)}...`
+              );
             }
 
             const formatted = connected
@@ -401,14 +312,9 @@ ${relationStats}`;
               })
               .join('\n\n');
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Found ${connected.length} connected memories from #${startId} (max depth: ${depth}):\n\n${formatted}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Found ${connected.length} connected memories from #${startId} (max depth: ${depth}):\n\n${formatted}`
+            );
           }
 
           case 'shortest_path': {
@@ -676,28 +582,17 @@ ${relationStats}`;
           }
 
           default:
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: 'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize, co_change, or bridge.',
-                },
-              ],
-            };
+            return createToolResponse(
+              'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize, co_change, or bridge.'
+            );
         }
-      } catch (error: any) {
+      } catch (error) {
         logWarn('graph', `Graph tool error in action=${action}`, {
           error: error instanceof Error ? error.message : String(error),
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
+        return createErrorResponse(
+          `Error: ${error instanceof Error ? error.message : String(error)}`
+        );
       } finally {
         closeDb();
       }

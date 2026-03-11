@@ -8,6 +8,7 @@
  */
 
 import { Worker } from 'worker_threads';
+import os from 'os';
 import { logInfo, logWarn } from './fault-logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -37,7 +38,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Worker pool configuration
-const WORKER_COUNT = Math.max(1, Math.min(4, (await import('os')).cpus().length - 1));
+const WORKER_COUNT = Math.max(1, Math.min(4, os.cpus().length - 1));
 const MIN_PAIRS_FOR_WORKERS = 1000; // Only use workers if we have enough pairs
 
 /**

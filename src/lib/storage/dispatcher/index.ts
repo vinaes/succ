@@ -27,8 +27,10 @@ let _initialized = false;
 
 function getDispatcherStorageConfig(): StorageConfig {
   const config = getConfig();
+  // Normalize 'postgres' → 'postgresql' (matches storage/index.ts getStorageConfig)
+  const rawBackend: string = config.storage?.backend ?? 'sqlite';
   return {
-    backend: config.storage?.backend ?? 'sqlite',
+    backend: (rawBackend === 'postgres' ? 'postgresql' : rawBackend) as 'sqlite' | 'postgresql',
     vector: config.storage?.vector ?? 'builtin',
     sqlite: config.storage?.sqlite,
     postgresql: config.storage?.postgresql,

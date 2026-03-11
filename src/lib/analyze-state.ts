@@ -47,6 +47,15 @@ export function saveAnalyzeState(succDir: string, state: AnalyzeState): void {
  */
 export function getGitHead(projectRoot: string): string {
   try {
+    // Check if we're inside a git work tree first (covers worktrees + non-git dirs)
+    const isGit = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    }).trim();
+    if (isGit !== 'true') return '';
+
     return execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: projectRoot,
       encoding: 'utf-8',
@@ -54,9 +63,12 @@ export function getGitHead(projectRoot: string): string {
       windowsHide: true,
     }).trim();
   } catch (error) {
-    logWarn('analyze-state', 'Failed to get git HEAD commit hash', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // Not a git repo or git not available — expected in worktrees/temp dirs
+    // Only log if it's NOT the common "not a git repository" case
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!msg.includes('not a git repository') && !msg.includes('not recognized')) {
+      logWarn('analyze-state', 'Unexpected git error in getGitHead', { error: msg });
+    }
     return '';
   }
 }

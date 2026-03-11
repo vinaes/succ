@@ -143,8 +143,8 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
     return response;
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new NetworkError(`Request timeout after ${timeoutMs}ms`);
     }
     throw error;
@@ -205,12 +205,12 @@ async function withRetry<T>(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
-    } catch (error: any) {
-      lastError = error;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
 
       // Don't retry on client errors (4xx except 429)
-      if (error.message?.includes('API error: 4') && !error.message?.includes('429')) {
-        throw error;
+      if (lastError.message?.includes('API error: 4') && !lastError.message?.includes('429')) {
+        throw lastError;
       }
 
       if (attempt < retries) {
@@ -413,8 +413,11 @@ export async function checkApiHealth(): Promise<{ ok: boolean; error?: string }>
     }
 
     return { ok: false, error: `Server returned ${testResponse.status}` };
-  } catch (error: any) {
-    return { ok: false, error: error.message || 'Connection failed' };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message || 'Connection failed' : String(error),
+    };
   }
 }
 

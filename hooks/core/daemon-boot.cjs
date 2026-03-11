@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { resolveMainRepoRoot } = require('./worktree.cjs');
 
 /**
  * Read daemon port from .succ/.tmp/daemon.port.
@@ -58,7 +59,14 @@ async function checkDaemon(port) {
  * @returns {boolean} Whether spawn was attempted
  */
 function startDaemon(projectDir, logFn) {
-  const servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+  let servicePath = path.join(projectDir, 'dist', 'daemon', 'service.js');
+  // Worktree fallback: dist/ lives in the main repo
+  if (!fs.existsSync(servicePath)) {
+    const mainRepo = resolveMainRepoRoot(projectDir);
+    if (mainRepo) {
+      servicePath = path.join(mainRepo, 'dist', 'daemon', 'service.js');
+    }
+  }
   if (!fs.existsSync(servicePath)) {
     if (logFn) logFn('[daemon] service.js not found: ' + servicePath);
     return false;
@@ -79,7 +87,10 @@ function startDaemon(projectDir, logFn) {
   });
   daemon.on('exit', (code) => {
     if (code && code !== 0) {
-      if (logFn) logFn(`[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`);
+      if (logFn)
+        logFn(
+          `[daemon] Crashed with exit code ${code}: ${stderrBuf.trim().split('\n')[0] || 'no stderr'}`
+        );
     }
   });
   daemon.unref();
@@ -95,10 +106,16 @@ function startDaemon(projectDir, logFn) {
  * @returns {Promise<{port: number|null}>} Daemon port or null if unavailable
  */
 async function ensureDaemon(projectDir, logFn) {
-  const succDir = path.join(projectDir, '.succ');
+  let succDir = path.join(projectDir, '.succ');
+  // Worktree fallback: .succ/ may be a junction or in the main repo
+  if (!fs.existsSync(succDir)) {
+    const { resolveSuccDir } = require('./worktree.cjs');
+    const resolved = resolveSuccDir(projectDir);
+    if (resolved) succDir = resolved;
+  }
 
   let port = getDaemonPort(succDir);
-  if (port && await checkDaemon(port)) {
+  if (port && (await checkDaemon(port))) {
     return { port };
   }
 
@@ -108,9 +125,9 @@ async function ensureDaemon(projectDir, logFn) {
 
   // Poll for daemon to become ready (max 3 seconds = 30 × 100ms)
   for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 100));
     port = getDaemonPort(succDir);
-    if (port && await checkDaemon(port)) {
+    if (port && (await checkDaemon(port))) {
       if (logFn) logFn(`[daemon] Started on port ${port}`);
       return { port };
     }

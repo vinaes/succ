@@ -253,12 +253,12 @@ export function registerSearchTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error searching: ${error.message}`,
+              text: `Error searching: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,
@@ -475,12 +475,12 @@ export function registerSearchTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error searching code: ${error.message}`,
+              text: `Error searching code: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
           isError: true,

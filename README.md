@@ -400,6 +400,23 @@ Disabled by default. Set via `succ_config(action="set", key="preCommitReview", v
 </details>
 
 <details>
+<summary>Autonomous mode (bypass security guards)</summary>
+
+When running with `--dangerously-skip-permissions`, succ's security guards can block autonomous operations. Enable `trustAgentPermissions` to downgrade deny/ask to context warnings:
+
+```json
+{
+  "security": {
+    "trustAgentPermissions": true
+  }
+}
+```
+
+Injection detection stays ON (protects the agent). See [Security Hardening](docs/security.md#autonomous-mode-trustagentpermissions) for details.
+
+</details>
+
+<details>
 <summary>Sleep agent</summary>
 
 Offload heavy operations to local LLM:

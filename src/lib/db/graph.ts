@@ -131,9 +131,12 @@ export function createMemoryLink(
     });
 
     return { id: result.lastInsertRowid as number, created: true };
-  } catch (error: any) {
+  } catch (error) {
     // Link already exists (UNIQUE constraint)
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (
+      error instanceof Error &&
+      (error as Error & { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+    ) {
       const existing = cachedPrepare(
         'SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?'
       ).get(sourceId, targetId, relation) as { id: number };

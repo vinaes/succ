@@ -73,3 +73,8 @@ export class DependencyError extends SuccError {
 export function isSuccError(error: unknown): error is SuccError {
   return error instanceof SuccError;
 }
+
+/** Extract a human-readable message from an unknown thrown value. */
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

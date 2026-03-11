@@ -108,6 +108,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
           { codeOnly: true, symbolType: filters?.symbolType }
         );
         if (qdrantResults.length > 0) {
+          this._resetQdrantFailures();
           results = this.applyCodeFilters(qdrantResults, regexFilter, fetchLimit);
           return rerank(query, results, lim);
         }
@@ -162,7 +163,10 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
           thresh,
           { docsOnly: true }
         );
-        if (results.length > 0) return rerank(query, results, lim);
+        if (results.length > 0) {
+          this._resetQdrantFailures();
+          return rerank(query, results, lim);
+        }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchDocs failed, falling back', error);
       }
@@ -205,8 +209,10 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
           thresh,
           { projectId: this.qdrant!.getProjectId() }
         );
-        if (results.length > 0)
+        if (results.length > 0) {
+          this._resetQdrantFailures();
           return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
+        }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchMemories failed, falling back', error);
       }
@@ -247,12 +253,14 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
           thresh,
           { tags, since }
         );
-        if (results.length > 0)
+        if (results.length > 0) {
+          this._resetQdrantFailures();
           return rerank(
             query,
             results as unknown as (GlobalMemorySearchResult & Rerankable)[],
             lim
           );
+        }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error);
       }

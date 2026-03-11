@@ -75,8 +75,8 @@ export function registerForgetTool(server: McpServer): void {
               ],
               isError: true,
             };
-          } catch (err: any) {
-            if (err?.name === 'PinnedMemoryError') {
+          } catch (err) {
+            if (err instanceof Error && err.name === 'PinnedMemoryError') {
               if (force) {
                 // Unpin and retry deletion; restore pin if retry fails
                 await setMemoryInvariant(id, false);
