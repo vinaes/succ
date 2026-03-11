@@ -286,32 +286,28 @@ export async function init(options: InitOptions = {}): Promise<void> {
     for (const hookFile of hooksToCreate) {
       const destPath = path.join(succDir, 'hooks', hookFile);
       const srcPath = path.join(SUCC_PACKAGE_DIR, 'hooks', hookFile);
+      const existed = fs.existsSync(destPath);
 
-      if (!fs.existsSync(destPath) || options.force) {
-        // Try to copy from package hooks/ directory (source of truth)
-        if (fs.existsSync(srcPath)) {
-          fs.copyFileSync(srcPath, destPath);
-          log(
-            options.force && fs.existsSync(destPath)
-              ? `Updated hooks/${hookFile}`
-              : `Created hooks/${hookFile}`
-          );
-        } else {
-          // Fallback to inline templates for backwards compatibility
+      // Always overwrite hook scripts so re-running `succ init` keeps them
+      // at the version shipped with the current package. This is intentional:
+      // hooks are generated files, not user-editable.
+      if (fs.existsSync(srcPath)) {
+        fs.copyFileSync(srcPath, destPath);
+        log(existed ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+      } else {
+        // Fallback to inline templates for backwards compatibility
+        if (!existed || options.force) {
           const hookContent = getHookContent(hookFile);
           if (hookContent) {
             fs.writeFileSync(destPath, hookContent);
-            log(
-              options.force && fs.existsSync(destPath)
-                ? `Updated hooks/${hookFile}`
-                : `Created hooks/${hookFile}`
-            );
+            log(existed ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
           }
         }
       }
     }
 
     // Copy hooks/core/ shared modules (adapter, daemon-boot)
+    // Always overwrite so re-runs stay in sync with the installed package.
     const coreSrcDir = path.join(SUCC_PACKAGE_DIR, 'hooks', 'core');
     const coreDestDir = path.join(succDir, 'hooks', 'core');
     if (fs.existsSync(coreSrcDir)) {
@@ -321,14 +317,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
       const coreFiles = fs.readdirSync(coreSrcDir).filter((f) => f.endsWith('.cjs'));
       for (const coreFile of coreFiles) {
         const dest = path.join(coreDestDir, coreFile);
-        if (!fs.existsSync(dest) || options.force) {
-          fs.copyFileSync(path.join(coreSrcDir, coreFile), dest);
-          log(
-            options.force && fs.existsSync(dest)
-              ? `Updated hooks/core/${coreFile}`
-              : `Created hooks/core/${coreFile}`
-          );
-        }
+        const existed = fs.existsSync(dest);
+        fs.copyFileSync(path.join(coreSrcDir, coreFile), dest);
+        log(existed ? `Updated hooks/core/${coreFile}` : `Created hooks/core/${coreFile}`);
       }
     }
   }
@@ -549,7 +540,15 @@ export async function init(options: InitOptions = {}): Promise<void> {
     if (settingsExisted) {
       try {
         const existingContent = fs.readFileSync(settingsPath, 'utf-8');
-        const existingSettings = JSON.parse(existingContent);
+        const parsed = JSON.parse(existingContent);
+        // Guard against valid JSON that isn't a plain object (null, array, primitive).
+        // Spreading a non-object would silently discard the value or throw at runtime.
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error(
+            `settings.json contains ${parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : `a ${typeof parsed}`} — expected a plain object`
+          );
+        }
+        const existingSettings = parsed as Record<string, unknown>;
         finalSettings = stripAndAddSuccHooks(existingSettings);
         log(
           options.force
@@ -963,7 +962,12 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       let existing: Record<string, any> = {};
       if (fs.existsSync(configPath)) {
         try {
-          existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+            existing = raw;
+          } else {
+            logWarn('init', `${configPath} is not a plain object — treating as empty`, {});
+          }
         } catch (e) {
           logWarn('init', `Failed to parse existing ${configPath}, will overwrite`, {
             error: e instanceof Error ? e.message : String(e),

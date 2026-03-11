@@ -53,6 +53,11 @@ export async function generateHyDE(
   query: string,
   numHypotheticals: number = 3
 ): Promise<HyDEResult> {
+  // Reject blank or whitespace-only queries early — they produce nonsense hypotheticals
+  if (!query || !query.trim()) {
+    throw new Error('generateHyDE: query must not be blank');
+  }
+
   // Clamp to prevent excessive LLM fan-out / rate limiting
   numHypotheticals = Math.max(1, Math.min(numHypotheticals, 10));
   // Use tree-sitter AST to detect if query is already code — skip HyDE if so

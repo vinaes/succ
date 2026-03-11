@@ -35,12 +35,14 @@ let rerankerSession: ort.InferenceSession | null = null;
 let rerankerTokenizer: any = null;
 let rerankerInitializing: Promise<void> | null = null;
 let rerankerInitFailed = false; // Don't retry after initialization failure
+let rerankerShuttingDown = false; // Guard against races between init and cleanup
 
 /**
  * Initialize the cross-encoder reranker session.
  * Uses same model resolution + provider detection as embedding pipeline.
  */
 async function initReranker(): Promise<void> {
+  if (rerankerShuttingDown) throw new Error('Reranker is shutting down');
   if (rerankerSession && rerankerTokenizer) return;
   if (rerankerInitFailed) throw new Error('Reranker initialization previously failed');
 
@@ -297,8 +299,24 @@ export function isRerankerEnabled(): boolean {
 
 /**
  * Cleanup reranker session to free memory.
+ *
+ * Sets a shutdown guard first, then awaits any in-flight initialization before
+ * releasing ONNX resources. This prevents a race where cleanup returns while
+ * initReranker() is still allocating the session (which would then leak).
  */
 export async function cleanupReranker(): Promise<void> {
+  rerankerShuttingDown = true;
+
+  // Wait for any in-flight init to finish before releasing resources.
+  if (rerankerInitializing) {
+    try {
+      await rerankerInitializing;
+    } catch {
+      // Init may have failed — that's fine, we're cleaning up anyway
+      logWarn('reranker', 'Reranker init failed during shutdown — continuing cleanup');
+    }
+  }
+
   if (rerankerSession) {
     try {
       await rerankerSession.release();
@@ -310,6 +328,7 @@ export async function cleanupReranker(): Promise<void> {
   rerankerTokenizer = null;
   rerankerInitializing = null;
   rerankerInitFailed = false;
+  rerankerShuttingDown = false;
 }
 
 // ============================================================================
