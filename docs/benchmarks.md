@@ -142,6 +142,7 @@ Code-specific models are recommended for `succ_search_code` when working with la
 {
   "llm": {
     "embeddings": {
+      "mode": "local",
       "model": "jinaai/jina-embeddings-v2-base-code"
     }
   }
