@@ -242,8 +242,15 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
   private async _deleteMemoryUnchecked(id: number): Promise<boolean> {
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteMemory(id);
-      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)
-        await this.qdrant.deleteMemoryVector(id);
+      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
+        try {
+          await this.qdrant.deleteMemoryVector(id);
+        } catch (err) {
+          logWarn('storage', `Qdrant vector delete failed for memory ${id}`, {
+            error: String(err),
+          });
+        }
+      }
       return deleted;
     }
     const sqlite = await this.getSqliteFns();

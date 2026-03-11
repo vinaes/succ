@@ -27,16 +27,9 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
 }));
 
-vi.mock('minimatch', () => ({
-  minimatch: vi.fn((filePath: string, pattern: string) => {
-    // Simple glob matching for tests
-    if (pattern === '*.log') return filePath.endsWith('.log');
-    if (pattern === 'dist/**') return filePath.startsWith('dist/');
-    if (pattern === 'generated/**') return filePath.startsWith('generated/');
-    if (pattern === 'dist/index.js') return filePath === 'dist/index.js';
-    return false;
-  }),
-}));
+vi.mock('minimatch', async () => {
+  return await vi.importActual<typeof import('minimatch')>('minimatch');
+});
 
 vi.mock('../lib/tree-sitter/types.js', () => ({
   EXTENSION_TO_LANGUAGE: {
@@ -445,6 +438,23 @@ describe('scanCode', () => {
     expect(result.chunks).toBe(6);
     expect(result.errorDetails).toHaveLength(1);
     expect(result.errorDetails[0]).toContain('parse error');
+  });
+
+  it('counts rejected indexCodeFile calls as errors', async () => {
+    vi.mocked(execFileSync).mockReturnValue('a.ts\nb.ts\nc.ts');
+    vi.mocked(fs.lstatSync).mockReturnValue({ size: 1000, isSymbolicLink: () => false } as any);
+    vi.mocked(getAllFileHashes).mockResolvedValue(new Map());
+
+    vi.mocked(indexCodeFile)
+      .mockResolvedValueOnce({ success: true, chunks: 3 })
+      .mockRejectedValueOnce(new Error('ENOMEM'))
+      .mockResolvedValueOnce({ success: true, chunks: 3 });
+
+    const result = await scanCode({});
+
+    expect(result.indexed).toBe(2);
+    expect(result.errors).toBe(1);
+    expect(result.chunks).toBe(6);
   });
 
   it('uses p-limit with configured concurrency', async () => {

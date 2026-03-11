@@ -10,6 +10,9 @@ import type {
   MemorySearchResult,
 } from '../types.js';
 
+/** Hard cap on overfetch multiplier to prevent unbounded DB/Qdrant reads */
+const RERANK_FETCH_CAP = 200;
+
 export class SearchDispatcherMixin extends StorageDispatcherBase {
   async invalidateCodeBm25Index(): Promise<void> {
     if (this.backend === 'postgresql') return; // tsvector maintained on insert
@@ -95,7 +98,10 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     // Overfetch for reranking (need more candidates to rerank from)
     const hasRegex = !!filters?.regex;
     const rerankerOverfetch = 3; // Fetch 3x candidates for reranking quality
-    const fetchLimit = hasRegex ? lim * rerankerOverfetch * 2 : lim * rerankerOverfetch;
+    const fetchLimit = Math.min(
+      hasRegex ? lim * rerankerOverfetch * 2 : lim * rerankerOverfetch,
+      RERANK_FETCH_CAP
+    );
     const regexFilter = hasRegex ? { regex: filters!.regex } : undefined;
     let results: HybridSearchResult[];
     if (this.hasQdrant()) {
@@ -152,7 +158,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    const fetchLimit = lim * 3; // Overfetch for reranking
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
     let results: HybridSearchResult[];
     if (this.hasQdrant()) {
       try {
@@ -198,7 +204,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    const fetchLimit = lim * 3; // Overfetch for reranking
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
     let results: Array<MemorySearchResult | HybridMemoryResult>;
     if (this.hasQdrant()) {
       try {
@@ -236,7 +242,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     since?: Date
   ): Promise<Array<GlobalMemorySearchResult | MemorySearchResult | HybridGlobalMemoryResult>> {
     const lim = limit ?? 10;
-    const fetchLimit = lim * 3; // Overfetch for reranking
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
