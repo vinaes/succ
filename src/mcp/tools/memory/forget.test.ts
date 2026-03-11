@@ -6,9 +6,9 @@ vi.mock('../../../lib/storage/index.js', () => ({
     content: 'remember this fact',
   })),
   deleteMemory: vi.fn(async () => true),
+  forceDeleteMemory: vi.fn(async () => true),
   deleteMemoriesOlderThan: vi.fn(async () => 3),
   deleteMemoriesByTag: vi.fn(async () => 2),
-  setMemoryInvariant: vi.fn(async () => {}),
   closeDb: vi.fn(),
 }));
 
@@ -18,7 +18,7 @@ vi.mock('../../helpers.js', () => ({
   parseRelativeDate: vi.fn(() => new Date('2026-01-01T00:00:00.000Z')),
 }));
 
-import { deleteMemory, getMemoryById, setMemoryInvariant } from '../../../lib/storage/index.js';
+import { deleteMemory, forceDeleteMemory, getMemoryById } from '../../../lib/storage/index.js';
 import { registerForgetTool } from './forget.js';
 
 type ToolHandler = (args: Record<string, any>) => Promise<any>;
@@ -76,15 +76,14 @@ describe('forget tool module', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('pinned');
     expect(result.content[0].text).toContain('force=true');
-    expect(setMemoryInvariant).not.toHaveBeenCalled();
+    expect(forceDeleteMemory).not.toHaveBeenCalled();
   });
 
-  it('force-deletes pinned memory by unpinning first', async () => {
+  it('force-deletes pinned memory via forceDeleteMemory', async () => {
     const pinnedError = new Error('Memory is pinned');
     pinnedError.name = 'PinnedMemoryError';
-    vi.mocked(deleteMemory)
-      .mockRejectedValueOnce(pinnedError) // first attempt: pinned
-      .mockResolvedValueOnce(true); // retry after unpin: success
+    vi.mocked(deleteMemory).mockRejectedValueOnce(pinnedError);
+    vi.mocked(forceDeleteMemory).mockResolvedValueOnce(true);
 
     const { server, handlers } = createMockServer();
     registerForgetTool(server as any);
@@ -92,8 +91,8 @@ describe('forget tool module', () => {
 
     const result = await handler({ id: 42, force: true, project_path: '/tmp/project' });
 
-    expect(setMemoryInvariant).toHaveBeenCalledWith(42, false);
-    expect(deleteMemory).toHaveBeenCalledTimes(2);
+    expect(forceDeleteMemory).toHaveBeenCalledWith(42);
+    expect(deleteMemory).toHaveBeenCalledTimes(1);
     expect(result.content[0].text).toContain('Force-deleted pinned memory 42');
     expect(result.isError).toBeUndefined();
   });

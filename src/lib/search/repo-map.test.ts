@@ -12,21 +12,28 @@ vi.mock('../config.js', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock tree-sitter: parseCode returns a fake tree, extractSymbols returns
-// symbols based on simple regex (for test purposes only — production uses AST)
+// Mock tree-sitter public API — regex-based symbol extraction for tests.
+// Production code uses real AST via tree-sitter; this avoids native deps.
+// repo-map.ts imports extractSymbolsFromContent from public.js, so we mock
+// that module directly (NOT parser.js / extractor.js separately).
 // ---------------------------------------------------------------------------
 
-const fakeTree = { delete: vi.fn() };
-
-vi.mock('../tree-sitter/parser.js', () => ({
-  parseCode: vi.fn(() => fakeTree),
-}));
+const MOCK_EXT_TO_LANG: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'tsx',
+  js: 'javascript',
+  jsx: 'javascript',
+  py: 'python',
+  go: 'go',
+  rs: 'rust',
+};
 
 /**
  * Lightweight symbol extraction for tests — mimics what tree-sitter
- * would return for common patterns. Production code uses the real AST.
+ * would return for common patterns. Returns SymbolInfo[] internally,
+ * then the mock wrapper maps to string[] (matching real API).
  */
-function fakeExtractSymbols(_tree: unknown, content: string, language: string): SymbolInfo[] {
+function fakeExtractSymbols(content: string, language: string): SymbolInfo[] {
   const symbols: SymbolInfo[] = [];
   const lines = content.split('\n');
 
@@ -208,8 +215,31 @@ function fakeExtractSymbols(_tree: unknown, content: string, language: string): 
   return symbols;
 }
 
-vi.mock('../tree-sitter/extractor.js', () => ({
-  extractSymbols: vi.fn(fakeExtractSymbols),
+vi.mock('../tree-sitter/public.js', () => ({
+  extractSymbolsFromContent: vi.fn(
+    async (
+      content: string,
+      filePath: string,
+      options?: { symbolTypes?: string[]; maxSymbols?: number }
+    ): Promise<string[]> => {
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const language = MOCK_EXT_TO_LANG[ext];
+      if (!language) return [];
+
+      let symbols = fakeExtractSymbols(content, language);
+
+      if (options?.symbolTypes?.length) {
+        const typeSet = new Set(options.symbolTypes);
+        symbols = symbols.filter((s) => typeSet.has(s.type));
+      }
+
+      const names = symbols.map((s) => s.name);
+      if (options?.maxSymbols !== undefined) {
+        return names.slice(0, Math.max(0, options.maxSymbols));
+      }
+      return names;
+    }
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -247,6 +277,7 @@ interface MockDirent {
   name: string;
   isDirectory: () => boolean;
   isFile: () => boolean;
+  isSymbolicLink: () => boolean;
 }
 
 function buildFsMock(files: Record<string, string>) {
@@ -275,6 +306,7 @@ function buildFsMock(files: Record<string, string>) {
           name,
           isDirectory: () => kind === 'dir',
           isFile: () => kind === 'file',
+          isSymbolicLink: () => false,
         })
       );
     }
@@ -306,7 +338,6 @@ describe('generateRepoMap', () => {
     readFileSyncMock.mockReset();
     existsSyncMock.mockReset();
     watchMock.mockClear();
-    fakeTree.delete.mockClear();
   });
 
   it('returns an empty result for an empty directory', async () => {
@@ -464,13 +495,15 @@ describe('generateRepoMap', () => {
     expect(result.totalSymbols).toBe(1);
   });
 
-  it('cleans up tree after extraction', async () => {
+  it('calls extractSymbolsFromContent for each file', async () => {
+    const { extractSymbolsFromContent } = await import('../tree-sitter/public.js');
+
     buildFsMock({
       '/project/mod.ts': 'export function test() {}',
     });
 
     await generateRepoMap('/project');
 
-    expect(fakeTree.delete).toHaveBeenCalled();
+    expect(extractSymbolsFromContent).toHaveBeenCalled();
   });
 });
