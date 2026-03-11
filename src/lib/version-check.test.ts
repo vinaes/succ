@@ -116,6 +116,50 @@ describe('version-check', () => {
       expect(result).toBeNull();
     });
 
+    it('returns cached result within TTL without fetching (update_available: true)', async () => {
+      const cache = {
+        latest: '99.0.0',
+        current: '1.0.0',
+        checked_at: new Date(Date.now() - 1 * 3600_000).toISOString(), // 1h ago — within 24h TTL
+        update_available: true,
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+        const s = String(p);
+        if (s.endsWith('.tmp') || s.endsWith('version-check.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(cache));
+
+      const { checkForUpdate } = await import('./version-check.js');
+      const result = await checkForUpdate();
+
+      expect(result).toEqual(cache);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('returns null within TTL when cached update_available is false', async () => {
+      const cache = {
+        latest: '1.0.0',
+        current: '1.0.0',
+        checked_at: new Date(Date.now() - 1 * 3600_000).toISOString(), // 1h ago — within 24h TTL
+        update_available: false,
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+        const s = String(p);
+        if (s.endsWith('.tmp') || s.endsWith('version-check.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(cache));
+
+      const { checkForUpdate } = await import('./version-check.js');
+      const result = await checkForUpdate();
+
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('fetches registry and returns result when update available', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

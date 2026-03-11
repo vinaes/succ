@@ -658,7 +658,13 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   }
 
   // Update notification — read cache, inject instruction for AI agent
-  try {
+  const updateCheckSuppressed =
+    process.env.SUCC_NO_UPDATE_CHECK === '1' ||
+    process.env.CI === 'true' ||
+    process.env.NO_UPDATE_NOTIFIER === '1' ||
+    config.update_check?.enabled === false;
+
+  if (!updateCheckSuppressed) try {
     const vcPath = path.join(succDir, '.tmp', 'version-check.json');
     if (fs.existsSync(vcPath)) {
       const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
