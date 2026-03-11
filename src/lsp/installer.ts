@@ -58,6 +58,9 @@ export function getServerPath(serverName: string): string {
 
 /** Get the binary path for a server after installation */
 export function getServerBinaryPath(serverName: string, command: string): string {
+  if (!command) {
+    throw new Error('LSP command must not be empty');
+  }
   // Validate command to prevent path traversal
   const basename = path.basename(command);
   if (basename !== command || command.includes('..')) {

@@ -2192,6 +2192,7 @@ export class PostgresBackend {
                  COALESCE((SELECT jsonb_agg(DISTINCT p)
                   FROM jsonb_array_elements_text(
                     COALESCE(memory_links.metadata->'code_paths', '[]'::jsonb) ||
+                    COALESCE(EXCLUDED.metadata->'code_paths', '[]'::jsonb) ||
                     CASE WHEN memory_links.metadata ? 'code_path'
                          THEN jsonb_build_array(memory_links.metadata->>'code_path')
                          ELSE '[]'::jsonb END ||
