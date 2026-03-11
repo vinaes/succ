@@ -143,12 +143,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // --global flag forces global mode (for testing), otherwise auto-detect
   const useGlobalHooks = options.global || isInstalledGlobally;
 
-  // Check if already initialized
-  if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
-    console.log('succ is already initialized. Use --force to reinitialize.');
-    return;
-  }
-
   // Create directories - flat brain vault structure (no numbered prefixes)
   const projectName = path.basename(projectRoot);
   const dirs = [
@@ -575,6 +569,12 @@ export async function init(options: InitOptions = {}): Promise<void> {
     }
 
     fs.writeFileSync(settingsPath, JSON.stringify(finalSettings, null, 2));
+  }
+
+  // Check if already initialized (after hooks/settings so re-runs always refresh them)
+  if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
+    spinner.succeed('succ hooks/settings refreshed (already initialized).');
+    return;
   }
 
   // Note: All hooks are now created in the earlier block using copyFileSync from hooks/ directory

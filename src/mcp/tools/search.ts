@@ -142,7 +142,7 @@ export function registerSearchTools(server: McpServer) {
           const hasPathFilters =
             (include_paths && include_paths.length > 0) ||
             (exclude_paths && exclude_paths.length > 0);
-          const fetchLimit = hasPathFilters ? limit * 5 : limit;
+          const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
           let recentDocs = await getRecentDocuments(fetchLimit);
 
           // Apply path filters
@@ -182,7 +182,7 @@ export function registerSearchTools(server: McpServer) {
         const hasPathFilters =
           (include_paths && include_paths.length > 0) ||
           (exclude_paths && exclude_paths.length > 0);
-        const fetchLimit = hasPathFilters ? limit * 5 : limit;
+        const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
         let results = await hybridSearchDocs(query, queryEmbedding, fetchLimit, threshold);
 
         // Apply path filters
@@ -360,7 +360,7 @@ export function registerSearchTools(server: McpServer) {
         const hasPathFilters =
           (include_paths && include_paths.length > 0) ||
           (exclude_paths && exclude_paths.length > 0);
-        const fetchLimit = hasPathFilters ? limit * 5 : limit;
+        const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
         // Hybrid search: BM25 + vector with RRF fusion
         let codeResults = await hybridSearchCode(
           query,

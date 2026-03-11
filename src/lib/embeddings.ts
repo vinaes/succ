@@ -70,6 +70,7 @@ import { EmbeddingPool } from './embedding-pool.js';
 
 // Lazy-loaded native ORT session (replaces transformers.js WASM pipeline)
 let nativeSession: NativeOrtSession | null = null;
+let nativeSessionInit: Promise<NativeOrtSession> | null = null;
 
 // Worker pool for parallel local embeddings (lazy init)
 let embeddingPool: EmbeddingPool | null = null;
@@ -239,7 +240,15 @@ function getEmbeddingModel(): string {
  * CUDA (Linux), CPU (all). Uses onnxruntime-node for 4-17x speedup over WASM.
  */
 export async function getNativeSession(): Promise<NativeOrtSession> {
-  if (!nativeSession) {
+  if (nativeSession) {
+    return nativeSession;
+  }
+
+  if (nativeSessionInit) {
+    return nativeSessionInit;
+  }
+
+  nativeSessionInit = (async () => {
     const config = getConfigWithOverride();
     const embeddingModel = getEmbeddingModel();
 
@@ -259,18 +268,21 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
       `Loading native ORT session: ${embeddingModel} (${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})`
     );
 
-    nativeSession = new NativeOrtSession({
+    const session = new NativeOrtSession({
       model: embeddingModel,
       providers: providerResult.fallbackChain,
       maxLength: getModelMaxLength(embeddingModel),
     });
 
     try {
-      await nativeSession.init();
-      gpuBackend = nativeSession.provider;
-      logInfo('embeddings', `Model loaded (${nativeSession.provider})`);
+      await session.init();
+      gpuBackend = session.provider;
+      logInfo('embeddings', `Model loaded (${session.provider})`);
+      nativeSession = session;
+      return session;
     } catch (error: unknown) {
       nativeSession = null;
+      gpuBackend = null;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to load embedding model '${embeddingModel}'. ` +
@@ -279,8 +291,11 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
         { cause: error }
       );
     }
-  }
-  return nativeSession;
+  })().finally(() => {
+    nativeSessionInit = null;
+  });
+
+  return nativeSessionInit;
 }
 
 /**

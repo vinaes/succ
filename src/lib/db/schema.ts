@@ -595,8 +595,10 @@ export function initVecTables(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // sqlite-vec may not support this syntax or other error
+    } catch (err) {
+      logWarn('schema', 'vec_memories table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       sqliteVecAvailable = false;
     }
   }
@@ -690,8 +692,10 @@ export function initVecTables(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_documents_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // Ignore errors for documents table
+    } catch (err) {
+      logWarn('schema', 'vec_documents table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
@@ -947,8 +951,10 @@ export function initGlobalVecTable(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // sqlite-vec may not be available for global db
+    } catch (err) {
+      logWarn('schema', 'global vec_memories table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }

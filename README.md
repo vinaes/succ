@@ -193,7 +193,7 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ prd status [id]` | Show PRD status and tasks |
 | `succ prd archive [id]` | Archive a PRD |
 | `succ prd export [id]` | Export PRD workflow to Obsidian (Mermaid diagrams) |
-| `succ session trim` | Trim tool content from session (with tool filter, input/result-only modes) |
+| `succ session trim` | Trim tool content from session (`--tools`, `--only-inputs`, `--only-results`) |
 | `succ session trim-thinking` | Trim thinking blocks only |
 | `succ session trim-all` | Trim all strippable content (tools, thinking, images) |
 | `succ session compact` | Manual compact with dialogue summary and chain integrity |

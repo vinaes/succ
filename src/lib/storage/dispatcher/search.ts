@@ -135,7 +135,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       query,
       queryEmbedding,
       fetchLimit,
-      threshold,
+      thresh,
       alpha,
       filters
     );
@@ -184,7 +184,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       return rerank(query, results, lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, threshold, alpha);
+    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha);
     return rerank(query, results, lim);
   }
 
@@ -226,7 +226,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       query,
       queryEmbedding,
       fetchLimit,
-      threshold,
+      thresh,
       alpha
     );
     return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
@@ -281,7 +281,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       query,
       queryEmbedding,
       fetchLimit,
-      threshold,
+      thresh,
       alpha,
       tags,
       since

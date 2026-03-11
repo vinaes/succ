@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getTokenOffsets`: passes `[text]` (array) for consistency with `embedRaw` 2D tensor output
 - Iterative Tarjan DFS replaces recursive implementation (avoids stack overflow on large graphs)
 
-## [1.4.59] - 2026-03-10
+## [1.4.59] - 2026-03-10 (master backport)
 
 ### Changed
 - **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, worktree resolution, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic

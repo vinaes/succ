@@ -736,6 +736,8 @@ async function mergeMemories(
       score: (q1 + q2) / 2, // Average, not max — prevent score inflation
       factors: { merged_from: 2, original_score_1: q1, original_score_2: q2 },
     },
+    sourceType: 'agent',
+    confidence: Math.max(m1.confidence ?? 0.5, m2.confidence ?? 0.5),
   });
 
   // Transfer links from both memories to the new one

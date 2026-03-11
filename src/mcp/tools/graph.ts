@@ -85,7 +85,7 @@ export function registerGraphTools(server: McpServer) {
           .default(2)
           .describe('Max traversal depth (for explore, default: 2)'),
         memory_id: z.number().optional().describe('Alias for source_id (for explore)'),
-        file_path: z.string().optional().describe('File path (for co_change action)'),
+        file_path: z.string().optional().describe('File path (for co_change or bridge actions)'),
         project_path: projectPathParam,
       },
       annotations: {
@@ -215,6 +215,7 @@ ${relationStats}`;
           case 'enrich': {
             const { enrichExistingLinks } = await import('../../lib/graph/llm-relations.js');
             const result = await enrichExistingLinks({ batchSize: 5 });
+            invalidateGraphCache();
             return createToolResponse(
               `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`
             );
@@ -400,7 +401,7 @@ ${relationStats}`;
               content: [
                 {
                   type: 'text' as const,
-                  text: `Relationship chain (${wrResult.path.length - 1} hops, strength ${wrResult.distance.toFixed(2)}):\n${chain}`,
+                  text: `Relationship chain (${wrResult.path.length - 1} hops, distance ${wrResult.distance.toFixed(2)}):\n${chain}`,
                 },
               ],
             };

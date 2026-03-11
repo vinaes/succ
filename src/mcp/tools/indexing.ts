@@ -221,6 +221,8 @@ export function registerIndexingTools(server: McpServer) {
             ];
 
             if (result.skippedSize > 0) lines.push(`Skipped (too large): ${result.skippedSize}`);
+            if (result.skippedExtension > 0)
+              lines.push(`Skipped (extension): ${result.skippedExtension}`);
             if (result.skippedIgnore > 0)
               lines.push(`Skipped (.succignore): ${result.skippedIgnore}`);
             if (result.errors > 0) {

@@ -38,6 +38,19 @@ export function registerForgetTool(server: McpServer): void {
     },
     async ({ id, older_than, tag, force, project_path }) => {
       await applyProjectPath(project_path);
+
+      if (force && id === undefined) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'force requires id',
+            },
+          ],
+          isError: true,
+        };
+      }
+
       try {
         // Delete by ID
         if (id !== undefined) {
