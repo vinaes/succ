@@ -32,6 +32,7 @@ import type {
   HybridMemoryResult,
   HybridGlobalMemoryResult,
 } from '../types.js';
+import { SOURCE_TYPES } from '../types.js';
 import { StorageError, ConfigError } from '../../errors.js';
 import {
   tokenizeCode,
@@ -1744,8 +1745,7 @@ export class PostgresBackend {
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       confidence = 0.5;
     }
-    const validSourceTypes = ['human', 'agent', 'canonical_doc'];
-    if (!validSourceTypes.includes(sourceType)) {
+    if (!(SOURCE_TYPES as readonly string[]).includes(sourceType)) {
       sourceType = 'human';
     }
 

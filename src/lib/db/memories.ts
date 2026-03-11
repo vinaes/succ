@@ -1273,8 +1273,8 @@ export function saveMemoriesBatch(
           embeddingBlob,
           validFromStr,
           validUntilStr,
-          input.confidence ?? null,
-          input.sourceType ?? null
+          input.confidence ?? 0.5,
+          input.sourceType ?? 'human'
         );
 
         const memoryId = Number(result.lastInsertRowid);
