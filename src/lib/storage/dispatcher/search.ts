@@ -222,13 +222,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchMemories(
-      query,
-      queryEmbedding,
-      fetchLimit,
-      thresh,
-      alpha
-    );
+    results = await sqlite.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh, alpha);
     return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
   }
 

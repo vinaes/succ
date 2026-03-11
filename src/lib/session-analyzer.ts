@@ -304,8 +304,10 @@ export function analyzeSession(entries: TranscriptEntry[]): SessionAnalysis {
     // Process top-level tool events (entries with tool_name/tool_input/tool_result)
     if (entry.tool_name) {
       const name = entry.tool_name;
-      const inputChars = entry.tool_input !== undefined ? JSON.stringify(entry.tool_input).length : 0;
-      const resultChars = entry.tool_result !== undefined ? JSON.stringify(entry.tool_result).length : 0;
+      const inputChars =
+        entry.tool_input !== undefined ? JSON.stringify(entry.tool_input).length : 0;
+      const resultChars =
+        entry.tool_result !== undefined ? JSON.stringify(entry.tool_result).length : 0;
 
       // Count chars into totals
       charTotals.tool_use += inputChars;
@@ -552,8 +554,7 @@ export function formatCompactStats(
     'thinking',
     'image',
   ];
-  const hasFullAfter =
-    afterBreakdown != null && expectedKeys.every((k) => k in afterBreakdown);
+  const hasFullAfter = afterBreakdown != null && expectedKeys.every((k) => k in afterBreakdown);
 
   for (const key of expectedKeys) {
     const bVal = bt[key];
