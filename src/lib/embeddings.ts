@@ -73,6 +73,9 @@ import { EmbeddingPool } from './embedding-pool.js';
 // Lazy-loaded native ORT session (replaces transformers.js WASM pipeline)
 let nativeSession: NativeOrtSession | null = null;
 let nativeSessionInit: Promise<NativeOrtSession> | null = null;
+// Incremented each time cleanupEmbeddings() runs so a concurrent init can
+// detect that the cleanup already happened and self-dispose the new session.
+let nativeSessionGeneration = 0;
 
 // Worker pool for parallel local embeddings (lazy init)
 let embeddingPool: EmbeddingPool | null = null;
@@ -82,6 +85,10 @@ let poolInitFailed = false; // Don't retry if pool init failed
  * Cleanup embedding session and worker pool to free memory
  */
 export function cleanupEmbeddings(): void {
+  // Increment generation so any in-flight getNativeSession() init knows to
+  // self-dispose the session it creates rather than assigning it to the module var.
+  nativeSessionGeneration++;
+
   if (nativeSession) {
     nativeSession
       .dispose()
@@ -250,6 +257,11 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
     return nativeSessionInit;
   }
 
+  // Capture generation at init start. If cleanupEmbeddings() runs while the
+  // session is loading, the counter will be higher and we self-dispose instead
+  // of leaving a live session behind a null pointer.
+  const initGeneration = nativeSessionGeneration;
+
   nativeSessionInit = (async () => {
     const config = getConfigWithOverride();
     const embeddingModel = getEmbeddingModel();
@@ -280,6 +292,19 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
       await session.init();
       gpuBackend = session.provider;
       logInfo('embeddings', `Model loaded (${session.provider})`);
+      // If cleanup ran while we were initialising, dispose this session
+      // immediately rather than assigning it to the module-level variable.
+      if (nativeSessionGeneration !== initGeneration) {
+        session
+          .dispose()
+          .catch((err) =>
+            logWarn(
+              'embeddings',
+              err instanceof Error ? err.message : 'Stale session dispose failed'
+            )
+          );
+        throw new Error('Embedding session disposed during init (cleanup ran concurrently)');
+      }
       nativeSession = session;
       return session;
     } catch (error: unknown) {

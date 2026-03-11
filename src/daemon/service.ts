@@ -515,15 +515,23 @@ export async function shutdownDaemon(): Promise<void> {
     idleWatcher = null;
   }
 
-  stopWatcher(log).catch((err) => log(`[shutdown] Watcher stop failed: ${err}`));
+  const watcherPromise = stopWatcher(log).catch((err) =>
+    log(`[shutdown] Watcher stop failed: ${err}`)
+  );
   stopAnalyzer(log);
 
-  if (state?.server) {
-    state.server.close();
-    state.server = null;
-  }
+  const serverPromise = state?.server
+    ? new Promise<void>((resolve) => {
+        state!.server!.close(() => resolve());
+        state!.server = null;
+      })
+    : Promise.resolve();
 
   processRegistry.killAll();
+
+  // Wait for watcher and HTTP server to finish before closing storage,
+  // so in-flight requests don't hit a closed DB.
+  await Promise.allSettled([watcherPromise, serverPromise]);
 
   await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
