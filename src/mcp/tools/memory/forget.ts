@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
   getMemoryById,
   deleteMemory,
+  forceDeleteMemory,
   deleteMemoriesOlderThan,
   deleteMemoriesByTag,
-  setMemoryInvariant,
   closeDb,
 } from '../../../lib/storage/index.js';
 import { parseRelativeDate, projectPathParam, applyProjectPath } from '../../helpers.js';
@@ -91,30 +91,23 @@ export function registerForgetTool(server: McpServer): void {
           } catch (err) {
             if (err instanceof Error && err.name === 'PinnedMemoryError') {
               if (force) {
-                // Unpin and retry deletion; restore pin if retry fails
-                await setMemoryInvariant(id, false);
-                try {
-                  const retryDeleted = await deleteMemory(id);
-                  if (retryDeleted) {
-                    return {
-                      content: [
-                        {
-                          type: 'text' as const,
-                          text: `Force-deleted pinned memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
-                        },
-                      ],
-                    };
-                  }
-                } catch (retryErr) {
-                  await setMemoryInvariant(id, true);
-                  throw retryErr;
+                // Atomic force-delete: bypasses pin guard at storage layer
+                const forceDeleted = await forceDeleteMemory(id);
+                if (forceDeleted) {
+                  return {
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `Force-deleted pinned memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                      },
+                    ],
+                  };
                 }
-                await setMemoryInvariant(id, true);
                 return {
                   content: [
                     {
                       type: 'text' as const,
-                      text: `Failed to delete pinned memory ${id}; pin was restored`,
+                      text: `Failed to force-delete pinned memory ${id}`,
                     },
                   ],
                   isError: true,

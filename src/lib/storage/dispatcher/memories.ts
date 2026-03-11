@@ -226,7 +226,20 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
   async deleteMemory(id: number): Promise<boolean> {
     // Tier 1 immutability guard: pinned memories cannot be deleted
     await this._guardPinned(id);
+    return this._deleteMemoryUnchecked(id);
+  }
 
+  /**
+   * Force-delete a memory, bypassing the pinned guard.
+   * Atomically unpins (if needed) and deletes in one operation,
+   * avoiding the race where a crash between unpin and delete
+   * leaves the memory permanently unpinned.
+   */
+  async forceDeleteMemory(id: number): Promise<boolean> {
+    return this._deleteMemoryUnchecked(id);
+  }
+
+  private async _deleteMemoryUnchecked(id: number): Promise<boolean> {
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteMemory(id);
       if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)

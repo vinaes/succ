@@ -480,6 +480,11 @@ export async function deleteMemory(id: number): Promise<boolean> {
   return d.deleteMemory(id);
 }
 
+export async function forceDeleteMemory(id: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.forceDeleteMemory(id);
+}
+
 export async function invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.invalidateMemory(memoryId, supersededById);
