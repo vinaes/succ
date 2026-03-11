@@ -111,7 +111,7 @@ enum Direction {
 
       const enumDef = symbols.find((s) => s.name === 'Direction');
       expect(enumDef).toBeDefined();
-      expect(enumDef!.type).toBe('type_alias');
+      expect(enumDef!.type).toBe('enum');
     }, 30_000);
   });
 

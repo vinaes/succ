@@ -1545,6 +1545,68 @@ Fine-tune search result ranking and expansion.
 
 ---
 
+## Reranker Settings
+
+Cross-encoder reranker for search result post-processing. Uses an ONNX cross-encoder model to score (query, document) pairs after hybrid search (BM25 + vector + RRF) for improved precision.
+
+Configured under `llm.reranker`:
+
+```json
+{
+  "llm": {
+    "reranker": {
+      "enabled": true,
+      "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "weight": 0.7,
+      "min_results": 3,
+      "max_doc_chars": 1000
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `llm.reranker.enabled` | boolean | true | Enable cross-encoder reranking after hybrid search |
+| `llm.reranker.model` | string | `"cross-encoder/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model |
+| `llm.reranker.weight` | number | 0.7 | Blend: `weight * reranker_score + (1-weight) * original_score`. 0=original only, 1=reranker only |
+| `llm.reranker.min_results` | number | 3 | Minimum results to trigger reranking (overhead not worth it for fewer) |
+| `llm.reranker.max_doc_chars` | number | 1000 | Truncate documents to this length before scoring (saves compute) |
+
+The reranker loads lazily on first search and uses the same GPU fallback chain as embeddings. If initialization fails, it's memoized — no retries until explicit cleanup.
+
+---
+
+## Auto Memory Settings
+
+Automatic memory extraction from coding sessions. Phase 1 extracts facts at session end via LLM with a quality gate. Phase 2 periodically consolidates (merges duplicates, promotes high-usage memories).
+
+```json
+{
+  "auto_memory": {
+    "enabled": true,
+    "phase1_on_session_end": true,
+    "phase2_interval_hours": 4,
+    "quality_threshold": 0.7,
+    "secret_redaction": true,
+    "max_unused_days": 90,
+    "confidence_promotion_accesses": 5
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `auto_memory.enabled` | boolean | true | Enable auto memory extraction |
+| `auto_memory.phase1_on_session_end` | boolean | true | Extract facts when session ends |
+| `auto_memory.phase2_interval_hours` | number | 4 | Consolidation interval in hours (0 to disable) |
+| `auto_memory.quality_threshold` | number | 0.7 | Minimum quality score for extracted facts (0-1) |
+| `auto_memory.secret_redaction` | boolean | true | Redact secrets before storing |
+| `auto_memory.max_unused_days` | number | 90 | Auto-prune after N days unused (0 to disable) |
+| `auto_memory.confidence_promotion_accesses` | number | 5 | Promote after N accesses |
+
+---
+
 ## Web Search Settings
 
 Real-time web search via Perplexity Sonar models through OpenRouter. Requires `openrouter_api_key`.

@@ -45,6 +45,13 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
 
   // Git Context removed - Claude Code provides native git integration
 
+  // Canonical session identifiers — derived once, used consistently throughout
+  // canonicalSessionId matches pre-compact hook's derivation (session_id-based)
+  const transcriptPath = hookInput.transcript_path || '';
+  const canonicalSessionId = (hookInput.session_id || 'unknown')
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+    .slice(0, 128);
+
   // succ MCP Tools Reference (hybrid: XML wrapper + markdown examples)
   contextParts.push(`<succ-tools>
 <critical>
@@ -417,6 +424,124 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
   }
 
+  // Read pre-compact stats (saved by succ-pre-compact.cjs hook) and display delta
+  if (isCompactEvent && !isServiceSession) {
+    const statsFile = path.join(succDir, '.tmp', `pre-compact-stats-${canonicalSessionId}.json`);
+    try {
+      if (fs.existsSync(statsFile)) {
+        const stats = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
+        const bt = stats.tokenTotals || {};
+
+        // Estimate post-compact token count from transcript (if available).
+        // null = transcript not available; skip delta display to avoid bogus "100% freed".
+        let postTokens = /** @type {number|null} */ (null);
+        const postByType = { text: 0, tool_use: 0, tool_result: 0, thinking: 0, image: 0 };
+        if (hookInput.transcript_path && fs.existsSync(hookInput.transcript_path)) {
+          try {
+            const postContent = fs.readFileSync(hookInput.transcript_path, 'utf8');
+            let postChars = 0;
+            for (const line of postContent.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const entry = JSON.parse(trimmed);
+                const msgContent = entry.message && entry.message.content;
+                if (typeof msgContent === 'string') {
+                  postChars += msgContent.length;
+                  postByType.text += msgContent.length;
+                } else if (Array.isArray(msgContent)) {
+                  for (const block of msgContent) {
+                    if (typeof block === 'string') {
+                      postChars += block.length;
+                      postByType.text += block.length;
+                    } else if (block && block.type === 'text') {
+                      const len = (block.text || '').length;
+                      postChars += len;
+                      postByType.text += len;
+                    } else if (block && block.type === 'tool_use') {
+                      const len = (block.input ? JSON.stringify(block.input).length : 0) +
+                        (block.name || '').length + (block.id || '').length;
+                      postChars += len;
+                      postByType.tool_use += len;
+                    } else if (block && block.type === 'tool_result') {
+                      const rc = block.content;
+                      let len = 0;
+                      if (typeof rc === 'string') len = rc.length;
+                      else if (Array.isArray(rc)) len = JSON.stringify(rc).length;
+                      postChars += len;
+                      postByType.tool_result += len;
+                    } else if (block && block.type === 'thinking') {
+                      const len = (block.thinking || '').length;
+                      postChars += len;
+                      postByType.thinking += len;
+                    } else if (block && block.type === 'image') {
+                      const len = block.source ? JSON.stringify(block.source).length : 100;
+                      postChars += len;
+                      postByType.image += len;
+                    }
+                  }
+                }
+              } catch {
+                /* skip malformed lines */
+              }
+            }
+            postTokens = Math.ceil(postChars / 4);
+            for (const k of Object.keys(postByType)) {
+              postByType[k] = Math.ceil(postByType[k] / 4);
+            }
+          } catch {
+            log('Skipping compact stats delta: failed to analyze post-compact transcript');
+          }
+        }
+
+        // Only display delta if post-compact tokens were actually measured
+        if (postTokens !== null) {
+          const beforeTotal = bt.total || 0;
+          const freed = beforeTotal - postTokens;
+          const pct = beforeTotal > 0 ? ((freed / beforeTotal) * 100).toFixed(1) : '0.0';
+
+          const fk = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0));
+
+          const statsLines = [];
+          statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
+          statsLines.push('');
+          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
+            const val = bt[key] || 0;
+            const aVal = postByType[key] || 0;
+            const f = val - aVal;
+            if (val === 0 && f === 0) continue;
+            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
+          }
+          statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+          statsLines.push(
+            `  ${'TOTAL'.padEnd(16)} ${fk(beforeTotal).padStart(8)} ${fk(postTokens).padStart(8)} ${fk(freed).padStart(8)}`
+          );
+
+          const topTools = (stats.topTools || []).slice(0, 5).filter((t) => t.tokens > 0);
+          if (topTools.length > 0) {
+            statsLines.push('');
+            statsLines.push('  Top tools (pre-compact):');
+            statsLines.push('  ' + topTools.map((t) => `${t.name}: ${fk(t.tokens)}`).join(' | '));
+          }
+
+          contextParts.push(`<compact-stats>\n${statsLines.join('\n')}\n</compact-stats>`);
+          log(`Compact stats: ${beforeTotal} → ${postTokens} tokens (${pct}% freed)`);
+        }
+
+        // Cleanup stats file
+        try {
+          fs.unlinkSync(statsFile);
+        } catch (e) {
+          log(`Failed to cleanup stats file: ${e.message || e}`);
+        }
+      }
+    } catch (err) {
+      log(`Failed to read compact stats: ${err.message || err}`);
+    }
+  }
+
   // Generate compact briefing (slow operation - may timeout)
   // Even if this times out, we have the compact-pending fallback above
   if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
@@ -553,29 +678,24 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   }
 
   // Register session with daemon
+  // transcriptPath and canonicalSessionId derived early — reuse here for consistency
   if (daemonPort) {
-    const transcriptPath = hookInput.transcript_path || '';
-    const sessionId = transcriptPath
-      ? path.basename(transcriptPath, '.jsonl')
-      : hookInput.session_id || `session-${Date.now()}`;
-    // isServiceSession already defined above
-
     try {
       const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: sessionId,
+          session_id: canonicalSessionId,
           transcript_path: transcriptPath,
           is_service: isServiceSession,
         }),
         signal: AbortSignal.timeout(3000),
       });
       if (!res.ok) {
-        log(`Session register failed: ${res.status} ${res.statusText} session=${sessionId}`);
+        log(`Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`);
       }
     } catch (err) {
-      log(`Session register error for ${sessionId}: ${err.message || err}`);
+      log(`Session register error for ${canonicalSessionId}: ${err.message || err}`);
     }
   }
 

@@ -23,7 +23,9 @@ import type {
   StorageConfig,
   Memory,
   MemoryType,
+  SourceType,
 } from '../types.js';
+import { SOURCE_TYPES } from '../types.js';
 import { DependencyError } from '../../errors.js';
 
 // Lazy-load qdrant client
@@ -215,6 +217,8 @@ export interface MemoryPayload {
   access_count: number;
   last_accessed: string | null;
   quality_score: number | null;
+  confidence: number | null;
+  source_type: SourceType | null;
 }
 
 // ============================================================================
@@ -246,6 +250,8 @@ export interface MemoryUpsertMeta {
   accessCount?: number;
   lastAccessed?: string | null;
   qualityScore?: number | null;
+  confidence?: number | null;
+  sourceType?: SourceType | null;
 }
 
 // ============================================================================
@@ -567,6 +573,19 @@ export class QdrantVectorStore implements VectorStore {
     await client.delete(this.collectionName('memories'), { points: [id] });
   }
 
+  async deleteMemoryVectors(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    const client = await this.getClient();
+    // Batch deletes to 1_000 IDs per request — callers can pass up to 100k IDs
+    // (deleteMemoriesByTag TAG_FETCH_LIMIT) which would otherwise create an oversized request
+    const BATCH_SIZE = 1_000;
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      await client.delete(this.collectionName('memories'), {
+        points: ids.slice(i, i + BATCH_SIZE),
+      });
+    }
+  }
+
   async searchMemories(
     query: number[],
     limit: number,
@@ -846,6 +865,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: 0,
             last_accessed: null,
             quality_score: null,
+            confidence: meta.confidence ?? null,
+            source_type: meta.sourceType ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -884,6 +905,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: 0,
             last_accessed: null,
             quality_score: null,
+            confidence: meta.confidence ?? null,
+            source_type: meta.sourceType ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -924,6 +947,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: item.meta.accessCount ?? 0,
             last_accessed: item.meta.lastAccessed ?? null,
             quality_score: item.meta.qualityScore ?? null,
+            confidence: item.meta.confidence ?? null,
+            source_type: item.meta.sourceType ?? null,
           } satisfies MemoryPayload,
         })),
       });
@@ -964,6 +989,8 @@ export class QdrantVectorStore implements VectorStore {
             access_count: item.meta.accessCount ?? 0,
             last_accessed: item.meta.lastAccessed ?? null,
             quality_score: item.meta.qualityScore ?? null,
+            confidence: item.meta.confidence ?? null,
+            source_type: item.meta.sourceType ?? null,
           } satisfies MemoryPayload,
         })),
       });
@@ -1296,6 +1323,12 @@ export class QdrantVectorStore implements VectorStore {
       priority_score: asNullableNumber(payload.priority_score),
       valid_from: asNullableString(payload.valid_from),
       valid_until: asNullableString(payload.valid_until),
+      confidence: asNullableNumber(payload.confidence),
+      source_type: (() => {
+        const raw = asNullableString(payload.source_type);
+        if (raw === null) return null;
+        return (SOURCE_TYPES as readonly string[]).includes(raw) ? (raw as SourceType) : null;
+      })(),
       created_at: asString(payload.created_at),
       similarity: point.score,
     };

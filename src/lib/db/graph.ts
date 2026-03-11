@@ -18,6 +18,11 @@ export const LINK_RELATIONS = [
   'implements', // A implements B (decision → code)
   'supersedes', // A supersedes/replaces B
   'references', // A references B
+  // Bridge edges: code ↔ knowledge
+  'documents', // Decision/learning explains code
+  'bug_in', // Error memory → code location
+  'test_covers', // Test → function it tests
+  'motivates', // Pattern → code module
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
@@ -32,6 +37,28 @@ export interface MemoryLink {
   valid_from: string | null; // When relationship became valid
   valid_until: string | null; // When relationship expired/was invalidated
   created_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/** Parse metadata JSON from SQLite TEXT column */
+function parseMetadata(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse raw SQLite row into MemoryLink with metadata */
+function parseLink(row: any): MemoryLink {
+  return {
+    ...row,
+    metadata: parseMetadata(row.metadata),
+  };
 }
 
 export interface MemoryWithLinks extends Memory {
@@ -41,6 +68,7 @@ export interface MemoryWithLinks extends Memory {
     weight: number;
     valid_from: string | null;
     valid_until: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
   incoming_links: Array<{
     source_id: number;
@@ -48,6 +76,7 @@ export interface MemoryWithLinks extends Memory {
     weight: number;
     valid_from: string | null;
     valid_until: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
 }
 
@@ -66,6 +95,7 @@ export function createMemoryLink(
   options?: {
     validFrom?: string | Date;
     validUntil?: string | Date;
+    metadata?: Record<string, unknown>;
   }
 ): { id: number; created: boolean } {
   // Convert Date objects to ISO strings
@@ -79,12 +109,13 @@ export function createMemoryLink(
       ? options.validUntil.toISOString()
       : options.validUntil
     : null;
+  const metadataStr = options?.metadata ? JSON.stringify(options.metadata) : null;
 
   try {
     const result = cachedPrepare(`
-        INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr);
+        INSERT INTO memory_links (source_id, target_id, relation, weight, valid_from, valid_until, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(sourceId, targetId, relation, weight, validFromStr, validUntilStr, metadataStr);
 
     // Auto-tag superseded memories for archive
     if (relation === 'supersedes') {
@@ -143,13 +174,13 @@ export function getMemoryLinks(memoryId: number): {
   outgoing: MemoryLink[];
   incoming: MemoryLink[];
 } {
-  const outgoing = cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(
-    memoryId
-  ) as MemoryLink[];
+  const outgoing = (
+    cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(memoryId) as any[]
+  ).map(parseLink);
 
-  const incoming = cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(
-    memoryId
-  ) as MemoryLink[];
+  const incoming = (
+    cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(memoryId) as any[]
+  ).map(parseLink);
 
   return { outgoing, incoming };
 }
@@ -190,6 +221,7 @@ export function getMemoryWithLinks(
       weight: l.weight,
       valid_from: l.valid_from,
       valid_until: l.valid_until,
+      metadata: l.metadata ?? null,
     })),
     incoming_links: links.incoming.filter(filterLink).map((l) => ({
       source_id: l.source_id,
@@ -197,6 +229,7 @@ export function getMemoryWithLinks(
       weight: l.weight,
       valid_from: l.valid_from,
       valid_until: l.valid_until,
+      metadata: l.metadata ?? null,
     })),
   };
 }
@@ -446,21 +479,25 @@ export function getMemoryLinksAsOf(
 } {
   const asOfStr = asOfDate.toISOString();
 
-  const outgoing = cachedPrepare(`
+  const outgoing = (
+    cachedPrepare(`
       SELECT * FROM memory_links
       WHERE source_id = ?
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+  ).map(parseLink);
 
-  const incoming = cachedPrepare(`
+  const incoming = (
+    cachedPrepare(`
       SELECT * FROM memory_links
       WHERE target_id = ?
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as MemoryLink[];
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+  ).map(parseLink);
 
   return { outgoing, incoming };
 }

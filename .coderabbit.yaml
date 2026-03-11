@@ -1,13 +1,77 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en-US
+tone_instructions: >-
+  Direct, technical, no praise. Bugs/security/correctness first.
+  Label nitpicks. Include code snippets. Skip already-reviewed unchanged code.
 reviews:
+  profile: assertive
   auto_review:
     enabled: true
     drafts: false
   request_changes_workflow: true
   high_level_summary: true
+  high_level_summary_in_walkthrough: true
   poem: false
   collapse_walkthrough: true
-  path_instructions: []
+  review_details: true
+  sequence_diagrams: false
+  path_instructions:
+    - path: "src/lib/storage/**"
+      instructions: |
+        Storage layer supports SQLite and PostgreSQL backends via dispatcher pattern.
+        - NEVER access DB directly (raw SQL, better-sqlite3). Use storage/index.ts exports.
+        - SOURCE_TYPES constant in types.ts is the canonical list — never hardcode subsets.
+        - Batch operations must apply same defaults as single-operation paths.
+        - Use CONCURRENCY=5 for batch DB writes to avoid SQLITE_BUSY.
+    - path: "src/mcp/tools/**"
+      instructions: |
+        MCP tools are the public API surface. Each tool has a consolidated action-based design.
+        - applyProjectPath() must be inside try blocks when finally{closeDb()} is used.
+        - Use createToolResponse/createErrorResponse from mcp/helpers.ts.
+        - Profile gating via gateAction() in mcp/profile.ts restricts expensive actions.
+    - path: "hooks/**"
+      instructions: |
+        CJS hooks run in Claude Code's Node.js process. Constraints:
+        - Single JSON output to stdout per hook (collect all parts, output once).
+        - Must handle missing/null fields gracefully (hookInput may be partial).
+        - session_id fallback: always check hookInput.session_id when transcript_path is absent.
+        - Windows 8.3 path normalization: use fs.realpathSync.native, not fs.realpathSync.
+    - path: "src/lib/embeddings.ts"
+      instructions: |
+        ONNX Runtime embedding session has async init lifecycle.
+        - cleanupEmbeddings() uses a generation counter to handle init/cleanup races.
+        - nativeSessionInit promise must be checked during cleanup.
+    - path: "**/*.test.ts"
+      instructions: |
+        Tests use Vitest. Key conventions:
+        - Don't test what types guarantee.
+        - Test behavior through public interface, not implementation details.
+        - Use vi.mock() at module level, not inside tests.
+        - Every catch block must log (no silent catches).
+    - path: "src/daemon/**"
+      instructions: |
+        Daemon runs as background process with HTTP API.
+        - shutdownDaemon() must await all cleanup before closeStorageDispatcher().
+        - POST /api/remember has dedup threshold 0.92 cosine and injection guard.
+  path_filters:
+    - "!docs/**"
+    - "!**/*.md"
+    - "!.succ/**"
+  tools:
+    eslint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+    markdownlint:
+      enabled: false
+    biome:
+      enabled: false
+knowledge_base:
+  code_guidelines:
+    enabled: true
+  learnings:
+    scope: auto
 chat:
   auto_reply: true

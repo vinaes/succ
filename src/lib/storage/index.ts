@@ -374,6 +374,8 @@ export async function saveMemory(
     validFrom?: string | Date;
     validUntil?: string | Date;
     autoLink?: boolean;
+    confidence?: number;
+    sourceType?: import('./types.js').SourceType;
   }
 ): Promise<{
   id: number;
@@ -408,6 +410,8 @@ export async function saveMemory(
     qualityFactors: qf,
     validFrom,
     validUntil,
+    confidence: options?.confidence,
+    sourceType: options?.sourceType,
   });
 
   // Convert dispatcher result to backward-compatible format
@@ -476,6 +480,11 @@ export async function deleteMemory(id: number): Promise<boolean> {
   return d.deleteMemory(id);
 }
 
+export async function forceDeleteMemory(id: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.forceDeleteMemory(id);
+}
+
 export async function invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
   const d = await getStorageDispatcher();
   return d.invalidateMemory(memoryId, supersededById);
@@ -494,6 +503,17 @@ export async function getConsolidationHistory(limit?: number): Promise<any[]> {
 export async function getMemoryStats(): Promise<any> {
   const d = await getStorageDispatcher();
   return d.getMemoryStats();
+}
+
+export async function getMemoryHealth(): Promise<{
+  total: number;
+  never_accessed: number;
+  stale_unused_90d: number;
+  avg_age_days: number;
+  avg_access: number;
+}> {
+  const d = await getStorageDispatcher();
+  return d.getMemoryHealth();
 }
 
 export async function deleteMemoriesOlderThan(date: Date): Promise<number> {
@@ -736,20 +756,34 @@ export async function createMemoryLink(
   targetId: number,
   relation?: LinkRelation,
   weight?: number,
-  optionsOrValidFrom?: string | { validFrom?: string; validUntil?: string },
-  validUntil?: string
+  optionsOrValidFrom?:
+    | string
+    | Date
+    | { validFrom?: string | Date; validUntil?: string | Date; metadata?: Record<string, unknown> },
+  validUntil?: string | Date
 ): Promise<{ id: number; created: boolean }> {
   const d = await getStorageDispatcher();
   let vf: string | undefined;
   let vu: string | undefined;
-  if (typeof optionsOrValidFrom === 'object') {
-    vf = optionsOrValidFrom.validFrom;
-    vu = optionsOrValidFrom.validUntil;
+  let metadata: Record<string, unknown> | undefined;
+  if (optionsOrValidFrom instanceof Date) {
+    vf = optionsOrValidFrom.toISOString();
+    vu = validUntil instanceof Date ? validUntil.toISOString() : validUntil;
+  } else if (typeof optionsOrValidFrom === 'object' && optionsOrValidFrom !== null) {
+    vf =
+      optionsOrValidFrom.validFrom instanceof Date
+        ? optionsOrValidFrom.validFrom.toISOString()
+        : optionsOrValidFrom.validFrom;
+    vu =
+      optionsOrValidFrom.validUntil instanceof Date
+        ? optionsOrValidFrom.validUntil.toISOString()
+        : optionsOrValidFrom.validUntil;
+    metadata = optionsOrValidFrom.metadata;
   } else {
     vf = optionsOrValidFrom;
-    vu = validUntil;
+    vu = validUntil instanceof Date ? validUntil.toISOString() : validUntil;
   }
-  return d.createMemoryLink(sourceId, targetId, relation, weight, vf, vu);
+  return d.createMemoryLink(sourceId, targetId, relation, weight, vf, vu, metadata);
 }
 
 export async function deleteMemoryLink(

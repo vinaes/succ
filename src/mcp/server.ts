@@ -2,7 +2,7 @@
 /**
  * succ MCP Server
  *
- * 14 consolidated MCP tools:
+ * 15 consolidated MCP tools:
  * - succ_search, succ_search_code: Semantic search
  * - succ_remember, succ_recall, succ_forget: Memory management
  * - succ_dead_end: Record failed approaches
@@ -14,8 +14,9 @@
  * - succ_prd: PRD pipeline (actions: generate/list/status/run/export)
  * - succ_web: Web search (actions: quick/search/deep/history)
  * - succ_debug: Structured debugging (12 actions)
+ * - succ_review: Review context pack from git diff
  *
- * Tool profiles: auto (detect by client), core (8), standard (12), full (14)
+ * Tool profiles: auto (detect by client), core (8), standard (12), full (15)
  * Configure via: succ_config(action="set", key="tool_profile", value="auto|core|standard|full")
  * Auto-profile: Claude clients → full, other clients → standard
  */
@@ -30,6 +31,7 @@ import {
   closeStorageDispatcher,
 } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
+import { cleanupReranker } from '../lib/reranker.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { getProjectRoot, getToolProfile } from '../lib/config.js';
 import { logError, logInfo, logWarn } from '../lib/fault-logger.js';
@@ -46,6 +48,7 @@ import { registerPrdTools } from './tools/prd.js';
 import { registerWebSearchTools } from './tools/web-search.js';
 import { registerDebugTools } from './tools/debug.js';
 import { registerWebFetchTools } from './tools/web-fetch.js';
+import { registerReviewTools } from './tools/review.js';
 import { setResolvedProfile } from './profile.js';
 
 const require = createRequire(import.meta.url);
@@ -108,7 +111,7 @@ function applyToolProfile(
               text:
                 `Tool "${name}" is not available in "${profile}" profile.\n\n` +
                 `To enable:\n  succ_config(action="set", key="tool_profile", value="${requiredProfile}")\n\n` +
-                `Available profiles: core (8 tools), standard (12 tools), full (14 tools)`,
+                `Available profiles: core (8 tools), standard (12 tools), full (15 tools)`,
             },
           ],
           isError: true,
@@ -169,6 +172,7 @@ registerPrdTools(server);
 registerWebSearchTools(server);
 registerDebugTools(server);
 registerWebFetchTools(server);
+registerReviewTools(server);
 
 // Apply tool profile (gate non-profile tools with helpful error stubs)
 const profile = getToolProfile();
@@ -188,9 +192,13 @@ process.on('unhandledRejection', (error) => {
     error instanceof Error ? error : new Error(String(error))
   );
   cleanupEmbeddings();
-  closeDb();
-  closeGlobalDb();
-  process.exit(1);
+  cleanupReranker()
+    .catch(() => {})
+    .finally(() => {
+      closeDb();
+      closeGlobalDb();
+      process.exit(1);
+    });
 });
 
 // Idle timeout: exit if no MCP requests for 60 minutes (zombie prevention)
@@ -280,6 +288,7 @@ main().catch(async (error) => {
   );
   await closeStorageDispatcher();
   cleanupEmbeddings();
+  await cleanupReranker();
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();

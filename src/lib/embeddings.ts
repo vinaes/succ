@@ -26,6 +26,10 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   'Xenova/bge-base-en-v1.5': 768,
   'Xenova/bge-large-en-v1.5': 1024,
   'Xenova/multilingual-e5-large': 1024,
+  'jinaai/jina-embeddings-v2-base-code': 768,
+  'jinaai/jina-embeddings-v2-base-en': 768,
+  'jinaai/jina-embeddings-v2-small-en': 512,
+  'nomic-ai/nomic-embed-code': 768,
   'openai/text-embedding-3-small': 1536,
   'openai/text-embedding-3-large': 3072,
   'openai/text-embedding-ada-002': 1536,
@@ -38,6 +42,29 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   'google/gemini-embedding-001': 3072,
 };
 
+// Known model max token lengths (for tokenizer truncation)
+// Models not listed here default to 512 tokens
+const MODEL_MAX_LENGTHS: Record<string, number> = {
+  'Xenova/all-MiniLM-L6-v2': 256,
+  'Xenova/multilingual-e5-large': 512,
+  'Xenova/bge-large-en-v1.5': 512,
+  'Xenova/bge-base-en-v1.5': 512,
+  'Xenova/bge-small-en-v1.5': 512,
+  'jinaai/jina-embeddings-v2-base-code': 8192,
+  'jinaai/jina-embeddings-v2-base-en': 8192,
+  'jinaai/jina-embeddings-v2-small-en': 8192,
+  'nomic-ai/nomic-embed-code': 8192,
+  'baai/bge-m3': 8192,
+};
+
+/**
+ * Get max token length for a model (for tokenizer truncation).
+ * Returns the model-specific limit, or 512 for unknown models.
+ */
+export function getModelMaxLength(model: string): number {
+  return MODEL_MAX_LENGTHS[model] ?? 512;
+}
+
 // Default timeout for API requests (30 seconds)
 const API_TIMEOUT_MS = 30000;
 
@@ -45,6 +72,10 @@ import { EmbeddingPool } from './embedding-pool.js';
 
 // Lazy-loaded native ORT session (replaces transformers.js WASM pipeline)
 let nativeSession: NativeOrtSession | null = null;
+let nativeSessionInit: Promise<NativeOrtSession> | null = null;
+// Incremented each time cleanupEmbeddings() runs so a concurrent init can
+// detect that the cleanup already happened and self-dispose the new session.
+let nativeSessionGeneration = 0;
 
 // Worker pool for parallel local embeddings (lazy init)
 let embeddingPool: EmbeddingPool | null = null;
@@ -54,6 +85,10 @@ let poolInitFailed = false; // Don't retry if pool init failed
  * Cleanup embedding session and worker pool to free memory
  */
 export function cleanupEmbeddings(): void {
+  // Increment generation so any in-flight getNativeSession() init knows to
+  // self-dispose the session it creates rather than assigning it to the module var.
+  nativeSessionGeneration++;
+
   if (nativeSession) {
     nativeSession
       .dispose()
@@ -213,8 +248,21 @@ function getEmbeddingModel(): string {
  * Auto-detects GPU provider per platform: DirectML (Windows), CoreML (macOS arm64),
  * CUDA (Linux), CPU (all). Uses onnxruntime-node for 4-17x speedup over WASM.
  */
-async function getNativeSession(): Promise<NativeOrtSession> {
-  if (!nativeSession) {
+export async function getNativeSession(): Promise<NativeOrtSession> {
+  if (nativeSession) {
+    return nativeSession;
+  }
+
+  if (nativeSessionInit) {
+    return nativeSessionInit;
+  }
+
+  // Capture generation at init start. If cleanupEmbeddings() runs while the
+  // session is loading, the counter will be higher and we self-dispose instead
+  // of leaving a live session behind a null pointer.
+  const initGeneration = nativeSessionGeneration;
+
+  nativeSessionInit = (async () => {
     const config = getConfigWithOverride();
     const embeddingModel = getEmbeddingModel();
 
@@ -234,17 +282,34 @@ async function getNativeSession(): Promise<NativeOrtSession> {
       `Loading native ORT session: ${embeddingModel} (${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})`
     );
 
-    nativeSession = new NativeOrtSession({
+    const session = new NativeOrtSession({
       model: embeddingModel,
       providers: providerResult.fallbackChain,
+      maxLength: getModelMaxLength(embeddingModel),
     });
 
     try {
-      await nativeSession.init();
-      gpuBackend = nativeSession.provider;
-      logInfo('embeddings', `Model loaded (${nativeSession.provider})`);
+      await session.init();
+      gpuBackend = session.provider;
+      logInfo('embeddings', `Model loaded (${session.provider})`);
+      // If cleanup ran while we were initialising, dispose this session
+      // immediately rather than assigning it to the module-level variable.
+      if (nativeSessionGeneration !== initGeneration) {
+        session
+          .dispose()
+          .catch((err) =>
+            logWarn(
+              'embeddings',
+              err instanceof Error ? err.message : 'Stale session dispose failed'
+            )
+          );
+        throw new Error('Embedding session disposed during init (cleanup ran concurrently)');
+      }
+      nativeSession = session;
+      return session;
     } catch (error: unknown) {
       nativeSession = null;
+      gpuBackend = null;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to load embedding model '${embeddingModel}'. ` +
@@ -253,8 +318,11 @@ async function getNativeSession(): Promise<NativeOrtSession> {
         { cause: error }
       );
     }
-  }
-  return nativeSession;
+  })().finally(() => {
+    nativeSessionInit = null;
+  });
+
+  return nativeSessionInit;
 }
 
 /**

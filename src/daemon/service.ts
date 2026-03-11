@@ -39,6 +39,7 @@ import {
   initStorageDispatcher,
 } from '../lib/storage/index.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
+import { cleanupReranker } from '../lib/reranker.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { loadBudgets } from '../lib/token-budget.js';
 import {
@@ -65,6 +66,7 @@ import { watcherRoutes } from './routes/watcher.js';
 import { analyzerRoutes } from './routes/analyzer.js';
 import { skillRoutes } from './routes/skills.js';
 import { hookRoutes } from './routes/hooks.js';
+import { addVersionedRoutes, getApiVersionInfo } from './routes/versioning.js';
 
 export type { DaemonConfig, DaemonState };
 
@@ -185,7 +187,7 @@ function createRouteContext(): RouteContext {
 }
 
 function buildRoutes(ctx: RouteContext): RouteMap {
-  return {
+  const baseRoutes: RouteMap = {
     ...statusRoutes(ctx),
     ...sessionRoutes(ctx),
     ...searchRoutes(ctx),
@@ -195,7 +197,13 @@ function buildRoutes(ctx: RouteContext): RouteMap {
     ...analyzerRoutes(ctx),
     ...skillRoutes(ctx),
     ...hookRoutes(ctx),
+
+    // API version info endpoint
+    'GET /api/version': async () => getApiVersionInfo(),
   };
+
+  // Add /v1/api/* aliases for all /api/* routes
+  return addVersionedRoutes(baseRoutes);
 }
 
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -499,7 +507,7 @@ function checkShutdown(): void {
   }
 }
 
-export function shutdownDaemon(): void {
+export async function shutdownDaemon(): Promise<void> {
   log('[daemon] Shutting down...');
 
   if (idleWatcher) {
@@ -507,18 +515,27 @@ export function shutdownDaemon(): void {
     idleWatcher = null;
   }
 
-  stopWatcher(log).catch((err) => log(`[shutdown] Watcher stop failed: ${err}`));
+  const watcherPromise = stopWatcher(log).catch((err) =>
+    log(`[shutdown] Watcher stop failed: ${err}`)
+  );
   stopAnalyzer(log);
 
-  if (state?.server) {
-    state.server.close();
-    state.server = null;
-  }
+  const serverPromise = state?.server
+    ? new Promise<void>((resolve) => {
+        state!.server!.close(() => resolve());
+        state!.server = null;
+      })
+    : Promise.resolve();
 
   processRegistry.killAll();
 
-  closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
+  // Wait for watcher and HTTP server to finish before closing storage,
+  // so in-flight requests don't hit a closed DB.
+  await Promise.allSettled([watcherPromise, serverPromise]);
+
+  await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
+  await cleanupReranker().catch((err) => log(`[shutdown] Reranker cleanup failed: ${err}`));
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();

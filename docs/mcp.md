@@ -35,24 +35,25 @@ Or if running from source:
 
 ## Available Tools
 
-14 consolidated tools (down from 31) — related actions are grouped under a single tool with an `action` parameter.
+15 tools — related actions are grouped under a single tool with an `action` parameter.
 
 | Tool | Actions | Description |
 |------|---------|-------------|
 | `succ_search` | — | Hybrid search in brain vault (BM25 + semantic). Output modes: `full`, `lean` |
 | `succ_search_code` | — | Search indexed code (hybrid BM25 + semantic). Regex/symbol filters. Output modes: `full`, `lean`, `signatures` |
-| `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols` | Index files, refresh stale entries, analyze with LLM, extract AST symbols |
+| `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols`, `scan` | Index files, refresh stale entries, analyze with LLM, extract AST symbols, recursive code scanning |
 | `succ_remember` | — | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
 | `succ_recall` | — | Recall memories (searches both local and global) |
 | `succ_forget` | — | Delete memories by id, age, or tag |
 | `succ_dead_end` | — | Record failed approach to prevent retrying. Boosted in recall results |
-| `succ_link` | `create`, `delete`, `show`, `graph`, `auto`, `enrich`, `proximity`, `communities`, `centrality`, `export`, `cleanup`, `explore` | Create/manage knowledge graph links; explore graph from a memory |
+| `succ_link` | `create`, `delete`, `show`, `graph`, `auto`, `enrich`, `proximity`, `communities`, `centrality`, `export`, `cleanup`, `explore`, `shortest_path`, `why_related`, `critical_nodes`, `pagerank`, `summarize`, `co_change`, `bridge` | Create/manage knowledge graph links; graph algorithms (PageRank, SCC, bridges); co-change analysis |
 | `succ_status` | — (default), `stats`, `score` | Get index/memory/daemon status; token savings statistics; AI-readiness score |
 | `succ_config` | — (default: show), `set`, `checkpoint_create`, `checkpoint_list` | Show/update config; create or list backups |
 | `succ_debug` | `create`, `hypothesis`, `instrument`, `result`, `resolve`, `abandon`, `status`, `list`, `log`, `show_log`, `detect_lang`, `gen_log` | Structured debugging sessions — hypotheses, instrumentation, results (14 languages) |
 | `succ_prd` | `generate`, `list`, `status`, `run`, `export` | Full PRD pipeline — generate, track, and execute feature tasks with quality gates |
 | `succ_web` | `quick`, `search`, `deep`, `history` | Web search via Perplexity Sonar (quick facts, quality search, deep research, history) |
 | `succ_fetch` | — | Fetch any URL and convert to clean Markdown via md.succ.ai (Readability + Playwright). Prefer over built-in WebFetch |
+| `succ_review` | — | Generate review context pack from git diff — summary, changed symbols, related code, memories, blast-radius estimate |
 
 ### succ_index actions
 
@@ -63,6 +64,7 @@ Or if running from source:
 | `refresh` | _(was `succ_reindex`)_ | Detect stale/deleted entries, re-index modified, clean deleted |
 | `analyze` | _(was `succ_analyze_file`)_ | Analyze a file with LLM, generate brain vault doc |
 | `symbols` | _(was `succ_symbols`)_ | Extract AST symbols via tree-sitter (13 languages) |
+| `scan` | _(new)_ | Recursive code file discovery and indexing via git ls-files / directory walk |
 
 ### succ_link actions
 
@@ -79,6 +81,13 @@ Or if running from source:
 | `export` | Export graph (Obsidian/JSON) |
 | `cleanup` | Full maintenance: prune weak links, enrich, connect orphans, rebuild communities + centrality |
 | `explore` | Traverse graph from a memory (`succ_explore` equivalent) |
+| `shortest_path` | Find shortest path between two memories |
+| `why_related` | Explain relationship between two memories via graph traversal |
+| `critical_nodes` | Find articulation points — memories whose removal disconnects the graph |
+| `pagerank` | Compute PageRank importance scores across all memories |
+| `summarize` | LLM-generated summary of a community cluster |
+| `co_change` | Analyze git co-change patterns for a file |
+| `bridge` | Find or create bridge edges connecting code and memory graphs |
 
 ### succ_status actions
 
@@ -348,6 +357,7 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 | **Web search history** | — | `succ_web action="history"` | Light: search cost/usage audit |
 | **Web fetch** | — | `succ_fetch` | Light: fetch + convert via md.succ.ai |
 | **Session tools** | `succ session-summary`, `succ precompute-context` | — | Heavy: processes transcripts |
+| **Session surgeon** | `succ session analyze\|trim\|trim-thinking\|trim-all\|compact` | — | Heavy: session analysis, trim, compact |
 
 ### Design Principles
 

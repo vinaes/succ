@@ -176,7 +176,7 @@ export async function indexCode(
 /**
  * Compute content hash for a file
  */
-function computeHash(content: string): string {
+export function computeHash(content: string): string {
   return crypto.createHash('md5').update(content).digest('hex');
 }
 

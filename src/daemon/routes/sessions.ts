@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { getStorageDispatcher } from '../../lib/storage/index.js';
+import { getSuccDir } from '../../lib/config.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { processSessionEnd } from '../session-processor.js';
@@ -12,6 +15,20 @@ import {
   type RouteContext,
   type RouteMap,
 } from './types.js';
+
+/** Strict session ID validator — returns null for IDs that would collide after normalization. */
+const SESSION_ID_RE = /^[A-Za-z0-9_\-]{1,128}$/;
+function validateSessionId(raw: string): string | null {
+  return SESSION_ID_RE.test(raw) ? raw : null;
+}
+
+/** Path for persisting pre-compact stats (survives session unregister + daemon restart). */
+function preCompactStatsPath(sessionId: string): string {
+  const safe = validateSessionId(sessionId);
+  if (!safe) throw new Error(`Invalid session ID: ${sessionId}`);
+  const tmpDir = path.join(getSuccDir(), '.tmp');
+  return path.join(tmpDir, `session-${safe}-pre-compact.json`);
+}
 
 export function sessionRoutes(ctx: RouteContext): RouteMap {
   return {
@@ -110,6 +127,73 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         sessions[id] = session;
       }
       return { sessions, count: manager.count(includeService) };
+    },
+
+    'POST /api/hooks/pre-compact': async (body) => {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return { success: false, error: 'invalid pre-compact payload' };
+      }
+      const stats = body as Record<string, unknown>;
+      // Payload size guard — pre-compact stats should be small
+      const payloadSize = Buffer.byteLength(JSON.stringify(stats), 'utf8');
+      if (payloadSize > 64_000) {
+        ctx.log(`[pre-compact] Rejected oversized payload: ${payloadSize} bytes`);
+        return { success: false, error: 'payload too large' };
+      }
+      const sessionId = (stats.sessionId as string) || 'unknown';
+      if (!validateSessionId(sessionId)) {
+        ctx.log(`[pre-compact] Rejected invalid session_id: ${sessionId}`);
+        return { success: false, error: 'invalid session_id' };
+      }
+
+      // Persist to disk so stats survive session unregister and daemon restarts
+      try {
+        const statsFile = preCompactStatsPath(sessionId);
+        const dir = path.dirname(statsFile);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(statsFile, JSON.stringify(stats), 'utf-8');
+      } catch (err) {
+        ctx.log(
+          `[pre-compact] Failed to persist stats: ${err instanceof Error ? err.message : err}`
+        );
+      }
+
+      // Also attach to live session for fast reads during active session
+      const manager = requireSessionManager(ctx);
+      const session = manager.get(sessionId);
+      if (session) {
+        (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
+      }
+      ctx.log(
+        `[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`
+      );
+      return { success: true };
+    },
+
+    'GET /api/session/stats': async (_body, searchParams) => {
+      const sessionId = searchParams.get('session_id') || '';
+      if (!sessionId) return { error: 'session_id required' };
+      if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
+
+      // Fast path: live session in memory
+      const manager = requireSessionManager(ctx);
+      const session = manager.get(sessionId) as
+        | (SessionState & { preCompactStats?: unknown })
+        | null;
+      if (session?.preCompactStats) {
+        return { stats: session.preCompactStats };
+      }
+
+      // Fallback: read from persisted file (survives unregister + restart)
+      try {
+        const statsFile = preCompactStatsPath(sessionId);
+        if (fs.existsSync(statsFile)) {
+          return { stats: JSON.parse(fs.readFileSync(statsFile, 'utf-8')) };
+        }
+      } catch {
+        // File corrupted or unreadable — fall through to null
+      }
+      return { stats: null };
     },
   };
 }

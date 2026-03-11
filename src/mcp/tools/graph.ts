@@ -18,6 +18,16 @@ import {
   closeDb,
 } from '../../lib/storage/index.js';
 import {
+  invalidateGraphCache,
+  shortestPath,
+  whyRelated,
+  getArticulationPoints,
+  computePageRank,
+  computeBetweennessCentrality,
+  detectLouvainCommunities,
+} from '../../lib/graph/graphology-bridge.js';
+import { logWarn } from '../../lib/fault-logger.js';
+import {
   projectPathParam,
   applyProjectPath,
   createToolResponse,
@@ -46,9 +56,16 @@ export function registerGraphTools(server: McpServer) {
             'export',
             'cleanup',
             'explore',
+            'shortest_path',
+            'why_related',
+            'critical_nodes',
+            'pagerank',
+            'summarize',
+            'co_change',
+            'bridge',
           ])
           .describe(
-            'Action: create (new link), delete (remove link), show (memory with links), graph (stats), auto (auto-link similar), enrich (LLM classify relations), proximity (co-occurrence links), communities (detect clusters), centrality (compute scores), export (Obsidian/JSON graph export), cleanup (prune weak links, enrich, connect orphans, rebuild communities + centrality), explore (traverse graph from a memory)'
+            'Action: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize (GraphRAG community summaries), co_change (git co-change analysis), bridge (auto-create code↔knowledge edges, or find memories for a code path via file_path)'
           ),
         source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
         target_id: z.number().optional().describe('Target memory ID (for create/delete)'),
@@ -68,6 +85,7 @@ export function registerGraphTools(server: McpServer) {
           .default(2)
           .describe('Max traversal depth (for explore, default: 2)'),
         memory_id: z.number().optional().describe('Alias for source_id (for explore)'),
+        file_path: z.string().optional().describe('File path (for co_change or bridge actions)'),
         project_path: projectPathParam,
       },
       annotations: {
@@ -85,19 +103,22 @@ export function registerGraphTools(server: McpServer) {
       threshold,
       depth,
       memory_id,
+      file_path,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
       try {
+        await applyProjectPath(project_path);
+        const trimmedFilePath = file_path?.trim() || undefined;
         switch (action) {
           case 'create': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return createToolResponse(
                 'Both source_id and target_id are required to create a link.'
               );
             }
 
             const result = await createMemoryLink(source_id, target_id, relation || 'related');
+            invalidateGraphCache();
 
             return createToolResponse(
               result.created
@@ -107,13 +128,14 @@ export function registerGraphTools(server: McpServer) {
           }
 
           case 'delete': {
-            if (!source_id || !target_id) {
+            if (source_id == null || target_id == null) {
               return createToolResponse(
                 'Both source_id and target_id are required to delete a link.'
               );
             }
 
             const deleted = await deleteMemoryLink(source_id, target_id, relation);
+            invalidateGraphCache();
 
             return createToolResponse(
               deleted
@@ -123,7 +145,7 @@ export function registerGraphTools(server: McpServer) {
           }
 
           case 'show': {
-            if (!source_id) {
+            if (source_id == null) {
               return createToolResponse('source_id is required to show a memory with its links.');
             }
 
@@ -184,6 +206,7 @@ ${relationStats}`;
           case 'auto': {
             const th = threshold || 0.75;
             const created = await autoLinkSimilarMemories(th, 3);
+            invalidateGraphCache();
 
             return createToolResponse(
               `Auto-linked similar memories (threshold: ${th}). Created ${created} new links.`
@@ -193,6 +216,7 @@ ${relationStats}`;
           case 'enrich': {
             const { enrichExistingLinks } = await import('../../lib/graph/llm-relations.js');
             const result = await enrichExistingLinks({ batchSize: 5 });
+            invalidateGraphCache();
             return createToolResponse(
               `LLM relation enrichment: ${result.enriched} enriched, ${result.failed} failed, ${result.skipped} skipped.`
             );
@@ -202,26 +226,43 @@ ${relationStats}`;
             const { createProximityLinks } =
               await import('../../lib/graph/contextual-proximity.js');
             const result = await createProximityLinks({ minCooccurrence: 2 });
+            invalidateGraphCache();
             return createToolResponse(
               `Contextual proximity: ${result.created} links created, ${result.skipped} skipped (${result.total_pairs} pairs found).`
             );
           }
 
           case 'communities': {
-            const { detectCommunities } = await import('../../lib/graph/community-detection.js');
-            const result = await detectCommunities();
+            const result = await detectLouvainCommunities();
             const summary = result.communities
               .map((c) => `  Community ${c.id}: ${c.size} members`)
               .join('\n');
             return createToolResponse(
-              `Detected ${result.communities.length} communities, ${result.isolated} isolated nodes.\n${summary}`
+              `Louvain community detection: ${result.communities.length} communities, ${result.isolated} isolated nodes (modularity: ${result.modularity.toFixed(4)}).\n${summary}`
             );
           }
 
           case 'centrality': {
+            const prScores = await computePageRank();
+            const bcScores = await computeBetweennessCentrality();
+
+            // Also update the storage-level centrality cache
             const { updateCentralityCache } = await import('../../lib/graph/centrality.js');
-            const result = await updateCentralityCache();
-            return createToolResponse(`Updated centrality scores for ${result.updated} memories.`);
+            const cacheResult = await updateCentralityCache();
+
+            // Show top 10 by PageRank
+            const top10 = [...prScores.entries()]
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, 10)
+              .map(([id, pr]) => {
+                const bc = bcScores.get(id) ?? 0;
+                return `  #${id}: PageRank=${pr.toFixed(6)}, Betweenness=${bc.toFixed(6)}`;
+              })
+              .join('\n');
+
+            return createToolResponse(
+              `Centrality scores computed for ${prScores.size} memories (cache updated: ${cacheResult.updated}).\n\nTop 10 by PageRank:\n${top10 || '  (no nodes)'}`
+            );
           }
 
           case 'export': {
@@ -240,6 +281,7 @@ ${relationStats}`;
             const result = await graphCleanup({
               pruneThreshold: threshold,
             });
+            invalidateGraphCache();
             return createToolResponse(
               `Graph cleanup complete:\n  Pruned: ${result.pruned}\n  Enriched: ${result.enriched}\n  Orphans connected: ${result.orphansConnected}\n  Communities: ${result.communitiesDetected}\n  Centrality updated: ${result.centralityUpdated}`
             );
@@ -277,12 +319,185 @@ ${relationStats}`;
             );
           }
 
+          case 'shortest_path': {
+            if (source_id == null || target_id == null) {
+              return createToolResponse(
+                'Both source_id and target_id are required for shortest_path.'
+              );
+            }
+
+            const spResult = await shortestPath(source_id, target_id);
+            if (!spResult) {
+              return createToolResponse(
+                `No path found between memory #${source_id} and #${target_id}.`
+              );
+            }
+
+            const pathStr = spResult.path.map((id) => `#${id}`).join(' → ');
+            return createToolResponse(
+              `Shortest path (${spResult.path.length - 1} hops, weight: ${spResult.weight.toFixed(2)}):\n${pathStr}`
+            );
+          }
+
+          case 'why_related': {
+            if (source_id == null || target_id == null) {
+              return createToolResponse(
+                'Both source_id and target_id are required for why_related.'
+              );
+            }
+
+            const wrResult = await whyRelated(source_id, target_id);
+            if (!wrResult) {
+              return createToolResponse(
+                `One or both memories (#${source_id}, #${target_id}) not found in graph.`
+              );
+            }
+
+            if (!wrResult.connected) {
+              return createToolResponse(
+                `Memories #${source_id} and #${target_id} are not connected in the knowledge graph.`
+              );
+            }
+
+            const chain = wrResult.path
+              .map((step, i) => {
+                if (i < wrResult.path.length - 1) {
+                  return `#${step.memoryId} --[${step.relation || 'related'}]-->`;
+                }
+                return `#${step.memoryId}`;
+              })
+              .join(' ');
+
+            return createToolResponse(
+              `Relationship chain (${wrResult.path.length - 1} hops, distance ${wrResult.distance.toFixed(2)}):\n${chain}`
+            );
+          }
+
+          case 'critical_nodes': {
+            const points = await getArticulationPoints();
+
+            if (points.length === 0) {
+              return createToolResponse(
+                'No articulation points found. The graph has no single points of failure.'
+              );
+            }
+
+            // Enrich with memory content snippets
+            const enriched = await Promise.all(
+              points.slice(0, 20).map(async (id) => {
+                const mem = await getMemoryById(id);
+                const snippet = mem ? mem.content.substring(0, 100) : '(unknown)';
+                return `  #${id}: ${snippet}${mem && mem.content.length > 100 ? '...' : ''}`;
+              })
+            );
+
+            return createToolResponse(
+              `Found ${points.length} critical nodes (articulation points):\n${enriched.join('\n')}${points.length > 20 ? `\n  ... and ${points.length - 20} more` : ''}`
+            );
+          }
+
+          case 'pagerank': {
+            const prMap = await computePageRank();
+
+            if (prMap.size === 0) {
+              return createToolResponse('No nodes in graph.');
+            }
+
+            const topN = 15;
+            const sorted = [...prMap.entries()].sort(([, a], [, b]) => b - a).slice(0, topN);
+
+            const lines = await Promise.all(
+              sorted.map(async ([id, score]) => {
+                const mem = await getMemoryById(id);
+                const snippet = mem ? mem.content.substring(0, 80) : '(unknown)';
+                return `  #${id} (${score.toFixed(6)}): ${snippet}${mem && mem.content.length > 80 ? '...' : ''}`;
+              })
+            );
+
+            return createToolResponse(
+              `PageRank — Top ${Math.min(topN, sorted.length)} of ${prMap.size} memories:\n${lines.join('\n')}`
+            );
+          }
+
+          case 'summarize': {
+            const { generateCommunitySummaries } =
+              await import('../../lib/graph/community-summaries.js');
+            const summResult = await generateCommunitySummaries();
+            invalidateGraphCache();
+            return createToolResponse(
+              `Community summaries: ${summResult.summariesCreated} created, ${summResult.summariesFailed} failed, ${summResult.oldSummariesRemoved} old summaries removed (${summResult.communitiesProcessed} communities processed).`
+            );
+          }
+
+          case 'co_change': {
+            const { getCoChangesForFile, analyzeCoChanges } =
+              await import('../../lib/git/co-change.js');
+
+            if (trimmedFilePath) {
+              const result = await getCoChangesForFile(trimmedFilePath);
+              if (result.cochanges.length === 0) {
+                return createToolResponse(
+                  `No co-change patterns found for "${trimmedFilePath}". The file may have few commits or mostly changes alone.`
+                );
+              }
+
+              const lines = result.cochanges.map(
+                (c) => `  ${c.path} (${c.count} times, score: ${c.score.toFixed(2)})`
+              );
+              return createToolResponse(
+                `Co-change analysis for "${trimmedFilePath}":\n\nFiles that frequently change together:\n${lines.join('\n')}`
+              );
+            }
+
+            // No file_path — show overall top co-change pairs
+            const result = await analyzeCoChanges();
+            const topPairs = result.pairs.slice(0, 15);
+            const lines = topPairs.map(
+              (p) => `  ${p.fileA} ↔ ${p.fileB} (${p.count} times, score: ${p.score.toFixed(2)})`
+            );
+
+            return createToolResponse(
+              `Git co-change analysis (${result.totalCommits} commits, ${result.totalFiles} files):\n\nTop co-change pairs:\n${lines.join('\n') || '  (no co-change patterns found)'}`
+            );
+          }
+
+          case 'bridge': {
+            const { findMemoriesForCode, autoBridgeRecentMemories } =
+              await import('../../lib/graph/bridge-edges.js');
+
+            if (trimmedFilePath) {
+              // Find memories linked to a specific code path
+              const results = await findMemoriesForCode(trimmedFilePath);
+              if (results.length === 0) {
+                return createToolResponse(`No memories found referencing "${trimmedFilePath}".`);
+              }
+
+              const lines = results.map(
+                (r) =>
+                  `  #${r.memoryId} [${r.relation}] (score: ${r.score.toFixed(3)}): ${r.content.substring(0, 120)}${r.content.length > 120 ? '...' : ''}`
+              );
+              return createToolResponse(
+                `Memories referencing "${trimmedFilePath}":\n\n${lines.join('\n')}`
+              );
+            }
+
+            // No trimmedFilePath — run auto-bridge scan
+            const result = await autoBridgeRecentMemories();
+            invalidateGraphCache();
+            return createToolResponse(
+              `Bridge edge scan: ${result.created} edges created, ${result.skipped} skipped, ${result.errors} errors.`
+            );
+          }
+
           default:
             return createToolResponse(
-              'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, or explore.'
+              'Unknown action. Use: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize, co_change, or bridge.'
             );
         }
       } catch (error) {
+        logWarn('graph', `Graph tool error in action=${action}`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return createErrorResponse(
           `Error: ${error instanceof Error ? error.message : String(error)}`
         );

@@ -11,6 +11,7 @@ import {
   upsertCentralityScore,
   getCentralityScores,
 } from '../storage/index.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Degree Centrality
@@ -75,6 +76,51 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
   }
 
   return { updated: entries.length };
+}
+
+/**
+ * Compute and cache centrality scores, using PageRank when graphology is
+ * available and falling back to degree centrality otherwise.
+ *
+ * PageRank captures global graph importance better than local degree count:
+ * a node connected to well-connected nodes scores higher than one with many
+ * weak connections.
+ */
+export async function updateCentralityScores(): Promise<{ updated: number }> {
+  let pageRankScores: Map<number, number>;
+  try {
+    const { computePageRank } = await import('./graphology-bridge.js');
+    pageRankScores = await computePageRank();
+  } catch (err) {
+    logWarn('centrality', 'PageRank unavailable, falling back to degree centrality', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return updateCentralityCache();
+  }
+
+  if (pageRankScores.size === 0) {
+    return updateCentralityCache();
+  }
+
+  // Normalize PageRank scores to 0-1 range for upsert
+  let maxScore = 0;
+  for (const score of pageRankScores.values()) {
+    if (score > maxScore) maxScore = score;
+  }
+
+  let count = 0;
+  for (const [memId, score] of pageRankScores) {
+    const normalized = maxScore > 0 ? score / maxScore : 0;
+    // Note: the DB column is named `degree` (from original degree centrality)
+    // but we repurpose it to store the raw PageRank score. Only
+    // `normalized_degree` (0-1 range) is read by consumers
+    // (getCentralityScores), so the raw column's semantics don't affect
+    // downstream behavior.
+    await upsertCentralityScore(memId, score, normalized);
+    count++;
+  }
+
+  return { updated: count };
 }
 
 /**

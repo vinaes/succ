@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   getMemoryById,
   deleteMemory,
+  forceDeleteMemory,
   deleteMemoriesOlderThan,
   deleteMemoriesByTag,
   closeDb,
@@ -22,6 +23,10 @@ export function registerForgetTool(server: McpServer): void {
           .optional()
           .describe('Delete memories older than (e.g., "30d", "1w", "3m", "1y")'),
         tag: z.string().optional().describe('Delete all memories with this tag'),
+        force: z
+          .boolean()
+          .optional()
+          .describe('Force-delete pinned (Tier 1) memories. Unpins the memory before deleting.'),
         project_path: projectPathParam,
       },
       annotations: {
@@ -31,9 +36,21 @@ export function registerForgetTool(server: McpServer): void {
         openWorldHint: false,
       },
     },
-    async ({ id, older_than, tag, project_path }) => {
+    async ({ id, older_than, tag, force, project_path }) => {
       await applyProjectPath(project_path);
+
       try {
+        if (force && id === undefined) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: 'force requires id',
+              },
+            ],
+            isError: true,
+          };
+        }
         // Delete by ID
         if (id !== undefined) {
           const memory = await getMemoryById(id);
@@ -72,11 +89,34 @@ export function registerForgetTool(server: McpServer): void {
             };
           } catch (err) {
             if (err instanceof Error && err.name === 'PinnedMemoryError') {
+              if (force) {
+                // Atomic force-delete: bypasses pin guard at storage layer
+                const forceDeleted = await forceDeleteMemory(id);
+                if (forceDeleted) {
+                  return {
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `Force-deleted pinned memory ${id}: "${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}"`,
+                      },
+                    ],
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `Failed to force-delete pinned memory ${id}`,
+                    },
+                  ],
+                  isError: true,
+                };
+              }
               return {
                 content: [
                   {
                     type: 'text' as const,
-                    text: `Cannot delete memory ${id}: it is pinned (Tier 1 — invariant rule or corrected memory). Pinned memories are protected from deletion. To force-delete, first unpin it with setMemoryInvariant(${id}, false) and reset correction_count.`,
+                    text: `Cannot delete memory ${id}: it is pinned (Tier 1). Use force=true to unpin and delete.`,
                   },
                 ],
                 isError: true,

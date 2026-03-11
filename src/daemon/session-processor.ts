@@ -285,14 +285,16 @@ async function saveFactsAsMemories(
         continue; // Skip low-quality facts
       }
 
-      // Add to batch
-      const tags = [...fact.tags, 'session-summary', fact.type];
+      // Add to batch with auto-extracted provenance
+      const tags = [...new Set([...fact.tags, 'session-summary', fact.type, 'auto_extracted'])];
       batch.push({
         content,
         embedding,
         tags,
         type: fact.type,
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
+        confidence: Math.min(fact.confidence * 0.5, 0.5), // Auto-extracted starts low
+        sourceType: 'auto_extracted',
       });
     } catch (err) {
       log(`[session-processor] Failed to prepare fact for batch: ${err}`);

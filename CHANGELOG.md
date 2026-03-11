@@ -5,7 +5,61 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.59] - 2026-03-10
+## [1.5.0] - 2026-03-11
+
+### Added
+
+- **Cross-encoder reranker** — ONNX-based cross-encoder (ms-marco-MiniLM-L6-v2) reranks hybrid search results by scoring (query, document) pairs. Configurable weight, min results, max doc chars. Shutdown race guard ensures ONNX cleanup completes even when racing with initialization
+- **HyDE (Hypothetical Document Embeddings)** — generates hypothetical code snippets via LLM for natural language queries, embeds them to bridge the NL↔code embedding gap. Tree-sitter AST code detection (threshold lowered to 3 chars for short expressions like `foo()`)
+- **Late chunking** — embeds full file with long-context model (e.g., jina 8192 tokens), pools per-token hidden states by AST chunk boundaries for context-aware chunk embeddings
+- **Hierarchical summaries (RAPTOR-style)** — bottom-up LLM summarization at file → directory → module → repo zoom levels. Query routing via `inferSummaryLevel()` matches query specificity to the right zoom
+- **Code-specific embedding models** — support for jina-embeddings-v2-base-code (768d, 8192 ctx), nomic-embed-code (32768 ctx), BAAI/bge-m3 with configurable `max_length` per model
+- **Graph algorithms** — Personalized PageRank (PPR) retrieval with correct directed-edge flow, Tarjan's SCC for circular dependency detection, articulation point analysis for architectural bottlenecks, community summaries via LLM. DirectedGraph preserves edge direction for accurate path/centrality computation
+- **Retrieval feedback loop** — tracks search result clicks/usage, adjusts future ranking based on historical relevance signals
+- **Observability pipeline** — structured logging of search latency, embedding times, LLM calls; recall analytics with per-query metrics stored in SQLite
+- **Auto-memory extraction** — session-end fact extraction via LLM with quality gate + periodic consolidation (dimension-bucketed deduplication handles model switches)
+- **Code scanning** — `succ_index action="scan"` recursively discovers and indexes all code files via git ls-files / directory walk, with .succignore support, size/extension filtering, symlink rejection, and p-limit batch indexing
+- **Repo map** — generates tree-style project structure maps for LLM context
+- **Cross-repo search** — search across multiple succ-indexed repositories
+- **Diff-brain analysis** — LLM-powered diff analysis for brain vault document changes (handles root-level files correctly)
+- **LSP client infrastructure** — language server protocol client, installer, and server registry for code intelligence (Kotlin + Swift added)
+- **MCP review tool** — `succ_review` for code review via MCP with blast-radius estimation
+- **Bridge edges** — cross-graph edges connecting code graph and memory graph with code_paths JSONB array merge on conflict
+- **Co-change analysis** — git log mining to detect files frequently changed together
+- **Session surgeon** — session analyzer (token breakdown by type + tool name, cut points) and surgeon (trim tool content, thinking, images; manual compact with chain integrity verifying all UUIDs and parent pointers). PreCompact hook auto-saves stats, SessionStart displays before/after delta table after compact. CLI: `succ session analyze|trim|trim-thinking|trim-all|compact`
+- **API versioning** — `/v1/` route prefix aliases for all daemon endpoints via `addVersionedRoutes()`
+- **PostgreSQL CHECK constraints** — defense-in-depth constraints on confidence [0,1] (with NaN guard), source_type enum validation, and non-negative link weights for Dijkstra correctness
+- **Brain vault export** — structured export of brain vault with metadata
+
+### Changed
+- `generateHyDE()` uses tree-sitter AST parsing instead of regex heuristics for code detection — more accurate, zero false positives on natural language
+- `NativeOrtSession` accepts configurable `maxLength` (was hardcoded 128) for long-context embedding models
+- `NativeOrtSession` exports `embedRaw()` for per-token hidden states and `getTokenOffsets()` for token position mapping
+- PPR algorithm uses `forEachOutEdge` for degree calculation and `forEachInNeighbor` for score propagation (correct directed-graph semantics)
+- Reranker clamps `topK` to positive integer, `weight` to [0,1], `maxDocChars` to positive; failure memoization prevents retrying initialization on every search call
+- `similarityToDistance` no longer clamps weights > 1.0 — stronger edges correctly produce shorter graph distances for Dijkstra/betweenness
+- Graph cache invalidated after LLM link enrichment in `llm-relations.ts`
+- `succ init` always refreshes hook scripts on rerun (was skipping existing `.cjs` files without `--force`)
+- `succ init` warns when global LLM scope selection is shadowed by stale project-level config overrides
+- `cosineSimilarity()` returns 0 for mismatched vector lengths instead of computing with undefined values
+- `db.prepare()` used instead of `cachedPrepare` for dynamic SQL with variable placeholder counts in recall-events
+
+### Fixed
+- `diff-brain`: removed `--` separator before diffRef in execFileSync (was treating revision as file path)
+- `execSync` → `execFileSync` in review context-pack and co-change analysis (command injection prevention)
+- All empty catch blocks replaced with `logWarn()` per NO SILENT CATCH convention
+- `inferSummaryLevel`: directory-level indicators checked before repo-level (fixes "describe this folder" → repo)
+- `inferSummaryLevel`: camelCase regex fixed from `/[A-Z][a-z]+[A-Z]/` to `/[a-z][A-Z]/` (matches "hashPassword")
+- `getTokenOffsets`: passes `[text]` (array) for consistency with `embedRaw` 2D tensor output
+- Iterative Tarjan DFS replaces recursive implementation (avoids stack overflow on large graphs)
+- `diff-parser.test.ts`: corrected malformed SAMPLE_DIFF hunk headers and assertion counts
+- `session-surgeon.ts`: `verifyChain` now detects duplicate UUIDs and validates all `parentUuid` pointers
+- `lstatSync` + symlink rejection in file discovery prevents path traversal
+- ReDoS-safe diff header parsing
+- Config JSON parsing validates object shape before merging (guards against null, arrays, primitives)
+- `cleanupReranker()` awaits in-flight initialization before releasing ONNX session
+
+## [1.4.59] - 2026-03-10 (master backport)
 
 ### Changed
 - **Hook boilerplate extraction** — `runHook()` wrapper in `core/adapter.cjs` handles stdin, agent detection, Windows path fix, worktree resolution, `.succ/` check for all 6 hooks; shared `core/log.cjs` and `core/config.cjs` modules replace duplicated logic
@@ -47,6 +101,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PRD context query loop** — breaks on first "DB not initialized" error instead of logging 5 identical warnings
 - **`getGitHead()`** — checks `--is-inside-work-tree` first, suppresses expected "not a git repository" errors
 - **Silent catch blocks** — added `logWarn` to junction failure catch in `config.ts` and unexpected git errors in `analyze-state.ts`
+
+## [1.4.10] - 2026-03-06
+
+### Added
+- **Multi-layered security hardening** — 3-tier prompt injection detection (structural patterns → multilingual regex + semantic embedding → LLM classification), Bell-LaPadula information flow control with 4 security levels + 4 compartments, content sanitization across 13 entry points, +35 command safety patterns across 10 categories
+- **HTTP hooks + PermissionRequest** — daemon handles hooks via HTTP POST (Claude Code v2.1.63+), auto-approve/deny permission dialogs via hook-rules (`type="allow"` skips dialog, `type="error"` blocks), deterministic daemon port from SHA-256(projectDir)
+- **Multi-agent support** — shared adapter module normalizes hook I/O for Cursor, GitHub Copilot, and Gemini CLI; `succ setup cursor|copilot|gemini` installation commands
+- **PostgreSQL full-text search** — `tsvector` column + GIN indexes, `ts_rank_cd` text scoring fused with pgvector cosine via RRF; all 8 BM25 dispatcher methods properly branch on PG backend
+- **Codex integration** — `succ setup codex` configures MCP + project trust, `succ codex` generates AGENTS.md with fresh succ context then spawns codex
+- **`succ init` copies hooks/core/ shared modules** — adapter, daemon-boot, and shared utils bundled with project hooks
+
+### Changed
+- Storage dispatcher decomposed: 2698-line monolith → 14 mixin modules in `src/lib/storage/dispatcher/`
+- Daemon service decomposed: 1710-line monolith → 9 route modules in `src/daemon/routes/`
+- ~116 `any` types eliminated via typed interfaces, `unknown`, boundary parsing
+- Zod validation on all 28 daemon API routes with 10MB body limit
+- 185 generic logWarn messages → descriptive context-specific messages
+- ESLint upgraded 9 → 10, all lint errors fixed, npm audit vulnerabilities resolved
+- Replaced `@iarna/toml` (unmaintained, CJS) with `smol-toml` (ESM, typed)
+- Removed `node-pty` dependency (native C++ build requirement eliminated)
+
+### Fixed
+- 31 CodeQL alerts addressed across 6 categories
+- Subdomain spoofing in URL hostname checks prevented
+- Skill suggestions always failing with fetch error
+- Daemon startup error logging in session-start hook
+- IFC step counting, tag validation, chunk sampling (CodeRabbit review)
+- `console.log` → `logInfo` across codebase, magic numbers extracted to constants
 
 ## [1.4.0] - 2026-02-20
 

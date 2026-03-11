@@ -29,6 +29,7 @@ import type {
   WebSearchHistoryRecord,
   WebSearchHistoryFilter,
   WebSearchHistorySummary,
+  SourceType,
 } from '../types.js';
 
 /**
@@ -208,7 +209,9 @@ export interface StorageBackend {
     qualityScore: number | undefined,
     qualityFactors: Record<string, number> | undefined,
     validFrom: string | undefined,
-    validUntil: string | undefined
+    validUntil: string | undefined,
+    confidence?: number,
+    sourceType?: SourceType
   ): number;
 
   /**
@@ -291,6 +294,17 @@ export interface StorageBackend {
     avg_quality_score: number | null;
     total_links: number;
     avg_links_per_memory: number;
+  };
+
+  /**
+   * Get memory health metrics (staleness, access patterns).
+   */
+  getMemoryHealth(): {
+    total: number;
+    never_accessed: number;
+    stale_unused_90d: number;
+    avg_age_days: number;
+    avg_access: number;
   };
 
   /**
@@ -385,7 +399,8 @@ export interface StorageBackend {
     relation: LinkRelation,
     weight: number,
     validFrom: string | undefined,
-    validUntil: string | undefined
+    validUntil: string | undefined,
+    metadata?: Record<string, unknown>
   ): { id: number; created: boolean };
 
   /**

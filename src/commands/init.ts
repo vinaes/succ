@@ -143,12 +143,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // --global flag forces global mode (for testing), otherwise auto-detect
   const useGlobalHooks = options.global || isInstalledGlobally;
 
-  // Check if already initialized
-  if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
-    console.log('succ is already initialized. Use --force to reinitialize.');
-    return;
-  }
-
   // Create directories - flat brain vault structure (no numbered prefixes)
   const projectName = path.basename(projectRoot);
   const dirs = [
@@ -286,37 +280,34 @@ export async function init(options: InitOptions = {}): Promise<void> {
       'succ-user-prompt.cjs',
       'succ-post-tool.cjs',
       'succ-pre-tool.cjs',
+      'succ-pre-compact.cjs',
     ];
 
     for (const hookFile of hooksToCreate) {
       const destPath = path.join(succDir, 'hooks', hookFile);
       const srcPath = path.join(SUCC_PACKAGE_DIR, 'hooks', hookFile);
+      const existed = fs.existsSync(destPath);
 
-      if (!fs.existsSync(destPath) || options.force) {
-        // Try to copy from package hooks/ directory (source of truth)
-        if (fs.existsSync(srcPath)) {
-          fs.copyFileSync(srcPath, destPath);
-          log(
-            options.force && fs.existsSync(destPath)
-              ? `Updated hooks/${hookFile}`
-              : `Created hooks/${hookFile}`
-          );
-        } else {
-          // Fallback to inline templates for backwards compatibility
+      // Always overwrite hook scripts so re-running `succ init` keeps them
+      // at the version shipped with the current package. This is intentional:
+      // hooks are generated files, not user-editable.
+      if (fs.existsSync(srcPath)) {
+        fs.copyFileSync(srcPath, destPath);
+        log(existed ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
+      } else {
+        // Fallback to inline templates for backwards compatibility
+        if (!existed || options.force) {
           const hookContent = getHookContent(hookFile);
           if (hookContent) {
             fs.writeFileSync(destPath, hookContent);
-            log(
-              options.force && fs.existsSync(destPath)
-                ? `Updated hooks/${hookFile}`
-                : `Created hooks/${hookFile}`
-            );
+            log(existed ? `Updated hooks/${hookFile}` : `Created hooks/${hookFile}`);
           }
         }
       }
     }
 
     // Copy hooks/core/ shared modules (adapter, daemon-boot)
+    // Always overwrite so re-runs stay in sync with the installed package.
     const coreSrcDir = path.join(SUCC_PACKAGE_DIR, 'hooks', 'core');
     const coreDestDir = path.join(succDir, 'hooks', 'core');
     if (fs.existsSync(coreSrcDir)) {
@@ -326,14 +317,9 @@ export async function init(options: InitOptions = {}): Promise<void> {
       const coreFiles = fs.readdirSync(coreSrcDir).filter((f) => f.endsWith('.cjs'));
       for (const coreFile of coreFiles) {
         const dest = path.join(coreDestDir, coreFile);
-        if (!fs.existsSync(dest) || options.force) {
-          fs.copyFileSync(path.join(coreSrcDir, coreFile), dest);
-          log(
-            options.force && fs.existsSync(dest)
-              ? `Updated hooks/core/${coreFile}`
-              : `Created hooks/core/${coreFile}`
-          );
-        }
+        const existed = fs.existsSync(dest);
+        fs.copyFileSync(path.join(coreSrcDir, coreFile), dest);
+        log(existed ? `Updated hooks/core/${coreFile}` : `Created hooks/core/${coreFile}`);
       }
     }
   }
@@ -394,7 +380,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
   const settingsPath = path.join(claudeDir, 'settings.json');
   const settingsExisted = fs.existsSync(settingsPath);
 
-  if (!settingsExisted || options.force) {
+  {
+    // Always install/update hooks and settings so re-running `succ init` on an existing
+    // project updates hooks to the latest version. The merge logic inside preserves
+    // existing permissions and any non-succ hooks.
     // Determine hooks path based on installation mode
     // Use $CLAUDE_PROJECT_DIR for portability (works regardless of cwd)
     const hooksPath = useGlobalHooks
@@ -486,6 +475,13 @@ export async function init(options: InitOptions = {}): Promise<void> {
         },
       ],
 
+      // PreCompact — command-only (Claude Code limitation)
+      PreCompact: [
+        {
+          hooks: [cmdHook('succ-pre-compact.cjs', 5, 'succ: analyzing session...')],
+        },
+      ],
+
       // New hooks (HTTP only, no command fallback needed)
       ...(useHttp
         ? {
@@ -544,7 +540,15 @@ export async function init(options: InitOptions = {}): Promise<void> {
     if (settingsExisted) {
       try {
         const existingContent = fs.readFileSync(settingsPath, 'utf-8');
-        const existingSettings = JSON.parse(existingContent);
+        const parsed = JSON.parse(existingContent);
+        // Guard against valid JSON that isn't a plain object (null, array, primitive).
+        // Spreading a non-object would silently discard the value or throw at runtime.
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error(
+            `settings.json contains ${parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : `a ${typeof parsed}`} — expected a plain object`
+          );
+        }
+        const existingSettings = parsed as Record<string, unknown>;
         finalSettings = stripAndAddSuccHooks(existingSettings);
         log(
           options.force
@@ -564,6 +568,15 @@ export async function init(options: InitOptions = {}): Promise<void> {
     }
 
     fs.writeFileSync(settingsPath, JSON.stringify(finalSettings, null, 2));
+  }
+
+  // Check if already initialized (after hooks/settings so re-runs always refresh them)
+  if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
+    // Always reconcile MCP server config even if DB exists — ensures older installs
+    // or previous failures get the Claude entry added.
+    addMcpServer(projectRoot);
+    spinner.succeed('succ hooks/settings refreshed (already initialized).');
+    return;
   }
 
   // Note: All hooks are now created in the earlier block using copyFileSync from hooks/ directory
@@ -714,6 +727,24 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
     });
 
     const targetConfig = configScope === 'global' ? newGlobalConfig : newProjectConfig;
+
+    // When user chose global scope, warn if project config already contains LLM overrides.
+    // Project-level llm keys take precedence over global, so stale entries can shadow the
+    // new global settings the wizard is about to write.
+    if (configScope === 'global' && fs.existsSync(projectConfigPath)) {
+      try {
+        const existingProjectCfg = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
+        if (existingProjectCfg?.llm && Object.keys(existingProjectCfg.llm).length > 0) {
+          console.log(
+            '\n  \x1b[33mNote:\x1b[0m Your project config (.succ/config.json) has existing LLM'
+          );
+          console.log('  settings that will override the global config for this project.');
+          console.log('  Remove the `llm` key from .succ/config.json to use global settings.\n');
+        }
+      } catch {
+        // Ignore parse errors — non-critical warning path
+      }
+    }
 
     // Step 2: Embedding mode
     console.log('\n┌─────────────────────────────────────────────────────────┐');
@@ -905,30 +936,71 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
       console.log('    Run `succ index` and `succ analyze` manually when needed');
     }
 
-    // Save daemon config to target scope
-    if (daemonMode !== 'none') {
-      targetConfig.daemon = daemonConfig;
-    }
+    // Daemon settings are always written to the project config, never global.
+    // Background-service toggles are per-project: writing them to the global
+    // config would bleed across unrelated projects.
+    // When daemonMode is 'none', explicitly write a disabled block so that
+    // mergeAndWriteConfig's additive deep merge does not leave behind any
+    // pre-existing daemon.enabled / auto_start values set to true.
+    newProjectConfig.daemon =
+      daemonMode === 'none'
+        ? { enabled: false, watch: { auto_start: false }, analyze: { auto_start: false } }
+        : daemonConfig;
     console.log('');
 
-    // Save config to chosen scope
+    // Save config to chosen scope — merge with existing to avoid overwriting
+    // user-configured fields (storage backend, Qdrant, custom settings, etc.)
+    const mergeAndWriteConfig = (
+      configPath: string,
+      configDir: string,
+      newConfig: Partial<ConfigData>
+    ) => {
+      if (Object.keys(newConfig).length === 0) return;
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      let existing: Record<string, any> = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+            existing = raw;
+          } else {
+            logWarn('init', `${configPath} is not a plain object — treating as empty`, {});
+          }
+        } catch (e) {
+          logWarn('init', `Failed to parse existing ${configPath}, will overwrite`, {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+      // Deep merge: wizard keys override, but preserve keys not covered by wizard
+      const merged = { ...existing };
+      for (const [key, value] of Object.entries(newConfig)) {
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          merged[key] = { ...(existing[key] ?? {}), ...value };
+          // One level deeper for nested objects (llm.embeddings, llm.analyze, daemon.watch, etc.)
+          for (const [subKey, subValue] of Object.entries(value as Record<string, any>)) {
+            if (typeof subValue === 'object' && subValue !== null && !Array.isArray(subValue)) {
+              merged[key][subKey] = { ...(existing[key]?.[subKey] ?? {}), ...subValue };
+            }
+          }
+        } else {
+          merged[key] = value;
+        }
+      }
+      fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+      const isNew = Object.keys(existing).length === 0;
+      console.log(`  ${isNew ? 'Created' : 'Merged into'}: ${configPath}`);
+    };
+
     if (configScope === 'global') {
-      if (Object.keys(newGlobalConfig).length > 0) {
-        if (!fs.existsSync(globalConfigDir)) {
-          fs.mkdirSync(globalConfigDir, { recursive: true });
-        }
-        fs.writeFileSync(globalConfigPath, JSON.stringify(newGlobalConfig, null, 2));
-        console.log(`  Saved: ${globalConfigPath}`);
-      }
-    } else {
-      if (Object.keys(newProjectConfig).length > 0) {
-        if (!fs.existsSync(projectConfigDir)) {
-          fs.mkdirSync(projectConfigDir, { recursive: true });
-        }
-        fs.writeFileSync(projectConfigPath, JSON.stringify(newProjectConfig, null, 2));
-        console.log(`  Saved: ${projectConfigPath}`);
-      }
+      mergeAndWriteConfig(globalConfigPath, globalConfigDir, newGlobalConfig);
     }
+    // Always write project config — daemon settings are project-scoped even when
+    // embedding/analyze settings are global. mergeAndWriteConfig is a no-op when
+    // newProjectConfig is empty so this is safe for pure global setups.
+    mergeAndWriteConfig(projectConfigPath, projectConfigDir, newProjectConfig);
 
     // Final message
     console.log('\n┌─────────────────────────────────────────────────────────┐');

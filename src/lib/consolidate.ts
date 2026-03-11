@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import {
   Memory,
   MemoryType,
+  type SourceType,
   deleteMemory,
   invalidateMemory,
   restoreInvalidatedMemory,
@@ -26,7 +27,8 @@ import {
   LinkRelation,
   getAllMemoriesWithEmbeddings as getAllMemoriesWithEmbeddingsDb,
 } from './storage/index.js';
-import { cosineSimilarity, getEmbedding } from './embeddings.js';
+import { getEmbedding } from './embeddings.js';
+import { findSimilarPairs } from './similarity-utils.js';
 import { getIdleReflectionConfig, getConfig, getLLMTaskConfig } from './config.js';
 import { scanSensitive } from './sensitive-filter.js';
 import { callLLM, type LLMBackend } from './llm.js';
@@ -87,6 +89,8 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
     priority_score?: number | null;
     valid_from?: string | null;
     valid_until?: string | null;
+    confidence?: number | null;
+    source_type?: string | null;
   }
 
   return rows
@@ -106,6 +110,8 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
       priority_score: row.priority_score ?? null,
       valid_from: row.valid_from ?? null,
       valid_until: row.valid_until ?? null,
+      confidence: row.confidence ?? null,
+      source_type: (row.source_type ?? null) as SourceType | null,
       created_at: row.created_at,
       embedding: row.embedding as number[],
     }));
@@ -194,28 +200,40 @@ export async function findConsolidationCandidates(
     return []; // Need at least 2 eligible memories
   }
 
-  // Generate all pairs
+  // Generate all pairs — skip cross-dimension pairs (would yield silently truncated
+  // cosine similarity, e.g. comparing 384-dim vs 768-dim after a model change)
   const pairs: Array<[number, number]> = [];
   for (let i = 0; i < memories.length; i++) {
     for (let j = i + 1; j < memories.length; j++) {
-      pairs.push([i, j]);
+      if (memories[i].embedding.length === memories[j].embedding.length) {
+        pairs.push([i, j]);
+      }
     }
   }
 
   // Decide whether to use workers or process sequentially
-  let similarPairs: Array<{ i: number; j: number; similarity: number }>;
+  let similarPairs: Array<{ i: number; j: number; similarity: number }> = [];
 
   if (pairs.length >= MIN_PAIRS_FOR_WORKERS && WORKER_COUNT > 1) {
     // Use worker threads for large datasets
     const embeddings = memories.map((m) => m.embedding);
     similarPairs = await runSimilarityWorkers(embeddings, pairs, similarityThreshold);
   } else {
-    // Process sequentially for small datasets (faster due to no worker overhead)
-    similarPairs = [];
-    for (const [i, j] of pairs) {
-      const similarity = cosineSimilarity(memories[i].embedding, memories[j].embedding);
-      if (similarity >= similarityThreshold) {
-        similarPairs.push({ i, j, similarity });
+    // Process sequentially for small datasets — bucket by dimension so
+    // findSimilarPairs never compares vectors of different lengths
+    const dimBuckets = new Map<number, Array<{ idx: number; embedding: number[] }>>();
+    for (let i = 0; i < memories.length; i++) {
+      const dim = memories[i].embedding.length;
+      const bucket = dimBuckets.get(dim) ?? [];
+      bucket.push({ idx: i, embedding: memories[i].embedding });
+      dimBuckets.set(dim, bucket);
+    }
+    for (const bucket of dimBuckets.values()) {
+      if (bucket.length < 2) continue;
+      const items = bucket.map((b) => ({ id: b.idx, embedding: b.embedding }));
+      const bucketPairs = findSimilarPairs(items, similarityThreshold);
+      for (const { a, b, similarity } of bucketPairs) {
+        similarPairs.push({ i: a, j: b, similarity });
       }
     }
   }
@@ -277,28 +295,31 @@ export async function findConsolidationCandidatesSync(
 
   if (memories.length < 2) return [];
 
+  // Bucket by dimension to avoid incorrect cross-dimension comparisons
+  const dimBuckets = new Map<number, Array<{ idx: number; embedding: number[] }>>();
+  for (let i = 0; i < memories.length; i++) {
+    const dim = memories[i].embedding.length;
+    const bucket = dimBuckets.get(dim) ?? [];
+    bucket.push({ idx: i, embedding: memories[i].embedding });
+    dimBuckets.set(dim, bucket);
+  }
+  const rawPairs: Array<{ a: number; b: number; similarity: number }> = [];
+  for (const bucket of dimBuckets.values()) {
+    if (bucket.length < 2) continue;
+    const items = bucket.map((b) => ({ id: b.idx, embedding: b.embedding }));
+    rawPairs.push(...findSimilarPairs(items, similarityThreshold));
+  }
+  rawPairs.sort((a, b) => b.similarity - a.similarity);
+
   const candidates: ConsolidationCandidate[] = [];
-
-  for (let i = 0; i < memories.length && candidates.length < limit; i++) {
-    for (let j = i + 1; j < memories.length && candidates.length < limit; j++) {
-      const m1 = memories[i];
-      const m2 = memories[j];
-
-      const similarity = cosineSimilarity(m1.embedding, m2.embedding);
-
-      if (similarity >= similarityThreshold) {
-        const action = determineAction(m1, m2, similarity);
-        candidates.push({
-          memory1: m1,
-          memory2: m2,
-          similarity,
-          ...action,
-        });
-      }
-    }
+  for (const { a: i, b: j, similarity } of rawPairs) {
+    if (candidates.length >= limit) break;
+    const m1 = memories[i];
+    const m2 = memories[j];
+    const action = determineAction(m1, m2, similarity);
+    candidates.push({ memory1: m1, memory2: m2, similarity, ...action });
   }
 
-  candidates.sort((a, b) => b.similarity - a.similarity);
   return candidates;
 }
 
@@ -715,6 +736,8 @@ async function mergeMemories(
       score: (q1 + q2) / 2, // Average, not max — prevent score inflation
       factors: { merged_from: 2, original_score_1: q1, original_score_2: q2 },
     },
+    sourceType: 'agent',
+    confidence: Math.max(m1.confidence ?? 0.5, m2.confidence ?? 0.5),
   });
 
   // Transfer links from both memories to the new one

@@ -15,6 +15,31 @@ import {
 } from '../storage/index.js';
 
 import { logWarn } from '../fault-logger.js';
+
+const BATCH_SIZE = 50;
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Parse memory tags from storage format (array, JSON string, or undefined). */
+function parseMemoryTags(tags: string[] | string | undefined, context: string): string[] {
+  if (Array.isArray(tags)) return tags.filter((t): t is string => typeof t === 'string');
+  if (typeof tags === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(tags);
+      if (Array.isArray(parsed)) return parsed.filter((t): t is string => typeof t === 'string');
+      return [];
+    } catch (error) {
+      logWarn('community-detection', `Failed to parse memory tags: ${context}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+  return [];
+}
+
 // ============================================================================
 // Adjacency List
 // ============================================================================
@@ -77,13 +102,13 @@ function shuffleArray<T>(arr: T[], rng: () => number): void {
  * 2. Iteratively: each node adopts the most frequent weighted label of its neighbors
  * 3. Converges when no labels change
  *
- * @returns Map of nodeId → communityId
+ * @returns Object with labels (nodeId → communityId) and actual iteration count
  */
 export function labelPropagation(
   adjacency: Map<number, Array<{ neighbor: number; weight: number }>>,
   maxIterations: number = 100,
   seed: number = 42
-): Map<number, number> {
+): { labels: Map<number, number>; iterations: number } {
   const rng = mulberry32(seed);
 
   // Initialize: each node is its own community
@@ -93,7 +118,9 @@ export function labelPropagation(
     labels.set(node, node);
   }
 
+  let actualIterations = 0;
   for (let iter = 0; iter < maxIterations; iter++) {
+    actualIterations = iter + 1;
     let changed = false;
 
     // Shuffle nodes for randomized order
@@ -130,7 +157,7 @@ export function labelPropagation(
     if (!changed) break;
   }
 
-  return labels;
+  return { labels, iterations: actualIterations };
 }
 
 /**
@@ -162,10 +189,11 @@ export interface CommunityResult {
 }
 
 /**
- * Detect communities in the memory graph.
+ * Detect communities using Label Propagation Algorithm.
  * Updates memory tags with community:N assignments.
+ * Exported for testing; prefer `detectCommunities()` which tries Louvain first.
  */
-export async function detectCommunities(
+export async function detectCommunitiesLP(
   options: { maxIterations?: number; minCommunitySize?: number; tagPrefix?: string } = {}
 ): Promise<CommunityResult> {
   const { maxIterations = 100, minCommunitySize = 2, tagPrefix = 'community' } = options;
@@ -174,15 +202,29 @@ export async function detectCommunities(
   const links = await getAllMemoryLinksForExport();
 
   if (links.length === 0) {
-    return { communities: [], isolated: 0, iterations: 0 };
+    // Clear any stale community tags from a previous run
+    await applyCommunityTags([], tagPrefix);
+    const allMemories = await getAllMemoriesForExport();
+    return { communities: [], isolated: allMemories.length, iterations: 0 };
   }
 
-  // Build adjacency list
+  // Build adjacency list, then seed all known memory IDs so isolated nodes
+  // (those with no edges) are still tracked and counted correctly.
   const adjacency = buildAdjacencyList(links);
 
+  // Hoist allMemories fetch: needed both to seed isolated nodes into the
+  // adjacency map (so LP assigns them each a singleton community) and later
+  // to retag every memory (matching Louvain behaviour).
+  const allMemories = await getAllMemoriesForExport();
+  for (const mem of allMemories) {
+    if (!adjacency.has(mem.id)) {
+      adjacency.set(mem.id, []);
+    }
+  }
+
   // Run Label Propagation
-  const rawLabels = labelPropagation(adjacency, maxIterations);
-  const labels = renumberCommunities(rawLabels);
+  const lpResult = labelPropagation(adjacency, maxIterations);
+  const labels = renumberCommunities(lpResult.labels);
 
   // Group by community
   const communityMap = new Map<number, number[]>();
@@ -208,49 +250,134 @@ export async function detectCommunities(
 
   // Update memory tags: remove old community tags, add new ones
   const tagPattern = `${tagPrefix}:`;
-  const allMemories = await getAllMemoriesForExport();
   const memoryTagMap = new Map<number, string[]>();
   for (const mem of allMemories) {
-    const tags = Array.isArray(mem.tags)
-      ? mem.tags
-      : typeof mem.tags === 'string'
-        ? (() => {
-            try {
-              return JSON.parse(mem.tags);
-            } catch (error) {
-              logWarn(
-                'community-detection',
-                'Failed to parse memory tags JSON string for community assignment',
-                {
-                  error: error instanceof Error ? error.message : String(error),
-                }
-              );
-              return [];
-            }
-          })()
-        : [];
-    memoryTagMap.set(mem.id, tags);
+    memoryTagMap.set(mem.id, parseMemoryTags(mem.tags, 'community assignment'));
   }
 
-  for (const memId of labels.keys()) {
-    let tags = memoryTagMap.get(memId) ?? [];
+  // Use all memories (not just labels.keys()) so memories that dropped out of the
+  // LP graph (no remaining edges or filtered by minCommunitySize) have their old
+  // community tags cleared — matching Louvain's behaviour of retagging every memory.
+  const memIds = allMemories.map((mem) => mem.id);
+  for (let i = 0; i < memIds.length; i += BATCH_SIZE) {
+    const batch = memIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map((memId) => {
+        let tags = memoryTagMap.get(memId) ?? [];
 
-    // Remove old community tags
-    tags = tags.filter((t: string) => !t.startsWith(tagPattern));
+        // Remove old community tags
+        tags = tags.filter((t: string) => !t.startsWith(tagPattern));
 
-    // Add new community tag (only if community is large enough)
-    const communityId = labels.get(memId);
-    if (communityId != null) {
-      const members = communityMap.get(communityId);
-      if (members && members.length >= minCommunitySize) {
-        tags.push(`${tagPrefix}:${communityId}`);
-      }
+        // Add new community tag (only if community is large enough)
+        const communityId = labels.get(memId);
+        if (communityId != null) {
+          const members = communityMap.get(communityId);
+          if (members && members.length >= minCommunitySize) {
+            tags.push(`${tagPrefix}:${communityId}`);
+          }
+        }
+
+        return updateMemoryTags(memId, tags);
+      })
+    );
+  }
+
+  return { communities, isolated, iterations: lpResult.iterations };
+}
+
+/**
+ * Detect communities in the memory graph.
+ * Tries Louvain modularity optimization first (higher quality); falls back to
+ * Label Propagation if graphology is unavailable.
+ * Updates memory tags with community:N assignments.
+ */
+export async function detectCommunities(
+  options: { maxIterations?: number; minCommunitySize?: number; tagPrefix?: string } = {}
+): Promise<CommunityResult> {
+  const { minCommunitySize = 2, tagPrefix = 'community' } = options;
+
+  let detectLouvain: (typeof import('./graphology-bridge.js'))['detectLouvainCommunities'];
+  try {
+    ({ detectLouvainCommunities: detectLouvain } = await import('./graphology-bridge.js'));
+  } catch (err) {
+    logWarn('community-detection', 'Louvain unavailable, falling back to Label Propagation', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return detectCommunitiesLP(options);
+  }
+
+  const louvainResult = await detectLouvain(minCommunitySize);
+
+  // Apply community tags (same as LP path) so Louvain results are persisted
+  await applyCommunityTags(louvainResult.communities, tagPrefix);
+
+  // Map LouvainCommunity[] to CommunityResult format
+  return {
+    communities: louvainResult.communities.map((c) => ({
+      id: c.id,
+      size: c.size,
+      members: c.members,
+    })),
+    isolated: louvainResult.isolated,
+    iterations: 1, // Louvain converges internally; report 1 pass
+  };
+}
+
+/**
+ * Apply community tags to memories based on detection results.
+ * Removes old tags with the given prefix and adds new ones.
+ */
+async function applyCommunityTags(
+  communities: Array<{ id: number; members: number[] }>,
+  tagPrefix: string
+): Promise<void> {
+  const tagPattern = `${tagPrefix}:`;
+  const allMemories = await getAllMemoriesForExport();
+
+  // Build a member→community lookup
+  const memberToCommunity = new Map<number, number>();
+  for (const c of communities) {
+    for (const memId of c.members) {
+      memberToCommunity.set(memId, c.id);
     }
-
-    await updateMemoryTags(memId, tags);
   }
 
-  return { communities, isolated, iterations: maxIterations };
+  for (let i = 0; i < allMemories.length; i += BATCH_SIZE) {
+    const batch = allMemories.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map((mem) => {
+        const communityId = memberToCommunity.get(mem.id);
+
+        // Detect whether parseMemoryTags had to normalize malformed data.
+        // When the stored value is a non-null string but parsing produced [],
+        // the DB row holds corrupt data (invalid JSON or a non-array JSON value).
+        // Force a rewrite so the corrected [] is persisted.
+        const rawTags = mem.tags;
+        const previousTags = parseMemoryTags(rawTags, 'applyCommunityTags');
+        const needsRewrite = typeof rawTags === 'string' && previousTags.length === 0;
+
+        let tags = previousTags;
+
+        // Remove old community tags
+        tags = tags.filter((t: string) => !t.startsWith(tagPattern));
+
+        // Add new community tag if assigned
+        if (communityId != null) {
+          tags.push(`${tagPrefix}:${communityId}`);
+        }
+
+        // Write if tags actually changed OR if we detected corrupt stored data
+        const changed =
+          tags.length !== previousTags.length ||
+          tags.some((tag, index) => tag !== previousTags[index]);
+
+        if (changed || needsRewrite) {
+          return updateMemoryTags(mem.id, tags);
+        }
+        return Promise.resolve();
+      })
+    );
+  }
 }
 
 /**
@@ -264,27 +391,11 @@ export async function getMemoryCommunity(
   const mem = await getMemoryById(memoryId);
   if (!mem) return null;
 
-  const tags: string[] = Array.isArray(mem.tags)
-    ? mem.tags
-    : typeof mem.tags === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(mem.tags as string);
-          } catch (error) {
-            logWarn(
-              'community-detection',
-              'Failed to parse memory tags JSON string for community lookup',
-              {
-                error: error instanceof Error ? error.message : String(error),
-              }
-            );
-            return [];
-          }
-        })()
-      : [];
+  const tags: string[] = parseMemoryTags(mem.tags, 'community lookup');
 
   const prefix = `${tagPrefix}:`;
   const communityTag = tags.find((t: string) => t.startsWith(prefix));
   if (!communityTag) return null;
-  return parseInt(communityTag.slice(prefix.length), 10);
+  const id = parseInt(communityTag.slice(prefix.length), 10);
+  return Number.isNaN(id) ? null : id;
 }

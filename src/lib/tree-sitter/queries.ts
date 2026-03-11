@@ -50,6 +50,10 @@ export const LANGUAGE_QUERIES: Record<string, string> = {
     (enum_declaration
       name: (identifier) @name) @definition.type
 
+    ; Namespaces (tree-sitter-typescript uses internal_module for namespace declarations)
+    (internal_module
+      name: (identifier) @name) @definition.type
+
     ; Methods inside classes
     (method_definition
       name: (property_identifier) @name) @definition.method
@@ -83,6 +87,10 @@ export const LANGUAGE_QUERIES: Record<string, string> = {
 
     ; Enums
     (enum_declaration
+      name: (identifier) @name) @definition.type
+
+    ; Namespaces (tree-sitter-typescript uses internal_module for namespace declarations)
+    (internal_module
       name: (identifier) @name) @definition.type
 
     ; Methods

@@ -89,6 +89,9 @@ export {
 } from './embeddings.js';
 export type { EmbeddingResponse } from './embeddings.js';
 
+// --- Reranker ---
+export { rerank, isRerankerEnabled, cleanupReranker } from './reranker.js';
+
 // --- Config ---
 export {
   getConfig,
@@ -134,6 +137,22 @@ export { createProximityLinks } from './graph/contextual-proximity.js';
 export { detectCommunities } from './graph/community-detection.js';
 export { updateCentralityCache } from './graph/centrality.js';
 export { exportGraphSilent } from './graph-export.js';
+
+// --- Graph: graphology algorithms ---
+export {
+  getGraph,
+  invalidateGraphCache,
+  personalizedPageRank,
+  detectLouvainCommunities,
+  shortestPath,
+  getArticulationPoints,
+  computePageRank,
+  computeBetweennessCentrality,
+  whyRelated,
+} from './graph/graphology-bridge.js';
+export type { LouvainCommunity } from './graph/graphology-bridge.js';
+export { generateCommunitySummaries } from './graph/community-summaries.js';
+export type { CommunitySummaryResult } from './graph/community-summaries.js';
 
 // --- PRD pipeline ---
 export { generatePrd } from './prd/generate.js';
@@ -186,6 +205,19 @@ export type { SymbolInfo, SymbolType } from './tree-sitter/types.js';
 export { fetchAsMarkdown } from './md-fetch.js';
 export type { MdFetchResult, MdFetchOptions } from './md-fetch.js';
 
+// --- Review context pack ---
+export { generateReviewContext } from './review/context-pack.js';
+export type { ReviewContextPack } from './review/context-pack.js';
+
+// --- Diff parsing ---
+export {
+  parseDiffText,
+  extractChangedSymbols,
+  summarizeDiff,
+  getFileChanges,
+} from './diff-parser.js';
+export type { DiffFile, DiffChunk, DiffChange, ParsedDiff } from './diff-parser.js';
+
 // --- Errors ---
 export {
   SuccError,
@@ -204,6 +236,7 @@ export type {
   HybridMemoryResult,
   LinkRelation,
   MemoryType,
+  SourceType,
   StorageConfig,
   SqliteConfig,
   PostgresConfig,
@@ -231,3 +264,101 @@ export type { ExtractedFact } from './session-summary.js';
 // --- Graph cleanup pipeline ---
 export { graphCleanup } from './graph/cleanup.js';
 export type { CleanupOptions, CleanupResult } from './graph/cleanup.js';
+
+// --- Git co-change analysis ---
+export { analyzeCoChanges, getCoChangesForFile } from './git/co-change.js';
+export type { CoChangePair, CoChangeResult, CoChangeForFile } from './git/co-change.js';
+
+// --- Bridge edges (code ↔ knowledge) ---
+export {
+  extractCodePaths,
+  inferBridgeRelation,
+  createBridgeEdgesForMemory,
+  createManualBridgeEdge,
+  findMemoriesForCode,
+  autoBridgeRecentMemories,
+  BRIDGE_RELATIONS,
+} from './graph/bridge-edges.js';
+export type { BridgeRelation, BridgeEdgeResult, CodeReference } from './graph/bridge-edges.js';
+export type { BridgeEdgeMetadata } from './storage/types.js';
+
+// --- Retrieval feedback loops ---
+export {
+  recordRecallEvent,
+  recordRecallBatch,
+  getRecallStats,
+  getRecallSummary,
+  getBoostFactor,
+  getBoostFactors,
+  getNeverUsedMemories,
+  cleanupRecallEvents,
+} from './retrieval-feedback.js';
+export type { RecallEvent, RecallStats, RecallSummary } from './retrieval-feedback.js';
+
+// --- Auto memory consolidation ---
+export { consolidateAutoMemories, getAutoMemoryStats } from './auto-memory/consolidation.js';
+export type { ConsolidationResult } from './auto-memory/consolidation.js';
+
+// --- LSP code intelligence ---
+export {
+  findDefinition,
+  findReferences,
+  getHover,
+  shutdownAll as shutdownLsp,
+  getStatus as getLspStatus,
+  getClient as getLspClient,
+} from '../lsp/manager.js';
+export type { LspQueryResult } from '../lsp/manager.js';
+export type { LspLocation, LspClientOptions } from '../lsp/client.js';
+export { LSP_SERVERS, detectProjectLanguages } from '../lsp/servers.js';
+export type { LspServerConfig, InstallStrategy } from '../lsp/servers.js';
+
+// --- Search: PPR-enhanced retrieval ---
+export { pprEnhancedRerank } from './search/ppr-retrieval.js';
+export type { PPRSearchResult, PPRSearchOptions } from './search/ppr-retrieval.js';
+
+// --- Search: HyDE (Hypothetical Document Embeddings) ---
+export { generateHyDE } from './search/hyde.js';
+export type { HyDEResult } from './search/hyde.js';
+
+// --- Search: BM25 query expansion ---
+export { expandQuery, expandQueryFull, looksLikeCode } from './query-expansion.js';
+export type { ExpandedQuery } from './query-expansion.js';
+
+// --- Search: Repo map ---
+export { generateRepoMap } from './search/repo-map.js';
+export type { RepoMapEntry, RepoMapResult } from './search/repo-map.js';
+
+// --- Cross-repo search ---
+export { discoverProjects, listProjects } from './cross-repo.js';
+export type {
+  CrossRepoProject,
+  CrossRepoSearchResult,
+  CrossRepoSearchSummary,
+} from './cross-repo.js';
+
+// --- Observability ---
+export {
+  recordLatency,
+  withLatency,
+  getLatencyStats,
+  getDashboard,
+  formatDashboard,
+} from './observability.js';
+export type { LatencyMetric, ObservabilityDashboard } from './observability.js';
+
+// --- Diff-aware brain vault analysis ---
+export { detectChangedFiles } from './diff-brain.js';
+export type { DiffAnalysisResult } from './diff-brain.js';
+
+// --- Brain vault export ---
+export {
+  readBrainVault,
+  exportBrainAsJson,
+  exportBrainAsMarkdown,
+  exportBrainSnapshot,
+} from './brain-export.js';
+export type { BrainDoc, BrainExportResult, BrainSnapshot } from './brain-export.js';
+
+// --- API versioning ---
+export { API_VERSION, addVersionedRoutes, getApiVersionInfo } from '../daemon/routes/versioning.js';

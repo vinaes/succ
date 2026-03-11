@@ -15,7 +15,10 @@ export function loadSqliteVec(database: Database.Database): boolean {
   try {
     sqliteVec.load(database);
     return true;
-  } catch {
+  } catch (error) {
+    logWarn('schema', 'sqlite-vec extension load failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sqliteVecAvailable = false;
     return false;
   }
@@ -31,6 +34,15 @@ export const MEMORY_TYPES = [
   'dead_end',
 ] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
+
+export const SOURCE_TYPES = [
+  'human',
+  'agent',
+  'canonical_doc',
+  'imported',
+  'auto_extracted',
+] as const;
+export type SourceType = (typeof SOURCE_TYPES)[number];
 
 /**
  * Initialize local database schema
@@ -353,9 +365,29 @@ export function initDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_learning_deltas_source ON learning_deltas(source);
   `);
 
+  // Migration: add confidence and source_type columns for memory provenance
+  // confidence: extraction correctness for auto-extracted memories (0.5 default, promoted to 0.7 on use). Distinct from quality_score (LLM content quality assessment).
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
+  } catch {
+    // expected: column already exists
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`).run();
+  } catch {
+    // expected: column already exists
+  }
+
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
   try {
     database.prepare(`ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0`).run();
+  } catch {
+    // expected: column already exists
+  }
+
+  // Migration: add metadata JSON column to memory_links (for bridge edges)
+  try {
+    database.prepare(`ALTER TABLE memory_links ADD COLUMN metadata TEXT`).run();
   } catch {
     // expected: column already exists
   }
@@ -388,6 +420,23 @@ export function initDb(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_wsh_created ON web_search_history(created_at);
     CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name);
+  `);
+
+  // Retrieval feedback table — tracks whether recalled memories were useful
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS recall_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      query TEXT NOT NULL,
+      was_used INTEGER NOT NULL DEFAULT 0,
+      rank_position INTEGER,
+      similarity_score REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recall_events_memory ON recall_events(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_recall_events_created ON recall_events(created_at);
   `);
 
   // Check if embedding model changed - warn user if reindex needed
@@ -546,8 +595,10 @@ export function initVecTables(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // sqlite-vec may not support this syntax or other error
+    } catch (err) {
+      logWarn('schema', 'vec_memories table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       sqliteVecAvailable = false;
     }
   }
@@ -641,8 +692,10 @@ export function initVecTables(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_documents_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // Ignore errors for documents table
+    } catch (err) {
+      logWarn('schema', 'vec_documents table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
@@ -729,6 +782,18 @@ export function initGlobalDb(database: Database.Database): void {
   }
   try {
     database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
+  } catch {
+    // expected: column already exists
+  }
+
+  // Migration: add provenance columns to global memories
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
+  } catch {
+    // expected: column already exists
+  }
+  try {
+    database.prepare(`ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`).run();
   } catch {
     // expected: column already exists
   }
@@ -886,8 +951,10 @@ export function initGlobalVecTable(database: Database.Database): void {
           "INSERT OR REPLACE INTO metadata (key, value) VALUES ('vec_memories_migrated_dims', ?)"
         )
         .run(String(dims));
-    } catch {
-      // sqlite-vec may not be available for global db
+    } catch (err) {
+      logWarn('schema', 'global vec_memories table creation failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }

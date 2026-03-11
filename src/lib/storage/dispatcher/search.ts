@@ -1,6 +1,7 @@
 import { StorageDispatcherBase } from './base.js';
 import { logWarn } from '../../fault-logger.js';
 import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
+import { rerank, type Rerankable } from '../../reranker.js';
 import type {
   GlobalMemorySearchResult,
   HybridGlobalMemoryResult,
@@ -8,6 +9,9 @@ import type {
   HybridSearchResult,
   MemorySearchResult,
 } from '../types.js';
+
+/** Hard cap on overfetch multiplier to prevent unbounded DB/Qdrant reads */
+const RERANK_FETCH_CAP = 200;
 
 export class SearchDispatcherMixin extends StorageDispatcherBase {
   async invalidateCodeBm25Index(): Promise<void> {
@@ -91,10 +95,15 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
-    // Overfetch only when regex post-filter is needed (symbolType is filtered natively by Qdrant/PG)
+    // Overfetch for reranking (need more candidates to rerank from)
     const hasRegex = !!filters?.regex;
-    const fetchLimit = hasRegex ? lim * 3 : lim;
+    const rerankerOverfetch = 3; // Fetch 3x candidates for reranking quality
+    const fetchLimit = Math.min(
+      hasRegex ? lim * rerankerOverfetch * 2 : lim * rerankerOverfetch,
+      RERANK_FETCH_CAP
+    );
     const regexFilter = hasRegex ? { regex: filters!.regex } : undefined;
+    let results: HybridSearchResult[];
     if (this.hasQdrant()) {
       try {
         const qdrantResults = await this.qdrant!.hybridSearchDocuments(
@@ -106,14 +115,15 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
         );
         if (qdrantResults.length > 0) {
           this._resetQdrantFailures();
-          return this.applyCodeFilters(qdrantResults, regexFilter, lim);
+          results = this.applyCodeFilters(qdrantResults, regexFilter, fetchLimit);
+          return rerank(query, results, lim);
         }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchCode failed, falling back', error);
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      const results = await this.postgres.hybridSearchDocuments(
+      results = await this.postgres.hybridSearchDocuments(
         query,
         queryEmbedding,
         fetchLimit,
@@ -123,10 +133,19 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
           symbolType: filters?.symbolType,
         }
       );
-      return this.applyCodeFilters(results, regexFilter, lim);
+      results = this.applyCodeFilters(results, regexFilter, fetchLimit);
+      return rerank(query, results, lim);
     }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
+    results = await sqlite.hybridSearchCode(
+      query,
+      queryEmbedding,
+      fetchLimit,
+      thresh,
+      alpha,
+      filters
+    );
+    return rerank(query, results, lim);
   }
 
   async hybridSearchDocs(
@@ -139,30 +158,40 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
+    let results: HybridSearchResult[];
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchDocuments(
+        results = await this.qdrant!.hybridSearchDocuments(
           query,
           queryEmbedding,
-          lim,
+          fetchLimit,
           thresh,
           { docsOnly: true }
         );
         if (results.length > 0) {
           this._resetQdrantFailures();
-          return results;
+          return rerank(query, results, lim);
         }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchDocs failed, falling back', error);
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
-      return this.postgres.hybridSearchDocuments(query, queryEmbedding, lim, thresh, {
-        docsOnly: true,
-      });
+      results = await this.postgres.hybridSearchDocuments(
+        query,
+        queryEmbedding,
+        fetchLimit,
+        thresh,
+        {
+          docsOnly: true,
+        }
+      );
+      return rerank(query, results, lim);
     }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
+    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha);
+    return rerank(query, results, lim);
   }
 
   async hybridSearchMemories(
@@ -175,27 +204,32 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
     const thresh = threshold ?? 0.3;
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
+    let results: Array<MemorySearchResult | HybridMemoryResult>;
     if (this.hasQdrant()) {
       try {
-        const results = await this.qdrant!.hybridSearchMemories(
+        results = await this.qdrant!.hybridSearchMemories(
           query,
           queryEmbedding,
-          lim,
+          fetchLimit,
           thresh,
           { projectId: this.qdrant!.getProjectId() }
         );
         if (results.length > 0) {
           this._resetQdrantFailures();
-          return results;
+          return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
         }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchMemories failed, falling back', error);
       }
     }
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.hybridSearchMemories(query, queryEmbedding, lim, thresh);
+    if (this.backend === 'postgresql' && this.postgres) {
+      results = await this.postgres.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh);
+      return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
+    }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
+    results = await sqlite.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh, alpha);
+    return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
   }
 
   async hybridSearchGlobalMemories(
@@ -208,43 +242,51 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     since?: Date
   ): Promise<Array<GlobalMemorySearchResult | MemorySearchResult | HybridGlobalMemoryResult>> {
     const lim = limit ?? 10;
+    const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
         const results = await this.qdrant!.hybridSearchGlobalMemories(
           query,
           queryEmbedding,
-          lim,
+          fetchLimit,
           thresh,
           { tags, since }
         );
         if (results.length > 0) {
           this._resetQdrantFailures();
-          return results;
+          return rerank(
+            query,
+            results as unknown as (GlobalMemorySearchResult & Rerankable)[],
+            lim
+          );
         }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error);
       }
     }
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.hybridSearchGlobalMemories(
+    if (this.backend === 'postgresql' && this.postgres) {
+      const results = await this.postgres.hybridSearchGlobalMemories(
         query,
         queryEmbedding,
-        lim,
+        fetchLimit,
         thresh,
         tags,
         since
       );
+      return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
+    }
     const sqlite = await this.getSqliteFns();
-    return sqlite.hybridSearchGlobalMemories(
+    const results = await sqlite.hybridSearchGlobalMemories(
       query,
       queryEmbedding,
-      limit,
-      threshold,
+      fetchLimit,
+      thresh,
       alpha,
       tags,
       since
     );
+    return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
   }
 
   /** Post-filter code search results by regex and/or symbolType, then trim to limit. */

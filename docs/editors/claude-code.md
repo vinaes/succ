@@ -65,6 +65,7 @@ Both transports produce identical behavior. HTTP hooks are faster (no Node.js st
 | Hook | Transport | Purpose |
 |------|-----------|---------|
 | **SessionStart** | Command only | Load context, start daemon, inject session briefing |
+| **PreCompact** | Command only | Pre-compact session analysis, save token breakdown stats |
 | **SessionEnd** | Command only | Unregister session, trigger transcript processing |
 | **PreToolUse** | HTTP or Command | Dynamic hook-rules, file-linked memories, command safety guard |
 | **PostToolUse** | HTTP or Command | Auto-capture git commits, deps, tests, file creation, MEMORY.md sync |
