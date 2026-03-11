@@ -135,6 +135,7 @@ succ analyze
 - **Multiple LLM Backends** — Local (Ollama), OpenRouter, or Claude CLI
 - **Storage Backends** — SQLite (default), PostgreSQL + pgvector, Qdrant
 - **Data Migration** — Export/import JSON, migrate between backends
+- **Update Notifications** — Background npm registry polling with TTL cache; banner in CLI and `succ_status`; opt-out via config or env vars
 
 </details>
 
@@ -187,7 +188,7 @@ Agents are auto-discovered by Claude Code from `.claude/agents/` and can be laun
 | `succ session analyze` | Token breakdown by type and tool name |
 | `succ session trim` | Trim tool content from session transcript |
 | `succ session compact` | Manual compact with dialogue summary |
-| `succ status` | Show index statistics |
+| `succ status` | Show index statistics and update availability |
 
 <details>
 <summary>All commands</summary>
@@ -418,6 +419,24 @@ Automatically run the `succ-diff-reviewer` agent before every git commit to catc
 When enabled, Claude will run a diff review before each commit. Critical findings block the commit; high findings trigger a warning.
 
 Disabled by default. Set via `succ_config(action="set", key="preCommitReview", value="true")`.
+
+</details>
+
+<details>
+<summary>Update notifications</summary>
+
+succ checks the npm registry for newer versions in the background. When an update is available, a banner appears in `succ status` output, `succ_status` MCP tool output, and the `succ-session-start` hook injects a notice into AI context.
+
+```json
+{
+  "update_check": {
+    "enabled": true,
+    "interval_hours": 24
+  }
+}
+```
+
+Disable via config (`update_check.enabled: false`) or environment variables: `SUCC_NO_UPDATE_CHECK=1`, `NO_UPDATE_NOTIFIER=1`, or `CI=true`.
 
 </details>
 

@@ -93,7 +93,7 @@ Or if running from source:
 
 | Action | Old tool | Description |
 |--------|----------|-------------|
-| (default) | `succ_status` | Indexed docs/code, memories, daemon status |
+| (default) | `succ_status` | Indexed docs/code, memories, daemon status, update availability |
 | `stats` | `succ_stats` | Token savings from RAG vs full-file reads |
 | `score` | `succ_score` | AI-readiness score for the project |
 

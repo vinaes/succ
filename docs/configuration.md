@@ -1170,6 +1170,41 @@ Triggers reflections after periods of inactivity.
 
 ---
 
+## Update Check Settings
+
+Controls automatic update notifications. succ periodically polls the npm registry to check for newer versions. Results are cached at `.succ/.tmp/version-check.json` (48h hard expiry).
+
+```json
+{
+  "update_check": {
+    "enabled": true,
+    "interval_hours": 24
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `update_check.enabled` | boolean | `true` | Enable npm registry polling for updates |
+| `update_check.interval_hours` | number | `24` | Minimum hours between registry checks |
+
+### Environment Variable Overrides
+
+| Variable | Description |
+|----------|-------------|
+| `SUCC_NO_UPDATE_CHECK=1` | Disable update checks for succ specifically |
+| `NO_UPDATE_NOTIFIER=1` | Disable update checks (common npm convention) |
+| `CI=true` | Disable update checks in CI environments |
+
+### Where notifications appear
+
+- **CLI:** `succ status` shows a banner when an update is available
+- **MCP:** `succ_status` default action includes an "Update Available" section with current/latest versions and the update command
+- **Session hook:** `succ-session-start` injects a `<update-available>` block into AI context, prompting the agent to notify the user
+- **Daemon:** Background polling; result written to `.succ/.tmp/version-check.json`
+
+---
+
 ## Idle Reflection Settings
 
 Controls what happens during idle reflection.
@@ -1866,6 +1901,11 @@ succ_config action="set" key="error_reporting.level" value="error"
       "auto_start": false,
       "patterns": ["**/*.md"]
     }
+  },
+
+  "update_check": {
+    "enabled": true,
+    "interval_hours": 24
   },
 
   "idle_watcher": {
