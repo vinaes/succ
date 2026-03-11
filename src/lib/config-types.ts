@@ -130,6 +130,15 @@ export interface SuccConfig {
   auto_memory?: AutoMemoryConfig;
   // Indexing settings (scan action)
   indexing?: IndexingConfig;
+  // Update check settings (npm registry polling)
+  update_check?: UpdateCheckConfig;
+}
+
+export interface UpdateCheckConfig {
+  /** Enable update checking (default: true) */
+  enabled?: boolean;
+  /** Hours between checks (default: 24) */
+  interval_hours?: number;
 }
 
 export interface IndexingConfig {

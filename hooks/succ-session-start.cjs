@@ -657,6 +657,27 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     }
   }
 
+  // Update notification — read cache, inject instruction for AI agent
+  try {
+    const vcPath = path.join(succDir, '.tmp', 'version-check.json');
+    if (fs.existsSync(vcPath)) {
+      const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
+      if (vc.update_available && vc.latest && vc.current) {
+        const age = Date.now() - new Date(vc.checked_at).getTime();
+        if (age < 48 * 3600000) {
+          contextParts.push(
+            `<update-available>` +
+              `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
+              `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
+              `</update-available>`
+          );
+        }
+      }
+    }
+  } catch (err) {
+    log(`Failed to read version-check cache: ${err.message || err}`);
+  }
+
   // Output context
   if (contextParts.length > 0) {
     // Sanitize closing wrapper tags from dynamic content to prevent XML injection
