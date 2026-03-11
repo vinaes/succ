@@ -729,6 +729,24 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
 
     const targetConfig = configScope === 'global' ? newGlobalConfig : newProjectConfig;
 
+    // When user chose global scope, warn if project config already contains LLM overrides.
+    // Project-level llm keys take precedence over global, so stale entries can shadow the
+    // new global settings the wizard is about to write.
+    if (configScope === 'global' && fs.existsSync(projectConfigPath)) {
+      try {
+        const existingProjectCfg = JSON.parse(fs.readFileSync(projectConfigPath, 'utf-8'));
+        if (existingProjectCfg?.llm && Object.keys(existingProjectCfg.llm).length > 0) {
+          console.log(
+            '\n  \x1b[33mNote:\x1b[0m Your project config (.succ/config.json) has existing LLM'
+          );
+          console.log('  settings that will override the global config for this project.');
+          console.log('  Remove the `llm` key from .succ/config.json to use global settings.\n');
+        }
+      } catch {
+        // Ignore parse errors — non-critical warning path
+      }
+    }
+
     // Step 2: Embedding mode
     console.log('\n┌─────────────────────────────────────────────────────────┐');
     console.log('│  succ converts text to vectors (embeddings) for search. │');
