@@ -114,6 +114,7 @@ describe('version-check', () => {
       const { checkForUpdate } = await import('./version-check.js');
       const result = await checkForUpdate();
       expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('returns cached result within TTL without fetching (update_available: true)', async () => {
