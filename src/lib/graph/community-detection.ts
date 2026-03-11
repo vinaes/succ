@@ -22,10 +22,12 @@ import { logWarn } from '../fault-logger.js';
 
 /** Parse memory tags from storage format (array, JSON string, or undefined). */
 function parseMemoryTags(tags: string[] | string | undefined, context: string): string[] {
-  if (Array.isArray(tags)) return tags;
+  if (Array.isArray(tags)) return tags.filter((t): t is string => typeof t === 'string');
   if (typeof tags === 'string') {
     try {
-      return JSON.parse(tags);
+      const parsed: unknown = JSON.parse(tags);
+      if (Array.isArray(parsed)) return parsed.filter((t): t is string => typeof t === 'string');
+      return [];
     } catch (error) {
       logWarn('community-detection', `Failed to parse memory tags: ${context}`, {
         error: error instanceof Error ? error.message : String(error),
@@ -334,10 +336,10 @@ async function applyCommunityTags(
     await Promise.all(
       batch.map((mem) => {
         const communityId = memberToCommunity.get(mem.id);
-        let tags = parseMemoryTags(mem.tags, 'applyCommunityTags');
+        const previousTags = parseMemoryTags(mem.tags, 'applyCommunityTags');
+        let tags = previousTags;
 
         // Remove old community tags
-        const oldLen = tags.length;
         tags = tags.filter((t: string) => !t.startsWith(tagPattern));
 
         // Add new community tag if assigned
@@ -346,7 +348,11 @@ async function applyCommunityTags(
         }
 
         // Only write if tags actually changed
-        if (tags.length !== oldLen || communityId != null) {
+        const changed =
+          tags.length !== previousTags.length ||
+          tags.some((tag, index) => tag !== previousTags[index]);
+
+        if (changed) {
           return updateMemoryTags(mem.id, tags);
         }
         return Promise.resolve();
