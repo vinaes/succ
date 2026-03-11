@@ -321,72 +321,42 @@ ${relationStats}`;
 
           case 'shortest_path': {
             if (source_id == null || target_id == null) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'Both source_id and target_id are required for shortest_path.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'Both source_id and target_id are required for shortest_path.'
+              );
             }
 
             const spResult = await shortestPath(source_id, target_id);
             if (!spResult) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `No path found between memory #${source_id} and #${target_id}.`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `No path found between memory #${source_id} and #${target_id}.`
+              );
             }
 
             const pathStr = spResult.path.map((id) => `#${id}`).join(' → ');
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Shortest path (${spResult.path.length - 1} hops, weight: ${spResult.weight.toFixed(2)}):\n${pathStr}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Shortest path (${spResult.path.length - 1} hops, weight: ${spResult.weight.toFixed(2)}):\n${pathStr}`
+            );
           }
 
           case 'why_related': {
             if (source_id == null || target_id == null) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'Both source_id and target_id are required for why_related.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'Both source_id and target_id are required for why_related.'
+              );
             }
 
             const wrResult = await whyRelated(source_id, target_id);
             if (!wrResult) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `One or both memories (#${source_id}, #${target_id}) not found in graph.`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `One or both memories (#${source_id}, #${target_id}) not found in graph.`
+              );
             }
 
             if (!wrResult.connected) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Memories #${source_id} and #${target_id} are not connected in the knowledge graph.`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `Memories #${source_id} and #${target_id} are not connected in the knowledge graph.`
+              );
             }
 
             const chain = wrResult.path
@@ -398,28 +368,18 @@ ${relationStats}`;
               })
               .join(' ');
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Relationship chain (${wrResult.path.length - 1} hops, distance ${wrResult.distance.toFixed(2)}):\n${chain}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Relationship chain (${wrResult.path.length - 1} hops, distance ${wrResult.distance.toFixed(2)}):\n${chain}`
+            );
           }
 
           case 'critical_nodes': {
             const points = await getArticulationPoints();
 
             if (points.length === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'No articulation points found. The graph has no single points of failure.',
-                  },
-                ],
-              };
+              return createToolResponse(
+                'No articulation points found. The graph has no single points of failure.'
+              );
             }
 
             // Enrich with memory content snippets
@@ -431,28 +391,16 @@ ${relationStats}`;
               })
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Found ${points.length} critical nodes (articulation points):\n${enriched.join('\n')}${points.length > 20 ? `\n  ... and ${points.length - 20} more` : ''}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Found ${points.length} critical nodes (articulation points):\n${enriched.join('\n')}${points.length > 20 ? `\n  ... and ${points.length - 20} more` : ''}`
+            );
           }
 
           case 'pagerank': {
             const prMap = await computePageRank();
 
             if (prMap.size === 0) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: 'No nodes in graph.',
-                  },
-                ],
-              };
+              return createToolResponse('No nodes in graph.');
             }
 
             const topN = 15;
@@ -466,14 +414,9 @@ ${relationStats}`;
               })
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `PageRank — Top ${Math.min(topN, sorted.length)} of ${prMap.size} memories:\n${lines.join('\n')}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `PageRank — Top ${Math.min(topN, sorted.length)} of ${prMap.size} memories:\n${lines.join('\n')}`
+            );
           }
 
           case 'summarize': {
@@ -481,14 +424,9 @@ ${relationStats}`;
               await import('../../lib/graph/community-summaries.js');
             const summResult = await generateCommunitySummaries();
             invalidateGraphCache();
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Community summaries: ${summResult.summariesCreated} created, ${summResult.summariesFailed} failed, ${summResult.oldSummariesRemoved} old summaries removed (${summResult.communitiesProcessed} communities processed).`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Community summaries: ${summResult.summariesCreated} created, ${summResult.summariesFailed} failed, ${summResult.oldSummariesRemoved} old summaries removed (${summResult.communitiesProcessed} communities processed).`
+            );
           }
 
           case 'co_change': {
@@ -498,27 +436,17 @@ ${relationStats}`;
             if (trimmedFilePath) {
               const result = await getCoChangesForFile(trimmedFilePath);
               if (result.cochanges.length === 0) {
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: `No co-change patterns found for "${trimmedFilePath}". The file may have few commits or mostly changes alone.`,
-                    },
-                  ],
-                };
+                return createToolResponse(
+                  `No co-change patterns found for "${trimmedFilePath}". The file may have few commits or mostly changes alone.`
+                );
               }
 
               const lines = result.cochanges.map(
                 (c) => `  ${c.path} (${c.count} times, score: ${c.score.toFixed(2)})`
               );
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Co-change analysis for "${trimmedFilePath}":\n\nFiles that frequently change together:\n${lines.join('\n')}`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `Co-change analysis for "${trimmedFilePath}":\n\nFiles that frequently change together:\n${lines.join('\n')}`
+              );
             }
 
             // No file_path — show overall top co-change pairs
@@ -528,14 +456,9 @@ ${relationStats}`;
               (p) => `  ${p.fileA} ↔ ${p.fileB} (${p.count} times, score: ${p.score.toFixed(2)})`
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Git co-change analysis (${result.totalCommits} commits, ${result.totalFiles} files):\n\nTop co-change pairs:\n${lines.join('\n') || '  (no co-change patterns found)'}`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Git co-change analysis (${result.totalCommits} commits, ${result.totalFiles} files):\n\nTop co-change pairs:\n${lines.join('\n') || '  (no co-change patterns found)'}`
+            );
           }
 
           case 'bridge': {
@@ -546,41 +469,24 @@ ${relationStats}`;
               // Find memories linked to a specific code path
               const results = await findMemoriesForCode(trimmedFilePath);
               if (results.length === 0) {
-                return {
-                  content: [
-                    {
-                      type: 'text' as const,
-                      text: `No memories found referencing "${trimmedFilePath}".`,
-                    },
-                  ],
-                };
+                return createToolResponse(`No memories found referencing "${trimmedFilePath}".`);
               }
 
               const lines = results.map(
                 (r) =>
                   `  #${r.memoryId} [${r.relation}] (score: ${r.score.toFixed(3)}): ${r.content.substring(0, 120)}${r.content.length > 120 ? '...' : ''}`
               );
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Memories referencing "${trimmedFilePath}":\n\n${lines.join('\n')}`,
-                  },
-                ],
-              };
+              return createToolResponse(
+                `Memories referencing "${trimmedFilePath}":\n\n${lines.join('\n')}`
+              );
             }
 
             // No trimmedFilePath — run auto-bridge scan
             const result = await autoBridgeRecentMemories();
             invalidateGraphCache();
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Bridge edge scan: ${result.created} edges created, ${result.skipped} skipped, ${result.errors} errors.`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `Bridge edge scan: ${result.created} edges created, ${result.skipped} skipped, ${result.errors} errors.`
+            );
           }
 
           default:

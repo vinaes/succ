@@ -3470,6 +3470,8 @@ export class PostgresBackend {
       qualityScore?: { score: number; factors: Record<string, number> };
       validFrom?: string | Date;
       validUntil?: string | Date;
+      confidence?: number;
+      sourceType?: string;
     }>,
     deduplicateThreshold: number = 0.92,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
@@ -3560,9 +3562,20 @@ export class PostgresBackend {
             : memory.validUntil
           : null;
 
+        // Validate provenance fields — mirror saveMemory() behaviour
+        const rawConfidence = memory.confidence ?? 0.5;
+        const confidence =
+          !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1
+            ? 0.5
+            : rawConfidence;
+        const sourceType =
+          memory.sourceType && (SOURCE_TYPES as readonly string[]).includes(memory.sourceType)
+            ? memory.sourceType
+            : 'human';
+
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING id`,
           [
             this.projectId,
@@ -3575,6 +3588,8 @@ export class PostgresBackend {
             toPgVector(memory.embedding),
             validFromStr,
             validUntilStr,
+            confidence,
+            sourceType,
           ]
         );
 

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getDb, cachedPrepare } from './connection.js';
-import { sqliteVecAvailable, MemoryType, SourceType } from './schema.js';
+import { sqliteVecAvailable, MemoryType, SourceType, SOURCE_TYPES } from './schema.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { logWarn } from '../fault-logger.js';
 import { cosineSimilarity } from '../embeddings.js';
@@ -164,9 +164,17 @@ export function saveMemory(
     qualityScore,
     validFrom,
     validUntil,
-    confidence = 0.5,
-    sourceType = 'human',
+    sourceType: rawSourceType = 'human',
   } = options;
+  let { confidence = 0.5 } = options;
+
+  // Validate provenance fields — mirror PostgreSQL backend behaviour
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    confidence = 0.5;
+  }
+  const sourceType: SourceType = (SOURCE_TYPES as readonly string[]).includes(rawSourceType)
+    ? (rawSourceType as SourceType)
+    : 'human';
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -1263,6 +1271,17 @@ export function saveMemoriesBatch(
             : input.validUntil
           : null;
 
+        // Validate provenance fields — mirror PostgreSQL backend behaviour
+        const rawConfidence = input.confidence ?? 0.5;
+        const confidence =
+          !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1
+            ? 0.5
+            : rawConfidence;
+        const sourceType: SourceType =
+          input.sourceType && (SOURCE_TYPES as readonly string[]).includes(input.sourceType)
+            ? (input.sourceType as SourceType)
+            : 'human';
+
         const result = insertStmt.run(
           input.content,
           tagsStr,
@@ -1273,8 +1292,8 @@ export function saveMemoriesBatch(
           embeddingBlob,
           validFromStr,
           validUntilStr,
-          input.confidence ?? 0.5,
-          input.sourceType ?? 'human'
+          confidence,
+          sourceType
         );
 
         const memoryId = Number(result.lastInsertRowid);

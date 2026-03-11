@@ -347,7 +347,15 @@ async function applyCommunityTags(
     await Promise.all(
       batch.map((mem) => {
         const communityId = memberToCommunity.get(mem.id);
-        const previousTags = parseMemoryTags(mem.tags, 'applyCommunityTags');
+
+        // Detect whether parseMemoryTags had to normalize malformed data.
+        // When the stored value is a non-null string but parsing produced [],
+        // the DB row holds corrupt data (invalid JSON or a non-array JSON value).
+        // Force a rewrite so the corrected [] is persisted.
+        const rawTags = mem.tags;
+        const previousTags = parseMemoryTags(rawTags, 'applyCommunityTags');
+        const needsRewrite = typeof rawTags === 'string' && previousTags.length === 0;
+
         let tags = previousTags;
 
         // Remove old community tags
@@ -358,12 +366,12 @@ async function applyCommunityTags(
           tags.push(`${tagPrefix}:${communityId}`);
         }
 
-        // Only write if tags actually changed
+        // Write if tags actually changed OR if we detected corrupt stored data
         const changed =
           tags.length !== previousTags.length ||
           tags.some((tag, index) => tag !== previousTags[index]);
 
-        if (changed) {
+        if (changed || needsRewrite) {
           return updateMemoryTags(mem.id, tags);
         }
         return Promise.resolve();
