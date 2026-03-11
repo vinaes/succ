@@ -134,8 +134,8 @@ const CODE_DETECT_LANGUAGES = ['typescript', 'python', 'go', 'rust'] as const;
  * Falls back to false if tree-sitter is unavailable.
  */
 async function looksLikeCodeAST(query: string): Promise<boolean> {
-  // Short strings (< 10 chars) are unlikely to be meaningful code
-  if (query.length < 10) return false;
+  // Short strings (< 3 chars) cannot form valid code constructs
+  if (query.length < 3) return false;
 
   for (const lang of CODE_DETECT_LANGUAGES) {
     try {

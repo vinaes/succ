@@ -219,8 +219,14 @@ export async function rerank<T extends Rerankable>(
 ): Promise<T[]> {
   if (results.length === 0) return [];
 
+  // Normalize topK: must be a positive integer, clamped to results length.
+  const safeTopK =
+    topK !== undefined && Number.isFinite(topK) && topK > 0
+      ? Math.min(Math.floor(topK), results.length)
+      : undefined;
+
   // Helper: apply topK slice consistently on every return path.
-  const applyTopK = (arr: T[]): T[] => (topK !== undefined ? arr.slice(0, topK) : arr);
+  const applyTopK = (arr: T[]): T[] => (safeTopK !== undefined ? arr.slice(0, safeTopK) : arr);
 
   if (results.length === 1) return applyTopK(results);
 
@@ -241,7 +247,9 @@ export async function rerank<T extends Rerankable>(
   try {
     // Prepare document texts for scoring
     // Truncate long documents to save compute
-    const maxDocChars = rerankerConfig?.max_doc_chars ?? 1000;
+    const rawMaxDocChars = rerankerConfig?.max_doc_chars ?? 1000;
+    const maxDocChars =
+      Number.isFinite(rawMaxDocChars) && rawMaxDocChars > 0 ? Math.floor(rawMaxDocChars) : 1000;
     const docTexts = results.map((r) => {
       const text = r.content.slice(0, maxDocChars);
       // Include symbol metadata for code results
@@ -256,7 +264,8 @@ export async function rerank<T extends Rerankable>(
 
     // Combine with original scores:
     // reranker_weight * cross_encoder_score + (1 - reranker_weight) * original_score
-    const weight = rerankerConfig?.weight ?? 0.7;
+    const rawWeight = rerankerConfig?.weight ?? 0.7;
+    const weight = Number.isFinite(rawWeight) ? Math.max(0, Math.min(1, rawWeight)) : 0.7;
     const reranked = results.map((result, i) => ({
       ...result,
       _originalSimilarity: result.similarity,

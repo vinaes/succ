@@ -6,7 +6,8 @@
  * Cosine similarity between two vectors.
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
-  const len = Math.min(a.length, b.length);
+  if (a.length !== b.length) return 0;
+  const len = a.length;
   if (len === 0) return 0;
   let dot = 0,
     magA = 0,
