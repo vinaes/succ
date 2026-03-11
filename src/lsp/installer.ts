@@ -199,10 +199,16 @@ function installViaNpm(
       // Clean up temp dir so it doesn't accumulate on repeated failures
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
-      } catch {
-        logWarn('lsp-installer', `Failed to clean up temp dir for ${serverName} after removal failure`);
+      } catch (tmpCleanupErr) {
+        logWarn(
+          'lsp-installer',
+          `Failed to clean up temp dir for ${serverName} after removal failure`,
+          { error: tmpCleanupErr instanceof Error ? tmpCleanupErr.message : String(tmpCleanupErr) }
+        );
       }
-      throw new Error(`Cannot replace existing install for ${serverName}: ${msg}`);
+      throw new Error(`Cannot replace existing install for ${serverName}: ${msg}`, {
+        cause: cleanupErr,
+      });
     }
   }
   fs.renameSync(tmpDir, serverDir);
