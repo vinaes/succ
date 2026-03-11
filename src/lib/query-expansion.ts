@@ -114,6 +114,12 @@ export async function expandQueryFull(
 ): Promise<ExpandedQuery> {
   const { forceExpand = false, mode } = options;
 
+  // '   '.trim().split(/\s+/) returns [''] (length 1), so the wordCount >= 8
+  // check below does NOT guard against whitespace-only queries. Bail early.
+  if (!query.trim()) {
+    return { original: query, expanded: [], combined: query, wasExpanded: false };
+  }
+
   if (!forceExpand) {
     const wordCount = query.trim().split(/\s+/).length;
     if (wordCount >= 8 || looksLikeCode(query)) {

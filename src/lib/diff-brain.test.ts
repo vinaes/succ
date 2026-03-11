@@ -40,8 +40,15 @@ describe('diff-brain', () => {
   });
 
   it('should reject invalid diff references', () => {
+    // Ensure validation runs BEFORE any shell-out — execFileSync must never be
+    // called with a malicious diff reference.
+    mockExecFileSync.mockClear();
     expect(() => detectChangedFiles('$(rm -rf /)')).toThrow('Invalid diff reference');
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+
+    mockExecFileSync.mockClear();
     expect(() => detectChangedFiles('HEAD; echo pwned')).toThrow('Invalid diff reference');
+    expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
   it('should find affected brain docs for changed files', () => {

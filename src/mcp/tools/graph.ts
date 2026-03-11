@@ -106,9 +106,9 @@ export function registerGraphTools(server: McpServer) {
       file_path,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
-      const trimmedFilePath = file_path?.trim() || undefined;
       try {
+        await applyProjectPath(project_path);
+        const trimmedFilePath = file_path?.trim() || undefined;
         switch (action) {
           case 'create': {
             if (source_id == null || target_id == null) {

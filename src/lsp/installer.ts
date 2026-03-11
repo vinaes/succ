@@ -143,35 +143,69 @@ function installViaNpm(
   serverDir: string,
   strategy: Extract<InstallStrategy, { type: 'npm' }>
 ): boolean {
-  // Create isolated directory
-  fs.mkdirSync(serverDir, { recursive: true });
+  // Install into a temp directory first so a failed install cannot delete a
+  // previously working version of the server.
+  const tmpDir = `${serverDir}.tmp`;
+
+  // Clean up any leftover temp dir from a previous failed attempt
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch (cleanupErr) {
+    logWarn('lsp-installer', `Failed to remove stale temp dir for ${serverName}`, {
+      error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+    });
+  }
+
+  fs.mkdirSync(tmpDir, { recursive: true });
 
   // Initialize package.json
-  const pkgJson = path.join(serverDir, 'package.json');
-  if (!fs.existsSync(pkgJson)) {
-    fs.writeFileSync(pkgJson, JSON.stringify({ name: `succ-lsp-${serverName}`, private: true }));
-  }
+  const pkgJson = path.join(tmpDir, 'package.json');
+  fs.writeFileSync(pkgJson, JSON.stringify({ name: `succ-lsp-${serverName}`, private: true }));
 
   // Install packages with --ignore-scripts for security
   logInfo('lsp-installer', `Installing ${serverName} via npm: ${strategy.packages.join(', ')}`);
 
   try {
     execFileSync('npm', ['install', '--ignore-scripts', ...strategy.packages], {
-      cwd: serverDir,
+      cwd: tmpDir,
       stdio: 'pipe',
       timeout: 120000,
     });
   } catch (error) {
-    // Clean up partial install so listInstalledServers() doesn't report false positives
+    // Clean up temp dir only — never touch serverDir so an existing working
+    // install is preserved.
     try {
-      fs.rmSync(serverDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch (cleanupErr) {
-      logWarn('lsp-installer', `Failed to clean up partial install for ${serverName}`, {
+      logWarn('lsp-installer', `Failed to clean up temp install dir for ${serverName}`, {
         error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
       });
     }
     throw error;
   }
+
+  // Atomically replace the existing install (if any) with the new one.
+  // Must remove serverDir first — fs.renameSync fails on Windows if the
+  // destination exists. If removal fails, clean up tmpDir and rethrow so
+  // the caller sees a clean failure rather than a stranded temp directory.
+  if (fs.existsSync(serverDir)) {
+    try {
+      fs.rmSync(serverDir, { recursive: true, force: true });
+    } catch (cleanupErr) {
+      const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+      logWarn('lsp-installer', `Failed to remove old install dir for ${serverName}`, {
+        error: msg,
+      });
+      // Clean up temp dir so it doesn't accumulate on repeated failures
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        logWarn('lsp-installer', `Failed to clean up temp dir for ${serverName} after removal failure`);
+      }
+      throw new Error(`Cannot replace existing install for ${serverName}: ${msg}`);
+    }
+  }
+  fs.renameSync(tmpDir, serverDir);
 
   logInfo('lsp-installer', `Successfully installed ${serverName}`);
   return true;
