@@ -662,7 +662,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     const vcPath = path.join(succDir, '.tmp', 'version-check.json');
     if (fs.existsSync(vcPath)) {
       const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
-      if (vc.update_available && vc.latest && vc.current) {
+      if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
         const age = Date.now() - new Date(vc.checked_at).getTime();
         if (age < 48 * 3600000) {
           contextParts.push(
