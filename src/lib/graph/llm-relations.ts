@@ -17,6 +17,7 @@ import {
   getMemoryLinks,
 } from '../storage/index.js';
 import { logWarn } from '../fault-logger.js';
+import { invalidateGraphCache } from './graphology-bridge.js';
 import {
   CLASSIFY_SYSTEM,
   CLASSIFY_PROMPT_SINGLE,
@@ -219,6 +220,12 @@ export async function enrichExistingLinks(
         failed++;
       }
     }
+  }
+
+  // Invalidate the graph cache once after all link mutations so that subsequent
+  // graph algorithm calls (PPR, betweenness, etc.) see the updated relations.
+  if (enriched > 0 || failed > 0) {
+    invalidateGraphCache();
   }
 
   return { enriched, failed, skipped };

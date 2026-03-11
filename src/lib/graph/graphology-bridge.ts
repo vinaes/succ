@@ -327,13 +327,17 @@ export async function detectLouvainCommunities(
 
 /**
  * Convert edge similarity weight (higher = stronger relation) to distance
- * cost (lower = closer) for Dijkstra. Avoids zero/negative costs.
+ * cost (lower = closer) for Dijkstra. Avoids zero/negative/non-finite costs.
+ *
+ * Only guards the lower bound and non-finite values — weights above 1.0 are
+ * intentionally preserved so that Dijkstra and betweenness centrality can
+ * distinguish between links of different strengths. Clamping to 1.0 would
+ * collapse all high-weight edges to an identical cost of 1.0 and lose ordering.
  */
 function similarityToDistance(_edge: string, attr: Record<string, unknown>): number {
-  const w = (attr.weight as number) ?? 1.0;
-  // Clamp to [0.01, 1] to avoid division by zero or negative costs
-  const clamped = Math.max(0.01, Math.min(1.0, w));
-  return 1.0 / clamped;
+  const raw = typeof attr.weight === 'number' ? attr.weight : 1.0;
+  const safe = Number.isFinite(raw) && raw > 0 ? raw : 0.01;
+  return 1.0 / safe;
 }
 
 /**
