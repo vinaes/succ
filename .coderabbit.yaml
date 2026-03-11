@@ -1,10 +1,8 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en-US
-tone_instructions: |
-  Be direct and technical. Skip praise ("great job", "looks good"). Focus on bugs,
-  security, and correctness first. For nitpicks, clearly label them as such.
-  When suggesting code changes, always include concrete code snippets.
-  Do not repeat findings from previous review rounds if the code hasn't changed.
+tone_instructions: >-
+  Direct, technical, no praise. Bugs/security/correctness first.
+  Label nitpicks. Include code snippets. Skip already-reviewed unchanged code.
 reviews:
   profile: assertive
   auto_review:
