@@ -204,11 +204,23 @@ export async function detectCommunitiesLP(
   if (links.length === 0) {
     // Clear any stale community tags from a previous run
     await applyCommunityTags([], tagPrefix);
-    return { communities: [], isolated: 0, iterations: 0 };
+    const allMemories = await getAllMemoriesForExport();
+    return { communities: [], isolated: allMemories.length, iterations: 0 };
   }
 
-  // Build adjacency list
+  // Build adjacency list, then seed all known memory IDs so isolated nodes
+  // (those with no edges) are still tracked and counted correctly.
   const adjacency = buildAdjacencyList(links);
+
+  // Hoist allMemories fetch: needed both to seed isolated nodes into the
+  // adjacency map (so LP assigns them each a singleton community) and later
+  // to retag every memory (matching Louvain behaviour).
+  const allMemories = await getAllMemoriesForExport();
+  for (const mem of allMemories) {
+    if (!adjacency.has(mem.id)) {
+      adjacency.set(mem.id, []);
+    }
+  }
 
   // Run Label Propagation
   const lpResult = labelPropagation(adjacency, maxIterations);
@@ -238,7 +250,6 @@ export async function detectCommunitiesLP(
 
   // Update memory tags: remove old community tags, add new ones
   const tagPattern = `${tagPrefix}:`;
-  const allMemories = await getAllMemoriesForExport();
   const memoryTagMap = new Map<number, string[]>();
   for (const mem of allMemories) {
     memoryTagMap.set(mem.id, parseMemoryTags(mem.tags, 'community assignment'));

@@ -26,11 +26,13 @@ describe('bridge-edges', () => {
       expect(refs[0].path).toBe('src/mcp/tools/graph.ts');
     });
 
-    it('should extract relative paths', () => {
+    it('should extract relative paths (normalized, leading ./ stripped)', () => {
       const content = 'See ./components/Button.tsx for the component';
       const refs = extractCodePaths(content);
       expect(refs).toHaveLength(1);
-      expect(refs[0].path).toBe('./components/Button.tsx');
+      // Leading ./ is stripped during extraction so includes() comparisons
+      // work correctly against paths stored without it.
+      expect(refs[0].path).toBe('components/Button.tsx');
     });
 
     it('should ignore non-code extensions', () => {

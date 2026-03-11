@@ -83,7 +83,9 @@ export function extractCodePaths(content: string): CodeReference[] {
 
   let match: RegExpExecArray | null;
   while ((match = FILE_PATH_PATTERN.exec(content)) !== null) {
-    const path = match[1];
+    // Normalize: strip leading ./ and convert backslashes to forward slashes
+    const rawPath = match[1];
+    const path = rawPath.replace(/^\.\//, '').replace(/\\/g, '/');
     // Must look like a code file
     if (!CODE_EXTENSIONS.test(path)) continue;
     // Skip duplicates

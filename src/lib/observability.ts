@@ -142,8 +142,7 @@ export function getLatencyStats(
   for (const [op, durations] of groups) {
     durations.sort((a, b) => a - b);
     const avg = durations.reduce((s, d) => s + d, 0) / durations.length;
-    const p95Index = Math.floor(durations.length * 0.95);
-    const p95 = durations[Math.min(p95Index, durations.length - 1)];
+    const p95 = durations[Math.max(0, Math.ceil(durations.length * 0.95) - 1)];
 
     stats.push({
       operation: op,
