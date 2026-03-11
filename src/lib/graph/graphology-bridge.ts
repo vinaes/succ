@@ -11,9 +11,9 @@
 
 import Graph from 'graphology';
 import louvain from 'graphology-communities-louvain';
-import pagerank from 'graphology-metrics/centrality/pagerank';
-import betweennessCentrality from 'graphology-metrics/centrality/betweenness';
-import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra';
+import pagerank from 'graphology-metrics/centrality/pagerank.js';
+import betweennessCentrality from 'graphology-metrics/centrality/betweenness.js';
+import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra.js';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
 import { getProjectRoot } from '../config.js';
 import { logInfo } from '../fault-logger.js';
