@@ -442,7 +442,7 @@ function extractKeyTerms(content: string, limit: number = 20): string[] {
   const text = content
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`[^`]+`/g, '')
-    .replace(/[#*_\[\]()>|~-]/g, ' ')
+    .replace(/[#*_[\]()>|~-]/g, ' ')
     .toLowerCase();
 
   // Count word frequency

@@ -66,7 +66,7 @@ export function detectChangedFiles(diffRef: string = 'HEAD~1'): DiffAnalysisResu
     throw new Error(`Invalid diff reference: ${diffRef}`);
   }
 
-  let changedFiles: string[] = [];
+  let changedFiles: string[];
   try {
     // diffRef is validated by the regex above — safe to pass as argument
     const output = execFileSync('git', ['diff', '--name-only', '--diff-filter=d', diffRef], {
