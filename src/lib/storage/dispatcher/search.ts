@@ -255,11 +255,17 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
         );
         if (results.length > 0) {
           this._resetQdrantFailures();
-          return rerank(
-            query,
-            results as unknown as (GlobalMemorySearchResult & Rerankable)[],
-            lim
-          );
+          const mapped: HybridGlobalMemoryResult[] = results.map((r) => ({
+            id: r.id,
+            content: r.content,
+            tags: r.tags,
+            source: r.source,
+            project: null,
+            type: r.type,
+            created_at: r.created_at,
+            similarity: r.similarity,
+          }));
+          return rerank(query, mapped as (HybridGlobalMemoryResult & Rerankable)[], lim);
         }
       } catch (error) {
         this._warnQdrantFailure('hybridSearchGlobalMemories failed, falling back', error);
