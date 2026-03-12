@@ -3793,9 +3793,15 @@ export class PostgresBackend {
 
   async deleteMemoriesOlderThan(date: Date): Promise<number> {
     const pool = await this.getPool();
-    const result = await pool.query('DELETE FROM memories WHERE created_at < $1', [
-      date.toISOString(),
-    ]);
+    const params: Array<string> = [date.toISOString()];
+    let sql = 'DELETE FROM memories WHERE created_at < $1';
+    if (this.projectId) {
+      sql += ` AND (LOWER(project_id) = LOWER($2) OR project_id IS NULL)`;
+      params.push(this.projectId);
+    } else {
+      sql += ` AND project_id IS NULL`;
+    }
+    const result = await pool.query(sql, params);
     return result.rowCount ?? 0;
   }
 
@@ -4474,11 +4480,18 @@ export class PostgresBackend {
       throw new Error(`olderThanDays must be a positive integer, got: ${olderThanDays}`);
     }
     const pool = await this.getPool();
-    const result = await pool.query(
-      `DELETE FROM recall_events
-       WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
-      [olderThanDays]
-    );
+    const params: Array<number | string> = [olderThanDays];
+    let sql = `DELETE FROM recall_events re
+               USING memories m
+               WHERE re.memory_id = m.id
+                 AND re.created_at < NOW() - INTERVAL '1 day' * $1`;
+    if (this.projectId) {
+      sql += ` AND (LOWER(m.project_id) = LOWER($2) OR m.project_id IS NULL)`;
+      params.push(this.projectId);
+    } else {
+      sql += ` AND m.project_id IS NULL`;
+    }
+    const result = await pool.query(sql, params);
     return result.rowCount ?? 0;
   }
 }
