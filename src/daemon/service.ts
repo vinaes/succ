@@ -327,6 +327,39 @@ export async function routeRequest(
 }
 
 let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
+let recallCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function scheduleRecallCleanup(logFn: (msg: string) => void): void {
+  const runCleanup = () => {
+    try {
+      const config = getConfig();
+      const retentionDays = config.privacy?.recall?.retention_days ?? 30;
+      if (retentionDays <= 0) return;
+      import('../lib/retrieval-feedback.js')
+        .then(({ cleanupRecallEvents }) => {
+          const deleted = cleanupRecallEvents(retentionDays);
+          if (deleted > 0) {
+            logFn(
+              `[recall-cleanup] Deleted ${deleted} recall events older than ${retentionDays} days`
+            );
+          }
+        })
+        .catch((err) => {
+          logWarn('daemon', 'Recall cleanup failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    } catch (err) {
+      logWarn('daemon', 'Recall cleanup scheduler error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  setTimeout(runCleanup, 10_000); // 10s after startup
+  recallCleanupTimer = setInterval(runCleanup, 86_400_000); // daily
+  recallCleanupTimer.unref();
+}
 
 function scheduleUpdateCheck(logFn: (msg: string) => void): void {
   // Run once at startup (after short delay to not block init)
@@ -473,6 +506,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   // Background update check — keeps cache warm for MCP-only users
   scheduleUpdateCheck(log);
 
+  // Daily recall event retention cleanup
+  scheduleRecallCleanup(log);
+
   if (config.daemon?.watch?.auto_start) {
     const watchConfig = config.daemon.watch;
     await startWatcher(
@@ -539,6 +575,11 @@ export async function shutdownDaemon(): Promise<void> {
   if (updateCheckTimer) {
     clearInterval(updateCheckTimer);
     updateCheckTimer = null;
+  }
+
+  if (recallCleanupTimer) {
+    clearInterval(recallCleanupTimer);
+    recallCleanupTimer = null;
   }
 
   if (idleWatcher) {
