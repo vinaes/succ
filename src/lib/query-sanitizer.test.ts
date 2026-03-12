@@ -68,10 +68,16 @@ describe('sanitizeQuery', () => {
     expect(result.redacted).toBe('hash is [HEX] in the log');
   });
 
-  it('does not mask short hex strings under 32 chars', () => {
+  it('does not mask hex strings under 32 chars', () => {
     const shortHex = 'deadbeef1234abcd'; // 16 chars
     const result = sanitizeQuery(`id is ${shortHex} ok`);
     expect(result.redacted).toBe(`id is ${shortHex} ok`);
+  });
+
+  it('does not mask 31-char hex (boundary below threshold)', () => {
+    const hex31 = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d'; // 31 hex chars
+    const result = sanitizeQuery(`hash ${hex31} here`);
+    expect(result.redacted).toBe(`hash ${hex31} here`);
   });
 
   it('masks long base64-like strings (32+ chars)', () => {
@@ -112,7 +118,12 @@ describe('sanitizeQuery', () => {
     expect(result.redacted).toBe('card [REDACTED_NUMBER] on file');
   });
 
-  it('does not mask short numbers (under 6 digits)', () => {
+  it('masks exactly 6-digit numbers (boundary at threshold)', () => {
+    const result = sanitizeQuery('code 123456 entered');
+    expect(result.redacted).toBe('code [REDACTED_NUMBER] entered');
+  });
+
+  it('does not mask 5-digit numbers (boundary below threshold)', () => {
     const result = sanitizeQuery('top 12345 results found');
     expect(result.redacted).toBe('top 12345 results found');
   });
