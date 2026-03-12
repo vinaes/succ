@@ -957,7 +957,7 @@ export function getMemoryById(id: number): Memory | null {
  * Uses json_each() to query tags array. ~5ms on SQLite.
  * Used by file-linked memories to surface related memories on file edit.
  */
-export function getMemoriesByTag(tag: string, limit: number = 5): Memory[] {
+export function getMemoriesByTag(tag: string, limit: number = 5, offset: number = 0): Memory[] {
   const rows = cachedPrepare(
     `
     SELECT DISTINCT m.id, m.content, m.tags, m.source, m.type, m.quality_score, m.quality_factors,
@@ -968,8 +968,9 @@ export function getMemoriesByTag(tag: string, limit: number = 5): Memory[] {
       AND m.invalidated_by IS NULL
     ORDER BY m.priority_score DESC NULLS LAST, m.created_at DESC
     LIMIT ?
+    OFFSET ?
     `
-  ).all(tag, limit) as Array<Record<string, any>>;
+  ).all(tag, limit, offset) as Array<Record<string, any>>;
 
   return rows.map((row) => ({
     id: row.id,

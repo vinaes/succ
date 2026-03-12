@@ -1974,7 +1974,7 @@ export class PostgresBackend {
     };
   }
 
-  async getMemoriesByTag(tag: string, limit: number = 5): Promise<Memory[]> {
+  async getMemoriesByTag(tag: string, limit: number = 5, offset: number = 0): Promise<Memory[]> {
     const pool = await this.getPool();
     const result = await pool.query<{
       id: number;
@@ -2003,8 +2003,9 @@ export class PostgresBackend {
          AND invalidated_by IS NULL
          AND (LOWER(project_id) = $3 OR project_id IS NULL)
        ORDER BY priority_score DESC NULLS LAST, created_at DESC
-       LIMIT $2`,
-      [tag, limit, this.projectId]
+       LIMIT $2
+       OFFSET $4`,
+      [tag, limit, this.projectId, offset]
     );
 
     return result.rows.map((row) => ({
