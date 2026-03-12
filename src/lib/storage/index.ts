@@ -516,6 +516,11 @@ export async function getMemoryHealth(): Promise<{
   return d.getMemoryHealth();
 }
 
+export async function deleteOldRecallEvents(olderThanDays: number): Promise<number> {
+  const d = await getStorageDispatcher();
+  return d.deleteOldRecallEvents(olderThanDays);
+}
+
 export async function deleteMemoriesOlderThan(date: Date): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesOlderThan(date);

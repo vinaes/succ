@@ -19,6 +19,11 @@ vi.mock('./fault-logger.js', () => ({
   logWarn: vi.fn(),
 }));
 
+const mockDeleteOldRecallEvents = vi.fn().mockResolvedValue(0);
+vi.mock('./storage/index.js', () => ({
+  deleteOldRecallEvents: (...args: unknown[]) => mockDeleteOldRecallEvents(...args),
+}));
+
 import {
   recordRecallEvent,
   recordRecallBatch,
@@ -179,18 +184,22 @@ describe('retrieval-feedback', () => {
   });
 
   describe('cleanupRecallEvents', () => {
-    it('should delete old events', () => {
-      mockRun.mockReturnValueOnce({ changes: 15 });
-      const deleted = cleanupRecallEvents(90);
+    it('should delete old events via storage dispatcher', async () => {
+      mockDeleteOldRecallEvents.mockResolvedValueOnce(15);
+      const deleted = await cleanupRecallEvents(90);
       expect(deleted).toBe(15);
+      expect(mockDeleteOldRecallEvents).toHaveBeenCalledWith(90);
     });
 
-    it('should handle errors gracefully', () => {
-      mockRun.mockImplementationOnce(() => {
-        throw new Error('DB locked');
-      });
-      const deleted = cleanupRecallEvents(90);
-      expect(deleted).toBe(0);
+    it('should use default retention of 30 days', async () => {
+      mockDeleteOldRecallEvents.mockResolvedValueOnce(0);
+      await cleanupRecallEvents();
+      expect(mockDeleteOldRecallEvents).toHaveBeenCalledWith(30);
+    });
+
+    it('should propagate storage errors', async () => {
+      mockDeleteOldRecallEvents.mockRejectedValueOnce(new Error('DB locked'));
+      await expect(cleanupRecallEvents(90)).rejects.toThrow('DB locked');
     });
   });
 });

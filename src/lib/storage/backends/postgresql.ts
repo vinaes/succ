@@ -4468,6 +4468,19 @@ export class PostgresBackend {
       relations,
     };
   }
+
+  async deleteOldRecallEvents(olderThanDays: number): Promise<number> {
+    if (!Number.isInteger(olderThanDays) || olderThanDays < 1) {
+      throw new Error(`olderThanDays must be a positive integer, got: ${olderThanDays}`);
+    }
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `DELETE FROM recall_events
+       WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+      [olderThanDays]
+    );
+    return result.rowCount ?? 0;
+  }
 }
 
 /**
