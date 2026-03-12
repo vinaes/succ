@@ -327,7 +327,9 @@ export async function routeRequest(
 }
 
 let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
+let updateCheckStartupTimer: ReturnType<typeof setTimeout> | null = null;
 let recallCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let recallCleanupStartupTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleRecallCleanup(logFn: (msg: string) => void): void {
   const runCleanup = () => {
@@ -356,7 +358,7 @@ function scheduleRecallCleanup(logFn: (msg: string) => void): void {
     }
   };
 
-  setTimeout(runCleanup, 10_000); // 10s after startup
+  recallCleanupStartupTimer = setTimeout(runCleanup, 10_000); // 10s after startup
   recallCleanupTimer = setInterval(runCleanup, 86_400_000); // daily
   recallCleanupTimer.unref();
 }
@@ -376,7 +378,7 @@ function scheduleUpdateCheck(logFn: (msg: string) => void): void {
       });
   };
 
-  setTimeout(runCheck, 5000); // 5s after startup
+  updateCheckStartupTimer = setTimeout(runCheck, 5000); // 5s after startup
   // Re-check every 12 hours (cache TTL is 24h, so this keeps it warm)
   updateCheckTimer = setInterval(runCheck, 12 * 3600_000);
   updateCheckTimer.unref(); // Don't prevent process exit
@@ -572,9 +574,19 @@ function checkShutdown(): void {
 export async function shutdownDaemon(): Promise<void> {
   log('[daemon] Shutting down...');
 
+  if (updateCheckStartupTimer) {
+    clearTimeout(updateCheckStartupTimer);
+    updateCheckStartupTimer = null;
+  }
+
   if (updateCheckTimer) {
     clearInterval(updateCheckTimer);
     updateCheckTimer = null;
+  }
+
+  if (recallCleanupStartupTimer) {
+    clearTimeout(recallCleanupStartupTimer);
+    recallCleanupStartupTimer = null;
   }
 
   if (recallCleanupTimer) {

@@ -222,7 +222,7 @@ export function getNeverUsedMemories(
  * @param olderThanDays - Delete events older than this many days
  * @returns Number of events deleted
  */
-export function cleanupRecallEvents(olderThanDays: number = 90): number {
+export function cleanupRecallEvents(olderThanDays: number = 30): number {
   return deleteOldRecallEvents(olderThanDays);
 }
 

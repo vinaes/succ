@@ -5,7 +5,7 @@
  * long hex strings, and base64-like blobs that users may include in queries.
  */
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}/g;
 const URL_RE = /https?:\/\/[^\s"'<>()[\]{}]+/g;
 // JWT: 3 base64url segments (header.payload.signature), min 20 chars each segment
 const JWT_RE = /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g;
@@ -16,6 +16,8 @@ const HEX_RE = /\b[0-9a-fA-F]{32,}\b/g;
 // Long base64-like strings (32+ chars: alphanumeric + /+=)
 // Must not be caught by HEX_RE already — include at least one non-hex base64 char
 const BASE64_RE = /[A-Za-z0-9+/]{32,}={0,2}/g;
+// Long numeric sequences (credit card numbers, account IDs, order numbers — 6+ consecutive digits)
+const LONG_NUMBER_RE = /\b\d{6,}\b/g;
 
 const TRUNCATE_LEN = 256;
 
@@ -56,6 +58,9 @@ export function sanitizeQuery(query: string): SanitizeResult {
 
   // 5. Long hex strings — before BASE64 because hex is a subset of base64 chars
   s = s.replace(HEX_RE, '[HEX]');
+
+  // 5b. Long numeric sequences (credit card numbers, account IDs, order numbers)
+  s = s.replace(LONG_NUMBER_RE, '[REDACTED_NUMBER]');
 
   // 6. Long base64-like strings (anything 32+ chars with base64 alphabet not already replaced)
   // Only match strings that contain at least one non-hex character (to avoid re-matching [HEX])

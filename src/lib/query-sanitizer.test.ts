@@ -98,6 +98,21 @@ describe('sanitizeQuery', () => {
     expect(result.redacted).toContain('[API_KEY]');
   });
 
+  it('masks long numeric sequences (6+ digits)', () => {
+    const result = sanitizeQuery('order 1234567890 was placed');
+    expect(result.redacted).toBe('order [REDACTED_NUMBER] was placed');
+  });
+
+  it('masks credit card-length numbers', () => {
+    const result = sanitizeQuery('card 4111111111111111 on file');
+    expect(result.redacted).toBe('card [REDACTED_NUMBER] on file');
+  });
+
+  it('does not mask short numbers (under 6 digits)', () => {
+    const result = sanitizeQuery('top 12345 results found');
+    expect(result.redacted).toBe('top 12345 results found');
+  });
+
   it('handles empty string', () => {
     const result = sanitizeQuery('');
     expect(result.redacted).toBe('');

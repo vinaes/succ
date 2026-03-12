@@ -2002,7 +2002,7 @@ export class PostgresBackend {
        WHERE tags::jsonb ? $1
          AND invalidated_by IS NULL
          AND (LOWER(project_id) = $3 OR project_id IS NULL)
-       ORDER BY priority_score DESC NULLS LAST, created_at DESC
+       ORDER BY priority_score DESC NULLS LAST, created_at DESC, id DESC
        LIMIT $2
        OFFSET $4`,
       [tag, limit, this.projectId, offset]
