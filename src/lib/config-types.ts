@@ -132,6 +132,8 @@ export interface SuccConfig {
   indexing?: IndexingConfig;
   // Update check settings (npm registry polling)
   update_check?: UpdateCheckConfig;
+  // Privacy settings (PII redaction, retention)
+  privacy?: PrivacyConfig;
 }
 
 export interface UpdateCheckConfig {
@@ -139,6 +141,13 @@ export interface UpdateCheckConfig {
   enabled?: boolean;
   /** Hours between checks (default: 24) */
   interval_hours?: number;
+}
+
+export interface PrivacyConfig {
+  recall?: {
+    /** Delete recall events older than this many days (default: 30, 0 to disable) */
+    retention_days?: number;
+  };
 }
 
 export interface IndexingConfig {

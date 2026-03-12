@@ -21,6 +21,7 @@ import {
   getNeverUsedMemoryRows,
   deleteOldRecallEvents,
 } from './db/index.js';
+import { sanitizeQuery } from './query-sanitizer.js';
 
 // ============================================================================
 // Types
@@ -78,7 +79,14 @@ export function recordRecallEvent(
   rankPosition?: number,
   similarityScore?: number
 ): number {
-  return insertRecallEvent(memoryId, query, wasUsed, rankPosition ?? null, similarityScore ?? null);
+  const safeQuery = sanitizeQuery(query).preview256;
+  return insertRecallEvent(
+    memoryId,
+    safeQuery,
+    wasUsed,
+    rankPosition ?? null,
+    similarityScore ?? null
+  );
 }
 
 /**
@@ -95,9 +103,10 @@ export function recordRecallBatch(
   query: string,
   similarityScores?: Map<number, number>
 ): void {
+  const safeQuery = sanitizeQuery(query).preview256;
   const events = retrievedIds.map((memId, i) => ({
     memoryId: memId,
-    query,
+    query: safeQuery,
     wasUsed: usedIds.has(memId),
     rankPosition: i + 1,
     similarityScore: similarityScores?.get(memId) ?? null,
@@ -213,7 +222,7 @@ export function getNeverUsedMemories(
  * @param olderThanDays - Delete events older than this many days
  * @returns Number of events deleted
  */
-export function cleanupRecallEvents(olderThanDays: number = 90): number {
+export function cleanupRecallEvents(olderThanDays: number = 30): number {
   return deleteOldRecallEvents(olderThanDays);
 }
 

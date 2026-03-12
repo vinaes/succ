@@ -216,11 +216,15 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return sqlite.getMemoryById(id);
   }
 
-  async getMemoriesByTag(tag: string, limit: number = 5): Promise<MemoryRecord[]> {
+  async getMemoriesByTag(
+    tag: string,
+    limit: number = 5,
+    offset: number = 0
+  ): Promise<MemoryRecord[]> {
     if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.getMemoriesByTag(tag, limit);
+      return this.postgres.getMemoriesByTag(tag, limit, offset);
     const sqlite = await this.getSqliteFns();
-    return sqlite.getMemoriesByTag(tag, limit);
+    return sqlite.getMemoriesByTag(tag, limit, offset);
   }
 
   async deleteMemory(id: number): Promise<boolean> {
@@ -475,17 +479,16 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     // Collect affected IDs before deletion for Qdrant vector cleanup.
     // Note: TOCTOU gap between ID collection and deletion is acceptable
     // for bulk retention operations — extra Qdrant deletes are no-ops.
-    let affectedIds: number[] = [];
+    const affectedIds: number[] = [];
     if (this.hasQdrant()) {
-      const TAG_FETCH_LIMIT = 100_000;
-      const matching = await this.getMemoriesByTag(tag, TAG_FETCH_LIMIT);
-      affectedIds = matching.map((m) => m.id);
-      if (matching.length >= TAG_FETCH_LIMIT) {
-        logWarn(
-          'storage',
-          `Tag "${tag}" has ${TAG_FETCH_LIMIT}+ memories — Qdrant cleanup may be incomplete`
-        );
-      }
+      const PAGE_SIZE = 1000;
+      let pageOffset = 0;
+      let page: MemoryRecord[];
+      do {
+        page = await this.getMemoriesByTag(tag, PAGE_SIZE, pageOffset);
+        affectedIds.push(...page.map((m) => m.id));
+        pageOffset += PAGE_SIZE;
+      } while (page.length === PAGE_SIZE);
     }
 
     let deleted: number;

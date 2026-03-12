@@ -327,6 +327,46 @@ export async function routeRequest(
 }
 
 let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
+let updateCheckStartupTimer: ReturnType<typeof setTimeout> | null = null;
+let recallCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let recallCleanupStartupTimer: ReturnType<typeof setTimeout> | null = null;
+let recallCleanupInFlight: Promise<void> | null = null;
+
+function scheduleRecallCleanup(logFn: (msg: string) => void): void {
+  const runCleanup = () => {
+    try {
+      const config = getConfig();
+      const retentionDays = config.privacy?.recall?.retention_days ?? 30;
+      if (retentionDays <= 0) return;
+      recallCleanupInFlight = (async () => {
+        const { cleanupRecallEvents } = await import('../lib/retrieval-feedback.js');
+        const deleted = cleanupRecallEvents(retentionDays);
+        if (deleted > 0) {
+          logFn(
+            `[recall-cleanup] Deleted ${deleted} recall events older than ${retentionDays} days`
+          );
+        }
+      })()
+        .catch((err) => {
+          logWarn('daemon', 'Recall cleanup failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        })
+        .finally(() => {
+          recallCleanupInFlight = null;
+        });
+    } catch (err) {
+      logWarn('daemon', 'Recall cleanup scheduler error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  recallCleanupStartupTimer = setTimeout(runCleanup, 10_000); // 10s after startup
+  recallCleanupStartupTimer.unref();
+  recallCleanupTimer = setInterval(runCleanup, 86_400_000); // daily
+  recallCleanupTimer.unref();
+}
 
 function scheduleUpdateCheck(logFn: (msg: string) => void): void {
   // Run once at startup (after short delay to not block init)
@@ -343,7 +383,8 @@ function scheduleUpdateCheck(logFn: (msg: string) => void): void {
       });
   };
 
-  setTimeout(runCheck, 5000); // 5s after startup
+  updateCheckStartupTimer = setTimeout(runCheck, 5000); // 5s after startup
+  updateCheckStartupTimer.unref();
   // Re-check every 12 hours (cache TTL is 24h, so this keeps it warm)
   updateCheckTimer = setInterval(runCheck, 12 * 3600_000);
   updateCheckTimer.unref(); // Don't prevent process exit
@@ -473,6 +514,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   // Background update check — keeps cache warm for MCP-only users
   scheduleUpdateCheck(log);
 
+  // Daily recall event retention cleanup
+  scheduleRecallCleanup(log);
+
   if (config.daemon?.watch?.auto_start) {
     const watchConfig = config.daemon.watch;
     await startWatcher(
@@ -536,9 +580,24 @@ function checkShutdown(): void {
 export async function shutdownDaemon(): Promise<void> {
   log('[daemon] Shutting down...');
 
+  if (updateCheckStartupTimer) {
+    clearTimeout(updateCheckStartupTimer);
+    updateCheckStartupTimer = null;
+  }
+
   if (updateCheckTimer) {
     clearInterval(updateCheckTimer);
     updateCheckTimer = null;
+  }
+
+  if (recallCleanupStartupTimer) {
+    clearTimeout(recallCleanupStartupTimer);
+    recallCleanupStartupTimer = null;
+  }
+
+  if (recallCleanupTimer) {
+    clearInterval(recallCleanupTimer);
+    recallCleanupTimer = null;
   }
 
   if (idleWatcher) {
@@ -560,9 +619,9 @@ export async function shutdownDaemon(): Promise<void> {
 
   processRegistry.killAll();
 
-  // Wait for watcher and HTTP server to finish before closing storage,
+  // Wait for watcher, HTTP server, and in-flight cleanup to finish before closing storage,
   // so in-flight requests don't hit a closed DB.
-  await Promise.allSettled([watcherPromise, serverPromise]);
+  await Promise.allSettled([watcherPromise, serverPromise, recallCleanupInFlight]);
 
   await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
