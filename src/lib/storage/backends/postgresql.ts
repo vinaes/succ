@@ -32,7 +32,6 @@ import type {
   HybridMemoryResult,
   HybridGlobalMemoryResult,
 } from '../types.js';
-import { SOURCE_TYPES } from '../types.js';
 import { StorageError, ConfigError } from '../../errors.js';
 import {
   tokenizeCode,
@@ -42,6 +41,7 @@ import {
 } from '../../bm25.js';
 
 import { logWarn } from '../../fault-logger.js';
+import { normalizeProvenance } from '../../provenance.js';
 // Lazy-load pg to make it optional
 let pg: typeof import('pg') | null = null;
 
@@ -1802,12 +1802,7 @@ export class PostgresBackend {
     sourceType: string = 'human'
   ): Promise<number> {
     // Validate provenance fields
-    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-      confidence = 0.5;
-    }
-    if (!(SOURCE_TYPES as readonly string[]).includes(sourceType)) {
-      sourceType = 'human';
-    }
+    ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
 
     const pool = await this.getPool();
     const projectId = isGlobal ? null : this.projectId;
@@ -3624,15 +3619,10 @@ export class PostgresBackend {
           : null;
 
         // Validate provenance fields — mirror saveMemory() behaviour
-        const rawConfidence = memory.confidence ?? 0.5;
-        const confidence =
-          !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1
-            ? 0.5
-            : rawConfidence;
-        const sourceType =
-          memory.sourceType && (SOURCE_TYPES as readonly string[]).includes(memory.sourceType)
-            ? memory.sourceType
-            : 'human';
+        const { confidence, sourceType } = normalizeProvenance(
+          memory.confidence,
+          memory.sourceType
+        );
 
         const insertResult = await client.query<{ id: number }>(
           `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
