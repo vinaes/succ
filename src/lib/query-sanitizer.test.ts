@@ -113,6 +113,16 @@ describe('sanitizeQuery', () => {
     expect(result.redacted).toBe('top 12345 results found');
   });
 
+  it('masks API keys with key- prefix', () => {
+    const result = sanitizeQuery('using key-abcdefgh12345678 for access');
+    expect(result.redacted).toBe('using [API_KEY] for access');
+  });
+
+  it('masks API keys with api- prefix', () => {
+    const result = sanitizeQuery('set api-myapikey12345 in env');
+    expect(result.redacted).toBe('set [API_KEY] in env');
+  });
+
   it('handles empty string', () => {
     const result = sanitizeQuery('');
     expect(result.redacted).toBe('');

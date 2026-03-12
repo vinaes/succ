@@ -1999,7 +1999,11 @@ export class PostgresBackend {
               access_count, last_accessed, valid_from, valid_until,
               correction_count, is_invariant, priority_score, confidence, source_type, created_at
        FROM memories
-       WHERE tags::jsonb ? $1
+       WHERE tags IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(tags) elem
+           WHERE LOWER(elem) = LOWER($1)
+         )
          AND invalidated_by IS NULL
          AND (LOWER(project_id) = $3 OR project_id IS NULL)
        ORDER BY priority_score DESC NULLS LAST, created_at DESC, id DESC
@@ -3804,8 +3808,9 @@ export class PostgresBackend {
          AND EXISTS (
            SELECT 1 FROM jsonb_array_elements_text(tags) elem
            WHERE LOWER(elem) = LOWER($1)
-         )`,
-      [tag]
+         )
+         AND (LOWER(project_id) = LOWER($2) OR project_id IS NULL)`,
+      [tag, this.projectId]
     );
     return result.rowCount ?? 0;
   }

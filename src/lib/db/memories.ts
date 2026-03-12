@@ -964,7 +964,7 @@ export function getMemoriesByTag(tag: string, limit: number = 5, offset: number 
            m.access_count, m.last_accessed, m.valid_from, m.valid_until,
            m.correction_count, m.is_invariant, m.priority_score, m.confidence, m.source_type, m.created_at
     FROM memories m, json_each(m.tags) t
-    WHERE t.value = ?
+    WHERE LOWER(t.value) = LOWER(?)
       AND m.invalidated_by IS NULL
     ORDER BY m.priority_score DESC NULLS LAST, m.created_at DESC, m.id DESC
     LIMIT ?

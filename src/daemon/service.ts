@@ -363,6 +363,7 @@ function scheduleRecallCleanup(logFn: (msg: string) => void): void {
   };
 
   recallCleanupStartupTimer = setTimeout(runCleanup, 10_000); // 10s after startup
+  recallCleanupStartupTimer.unref();
   recallCleanupTimer = setInterval(runCleanup, 86_400_000); // daily
   recallCleanupTimer.unref();
 }
@@ -383,6 +384,7 @@ function scheduleUpdateCheck(logFn: (msg: string) => void): void {
   };
 
   updateCheckStartupTimer = setTimeout(runCheck, 5000); // 5s after startup
+  updateCheckStartupTimer.unref();
   // Re-check every 12 hours (cache TTL is 24h, so this keeps it warm)
   updateCheckTimer = setInterval(runCheck, 12 * 3600_000);
   updateCheckTimer.unref(); // Don't prevent process exit
