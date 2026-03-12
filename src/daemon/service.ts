@@ -330,6 +330,7 @@ let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
 let updateCheckStartupTimer: ReturnType<typeof setTimeout> | null = null;
 let recallCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let recallCleanupStartupTimer: ReturnType<typeof setTimeout> | null = null;
+let recallCleanupInFlight: Promise<void> | null = null;
 
 function scheduleRecallCleanup(logFn: (msg: string) => void): void {
   const runCleanup = () => {
@@ -337,19 +338,22 @@ function scheduleRecallCleanup(logFn: (msg: string) => void): void {
       const config = getConfig();
       const retentionDays = config.privacy?.recall?.retention_days ?? 30;
       if (retentionDays <= 0) return;
-      import('../lib/retrieval-feedback.js')
-        .then(({ cleanupRecallEvents }) => {
-          const deleted = cleanupRecallEvents(retentionDays);
-          if (deleted > 0) {
-            logFn(
-              `[recall-cleanup] Deleted ${deleted} recall events older than ${retentionDays} days`
-            );
-          }
-        })
+      recallCleanupInFlight = (async () => {
+        const { cleanupRecallEvents } = await import('../lib/retrieval-feedback.js');
+        const deleted = cleanupRecallEvents(retentionDays);
+        if (deleted > 0) {
+          logFn(
+            `[recall-cleanup] Deleted ${deleted} recall events older than ${retentionDays} days`
+          );
+        }
+      })()
         .catch((err) => {
           logWarn('daemon', 'Recall cleanup failed', {
             error: err instanceof Error ? err.message : String(err),
           });
+        })
+        .finally(() => {
+          recallCleanupInFlight = null;
         });
     } catch (err) {
       logWarn('daemon', 'Recall cleanup scheduler error', {
@@ -613,9 +617,9 @@ export async function shutdownDaemon(): Promise<void> {
 
   processRegistry.killAll();
 
-  // Wait for watcher and HTTP server to finish before closing storage,
+  // Wait for watcher, HTTP server, and in-flight cleanup to finish before closing storage,
   // so in-flight requests don't hit a closed DB.
-  await Promise.allSettled([watcherPromise, serverPromise]);
+  await Promise.allSettled([watcherPromise, serverPromise, recallCleanupInFlight]);
 
   await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
   cleanupEmbeddings();
