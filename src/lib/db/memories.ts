@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { getDb, cachedPrepare } from './connection.js';
-import { sqliteVecAvailable, MemoryType, SourceType, SOURCE_TYPES } from './schema.js';
+import { sqliteVecAvailable, MemoryType, SourceType } from './schema.js';
+import { normalizeProvenance } from '../provenance.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { logWarn } from '../fault-logger.js';
 import { cosineSimilarity } from '../embeddings.js';
@@ -169,12 +170,11 @@ export function saveMemory(
   let { confidence = 0.5 } = options;
 
   // Validate provenance fields — mirror PostgreSQL backend behaviour
-  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-    confidence = 0.5;
-  }
-  const sourceType: SourceType = (SOURCE_TYPES as readonly string[]).includes(rawSourceType)
-    ? (rawSourceType as SourceType)
-    : 'human';
+  const { confidence: normalizedConfidence, sourceType } = normalizeProvenance(
+    confidence,
+    rawSourceType
+  );
+  confidence = normalizedConfidence;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -1272,15 +1272,7 @@ export function saveMemoriesBatch(
           : null;
 
         // Validate provenance fields — mirror PostgreSQL backend behaviour
-        const rawConfidence = input.confidence ?? 0.5;
-        const confidence =
-          !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1
-            ? 0.5
-            : rawConfidence;
-        const sourceType: SourceType =
-          input.sourceType && (SOURCE_TYPES as readonly string[]).includes(input.sourceType)
-            ? (input.sourceType as SourceType)
-            : 'human';
+        const { confidence, sourceType } = normalizeProvenance(input.confidence, input.sourceType);
 
         const result = insertStmt.run(
           input.content,

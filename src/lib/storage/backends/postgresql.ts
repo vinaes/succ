@@ -32,8 +32,7 @@ import type {
   HybridMemoryResult,
   HybridGlobalMemoryResult,
 } from '../types.js';
-import { SOURCE_TYPES } from '../types.js';
-import { StorageError, ConfigError } from '../../errors.js';
+import { StorageError, ConfigError, getErrorMessage } from '../../errors.js';
 import {
   tokenizeCode,
   tokenizeCodeWithAST,
@@ -42,6 +41,7 @@ import {
 } from '../../bm25.js';
 
 import { logWarn } from '../../fault-logger.js';
+import { normalizeProvenance } from '../../provenance.js';
 // Lazy-load pg to make it optional
 let pg: typeof import('pg') | null = null;
 
@@ -122,6 +122,7 @@ export class PostgresBackend {
 
     const poolConfig: PoolConfig = {
       max: this.config.poolSize ?? 10,
+      connectionTimeoutMillis: 10_000,
     };
 
     if (this.config.connectionString) {
@@ -146,6 +147,16 @@ export class PostgresBackend {
     }
 
     this.pool = new Pool(poolConfig);
+
+    this.pool.on('error', (err) => {
+      logWarn('postgresql', `Pool error: ${err.message}`);
+    });
+
+    this.pool.on('connect', (client) => {
+      void client.query("SET statement_timeout = '30s'").catch((err) => {
+        logWarn('postgresql', `Failed to set statement_timeout: ${getErrorMessage(err)}`);
+      });
+    });
 
     if (!this.initialized) {
       await this.initSchema();
@@ -1793,12 +1804,7 @@ export class PostgresBackend {
     sourceType: string = 'human'
   ): Promise<number> {
     // Validate provenance fields
-    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-      confidence = 0.5;
-    }
-    if (!(SOURCE_TYPES as readonly string[]).includes(sourceType)) {
-      sourceType = 'human';
-    }
+    ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
 
     const pool = await this.getPool();
     const projectId = isGlobal ? null : this.projectId;
@@ -3615,15 +3621,10 @@ export class PostgresBackend {
           : null;
 
         // Validate provenance fields — mirror saveMemory() behaviour
-        const rawConfidence = memory.confidence ?? 0.5;
-        const confidence =
-          !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1
-            ? 0.5
-            : rawConfidence;
-        const sourceType =
-          memory.sourceType && (SOURCE_TYPES as readonly string[]).includes(memory.sourceType)
-            ? memory.sourceType
-            : 'human';
+        const { confidence, sourceType } = normalizeProvenance(
+          memory.confidence,
+          memory.sourceType
+        );
 
         const insertResult = await client.query<{ id: number }>(
           `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
