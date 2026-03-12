@@ -99,6 +99,7 @@ describe('sanitizeQuery', () => {
     expect(result.redacted).toContain('[EMAIL]');
     expect(result.redacted).toContain('[URL]');
     expect(result.redacted).toContain('[API_KEY]');
+    expect(result.redacted).toContain('[HEX]');
   });
 
   it('masks long numeric sequences (6+ digits)', () => {
