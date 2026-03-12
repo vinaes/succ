@@ -78,8 +78,7 @@ describe('sanitizeQuery', () => {
     // 52-char base64 string with non-hex chars (g-z) so it won't be matched by HEX_RE
     const b64 = 'dGhpcyBpcyBhIGRlZmluaXRlbHkgc2VjcmV0IHZhbHVlIDEyMw==';
     const result = sanitizeQuery(`encoded ${b64} data`);
-    expect(result.redacted).not.toContain(b64);
-    expect(result.redacted).toMatch(/\[BASE64\]|\[HEX\]/);
+    expect(result.redacted).toBe('encoded [BASE64] data');
   });
 
   it('truncates to 256 characters', () => {
