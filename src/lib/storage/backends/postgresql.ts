@@ -32,7 +32,7 @@ import type {
   HybridMemoryResult,
   HybridGlobalMemoryResult,
 } from '../types.js';
-import { StorageError, ConfigError } from '../../errors.js';
+import { StorageError, ConfigError, getErrorMessage } from '../../errors.js';
 import {
   tokenizeCode,
   tokenizeCodeWithAST,
@@ -153,7 +153,9 @@ export class PostgresBackend {
     });
 
     this.pool.on('connect', (client) => {
-      client.query("SET statement_timeout = '30s'");
+      void client.query("SET statement_timeout = '30s'").catch((err) => {
+        logWarn('postgresql', `Failed to set statement_timeout: ${getErrorMessage(err)}`);
+      });
     });
 
     if (!this.initialized) {

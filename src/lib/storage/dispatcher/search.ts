@@ -256,14 +256,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
         if (results.length > 0) {
           this._resetQdrantFailures();
           const mapped: HybridGlobalMemoryResult[] = results.map((r) => ({
-            id: r.id,
-            content: r.content,
-            tags: r.tags,
-            source: r.source,
+            ...r,
             project: null,
-            type: r.type,
-            created_at: r.created_at,
-            similarity: r.similarity,
           }));
           return rerank(query, mapped as (HybridGlobalMemoryResult & Rerankable)[], lim);
         }
