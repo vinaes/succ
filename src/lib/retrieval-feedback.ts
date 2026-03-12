@@ -19,8 +19,8 @@ import {
   getBoostDataForMemory,
   getBoostDataForMemories,
   getNeverUsedMemoryRows,
-  deleteOldRecallEvents,
 } from './db/index.js';
+import { deleteOldRecallEvents } from './storage/index.js';
 import { sanitizeQuery } from './query-sanitizer.js';
 
 // ============================================================================
@@ -222,7 +222,7 @@ export function getNeverUsedMemories(
  * @param olderThanDays - Delete events older than this many days
  * @returns Number of events deleted
  */
-export function cleanupRecallEvents(olderThanDays: number = 30): number {
+export async function cleanupRecallEvents(olderThanDays: number = 30): Promise<number> {
   return deleteOldRecallEvents(olderThanDays);
 }
 

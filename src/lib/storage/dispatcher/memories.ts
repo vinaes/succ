@@ -475,6 +475,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return deleted;
   }
 
+  async deleteOldRecallEvents(olderThanDays: number): Promise<number> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.deleteOldRecallEvents(olderThanDays);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.deleteOldRecallEvents(olderThanDays);
+  }
+
   async deleteMemoriesByTag(tag: string): Promise<number> {
     // Collect affected IDs before deletion for Qdrant vector cleanup.
     // Note: TOCTOU gap between ID collection and deletion is acceptable

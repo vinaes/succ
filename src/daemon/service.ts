@@ -340,7 +340,7 @@ function scheduleRecallCleanup(logFn: (msg: string) => void): void {
       if (retentionDays <= 0) return;
       recallCleanupInFlight = (async () => {
         const { cleanupRecallEvents } = await import('../lib/retrieval-feedback.js');
-        const deleted = cleanupRecallEvents(retentionDays);
+        const deleted = await cleanupRecallEvents(retentionDays);
         if (deleted > 0) {
           logFn(
             `[recall-cleanup] Deleted ${deleted} recall events older than ${retentionDays} days`
