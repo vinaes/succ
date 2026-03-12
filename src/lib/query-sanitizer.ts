@@ -5,7 +5,11 @@
  * long hex strings, and base64-like blobs that users may include in queries.
  */
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}/g;
+// Atomic local-part: character class has no members that match '@', preventing
+// backtracking. Domain uses explicit dot-separated segments (no '.' in char class)
+// to avoid polynomial backtracking. Both parts are linear-time.
+const EMAIL_RE =
+  /[a-zA-Z0-9_%+\-.]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z0-9-]{1,63})*\.[a-zA-Z]{2,}/g;
 const URL_RE = /https?:\/\/[^\s"'<>()[\]{}]+/g;
 // JWT: 3 base64url segments (header.payload.signature), min 20 chars each segment
 const JWT_RE = /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g;
