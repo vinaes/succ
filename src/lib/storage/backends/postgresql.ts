@@ -122,6 +122,7 @@ export class PostgresBackend {
 
     const poolConfig: PoolConfig = {
       max: this.config.poolSize ?? 10,
+      connectionTimeoutMillis: 10_000,
     };
 
     if (this.config.connectionString) {
@@ -146,6 +147,14 @@ export class PostgresBackend {
     }
 
     this.pool = new Pool(poolConfig);
+
+    this.pool.on('error', (err) => {
+      logWarn('postgresql', `Pool error: ${err.message}`);
+    });
+
+    this.pool.on('connect', (client) => {
+      client.query("SET statement_timeout = '30s'");
+    });
 
     if (!this.initialized) {
       await this.initSchema();
