@@ -5,6 +5,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { analyzeFile } from '../../commands/analyze.js';
+import { getErrorMessage } from '../../lib/errors.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import {
   projectPathParam,
   applyProjectPath,
@@ -235,9 +237,12 @@ export function registerIndexingTools(server: McpServer) {
             return {
               content: [{ type: 'text' as const, text: lines.join('\n') }],
             };
-          } catch (error: any) {
+          } catch (error: unknown) {
+            logWarn('indexing-scan', getErrorMessage(error));
             return {
-              content: [{ type: 'text' as const, text: `Error during scan: ${error.message}` }],
+              content: [
+                { type: 'text' as const, text: `Error during scan: ${getErrorMessage(error)}` },
+              ],
               isError: true,
             };
           }
