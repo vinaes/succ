@@ -304,38 +304,74 @@ export async function saveSingleMemory(params: {
     validUntilDate = parseDuration(valid_until);
   }
 
-  const embedding = await getEmbedding(processedContent);
+  try {
+    const embedding = await getEmbedding(processedContent);
 
-  let qualityScore = null;
-  if (config.quality_scoring_enabled !== false) {
-    qualityScore = await scoreMemory(processedContent);
-    if (!passesQualityThreshold(qualityScore)) {
+    let qualityScore = null;
+    if (config.quality_scoring_enabled !== false) {
+      qualityScore = await scoreMemory(processedContent);
+      if (!passesQualityThreshold(qualityScore)) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
+            },
+          ],
+        };
+      }
+    }
+
+    const fallbackPrefix = fallbackReason ? `(${fallbackReason})\n` : '';
+
+    if (useGlobal) {
+      const projectName = path.basename(getProjectRoot());
+      const result = await saveGlobalMemory(
+        processedContent,
+        embedding,
+        tags,
+        source,
+        projectName,
+        {
+          type,
+        }
+      );
+
+      if (result.isDuplicate) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
             type: 'text' as const,
-            text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`,
+            text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
           },
         ],
       };
     }
-  }
 
-  const fallbackPrefix = fallbackReason ? `(${fallbackReason})\n` : '';
-
-  if (useGlobal) {
-    const projectName = path.basename(getProjectRoot());
-    const result = await saveGlobalMemory(processedContent, embedding, tags, source, projectName, {
+    const result = await saveMemory(processedContent, embedding, tags, source, {
       type,
+      qualityScore: qualityScore
+        ? { score: qualityScore.score, factors: qualityScore.factors }
+        : undefined,
+      validFrom: validFromDate,
+      validUntil: validUntilDate,
     });
-    closeGlobalDb();
 
     if (result.isDuplicate) {
       return {
         content: [
           {
             type: 'text' as const,
-            text: `${fallbackPrefix}⚠ Similar global memory exists (id: ${result.id}). Skipped duplicate.`,
+            text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
           },
         ],
       };
@@ -344,38 +380,12 @@ export async function saveSingleMemory(params: {
       content: [
         {
           type: 'text' as const,
-          text: `${fallbackPrefix}✓ Remembered globally (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
+          text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
         },
       ],
     };
+  } finally {
+    closeDb();
+    closeGlobalDb();
   }
-
-  const result = await saveMemory(processedContent, embedding, tags, source, {
-    type,
-    qualityScore: qualityScore
-      ? { score: qualityScore.score, factors: qualityScore.factors }
-      : undefined,
-    validFrom: validFromDate,
-    validUntil: validUntilDate,
-  });
-  closeDb();
-
-  if (result.isDuplicate) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `${fallbackPrefix}⚠ Similar memory exists (id: ${result.id}). Skipped duplicate.`,
-        },
-      ],
-    };
-  }
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: `${fallbackPrefix}✓ Remembered (id: ${result.id}): "${processedContent.substring(0, 80)}..."`,
-      },
-    ],
-  };
 }
