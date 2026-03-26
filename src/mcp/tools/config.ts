@@ -201,7 +201,7 @@ export function registerConfigTools(server: McpServer) {
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             logWarn('config', 'Error creating checkpoint', { error: msg });
-            return createErrorResponse(`Error: ${msg}`);
+            return createErrorResponse(`Error creating checkpoint: ${msg}`);
           } finally {
             closeDb();
             await closeStorageDispatcher();
@@ -235,7 +235,7 @@ export function registerConfigTools(server: McpServer) {
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             logWarn('config', 'Error listing checkpoints', { error: msg });
-            return createErrorResponse(`Error: ${msg}`);
+            return createErrorResponse(`Error listing checkpoints: ${msg}`);
           } finally {
             closeDb();
           }

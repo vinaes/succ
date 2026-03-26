@@ -234,16 +234,11 @@ export function registerIndexingTools(server: McpServer) {
               }
             }
 
-            return {
-              content: [{ type: 'text' as const, text: lines.join('\n') }],
-            };
+            return createToolResponse(lines.join('\n'));
           } catch (error: unknown) {
             const msg = getErrorMessage(error);
             logWarn('indexing', 'Error during scan', { error: msg });
-            return {
-              content: [{ type: 'text' as const, text: `Error during scan: ${msg}` }],
-              isError: true,
-            };
+            return createErrorResponse(msg);
           }
         }
 
