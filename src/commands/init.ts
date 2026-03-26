@@ -89,7 +89,7 @@ function isSuccHook(h: Record<string, unknown>): boolean {
   const hook = hooks[0];
   const cmd = (hook.command as string) || '';
   const url = (hook.url as string) || '';
-  // Command hooks
+  // Command hooks (current)
   if (
     cmd.includes('.succ/hooks/') ||
     cmd.includes('/hooks/succ-') ||
@@ -97,6 +97,8 @@ function isSuccHook(h: Record<string, unknown>): boolean {
   )
     return true;
   if (/succ-(session|stop|user|post|pre)-/.test(cmd)) return true;
+  // Legacy hooks (.claude/hooks/session-start.cjs, idle-reflection.cjs, etc.)
+  if (/[/\\]\.claude[/\\]hooks[/\\](session-|idle-)/.test(cmd)) return true;
   // HTTP hooks
   if (url.includes('/api/hooks/')) return true;
   return false;
@@ -322,6 +324,18 @@ export async function init(options: InitOptions = {}): Promise<void> {
         log(existed ? `Updated hooks/core/${coreFile}` : `Created hooks/core/${coreFile}`);
       }
     }
+  }
+
+  // Write package root so hooks/daemon can find dist/ even when copied to .succ/
+  const pkgRootFile = path.join(succDir, '.package-root');
+  const pkgRootValue = SUCC_PACKAGE_DIR;
+  const existingPkgRoot = fs.existsSync(pkgRootFile)
+    ? fs.readFileSync(pkgRootFile, 'utf8').trim()
+    : null;
+  if (existingPkgRoot !== pkgRootValue) {
+    fs.mkdirSync(path.dirname(pkgRootFile), { recursive: true });
+    fs.writeFileSync(pkgRootFile, pkgRootValue);
+    log(existingPkgRoot ? 'Updated .package-root' : 'Created .package-root');
   }
 
   // Create or merge settings.json in .claude/ (Claude Code looks for it there)
