@@ -610,6 +610,7 @@ export function registerRecallTool(server: McpServer): void {
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('mcp-memory', 'Error recalling memories', { error: errorMsg });
         return {
           content: [
             {

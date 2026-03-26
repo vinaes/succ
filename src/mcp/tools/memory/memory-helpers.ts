@@ -139,6 +139,7 @@ export async function rememberWithLLMExtraction(params: {
         prepared.push({ fact, content: factContent, embedding, tags: factTags, qualityScore });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('mcp-memory', `Error preparing fact for save: ${fact.type}`, { error: errorMsg });
         results.push(`✗ [${fact.type}] Error: ${errorMsg}`);
         skipped++;
       }

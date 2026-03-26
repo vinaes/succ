@@ -13,6 +13,7 @@ import { getEmbedding } from '../../lib/embeddings.js';
 import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../lib/quality.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
 
 export function registerDeadEndTools(server: McpServer) {
   server.registerTool(
@@ -144,11 +145,13 @@ export function registerDeadEndTools(server: McpServer) {
           ],
         };
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('dead-end', 'Error recording dead-end', { error: errorMsg });
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error recording dead-end: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error recording dead-end: ${errorMsg}`,
             },
           ],
           isError: true,

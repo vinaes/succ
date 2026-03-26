@@ -9,6 +9,7 @@ import {
   closeDb,
 } from '../../../lib/storage/index.js';
 import { parseRelativeDate, projectPathParam, applyProjectPath } from '../../helpers.js';
+import { logWarn } from '../../../lib/fault-logger.js';
 
 export function registerForgetTool(server: McpServer): void {
   server.registerTool(
@@ -177,6 +178,7 @@ export function registerForgetTool(server: McpServer): void {
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('mcp-memory', 'Error forgetting memory', { error: errorMsg });
         return {
           content: [
             {

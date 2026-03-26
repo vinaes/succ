@@ -10,6 +10,7 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import { generatePrd } from '../../lib/prd/generate.js';
 import { runPrd } from '../../lib/prd/runner.js';
 import { exportPrdToObsidian, exportAllPrds } from '../../lib/prd/export.js';
@@ -139,6 +140,7 @@ export function registerPrdTools(server: McpServer) {
             return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
+            logWarn('prd', 'Error generating PRD', { error: msg });
             return createErrorResponse(`Error generating PRD: ${msg}`);
           }
         }
@@ -156,6 +158,7 @@ export function registerPrdTools(server: McpServer) {
             return createToolResponse(`PRDs:\n${lines.join('\n')}`);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
+            logWarn('prd', 'Error listing PRDs', { error: msg });
             return createErrorResponse(`Error listing PRDs: ${msg}`);
           }
         }
@@ -200,6 +203,7 @@ export function registerPrdTools(server: McpServer) {
             return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
+            logWarn('prd', 'Error getting PRD status', { error: msg });
             return createErrorResponse(`Error: ${msg}`);
           }
         }
@@ -239,6 +243,7 @@ export function registerPrdTools(server: McpServer) {
             return createToolResponse(text);
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
+            logWarn('prd', 'Error running PRD', { error: msg });
             return createErrorResponse(`Error running PRD: ${msg}`);
           }
         }
@@ -262,6 +267,7 @@ export function registerPrdTools(server: McpServer) {
             );
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
+            logWarn('prd', 'Error exporting PRD', { error: msg });
             return createErrorResponse(`Error exporting PRD: ${msg}`);
           }
         }

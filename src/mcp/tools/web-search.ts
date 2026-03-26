@@ -333,9 +333,9 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            return createErrorResponse(
-              `Quick search failed: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('web-search', 'Quick search failed', { error: msg });
+            return createErrorResponse(`Quick search failed: ${msg}`);
           }
         }
 
@@ -403,9 +403,9 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            return createErrorResponse(
-              `Web search failed: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('web-search', 'Web search failed', { error: msg });
+            return createErrorResponse(`Web search failed: ${msg}`);
           }
         }
 
@@ -475,9 +475,9 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            return createErrorResponse(
-              `Deep research failed: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('web-search', 'Deep research failed', { error: msg });
+            return createErrorResponse(`Deep research failed: ${msg}`);
           }
         }
 
@@ -527,9 +527,9 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            return createErrorResponse(
-              `Failed to retrieve search history: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('web-search', 'Failed to retrieve search history', { error: msg });
+            return createErrorResponse(`Failed to retrieve search history: ${msg}`);
           }
         }
 

@@ -16,6 +16,7 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const SENSITIVE_PATTERNS = [
@@ -96,9 +97,9 @@ export function registerConfigTools(server: McpServer) {
 
             return createToolResponse(formatConfigDisplay(display));
           } catch (error) {
-            return createErrorResponse(
-              `Error getting config: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('config', 'Error getting config', { error: msg });
+            return createErrorResponse(`Error getting config: ${msg}`);
           }
         }
 
@@ -175,9 +176,9 @@ export function registerConfigTools(server: McpServer) {
               `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`
             );
           } catch (error) {
-            return createErrorResponse(
-              `Error setting config: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('config', 'Error setting config', { error: msg });
+            return createErrorResponse(`Error setting config: ${msg}`);
           }
         }
 
@@ -198,9 +199,9 @@ export function registerConfigTools(server: McpServer) {
               `Checkpoint created successfully!\n\nFile: ${outputPath}\nProject: ${cp.project_name}\nSize: ${formatSize(stat.size)}\n\nContents:\n  Memories: ${cp.stats.memories_count}\n  Documents: ${cp.stats.documents_count}\n  Memory links: ${cp.stats.links_count}\n  Centrality scores: ${cp.stats.centrality_count || 0}\n  Brain files: ${cp.stats.brain_files_count}\n\nTo restore: succ checkpoint restore "${outputPath}"`
             );
           } catch (error) {
-            return createErrorResponse(
-              `Error: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('config', 'Error creating checkpoint', { error: msg });
+            return createErrorResponse(`Error: ${msg}`);
           } finally {
             closeDb();
             await closeStorageDispatcher();
@@ -232,9 +233,9 @@ export function registerConfigTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            return createErrorResponse(
-              `Error: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = error instanceof Error ? error.message : String(error);
+            logWarn('config', 'Error listing checkpoints', { error: msg });
+            return createErrorResponse(`Error: ${msg}`);
           } finally {
             closeDb();
           }
