@@ -12,6 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { getSuccDir, getProjectRoot } from '../lib/config.js';
 import { NetworkError } from '../lib/errors.js';
 import { logWarn } from '../lib/fault-logger.js';
@@ -440,7 +441,17 @@ export async function ensureDaemonRunning(projectDir?: string): Promise<boolean>
   try {
     const spawn = (await import('cross-spawn')).default;
     const resolvedProjectDir = projectDir || getProjectRoot();
-    const servicePath = path.join(resolvedProjectDir, 'dist', 'daemon', 'service.js');
+    let servicePath = path.join(resolvedProjectDir, 'dist', 'daemon', 'service.js');
+
+    // Package fallback: when succ is installed as npm package (global or local dep),
+    // resolve service.js relative to this file (both live in dist/daemon/)
+    if (!fs.existsSync(servicePath)) {
+      const clientDir = path.dirname(fileURLToPath(import.meta.url));
+      const pkgServicePath = path.join(clientDir, 'service.js');
+      if (fs.existsSync(pkgServicePath)) {
+        servicePath = pkgServicePath;
+      }
+    }
 
     // Spawn node directly with the service file
     const proc = spawn(process.execPath, ['--no-warnings', '--no-deprecation', servicePath], {
