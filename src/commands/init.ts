@@ -98,7 +98,12 @@ function isSuccHook(h: Record<string, unknown>): boolean {
     return true;
   if (/succ-(session|stop|user|post|pre)-/.test(cmd)) return true;
   // Legacy hooks (.claude/hooks/session-start.cjs, idle-reflection.cjs, etc.)
-  if (/[/\\]\.claude[/\\]hooks[/\\](session-|idle-)/.test(cmd)) return true;
+  // Use explicit whitelist to avoid misclassifying user hooks starting with session- or idle-
+  const legacyHookNames = new Set(['session-start.cjs', 'idle-reflection.cjs', 'idle-watcher.cjs']);
+  if (cmd.includes('.claude') && cmd.includes('hooks')) {
+    const basename = path.basename(cmd);
+    if (legacyHookNames.has(basename)) return true;
+  }
   // HTTP hooks
   if (url.includes('/api/hooks/')) return true;
   return false;
@@ -329,9 +334,25 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Write package root so hooks/daemon can find dist/ even when copied to .succ/
   const pkgRootFile = path.join(succDir, '.package-root');
   const pkgRootValue = SUCC_PACKAGE_DIR;
-  const existingPkgRoot = fs.existsSync(pkgRootFile)
-    ? fs.readFileSync(pkgRootFile, 'utf8').trim()
-    : null;
+
+  // Safely read existing .package-root with proper error handling
+  let existingPkgRoot: string | null = null;
+  if (fs.existsSync(pkgRootFile)) {
+    try {
+      const stats = fs.statSync(pkgRootFile);
+      if (stats.isFile()) {
+        existingPkgRoot = fs.readFileSync(pkgRootFile, 'utf8').trim();
+      }
+    } catch (error) {
+      // Log error but continue gracefully - we'll just recreate the file
+      if (verbose) {
+        log(
+          `Warning: Failed to read .package-root: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  }
+
   if (existingPkgRoot !== pkgRootValue) {
     fs.mkdirSync(path.dirname(pkgRootFile), { recursive: true });
     fs.writeFileSync(pkgRootFile, pkgRootValue);
