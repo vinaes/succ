@@ -472,7 +472,10 @@ async function callApiLLM(
     try {
       const h = new URL(endpoint).hostname;
       return h === 'anthropic.com' || h.endsWith('.anthropic.com');
-    } catch {
+    } catch (err) {
+      logWarn('llm', 'Failed to parse API endpoint URL', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       return false;
     }
   })();
