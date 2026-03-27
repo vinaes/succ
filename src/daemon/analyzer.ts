@@ -289,10 +289,11 @@ async function saveDiscoveriesBatch(
     const embedding = embeddings[i];
     const tags = [...discovery.tags, discovery.type, 'discovery'];
 
+    const qualityResult = validation.qualityResult!;
     const result = await saveMemory(content, embedding, tags, discovery.type, {
       qualityScore: {
-        score: validation.qualityResult!.score,
-        factors: validation.qualityResult!.factors,
+        score: qualityResult.score,
+        factors: qualityResult.factors,
       },
     });
 

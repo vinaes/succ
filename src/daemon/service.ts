@@ -300,7 +300,9 @@ export async function parseBody(req: http.IncomingMessage): Promise<RequestBody>
         }
         settle(() => resolve(parsed as RequestBody));
       } catch (err) {
-        logWarn('daemon', 'Failed to parse request body', { error: err });
+        logWarn('daemon', 'Failed to parse request body', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         settle(() => reject(new Error('Invalid request body')));
       }
     });
