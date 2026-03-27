@@ -17,6 +17,7 @@ import {
   createErrorResponse,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 /**
  * Helper to normalize error, log warning, and return error response
@@ -26,7 +27,7 @@ function handleErrorResponse(
   contextMessage: string,
   contextPrefix: string
 ): ReturnType<typeof createErrorResponse> {
-  const msg = error instanceof Error ? error.message : String(error);
+  const msg = getErrorMessage(error);
   logWarn('config', contextMessage, { error: msg });
   return createErrorResponse(`${contextPrefix}${msg}`);
 }

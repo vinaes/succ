@@ -44,6 +44,7 @@ const ACTION_GATES: Record<string, Record<string, 'standard' | 'full'>> = {
   succ_fetch: { __extract: 'standard' },
   succ_config: { checkpoint_create: 'full', checkpoint_list: 'full' },
   succ_web: { deep: 'full', history: 'full' },
+  succ_link: { critical_nodes: 'full', pagerank: 'full' },
 };
 
 /**

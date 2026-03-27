@@ -283,18 +283,16 @@ export function registerRecallTool(server: McpServer): void {
                 )
               );
 
-              const existingIds = new Set(localResults.map((r) => r.id));
+              const existingIdx = new Map(localResults.map((r, i) => [r.id, i]));
               for (const eqResults of eqSearchResults) {
                 for (const r of eqResults) {
-                  if (!existingIds.has(r.id)) {
+                  const idx = existingIdx.get(r.id);
+                  if (idx === undefined) {
+                    existingIdx.set(r.id, localResults.length);
                     localResults.push(r);
-                    existingIds.add(r.id);
-                  } else {
+                  } else if (r.similarity > localResults[idx].similarity) {
                     // Keep the higher similarity score
-                    const existing = localResults.find((lr) => lr.id === r.id);
-                    if (existing && r.similarity > existing.similarity) {
-                      existing.similarity = r.similarity;
-                    }
+                    localResults[idx].similarity = r.similarity;
                   }
                 }
               }

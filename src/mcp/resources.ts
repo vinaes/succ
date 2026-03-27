@@ -83,13 +83,20 @@ export function registerResources(server: McpServer) {
       }
 
       try {
-        // Check for symlinks (security hardening) — lstat doesn't follow symlinks
+        // Resolve all symlinks in the entire path hierarchy to prevent traversal via symlinked parents
+        const realBrain = fs.realpathSync(brainPath);
+        const realPath = fs.realpathSync(fullPath);
+        if (realPath !== realBrain && !realPath.startsWith(realBrain + path.sep)) {
+          return { contents: [{ uri: uri.href, text: 'Error: Path traversal not allowed' }] };
+        }
+
+        // Keep explicit no-symlink policy for the leaf node
         const stats = fs.lstatSync(fullPath);
         if (stats.isSymbolicLink()) {
           return { contents: [{ uri: uri.href, text: 'Error: Symbolic links not allowed' }] };
         }
 
-        const content = fs.readFileSync(fullPath, 'utf-8');
+        const content = fs.readFileSync(realPath, 'utf-8');
         return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }] };
       } catch (err) {
         logWarn('resources', `Failed to read brain file ${filePath}: ${err}`);
