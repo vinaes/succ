@@ -1,4 +1,5 @@
 import { getConfig, getConfigWithOverride, getLLMTaskConfig, LOCAL_MODEL } from './config.js';
+import type { SuccConfig } from './config.js';
 import { createHash } from 'crypto';
 import { logInfo, logWarn } from './fault-logger.js';
 import { NativeOrtSession } from './ort-session.js';
@@ -336,7 +337,10 @@ export function getGpuBackend(): string | null {
  * Try to use worker pool for large embedding batches.
  * Returns null if pool is unavailable or disabled.
  */
-async function tryPoolEmbeddings(texts: string[], config: any): Promise<number[][] | null> {
+async function tryPoolEmbeddings(
+  texts: string[],
+  config: Partial<SuccConfig>
+): Promise<number[][] | null> {
   if (poolInitFailed) return null;
   if (config.embedding_worker_pool_enabled === false) return null;
   // Only use pool for batches large enough to benefit from parallelism
