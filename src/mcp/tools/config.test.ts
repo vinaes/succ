@@ -42,6 +42,7 @@ vi.mock('../../lib/config.js', () => ({
   getSuccDir: vi.fn(() => '/project/.succ'),
   getConfigDisplay: vi.fn(() => ({ tool_profile: 'full' })),
   formatConfigDisplay: vi.fn(() => 'tool_profile = full'),
+  invalidateConfigCache: vi.fn(),
 }));
 
 vi.mock('../../lib/checkpoint.js', () => ({

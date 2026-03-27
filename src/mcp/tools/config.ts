@@ -8,7 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
-import { getSuccDir } from '../../lib/config.js';
+import { getSuccDir, invalidateConfigCache } from '../../lib/config.js';
 import { maskSensitive } from '../../lib/config-display.js';
 import {
   projectPathParam,
@@ -168,8 +168,9 @@ export function registerConfigTools(server: McpServer) {
               fs.mkdirSync(configDir, { recursive: true });
             }
 
-            // Save config
+            // Save config and invalidate cached values
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            invalidateConfigCache();
 
             return createToolResponse(
               `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`
