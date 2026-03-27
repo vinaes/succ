@@ -128,7 +128,7 @@ export async function createProximityLinks(
   // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls)
   const uniqueIds = [...new Set(filtered.flatMap((p) => [p.node_1, p.node_2]))];
   const linkSettled = await Promise.allSettled(uniqueIds.map((id) => getMemoryLinks(id)));
-  const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>>>();
+  const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>> | null>();
   for (let i = 0; i < uniqueIds.length; i++) {
     const r = linkSettled[i];
     if (r.status === 'fulfilled') {
@@ -137,6 +137,8 @@ export async function createProximityLinks(
       logWarn('contextual-proximity', `Failed to fetch links for memory ${uniqueIds[i]}`, {
         error: r.reason instanceof Error ? r.reason.message : String(r.reason),
       });
+      // Store null sentinel so downstream code can distinguish "fetch failed" from "no links"
+      linksById.set(uniqueIds[i], null);
     }
   }
 
@@ -144,8 +146,15 @@ export async function createProximityLinks(
   let skipped = 0;
 
   for (const pair of filtered) {
-    // Check if any link already exists between these two memories (using pre-fetched data)
+    // Skip if either node's links failed to fetch — we can't know if a link already exists
     const linksA = linksById.get(pair.node_1);
+    const linksB = linksById.get(pair.node_2);
+    if (linksA === null || linksB === null) {
+      skipped++;
+      continue;
+    }
+
+    // Check if any link already exists between these two memories (using pre-fetched data)
     const hasLink =
       linksA?.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
       linksA?.incoming?.some((l: any) => l.source_id === pair.node_2);
