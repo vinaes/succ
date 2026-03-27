@@ -300,10 +300,7 @@ export async function parseBody(req: http.IncomingMessage): Promise<RequestBody>
         }
         settle(() => resolve(parsed as RequestBody));
       } catch (err) {
-        logWarn(
-          'daemon',
-          `Failed to parse request body: ${err instanceof Error ? err.message : String(err)}`
-        );
+        logWarn('daemon', 'Failed to parse request body', { error: err });
         settle(() => reject(new Error('Invalid request body')));
       }
     });
@@ -447,6 +444,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   await initStorageDispatcher();
 
   sessionManager = createSessionManager();
+  cachedRoutes = null;
   loadBudgets();
   initReflectionMaintenance();
 
@@ -505,6 +503,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     port,
     server,
   };
+  cachedRoutes = null;
 
   fs.writeFileSync(getDaemonPidFile(), String(process.pid));
   fs.writeFileSync(getDaemonPortFile(), String(port));
