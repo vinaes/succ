@@ -8,7 +8,11 @@
 // NOTE: See also reflection-synthesizer.ts which extracts patterns/learnings from communities.
 // This module generates retrieval-oriented GraphRAG summaries; that one generates actionable insights.
 
-import { detectLouvainCommunities, type LouvainCommunity } from './graphology-bridge.js';
+import {
+  detectLouvainCommunities,
+  invalidateGraphCache,
+  type LouvainCommunity,
+} from './graphology-bridge.js';
 import { getMemoryById, saveMemory, deleteMemoriesByTag } from '../storage/index.js';
 import { getEmbedding } from '../embeddings.js';
 import { callLLM } from '../llm.js';
@@ -108,7 +112,15 @@ async function summarizeCommunity(community: LouvainCommunity): Promise<number |
   const memResults = await Promise.allSettled(promptSampleIds.map((id) => getMemoryById(id)));
   for (let i = 0; i < promptSampleIds.length; i++) {
     const r = memResults[i];
-    if (r.status === 'fulfilled' && r.value) {
+    if (r.status === 'rejected') {
+      logWarn(
+        'community-summaries',
+        `Failed to fetch memory ${promptSampleIds[i]} for community ${community.id}`,
+        {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        }
+      );
+    } else if (r.value) {
       const mem = r.value;
       const truncated =
         mem.content.length > MAX_CONTENT_PER_MEMORY
@@ -167,6 +179,9 @@ Write a concise 2-3 sentence summary that captures the shared theme, key insight
       }
     }
   }
+
+  // Invalidate cached graph so new links are picked up by subsequent operations
+  invalidateGraphCache();
 
   return saveResult.id;
 }

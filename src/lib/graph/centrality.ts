@@ -70,6 +70,7 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
 
   // Chunk writes to avoid unbounded fan-out on large graphs
   const CHUNK_SIZE = 50;
+  let fulfilled = 0;
   for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
     const settled = await Promise.allSettled(
@@ -80,11 +81,13 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
         logWarn('centrality', 'Failed to upsert centrality score', {
           error: r.reason instanceof Error ? r.reason.message : String(r.reason),
         });
+      } else {
+        fulfilled++;
       }
     }
   }
 
-  return { updated: entries.length };
+  return { updated: fulfilled };
 }
 
 /**
@@ -124,6 +127,7 @@ export async function updateCentralityScores(): Promise<{ updated: number }> {
   }));
 
   const CHUNK_SIZE = 50;
+  let fulfilled = 0;
   for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
     const settled = await Promise.allSettled(
@@ -134,11 +138,13 @@ export async function updateCentralityScores(): Promise<{ updated: number }> {
         logWarn('centrality', 'Failed to upsert PageRank centrality score', {
           error: r.reason instanceof Error ? r.reason.message : String(r.reason),
         });
+      } else {
+        fulfilled++;
       }
     }
   }
 
-  return { updated: entries.length };
+  return { updated: fulfilled };
 }
 
 /**

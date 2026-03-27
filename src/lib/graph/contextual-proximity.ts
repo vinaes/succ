@@ -7,6 +7,7 @@
  */
 
 import { getAllMemoriesForExport, getMemoryLinks, createMemoryLink } from '../storage/index.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Source Normalization
@@ -132,6 +133,10 @@ export async function createProximityLinks(
     const r = linkSettled[i];
     if (r.status === 'fulfilled') {
       linksById.set(uniqueIds[i], r.value);
+    } else {
+      logWarn('contextual-proximity', `Failed to fetch links for memory ${uniqueIds[i]}`, {
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
     }
   }
 

@@ -280,11 +280,16 @@ export async function detectCommunitiesLP(
         return updateMemoryTags(memId, tags);
       })
     );
-    for (const r of settled) {
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
       if (r.status === 'rejected') {
-        logWarn('community-detection', 'Failed to update memory tags during LP retagging', {
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-        });
+        logWarn(
+          'community-detection',
+          `Failed to update memory tags during LP retagging for memory ${batch[j]}`,
+          {
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          }
+        );
       }
     }
   }
@@ -384,11 +389,16 @@ async function applyCommunityTags(
         return Promise.resolve();
       })
     );
-    for (const r of settled) {
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
       if (r.status === 'rejected') {
-        logWarn('community-detection', 'Failed to update memory tags during community tagging', {
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-        });
+        logWarn(
+          'community-detection',
+          `Failed to update memory tags during community tagging for memory ${batch[j].id}`,
+          {
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          }
+        );
       }
     }
   }
