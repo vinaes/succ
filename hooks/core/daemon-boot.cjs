@@ -28,8 +28,8 @@ function getDaemonPort(succDir) {
     if (fs.existsSync(portFile)) {
       return parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
     }
-  } catch {
-    // intentionally empty — port file read failed
+  } catch (e) {
+    console.error(`[succ:daemon] Port file read failed: ${e.message || e}`);
   }
   return null;
 }
@@ -46,8 +46,8 @@ async function checkDaemon(port) {
     });
     const data = await response.json();
     return data?.status === 'ok';
-  } catch {
-    // intentionally empty — daemon not reachable
+  } catch (e) {
+    console.error(`[succ:daemon] Health check failed: ${e.message || e}`);
     return false;
   }
 }
@@ -80,8 +80,8 @@ function startDaemon(projectDir, logFn) {
         if (fs.existsSync(candidate)) {
           servicePath = candidate;
         }
-      } catch {
-        // intentionally empty — .package-root read failed
+      } catch (e) {
+        console.error(`[succ:daemon] .package-root read failed: ${e.message || e}`);
       }
     }
     // Fallback: __dirname (works when hooks run directly from npm package)

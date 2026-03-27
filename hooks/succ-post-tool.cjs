@@ -132,8 +132,8 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         }),
         signal: AbortSignal.timeout(3000),
       });
-    } catch {
-      // intentionally empty
+    } catch (e) {
+      console.error(`[succ:post-tool] succRemember failed: ${e.message || e}`);
     }
   };
 
@@ -237,7 +237,8 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         } else if (typeof parsed === 'string') {
           text = parsed;
         }
-      } catch {
+      } catch (e) {
+        console.error(`[succ:post-tool] Task output JSON parse failed: ${e.message || e}`);
         text = typeof toolOutput === 'string' ? toolOutput : '';
       }
 
@@ -277,12 +278,12 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
                   source: 'memory-md-sync',
                 }),
                 signal: AbortSignal.timeout(5000),
-              }).catch(() => {});
+              }).catch((e) => { console.error(`[succ:post-tool] MEMORY.md bullet sync failed: ${e.message || e}`); });
             })
           );
         }
-      } catch {
-        // intentionally empty
+      } catch (e) {
+        console.error(`[succ:post-tool] MEMORY.md sync failed: ${e.message || e}`);
       }
     }
   }

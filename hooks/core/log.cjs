@@ -33,8 +33,8 @@ function log(succDir, hookName, message) {
     const logFile = path.join(tmpDir, 'hooks.log');
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logFile, `[${timestamp}] [${hookName}] ${message}\n`);
-  } catch {
-    // intentionally empty — logging failed, not critical
+  } catch (e) {
+    console.error(`[succ:log] Failed to write hooks.log: ${e.message || e}`);
   }
 }
 

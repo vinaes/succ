@@ -614,7 +614,8 @@ function checkDangerous(command, config) {
     if (allowed.length > MAX_REGEX_LENGTH) continue;
     try {
       if (new RegExp(allowed).test(trimmed)) return null;
-    } catch {
+    } catch (e) {
+      console.error(`[succ:pre-tool] Invalid allowlist regex "${allowed}": ${e.message || e}`);
       if (trimmed === allowed) return null;
     }
   }
@@ -651,8 +652,8 @@ function checkDangerous(command, config) {
           mode: config.commandSafetyGuard.mode,
         };
       }
-    } catch {
-      // Invalid regex in config — skip silently
+    } catch (e) {
+      console.error(`[succ:pre-tool] Invalid custom safety pattern "${custom.pattern}": ${e.message || e}`);
     }
   }
 
@@ -709,8 +710,9 @@ async function recallFileMemories(succDir, fileName) {
     if (!res.ok) return [];
     const data = await res.json();
     return data.results || [];
-  } catch {
-    return []; // fail-open
+  } catch (e) {
+    console.error(`[succ:pre-tool] recallFileMemories failed: ${e.message || e}`);
+    return [];
   }
 }
 
@@ -728,8 +730,9 @@ async function fetchHookRules(succDir, toolName, toolInput) {
     if (!res.ok) return [];
     const data = await res.json();
     return data.rules || [];
-  } catch {
-    return []; // fail-open
+  } catch (e) {
+    console.error(`[succ:pre-tool] fetchHookRules failed: ${e.message || e}`);
+    return [];
   }
 }
 

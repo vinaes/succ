@@ -179,7 +179,8 @@ function normalizeInput(agent, stdinJson) {
     if (stdinJson.toolArgs !== undefined && typeof stdinJson.toolArgs === 'string') {
       try {
         normalized.tool_input = JSON.parse(stdinJson.toolArgs);
-      } catch {
+      } catch (e) {
+        console.error(`[succ:adapter] Copilot toolArgs JSON parse failed: ${e.message || e}`);
         normalized.tool_input = stdinJson.toolArgs;
       }
     }
@@ -437,14 +438,15 @@ function runHook(hookName, callback) {
             process.exit(0);
           }
           succDir = resolved;
-        } catch {
+        } catch (e) {
+          console.error(`[succ:adapter] Worktree resolution failed: ${e.message || e}`);
           process.exit(0);
         }
       }
 
       await callback({ agent, hookInput, projectDir, succDir });
-    } catch {
-      // Fail-open: never crash the hook, always let the tool call proceed
+    } catch (e) {
+      console.error(`[succ:adapter] Hook ${hookName} failed (fail-open): ${e.message || e}`);
       process.exit(0);
     }
   });

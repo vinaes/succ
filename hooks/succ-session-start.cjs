@@ -339,8 +339,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           `<architecture hint="Use succ_search to read full docs">\n${archParts.join('\n\n')}\n</architecture>`
         );
       }
-    } catch {
-      // intentionally empty — brain vault scan failed, not critical
+    } catch (e) {
+      log(`Brain vault scan failed: ${e.message || e}`);
     }
   }
 
@@ -379,12 +379,12 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             for (const oldArchive of archives.slice(10)) {
               fs.unlinkSync(path.join(archiveDir, oldArchive));
             }
-          } catch {
-            // intentionally empty — cleanup failed, not critical
+          } catch (e) {
+            log(`Archive cleanup failed: ${e.message || e}`);
           }
         }
-      } catch {
-        // intentionally empty — ignore errors
+      } catch (e) {
+        log(`Precomputed context load failed: ${e.message || e}`);
       }
     }
   }
@@ -440,6 +440,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           try {
             const postContent = fs.readFileSync(hookInput.transcript_path, 'utf8');
             let postChars = 0;
+            let malformedLines = 0;
             for (const line of postContent.split('\n')) {
               const trimmed = line.trim();
               if (!trimmed) continue;
@@ -482,9 +483,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                   }
                 }
               } catch {
-                /* skip malformed lines */
+                malformedLines++;
               }
             }
+            if (malformedLines > 0) log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
             postTokens = Math.ceil(postChars / 4);
             for (const k of Object.keys(postByType)) {
               postByType[k] = Math.ceil(postByType[k] / 4);
@@ -604,8 +606,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           );
         }
       }
-    } catch {
-      // intentionally empty — pinned memories not available
+    } catch (e) {
+      log(`Pinned memories fetch failed: ${e.message || e}`);
     }
 
     // Phase 2: Recent memories (excluding pinned to avoid duplication)
@@ -630,8 +632,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           );
         }
       }
-    } catch {
-      // intentionally empty — memories not available
+    } catch (e) {
+      log(`Recent memories fetch failed: ${e.message || e}`);
     }
   }
 
@@ -652,8 +654,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           );
         }
       }
-    } catch {
-      // intentionally empty — status not available
+    } catch (e) {
+      log(`Knowledge base status fetch failed: ${e.message || e}`);
     }
   }
 
