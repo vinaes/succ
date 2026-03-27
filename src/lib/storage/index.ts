@@ -12,6 +12,7 @@
  */
 
 import { getConfig, getDbPath, getGlobalDbPath } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 import { getStorageDispatcher } from './dispatcher.js';
 import { ConfigError } from '../errors.js';
 import type {
@@ -330,8 +331,15 @@ export async function getStaleFiles(projectRoot: string): Promise<IndexFreshness
           stale.push(entry.file_path);
         }
       }
-    } catch {
-      // Expected: file no longer exists on disk
+    } catch (err: unknown) {
+      // ENOENT is expected (file removed from disk); anything else is surprising
+      const isNotFound =
+        err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT';
+      if (!isNotFound) {
+        logWarn('storage', `Unexpected error checking staleness for ${entry.file_path}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       deleted.push(entry.file_path);
     }
   }

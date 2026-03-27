@@ -93,24 +93,33 @@ export class RetentionDispatcherMixin extends StorageDispatcherBase {
   /** Filter out pinned memory IDs from a list (for bulk operations) */
 
   async _filterOutPinned(ids: number[]): Promise<number[]> {
+    if (ids.length === 0) return [];
     const { isPinned } = await import('../../working-memory-pipeline.js');
-    const safe: number[] = [];
-    for (const id of ids) {
-      const memory = await this.getMemoryById(id);
-      if (!memory) {
-        safe.push(id);
-        continue;
-      }
-      if (
-        !isPinned({
-          is_invariant: memory.is_invariant,
-          correction_count: memory.correction_count,
-        })
-      ) {
-        safe.push(id);
+
+    // Batch-fetch all memories at once to avoid N sequential getMemoryById calls.
+    // PostgreSQL uses a single batch query; SQLite uses sync per-ID lookups
+    // (no network overhead so N+1 is not a concern).
+    let memoriesById: Map<number, { is_invariant: boolean; correction_count: number }>;
+    if (this.backend === 'postgresql' && this.postgres) {
+      const rows = await this.postgres.getMemoriesByIds(ids);
+      memoriesById = new Map(rows.map((m) => [m.id, m]));
+    } else {
+      const sqlite = await this.getSqliteFns();
+      memoriesById = new Map<number, { is_invariant: boolean; correction_count: number }>();
+      for (const id of ids) {
+        const m = sqlite.getMemoryById(id);
+        if (m) memoriesById.set(id, m);
       }
     }
-    return safe;
+
+    return ids.filter((id) => {
+      const memory = memoriesById.get(id);
+      if (!memory) return true; // missing = safe to delete
+      return !isPinned({
+        is_invariant: memory.is_invariant,
+        correction_count: memory.correction_count,
+      });
+    });
   }
 
   /** Throw PinnedMemoryError if the memory is pinned (Tier 1 immutability) */
