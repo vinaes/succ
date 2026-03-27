@@ -178,17 +178,15 @@ export class DocumentsDispatcherMixin extends StorageDispatcherBase {
           const results = await this.qdrant!.searchDocuments(queryEmbedding, limit * 3, threshold);
           if (results.length > 0) {
             const pgRows = await this.postgres.getDocumentsByIds(results.map((r) => r.id));
+            const scoreMap = new Map(results.map((r) => [r.id, r.similarity]));
             return pgRows
-              .map((row) => {
-                const score = results.find((r) => r.id === row.id)?.similarity ?? 0;
-                return {
-                  file_path: row.file_path,
-                  content: row.content,
-                  start_line: row.start_line,
-                  end_line: row.end_line,
-                  similarity: score,
-                };
-              })
+              .map((row) => ({
+                file_path: row.file_path,
+                content: row.content,
+                start_line: row.start_line,
+                end_line: row.end_line,
+                similarity: scoreMap.get(row.id) ?? 0,
+              }))
               .sort((a, b) => b.similarity - a.similarity)
               .slice(0, limit);
           }

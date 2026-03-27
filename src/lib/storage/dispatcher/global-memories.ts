@@ -184,7 +184,8 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
               { excludeInvalidated: false }
             );
             if (pgRows.length > 0) {
-              const score = qr.find((r) => r.id === pgRows[0].id)?.similarity ?? 0;
+              const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
+              const score = scoreMap.get(pgRows[0].id) ?? 0;
               if (score >= thresh)
                 return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
             }
