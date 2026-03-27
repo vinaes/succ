@@ -622,6 +622,10 @@ export function extractSafetyConfig(guard?: CommandSafetyGuardConfig): {
   };
 }
 
+// Throttle invalid-pattern warnings to once per index (avoid log storms on repeated calls)
+const warnedAllowlistIdx = new Set<number>();
+const warnedCustomIdx = new Set<number>();
+
 /**
  * Check if a command is dangerous.
  * Returns null if safe, or { reason, mode } if dangerous.
@@ -644,10 +648,13 @@ export function checkDangerous(
     try {
       if (new RegExp(allowed).test(trimmed)) return null;
     } catch {
-      logWarn(
-        'command-safety',
-        `Invalid allowlist regex pattern at index ${idx} (pattern redacted)`
-      );
+      if (!warnedAllowlistIdx.has(idx)) {
+        warnedAllowlistIdx.add(idx);
+        logWarn(
+          'command-safety',
+          `Invalid allowlist regex pattern at index ${idx} (pattern redacted)`
+        );
+      }
       // Fallback: try as literal exact match
       if (trimmed === allowed) return null;
     }
@@ -682,7 +689,13 @@ export function checkDangerous(
         };
       }
     } catch {
-      logWarn('command-safety', `Invalid custom pattern regex at index ${idx} (pattern redacted)`);
+      if (!warnedCustomIdx.has(idx)) {
+        warnedCustomIdx.add(idx);
+        logWarn(
+          'command-safety',
+          `Invalid custom pattern regex at index ${idx} (pattern redacted)`
+        );
+      }
     }
   }
 
