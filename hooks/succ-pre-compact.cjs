@@ -57,7 +57,9 @@ process.stdin.on('end', async () => {
       return;
     }
 
-    const sessionId = (hookInput.session_id || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+    const sessionId = (hookInput.session_id || 'unknown')
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .slice(0, 128);
     const transcriptPath = hookInput.transcript_path;
 
     log(
@@ -239,9 +241,15 @@ process.stdin.on('end', async () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(stats),
           signal: AbortSignal.timeout(2000),
-        }).catch(() => {
-          /* fire and forget */
-        });
+        })
+          .then((res) => {
+            if (!res.ok) {
+              log(succDir, `Daemon notify failed: ${res.status} ${res.statusText}`);
+            }
+          })
+          .catch((e) => {
+            log(succDir, `Daemon notify failed: ${e.message || e}`);
+          });
       }
     } catch (e) {
       log(succDir, `Daemon notify failed: ${e.message || e}`);

@@ -61,8 +61,10 @@ function resolveMainRepoRoot(worktreeDir) {
       console.error(`[succ:worktree] realpathSync.native failed for mainRoot: ${e.message || e}`);
     }
     return mainRoot;
-  } catch (e) {
-    console.error(`[succ:worktree] git rev-parse failed, falling back to .git parse: ${e.message || e}`);
+  } catch (gitErr) {
+    console.error(
+      `[succ:worktree] git rev-parse failed, falling back to .git parse: ${gitErr.message || gitErr}`
+    );
     // Fallback: parse .git file
     try {
       const content = fs.readFileSync(path.join(worktreeDir, '.git'), 'utf-8').trim();
@@ -74,13 +76,15 @@ function resolveMainRepoRoot(worktreeDir) {
         // Normalize 8.3 short names on Windows (same as happy-path above)
         try {
           fallbackRoot = fs.realpathSync.native(fallbackRoot);
-        } catch (e) {
-          console.error(`[succ:worktree] realpathSync.native failed for fallbackRoot: ${e.message || e}`);
+        } catch (realpathErr) {
+          console.error(
+            `[succ:worktree] realpathSync.native failed for fallbackRoot: ${realpathErr.message || realpathErr}`
+          );
         }
         return fallbackRoot;
       }
-    } catch (e) {
-      console.error(`[succ:worktree] .git file parse failed: ${e.message || e}`);
+    } catch (parseErr) {
+      console.error(`[succ:worktree] .git file parse failed: ${parseErr.message || parseErr}`);
     }
     return null;
   }
@@ -113,7 +117,9 @@ function resolveSuccDir(projectDir) {
     fs.symlinkSync(mainSucc, localSucc, 'junction');
     return localSucc;
   } catch (e) {
-    console.error(`[succ:worktree] Junction creation failed, using main repo path: ${e.message || e}`);
+    console.error(
+      `[succ:worktree] Junction creation failed, using main repo path: ${e.message || e}`
+    );
     return mainSucc;
   }
 }

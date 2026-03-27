@@ -439,7 +439,7 @@ function runHook(hookName, callback) {
           }
           succDir = resolved;
         } catch (e) {
-          console.error(`[succ:adapter] Worktree resolution failed: ${e.message || e}`);
+          console.error(`[succ:adapter] Worktree module load failed: ${e.message || e}`);
           process.exit(0);
         }
       }
