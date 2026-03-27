@@ -76,9 +76,10 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
     const settled = await Promise.allSettled(
       chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized))
     );
-    for (const r of settled) {
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
       if (r.status === 'rejected') {
-        logWarn('centrality', 'Failed to upsert centrality score', {
+        logWarn('centrality', `Failed to upsert centrality score for memory ${chunk[j].memId}`, {
           error: r.reason instanceof Error ? r.reason.message : String(r.reason),
         });
       } else {
@@ -133,11 +134,16 @@ export async function updateCentralityScores(): Promise<{ updated: number }> {
     const settled = await Promise.allSettled(
       chunk.map((e) => upsertCentralityScore(e.memId, e.score, e.normalized))
     );
-    for (const r of settled) {
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
       if (r.status === 'rejected') {
-        logWarn('centrality', 'Failed to upsert PageRank centrality score', {
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-        });
+        logWarn(
+          'centrality',
+          `Failed to upsert PageRank centrality score for memory ${chunk[j].memId}`,
+          {
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          }
+        );
       } else {
         fulfilled++;
       }

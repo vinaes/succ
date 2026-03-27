@@ -171,11 +171,16 @@ Write a concise 2-3 sentence summary that captures the shared theme, key insight
     const settled = await Promise.allSettled(
       batch.map((memId) => createMemoryLink(saveResult.id, memId, 'related'))
     );
-    for (const r of settled) {
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
       if (r.status === 'rejected') {
-        logWarn('community-summaries', `Failed to link summary ${saveResult.id} to member`, {
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-        });
+        logWarn(
+          'community-summaries',
+          `Failed to link summary ${saveResult.id} to member ${batch[j]}`,
+          {
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          }
+        );
       }
     }
   }
