@@ -11,16 +11,11 @@
 
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 
-adapter.runHook('session-end', async ({ hookInput, succDir }) => {
+adapter.runHook('session-end', async ({ hookInput, projectDir, succDir }) => {
   const log = (msg) => _log(succDir, 'session-end', msg);
-  const daemonPort = getDaemonPort(succDir);
-  if (!daemonPort) {
-    log('Daemon port unavailable — skipping session unregister/reflection');
-    process.exit(0);
-  }
 
   // Get session info — fall back to hookInput.session_id when transcript_path is absent
   // (session-start registers a synthetic session_id in that case)
@@ -30,6 +25,12 @@ adapter.runHook('session-end', async ({ hookInput, succDir }) => {
     : hookInput.session_id || null;
 
   if (!sessionId) {
+    process.exit(0);
+  }
+
+  const daemonPort = ensureDaemonLazy(projectDir, succDir);
+  if (!daemonPort) {
+    log('Daemon port unavailable — skipping session unregister/reflection');
     process.exit(0);
   }
 
