@@ -639,12 +639,15 @@ export function checkDangerous(
   // Check allowlist — each entry is tested as an anchored regex against the full command.
   // Examples: "^git push$" (exact), "^npm test" (prefix), "^git push(?! .*(--force|-f))" (push but not force)
   const trimmed = command.trim();
-  for (const allowed of config.allowlist) {
+  for (const [idx, allowed] of config.allowlist.entries()) {
     if (allowed.length > MAX_REGEX_LENGTH) continue; // ReDoS guard
     try {
       if (new RegExp(allowed).test(trimmed)) return null;
     } catch {
-      logWarn('command-safety', `Invalid allowlist regex pattern: ${allowed}`);
+      logWarn(
+        'command-safety',
+        `Invalid allowlist regex pattern at index ${idx} (pattern redacted)`
+      );
       // Fallback: try as literal exact match
       if (trimmed === allowed) return null;
     }
@@ -668,7 +671,7 @@ export function checkDangerous(
   }
 
   // Check user-defined custom patterns
-  for (const custom of config.customPatterns) {
+  for (const [idx, custom] of config.customPatterns.entries()) {
     if (custom.pattern.length > MAX_REGEX_LENGTH) continue; // ReDoS guard
     try {
       const regex = new RegExp(custom.pattern, custom.flags || '');
@@ -679,7 +682,7 @@ export function checkDangerous(
         };
       }
     } catch {
-      logWarn('command-safety', `Invalid custom pattern regex: ${custom.pattern}`);
+      logWarn('command-safety', `Invalid custom pattern regex at index ${idx} (pattern redacted)`);
     }
   }
 
