@@ -42,6 +42,7 @@ vi.mock('../../lib/config.js', () => ({
   getSuccDir: vi.fn(() => '/project/.succ'),
   getConfigDisplay: vi.fn(() => ({ tool_profile: 'full' })),
   formatConfigDisplay: vi.fn(() => 'tool_profile = full'),
+  invalidateConfigCache: vi.fn(),
 }));
 
 vi.mock('../../lib/checkpoint.js', () => ({
@@ -161,6 +162,9 @@ describe('config tool module', () => {
     expect(writtenPath).toBe(path.join('/project/.succ', 'config.json'));
     const parsed = JSON.parse(payload);
     expect(parsed.idle_reflection.enabled).toBe(true);
+
+    const { invalidateConfigCache } = await import('../../lib/config.js');
+    expect(invalidateConfigCache).toHaveBeenCalled();
   });
 
   it('lists empty checkpoints message and closes db', async () => {

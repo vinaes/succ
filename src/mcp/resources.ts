@@ -12,6 +12,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import path from 'path';
 import fs from 'fs';
 import { getProjectRoot, getSuccDir } from '../lib/config.js';
+import { logWarn } from '../lib/fault-logger.js';
 import { getBrainPath } from './helpers.js';
 
 export function registerResources(server: McpServer) {
@@ -30,7 +31,13 @@ export function registerResources(server: McpServer) {
 
       const files: string[] = [];
       function walkDir(dir: string, prefix: string = '') {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (err) {
+          logWarn('resources', `Cannot read directory ${dir}: ${err}`);
+          return;
+        }
         for (const entry of entries) {
           if (entry.name.startsWith('.')) continue;
           const fullPath = path.join(dir, entry.name);
@@ -60,7 +67,10 @@ export function registerResources(server: McpServer) {
     { description: 'Read a file from the brain vault. Use brain://list to see available files.' },
     async (uri, variables) => {
       const brainPath = getBrainPath();
-      const filePath = variables.path as string;
+      const filePath = variables.path as string | undefined;
+      if (!filePath) {
+        return { contents: [{ uri: uri.href, text: 'Error: Missing required path parameter' }] };
+      }
       const fullPath = path.join(brainPath, filePath);
 
       // Security: use path.resolve for proper path traversal protection
@@ -72,18 +82,19 @@ export function registerResources(server: McpServer) {
         return { contents: [{ uri: uri.href, text: 'Error: Path traversal not allowed' }] };
       }
 
-      if (!fs.existsSync(fullPath)) {
+      try {
+        // Check for symlinks (security hardening) — lstat doesn't follow symlinks
+        const stats = fs.lstatSync(fullPath);
+        if (stats.isSymbolicLink()) {
+          return { contents: [{ uri: uri.href, text: 'Error: Symbolic links not allowed' }] };
+        }
+
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }] };
+      } catch (err) {
+        logWarn('resources', `Failed to read brain file ${filePath}: ${err}`);
         return { contents: [{ uri: uri.href, text: `File not found: ${filePath}` }] };
       }
-
-      // Check for symlinks (optional security hardening)
-      const stats = fs.lstatSync(fullPath);
-      if (stats.isSymbolicLink()) {
-        return { contents: [{ uri: uri.href, text: 'Error: Symbolic links not allowed' }] };
-      }
-
-      const content = fs.readFileSync(fullPath, 'utf-8');
-      return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }] };
     }
   );
 
