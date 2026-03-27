@@ -68,8 +68,10 @@ function getClaudeCodeVersion(): string | null {
     });
     const match = stdout.match(/(\d+\.\d+\.\d+)/);
     return match ? match[1] : null;
-  } catch {
-    logWarn('init', 'Claude Code CLI not found or version detection failed');
+  } catch (e) {
+    logWarn('init', 'Claude Code CLI not found or version detection failed', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     return null;
   }
 }

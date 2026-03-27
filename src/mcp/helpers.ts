@@ -76,7 +76,7 @@ export async function applyProjectPath(projectPath?: string): Promise<void> {
       const d = await getStorageDispatcher();
       await d.flushSessionCounters('mcp-project-switch');
     } catch (err) {
-      logWarn('mcp', 'Session counter flush failed', { error: String(err) });
+      logWarn('mcp', 'Session counter flush failed', { error: getErrorMessage(err) });
     }
     closeDb();
     closeGlobalDb();
@@ -96,7 +96,7 @@ export function setupGracefulShutdown() {
       const d = await getStorageDispatcher();
       await d.flushSessionCounters('mcp-session');
     } catch (err) {
-      logWarn('mcp', 'Session counter flush failed', { error: String(err) });
+      logWarn('mcp', 'Session counter flush failed', { error: getErrorMessage(err) });
     }
     await closeStorageDispatcher();
     cleanupEmbeddings();
@@ -204,7 +204,7 @@ export async function trackTokenSavings(
       estimated_cost: estimatedCost,
     });
   } catch (err) {
-    logWarn('mcp', 'Token savings tracking failed', { error: String(err) });
+    logWarn('mcp', 'Token savings tracking failed', { error: getErrorMessage(err) });
   }
 }
 
@@ -238,7 +238,7 @@ export async function trackMemoryAccess(
 
     await incrementMemoryAccessBatch(accesses);
   } catch (err) {
-    logWarn('mcp', 'Memory access tracking failed', { error: String(err) });
+    logWarn('mcp', 'Memory access tracking failed', { error: getErrorMessage(err) });
   }
 }
 

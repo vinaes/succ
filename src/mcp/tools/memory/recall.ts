@@ -24,8 +24,10 @@ import {
   projectPathParam,
   applyProjectPath,
   extractAnswerFromResults,
+  createErrorResponse,
 } from '../../helpers.js';
 import { logWarn } from '../../../lib/fault-logger.js';
+import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
 
 interface ExtendedMemoryResult extends HybridMemoryResult {
@@ -607,17 +609,9 @@ export function registerRecallTool(server: McpServer): void {
           ],
         };
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         logWarn('mcp-memory', 'Error recalling memories', { error: errorMsg });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error recalling memories: ${errorMsg}`,
-            },
-          ],
-          isError: true,
-        };
+        return createErrorResponse(`Error recalling memories: ${errorMsg}`);
       } finally {
         closeDb();
         closeGlobalDb();
