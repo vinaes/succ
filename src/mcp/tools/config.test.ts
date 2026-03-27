@@ -162,6 +162,9 @@ describe('config tool module', () => {
     expect(writtenPath).toBe(path.join('/project/.succ', 'config.json'));
     const parsed = JSON.parse(payload);
     expect(parsed.idle_reflection.enabled).toBe(true);
+
+    const { invalidateConfigCache } = await import('../../lib/config.js');
+    expect(invalidateConfigCache).toHaveBeenCalled();
   });
 
   it('lists empty checkpoints message and closes db', async () => {
