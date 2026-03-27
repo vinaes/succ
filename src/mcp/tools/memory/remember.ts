@@ -288,6 +288,7 @@ export function registerRememberTool(server: McpServer): void {
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('mcp-memory', 'Error saving memory', { error: errorMsg });
         return {
           content: [
             {

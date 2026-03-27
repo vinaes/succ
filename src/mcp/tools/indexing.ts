@@ -80,9 +80,9 @@ export function registerIndexingTools(server: McpServer) {
 
             return createToolResponse(`Indexed: ${file} (${result.chunks} chunks)`);
           } catch (error) {
-            return createErrorResponse(
-              `Error indexing file: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error indexing doc file', { error: msg });
+            return createErrorResponse(`Error indexing file: ${msg}`);
           }
         }
 
@@ -101,9 +101,9 @@ export function registerIndexingTools(server: McpServer) {
 
             return createToolResponse(`Indexed: ${file} (${result.chunks} chunks)`);
           } catch (error) {
-            return createErrorResponse(
-              `Error indexing code file: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error indexing code file', { error: msg });
+            return createErrorResponse(`Error indexing code file: ${msg}`);
           }
         }
 
@@ -117,9 +117,9 @@ export function registerIndexingTools(server: McpServer) {
               return createErrorResponse(`Error analyzing file: ${result.error}`);
             }
           } catch (error) {
-            return createErrorResponse(
-              `Error analyzing file: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error analyzing file', { error: msg });
+            return createErrorResponse(`Error analyzing file: ${msg}`);
           }
         }
 
@@ -141,9 +141,9 @@ export function registerIndexingTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            return createErrorResponse(
-              `Error during reindex: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error during reindex', { error: msg });
+            return createErrorResponse(`Error during reindex: ${msg}`);
           }
         }
 

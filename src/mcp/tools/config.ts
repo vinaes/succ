@@ -16,6 +16,20 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
+
+/**
+ * Helper to normalize error, log warning, and return error response
+ */
+function handleErrorResponse(
+  error: unknown,
+  contextMessage: string,
+  contextPrefix: string
+): ReturnType<typeof createErrorResponse> {
+  const msg = error instanceof Error ? error.message : String(error);
+  logWarn('config', contextMessage, { error: msg });
+  return createErrorResponse(`${contextPrefix}${msg}`);
+}
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const SENSITIVE_PATTERNS = [
@@ -96,9 +110,7 @@ export function registerConfigTools(server: McpServer) {
 
             return createToolResponse(formatConfigDisplay(display));
           } catch (error) {
-            return createErrorResponse(
-              `Error getting config: ${error instanceof Error ? error.message : String(error)}`
-            );
+            return handleErrorResponse(error, 'Error getting config', 'Error getting config: ');
           }
         }
 
@@ -175,9 +187,7 @@ export function registerConfigTools(server: McpServer) {
               `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`
             );
           } catch (error) {
-            return createErrorResponse(
-              `Error setting config: ${error instanceof Error ? error.message : String(error)}`
-            );
+            return handleErrorResponse(error, 'Error setting config', 'Error setting config: ');
           }
         }
 
@@ -198,8 +208,10 @@ export function registerConfigTools(server: McpServer) {
               `Checkpoint created successfully!\n\nFile: ${outputPath}\nProject: ${cp.project_name}\nSize: ${formatSize(stat.size)}\n\nContents:\n  Memories: ${cp.stats.memories_count}\n  Documents: ${cp.stats.documents_count}\n  Memory links: ${cp.stats.links_count}\n  Centrality scores: ${cp.stats.centrality_count || 0}\n  Brain files: ${cp.stats.brain_files_count}\n\nTo restore: succ checkpoint restore "${outputPath}"`
             );
           } catch (error) {
-            return createErrorResponse(
-              `Error: ${error instanceof Error ? error.message : String(error)}`
+            return handleErrorResponse(
+              error,
+              'Error creating checkpoint',
+              'Error creating checkpoint: '
             );
           } finally {
             closeDb();
@@ -232,8 +244,10 @@ export function registerConfigTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            return createErrorResponse(
-              `Error: ${error instanceof Error ? error.message : String(error)}`
+            return handleErrorResponse(
+              error,
+              'Error listing checkpoints',
+              'Error listing checkpoints: '
             );
           } finally {
             closeDb();

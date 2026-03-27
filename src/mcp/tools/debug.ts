@@ -14,6 +14,7 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import {
   generateSessionId,
   ensureDebugsDir,
@@ -336,9 +337,9 @@ export function registerDebugTools(server: McpServer) {
             return createErrorResponse(`Unknown action: ${action}`);
         }
       } catch (error) {
-        return createErrorResponse(
-          `Debug tool error: ${error instanceof Error ? error.message : String(error)}`
-        );
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logWarn('debug', 'Debug tool error', { error: errorMsg });
+        return createErrorResponse(`Debug tool error: ${errorMsg}`);
       }
     }
   );

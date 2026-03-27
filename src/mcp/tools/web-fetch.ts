@@ -160,6 +160,7 @@ export function registerWebFetchTools(server: McpServer) {
         return createToolResponse(lines);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
+        logWarn(COMPONENT, `Failed to fetch ${url}`, { error: msg });
         return createErrorResponse(
           `Failed to fetch ${url}: ${msg}`,
           COMPONENT,

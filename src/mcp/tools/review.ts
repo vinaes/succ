@@ -135,7 +135,7 @@ export function registerReviewTools(server: McpServer) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (error) {
         logWarn('review', 'Review context generation failed', {
           error: error instanceof Error ? error.message : String(error),
         });

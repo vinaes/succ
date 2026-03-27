@@ -23,6 +23,7 @@ import {
   applyProjectPath,
   extractAnswerFromResults,
 } from '../helpers.js';
+import { logWarn } from '../../lib/fault-logger.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -257,11 +258,13 @@ export function registerSearchTools(server: McpServer) {
           ],
         };
       } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logWarn('search', 'Error searching documents', { error: msg });
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error searching: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error searching: ${msg}`,
             },
           ],
           isError: true,
@@ -479,11 +482,13 @@ export function registerSearchTools(server: McpServer) {
           ],
         };
       } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logWarn('search', 'Error searching code', { error: msg });
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error searching code: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error searching code: ${msg}`,
             },
           ],
           isError: true,
