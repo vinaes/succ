@@ -11,12 +11,12 @@
 
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 
-adapter.runHook('session-end', async ({ hookInput, succDir }) => {
+adapter.runHook('session-end', async ({ hookInput, projectDir, succDir }) => {
   const log = (msg) => _log(succDir, 'session-end', msg);
-  const daemonPort = getDaemonPort(succDir);
+  const daemonPort = ensureDaemonLazy(projectDir, succDir);
   if (!daemonPort) {
     log('Daemon port unavailable — skipping session unregister/reflection');
     process.exit(0);

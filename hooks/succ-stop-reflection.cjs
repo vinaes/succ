@@ -9,9 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 
-adapter.runHook('stop-reflection', async ({ hookInput, succDir }) => {
+adapter.runHook('stop-reflection', async ({ hookInput, projectDir, succDir }) => {
   const tmpDir = path.join(succDir, '.tmp');
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -24,7 +24,7 @@ adapter.runHook('stop-reflection', async ({ hookInput, succDir }) => {
     ? path.basename(transcriptPath, '.jsonl')
     : hookInput.session_id || null;
 
-  const daemonPort = getDaemonPort(succDir);
+  const daemonPort = ensureDaemonLazy(projectDir, succDir);
 
   // Check if this is a service session (e.g., reflection subagent)
   const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';

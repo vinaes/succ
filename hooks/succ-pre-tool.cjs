@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
@@ -696,8 +696,8 @@ MEDIUM and below — commit is OK, mention findings in summary.
 
 // ─── Daemon helpers ──────────────────────────────────────────────────
 
-async function recallFileMemories(succDir, fileName) {
-  const port = getDaemonPort(succDir);
+async function recallFileMemories(projectDir, succDir, fileName) {
+  const port = ensureDaemonLazy(projectDir, succDir);
   if (!port) return [];
 
   try {
@@ -716,8 +716,8 @@ async function recallFileMemories(succDir, fileName) {
   }
 }
 
-async function fetchHookRules(succDir, toolName, toolInput) {
-  const port = getDaemonPort(succDir);
+async function fetchHookRules(projectDir, succDir, toolName, toolInput) {
+  const port = ensureDaemonLazy(projectDir, succDir);
   if (!port) return [];
 
   try {
@@ -801,7 +801,7 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
   // 1. Dynamic hook rules from memory (ALL tools)
   // Note: deny/ask exit immediately — any accumulated contextParts are intentionally
   // discarded because the tool call is being blocked or requires confirmation.
-  const rules = await fetchHookRules(succDir, toolName, toolInput);
+  const rules = await fetchHookRules(projectDir, succDir, toolName, toolInput);
   for (const rule of rules) {
     // Scan rule content for injection (prevents poisoned memory escalation)
     if (detectTier1(rule.content)) continue;
@@ -825,7 +825,7 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
   // 2. File-linked memories (Edit/Write only — Read is too frequent, wastes context)
   if ((toolName === 'Edit' || toolName === 'Write') && filePath) {
     const fileName = path.basename(filePath);
-    const memories = await recallFileMemories(succDir, fileName);
+    const memories = await recallFileMemories(projectDir, succDir, fileName);
     if (memories.length > 0) {
       contextParts.push(formatFileContext(memories, fileName));
     }
