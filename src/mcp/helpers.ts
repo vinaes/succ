@@ -337,7 +337,8 @@ export async function extractAnswerFromResults(
     );
     return answer;
   } catch (err) {
-    logWarn('mcp', `Extract failed for ${toolName}: ${err}`);
-    return `Extract failed: ${err instanceof Error ? err.message : String(err)}\n\nFalling back to raw results would require re-calling without extract parameter.`;
+    const msg = err instanceof Error ? err.message : String(err);
+    logWarn('mcp', `Extract failed for ${toolName}: ${msg}`);
+    return `Extract failed: ${msg}\n\nFalling back to raw results would require re-calling without extract parameter.`;
   }
 }

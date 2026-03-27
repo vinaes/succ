@@ -118,7 +118,10 @@ function applyToolProfile(
         }),
       });
     } catch (err) {
-      logWarn('mcp', `Failed to apply profile restriction to tool "${name}": ${err}`);
+      logWarn(
+        'mcp',
+        `Failed to apply profile restriction to tool "${name}": ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 
@@ -193,7 +196,12 @@ process.on('unhandledRejection', (error) => {
   );
   cleanupEmbeddings();
   cleanupReranker()
-    .catch(() => {})
+    .catch((err) => {
+      logWarn(
+        'mcp',
+        `Reranker cleanup failed during unhandled rejection: ${err instanceof Error ? err.message : String(err)}`
+      );
+    })
     .finally(() => {
       closeDb();
       closeGlobalDb();
