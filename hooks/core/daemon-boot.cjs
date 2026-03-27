@@ -67,6 +67,31 @@ function startDaemon(projectDir, logFn) {
       servicePath = path.join(mainRepo, 'dist', 'daemon', 'service.js');
     }
   }
+  // Package fallback: find service.js via .succ/.package-root (written by succ init)
+  // or via __dirname when hooks run directly from the installed package
+  if (!fs.existsSync(servicePath)) {
+    // Try .package-root breadcrumb (works for copied hooks in .succ/hooks/)
+    const succDir = path.join(projectDir, '.succ');
+    const pkgRootFile = path.join(succDir, '.package-root');
+    if (fs.existsSync(pkgRootFile)) {
+      try {
+        const pkgRoot = fs.readFileSync(pkgRootFile, 'utf8').trim();
+        const candidate = path.join(pkgRoot, 'dist', 'daemon', 'service.js');
+        if (fs.existsSync(candidate)) {
+          servicePath = candidate;
+        }
+      } catch {
+        // intentionally empty — .package-root read failed
+      }
+    }
+    // Fallback: __dirname (works when hooks run directly from npm package)
+    if (!fs.existsSync(servicePath)) {
+      const candidate = path.resolve(__dirname, '..', '..', 'dist', 'daemon', 'service.js');
+      if (fs.existsSync(candidate)) {
+        servicePath = candidate;
+      }
+    }
+  }
   if (!fs.existsSync(servicePath)) {
     if (logFn) logFn('[daemon] service.js not found: ' + servicePath);
     return false;
