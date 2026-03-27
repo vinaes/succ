@@ -35,6 +35,7 @@ import { cleanupReranker } from '../lib/reranker.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { getProjectRoot, getToolProfile } from '../lib/config.js';
 import { logError, logInfo, logWarn } from '../lib/fault-logger.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { setupGracefulShutdown, setCurrentProject } from './helpers.js';
 import { registerResources } from './resources.js';
 import { registerSearchTools } from './tools/search.js';
@@ -120,7 +121,7 @@ function applyToolProfile(
     } catch (err) {
       logWarn(
         'mcp',
-        `Failed to apply profile restriction to tool "${name}": ${err instanceof Error ? err.message : String(err)}`
+        `Failed to apply profile restriction to tool "${name}": ${getErrorMessage(err)}`
       );
     }
   }
@@ -196,12 +197,9 @@ process.on('unhandledRejection', (error) => {
   );
   cleanupEmbeddings();
   cleanupReranker()
-    .catch((err) => {
-      logWarn(
-        'mcp',
-        `Reranker cleanup failed during unhandled rejection: ${err instanceof Error ? err.message : String(err)}`
-      );
-    })
+    .catch((e) =>
+      logWarn('mcp', `cleanupReranker failed during unhandled rejection: ${getErrorMessage(e)}`)
+    )
     .finally(() => {
       closeDb();
       closeGlobalDb();

@@ -26,6 +26,7 @@ import {
 } from '../lib/storage/index.js';
 import { getProjectRoot, getSuccDir, invalidateConfigCache } from '../lib/config.js';
 import { logFault, logWarn } from '../lib/fault-logger.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { cleanupEmbeddings } from '../lib/embeddings.js';
 import { cleanupQualityScoring } from '../lib/quality.js';
 import { countTokens, countTokensArray } from '../lib/token-counter.js';
@@ -337,8 +338,7 @@ export async function extractAnswerFromResults(
     );
     return answer;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logWarn('mcp', `Extract failed for ${toolName}: ${msg}`);
-    return `Extract failed: ${msg}\n\nFalling back to raw results would require re-calling without extract parameter.`;
+    logWarn('mcp', `Extract failed for ${toolName}: ${getErrorMessage(err)}`);
+    return `Extract failed: ${getErrorMessage(err)}\n\nFalling back to raw results would require re-calling without extract parameter.`;
   }
 }
