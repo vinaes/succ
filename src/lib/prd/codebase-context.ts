@@ -65,7 +65,7 @@ async function gatherFileTree(): Promise<string> {
       dot: false,
       ignore: ['**/*.test.*', '**/*.spec.*'],
     });
-    const srcEntries = [...srcL1, ...srcL2].filter((v, i, a) => a.indexOf(v) === i);
+    const srcEntries = [...new Set([...srcL1, ...srcL2])];
 
     for (const entry of srcEntries.sort()) {
       const fullPath = path.join(srcDir, entry);

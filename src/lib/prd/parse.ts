@@ -173,12 +173,11 @@ function tryParse(text: string): unknown | null {
   try {
     return JSON.parse(text);
   } catch {
-    // Expected: LLM output may be invalid JSON on first parse.
-    // Try with malformation fixes
+    logWarn('parse', 'JSON parse failed on raw LLM output, trying malformation fixes');
     try {
       return JSON.parse(fixMalformedJson(text));
     } catch {
-      // Expected: malformed JSON can remain invalid after best-effort fix.
+      logWarn('parse', 'JSON parse failed after malformation fixes');
       return null;
     }
   }
