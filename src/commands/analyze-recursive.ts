@@ -126,7 +126,7 @@ export async function analyzeFileRecursive(
 
   // Step 3: Analyze each batch (sequential with concurrency limit)
   const chunkAnalyses: string[] = [];
-  const pending: Promise<void>[] = [];
+  const pending = new Set<Promise<void>>();
   let activeCount = 0;
 
   for (let i = 0; i < batches.length; i++) {
@@ -172,9 +172,9 @@ Respond with a concise analysis. No frontmatter, no markdown headers, just facts
       })
       .finally(() => {
         activeCount--;
-        pending.splice(pending.indexOf(p), 1);
+        pending.delete(p);
       });
-    pending.push(p);
+    pending.add(p);
   }
 
   // Wait for remaining

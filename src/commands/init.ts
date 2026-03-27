@@ -51,6 +51,7 @@ function isCloudProvider(url: string): boolean {
       hostname.endsWith('.openai.com')
     );
   } catch {
+    logWarn('init', 'Invalid URL provided during cloud provider check');
     return false;
   }
 }
@@ -66,6 +67,7 @@ function getClaudeCodeVersion(): string | null {
     const match = stdout.match(/(\d+\.\d+\.\d+)/);
     return match ? match[1] : null;
   } catch {
+    logWarn('init', 'Claude Code CLI not found or version detection failed');
     return null;
   }
 }
@@ -777,7 +779,7 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
           console.log('  Remove the `llm` key from .succ/config.json to use global settings.\n');
         }
       } catch {
-        // Ignore parse errors — non-critical warning path
+        logWarn('init', 'Failed to parse project config while checking LLM overrides');
       }
     }
 
