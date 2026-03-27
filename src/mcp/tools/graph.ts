@@ -17,6 +17,7 @@ import {
   LINK_RELATIONS,
   closeDb,
 } from '../../lib/storage/index.js';
+import type { MemoryWithLinks } from '../../lib/storage/types.js';
 import {
   invalidateGraphCache,
   shortestPath,
@@ -33,6 +34,8 @@ import {
   createToolResponse,
   createErrorResponse,
 } from '../helpers.js';
+import { gateAction } from '../profile.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 export function registerGraphTools(server: McpServer) {
   // Tool: succ_link - Create/manage memory links (knowledge graph)
@@ -149,22 +152,18 @@ export function registerGraphTools(server: McpServer) {
               return createToolResponse('source_id is required to show a memory with its links.');
             }
 
-            const memory = await getMemoryWithLinks(source_id);
+            const memory: MemoryWithLinks | null = await getMemoryWithLinks(source_id);
             if (!memory) {
               return createToolResponse(`Memory #${source_id} not found.`);
             }
 
             const outLinks =
               memory.outgoing_links.length > 0
-                ? memory.outgoing_links
-                    .map((l: any) => `  → #${l.target_id} (${l.relation})`)
-                    .join('\n')
+                ? memory.outgoing_links.map((l) => `  → #${l.target_id} (${l.relation})`).join('\n')
                 : '  (none)';
             const inLinks =
               memory.incoming_links.length > 0
-                ? memory.incoming_links
-                    .map((l: any) => `  ← #${l.source_id} (${l.relation})`)
-                    .join('\n')
+                ? memory.incoming_links.map((l) => `  ← #${l.source_id} (${l.relation})`).join('\n')
                 : '  (none)';
 
             const text = `Memory #${memory.id}:
@@ -374,6 +373,9 @@ ${relationStats}`;
           }
 
           case 'critical_nodes': {
+            const gated = gateAction('succ_link', 'critical_nodes');
+            if (gated) return gated;
+
             const points = await getArticulationPoints();
 
             if (points.length === 0) {
@@ -385,9 +387,16 @@ ${relationStats}`;
             // Enrich with memory content snippets
             const enriched = await Promise.all(
               points.slice(0, 20).map(async (id) => {
-                const mem = await getMemoryById(id);
-                const snippet = mem ? mem.content.substring(0, 100) : '(unknown)';
-                return `  #${id}: ${snippet}${mem && mem.content.length > 100 ? '...' : ''}`;
+                try {
+                  const mem = await getMemoryById(id);
+                  const snippet = mem ? mem.content.substring(0, 100) : '(unknown)';
+                  return `  #${id}: ${snippet}${mem && mem.content.length > 100 ? '...' : ''}`;
+                } catch (error) {
+                  logWarn('graph', `Failed to fetch memory #${id} for critical_nodes`, {
+                    error: getErrorMessage(error),
+                  });
+                  return `  #${id}: (fetch failed)`;
+                }
               })
             );
 
@@ -397,6 +406,9 @@ ${relationStats}`;
           }
 
           case 'pagerank': {
+            const gated = gateAction('succ_link', 'pagerank');
+            if (gated) return gated;
+
             const prMap = await computePageRank();
 
             if (prMap.size === 0) {
@@ -408,9 +420,16 @@ ${relationStats}`;
 
             const lines = await Promise.all(
               sorted.map(async ([id, score]) => {
-                const mem = await getMemoryById(id);
-                const snippet = mem ? mem.content.substring(0, 80) : '(unknown)';
-                return `  #${id} (${score.toFixed(6)}): ${snippet}${mem && mem.content.length > 80 ? '...' : ''}`;
+                try {
+                  const mem = await getMemoryById(id);
+                  const snippet = mem ? mem.content.substring(0, 80) : '(unknown)';
+                  return `  #${id} (${score.toFixed(6)}): ${snippet}${mem && mem.content.length > 80 ? '...' : ''}`;
+                } catch (error) {
+                  logWarn('graph', `Failed to fetch memory #${id} for pagerank`, {
+                    error: getErrorMessage(error),
+                  });
+                  return `  #${id} (${score.toFixed(6)}): (fetch failed)`;
+                }
               })
             );
 

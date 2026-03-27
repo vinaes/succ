@@ -385,6 +385,7 @@ export async function saveSingleMemory(params: {
       ],
     };
   } finally {
+    // Idempotent — safe if already closed by rememberWithLLMExtraction's finally block
     closeDb();
     closeGlobalDb();
   }

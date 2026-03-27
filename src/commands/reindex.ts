@@ -88,7 +88,8 @@ export async function reindexFiles(projectRoot: string): Promise<ReindexResult> 
         details.push(`Error: ${r.value.relativePath} — ${r.value.error}`);
         errors++;
       } else if (r.status === 'rejected') {
-        details.push(`Error: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        details.push(`Error (unknown file): ${reason}`);
         errors++;
       }
     }
