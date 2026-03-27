@@ -48,7 +48,11 @@ function parseMetadata(raw: string | null | undefined): Record<string, unknown> 
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
-  } catch {
+  } catch (err) {
+    logWarn(
+      'graph',
+      `Failed to parse metadata JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
     return null;
   }
 }

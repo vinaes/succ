@@ -795,7 +795,7 @@ export function hybridSearchGlobalMemories(
     if (!row) continue;
 
     // Parse and filter by tags if specified
-    const rowTags: string[] = row.tags ? JSON.parse(row.tags) : [];
+    const rowTags: string[] = parseTags(row.tags);
     if (tags && tags.length > 0) {
       const hasMatchingTag = tags.some((t) =>
         rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
