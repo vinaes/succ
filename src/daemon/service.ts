@@ -299,7 +299,10 @@ export async function parseBody(req: http.IncomingMessage): Promise<RequestBody>
           return;
         }
         settle(() => resolve(parsed as RequestBody));
-      } catch {
+      } catch (err) {
+        logWarn('daemon', 'Failed to parse request body', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         settle(() => reject(new Error('Invalid request body')));
       }
     });
@@ -310,6 +313,15 @@ export async function parseBody(req: http.IncomingMessage): Promise<RequestBody>
   });
 }
 
+let cachedRoutes: RouteMap | null = null;
+
+function getRoutes(): RouteMap {
+  if (!cachedRoutes) {
+    cachedRoutes = buildRoutes(createRouteContext());
+  }
+  return cachedRoutes;
+}
+
 /** @internal Exported for testing */
 export async function routeRequest(
   method: string,
@@ -317,7 +329,7 @@ export async function routeRequest(
   searchParams: URLSearchParams,
   body: unknown
 ): Promise<unknown> {
-  const routes = buildRoutes(createRouteContext());
+  const routes = getRoutes();
   const key = `${method} ${pathname}`;
   const handler = routes[key];
   if (!handler) {
@@ -434,6 +446,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   await initStorageDispatcher();
 
   sessionManager = createSessionManager();
+  cachedRoutes = null;
   loadBudgets();
   initReflectionMaintenance();
 
@@ -492,6 +505,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     port,
     server,
   };
+  cachedRoutes = null;
 
   fs.writeFileSync(getDaemonPidFile(), String(process.pid));
   fs.writeFileSync(getDaemonPortFile(), String(port));
@@ -654,6 +668,7 @@ export async function shutdownDaemon(): Promise<void> {
 export function _initTestState(cwd: string = process.cwd()): void {
   sessionManager = createSessionManager();
   state = { cwd, startedAt: Date.now(), port: 0, server: null };
+  cachedRoutes = null;
 }
 
 /** @internal Reset module state after testing */
@@ -661,6 +676,7 @@ export function _resetTestState(): void {
   sessionManager = null;
   idleWatcher = null;
   state = null;
+  cachedRoutes = null;
   resetReflectionRoutesState();
   resetMemoryRoutesState();
   resetSearchRoutesState();

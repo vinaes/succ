@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { processSessionEnd } from '../session-processor.js';
@@ -190,8 +191,11 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         if (fs.existsSync(statsFile)) {
           return { stats: JSON.parse(fs.readFileSync(statsFile, 'utf-8')) };
         }
-      } catch {
-        // File corrupted or unreadable — fall through to null
+      } catch (err) {
+        logWarn(
+          'sessions',
+          `Failed to read pre-compact stats for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
       return { stats: null };
     },
