@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
+import { logWarn } from '../../lib/fault-logger.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import {
   getConfig,
@@ -20,11 +21,7 @@ import {
   recordTranscriptTokens,
   resetTranscriptCounter,
 } from '../../lib/token-budget.js';
-import {
-  appendObservations,
-  cleanupStaleObservations,
-  removeObservations,
-} from '../../lib/session-observations.js';
+import { appendObservations, cleanupStaleObservations } from '../../lib/session-observations.js';
 import { REFLECTION_PROMPT, REFLECTION_SYSTEM } from '../../prompts/index.js';
 import type { SessionState } from '../sessions.js';
 import {
@@ -341,7 +338,15 @@ export async function performReflection(
       );
     }
 
-    await Promise.all(parallelOps);
+    const settled = await Promise.allSettled(parallelOps);
+    for (const result of settled) {
+      if (result.status === 'rejected') {
+        logWarn(
+          'reflection',
+          `Parallel reflection op failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+        );
+      }
+    }
 
     if (
       idleConfig.operations?.graph_refinement !== false ||
@@ -518,11 +523,4 @@ export function reflectionRoutes(ctx: RouteContext): RouteMap {
 
 export function initReflectionMaintenance(): void {
   cleanupStaleObservations();
-}
-
-export function disposeReflectionMaintenance(sessionId?: string): void {
-  if (sessionId) {
-    removeObservations(sessionId);
-    clearBriefingCache(sessionId);
-  }
 }

@@ -242,7 +242,7 @@ async function saveDiscoveriesBatch(
   const embeddings = await getEmbeddings(contents);
 
   // 3. Parallel quality scoring and dedup checking
-  const validationResults = await Promise.all(
+  const settled = await Promise.allSettled(
     discoveries.map(async (discovery, i) => {
       const content = contents[i];
       const embedding = embeddings[i];
@@ -250,18 +250,28 @@ async function saveDiscoveriesBatch(
       // Check for duplicates
       const similar = await hybridSearchDocs(content, embedding, 3, 0.85);
       if (similar.length > 0) {
-        return { valid: false, reason: 'duplicate' };
+        return { valid: false as const, reason: 'duplicate' };
       }
 
       // Score quality
       const qualityResult = await scoreMemory(content);
       if (!passesQualityThreshold(qualityResult)) {
-        return { valid: false, reason: 'low_quality' };
+        return { valid: false as const, reason: 'low_quality' };
       }
 
-      return { valid: true, qualityResult };
+      return { valid: true as const, qualityResult };
     })
   );
+  const validationResults = settled.map((result, i) => {
+    if (result.status === 'rejected') {
+      logWarn(
+        'analyzer',
+        `Validation failed for discovery "${discoveries[i].title}": ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+      );
+      return { valid: false as const, reason: 'error' };
+    }
+    return result.value;
+  });
 
   // 4. Save valid discoveries
   let savedCount = 0;
