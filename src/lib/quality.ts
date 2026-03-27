@@ -380,11 +380,11 @@ export async function scoreWithLocal(
       classifier(content, QUALITY_LABELS.relevance, { multi_label: false }),
     ]);
 
-    // Extract ONNX scores
-    const onnxQuality =
-      qualityResult.scores[qualityResult.labels.indexOf(QUALITY_LABELS.quality[0])];
-    const onnxRelevance =
-      relevanceResult.scores[relevanceResult.labels.indexOf(QUALITY_LABELS.relevance[0])];
+    // Extract ONNX scores (guard against label not found — indexOf returns -1)
+    const qualityIdx = qualityResult.labels.indexOf(QUALITY_LABELS.quality[0]);
+    const relevanceIdx = relevanceResult.labels.indexOf(QUALITY_LABELS.relevance[0]);
+    const onnxQuality = qualityIdx >= 0 ? qualityResult.scores[qualityIdx] : 0.5;
+    const onnxRelevance = relevanceIdx >= 0 ? relevanceResult.scores[relevanceIdx] : 0.5;
 
     // Uniqueness from similarity if provided
     const uniqueness = existingSimilarity !== undefined ? 1 - existingSimilarity : 0.5;

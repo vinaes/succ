@@ -560,6 +560,9 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   // Compute and cache
   const embeddings = await getEmbeddings([text]);
+  if (embeddings.length === 0) {
+    throw new ValidationError('getEmbeddings returned empty result for single text input');
+  }
   const result = embeddings[0];
   cacheSet(cacheKey, result);
 

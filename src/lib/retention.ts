@@ -229,21 +229,35 @@ export function calculateRetentionStats(results: EffectiveScoreResult[]): Retent
     };
   }
 
-  const keepCount = results.filter((r) => r.tier === 'keep').length;
-  const warnCount = results.filter((r) => r.tier === 'warn').length;
-  const deleteCount = results.filter((r) => r.tier === 'delete').length;
+  let keepCount = 0;
+  let warnCount = 0;
+  let deleteCount = 0;
+  let sumEffective = 0;
+  let sumQuality = 0;
+  let sumAge = 0;
+  let sumAccess = 0;
+  let high = 0;
+  let medium = 0;
+  let low = 0;
+  let critical = 0;
 
-  const sumEffective = results.reduce((sum, r) => sum + r.effectiveScore, 0);
-  const sumQuality = results.reduce((sum, r) => sum + r.qualityScore, 0);
-  const sumAge = results.reduce((sum, r) => sum + r.ageDays, 0);
-  const sumAccess = results.reduce((sum, r) => sum + r.accessCount, 0);
+  for (const r of results) {
+    if (r.tier === 'keep') keepCount++;
+    else if (r.tier === 'warn') warnCount++;
+    else if (r.tier === 'delete') deleteCount++;
 
-  const scoreDistribution = {
-    high: results.filter((r) => r.effectiveScore >= 0.6).length,
-    medium: results.filter((r) => r.effectiveScore >= 0.3 && r.effectiveScore < 0.6).length,
-    low: results.filter((r) => r.effectiveScore >= 0.15 && r.effectiveScore < 0.3).length,
-    critical: results.filter((r) => r.effectiveScore < 0.15).length,
-  };
+    sumEffective += r.effectiveScore;
+    sumQuality += r.qualityScore;
+    sumAge += r.ageDays;
+    sumAccess += r.accessCount;
+
+    if (r.effectiveScore >= 0.6) high++;
+    else if (r.effectiveScore >= 0.3) medium++;
+    else if (r.effectiveScore >= 0.15) low++;
+    else critical++;
+  }
+
+  const scoreDistribution = { high, medium, low, critical };
 
   return {
     totalMemories: results.length,

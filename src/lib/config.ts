@@ -268,8 +268,10 @@ export function getSuccDir(): string {
         }
       }
     }
-  } catch {
-    // Not a worktree or git unavailable — fall through
+  } catch (err) {
+    logWarn('config', 'Worktree detection failed, using local .succ path', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return localSucc;
