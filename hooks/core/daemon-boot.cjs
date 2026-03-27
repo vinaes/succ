@@ -145,7 +145,7 @@ async function ensureDaemon(projectDir, logFn) {
 
   let port = getDaemonPort(succDir, { quiet: true });
   if (port && (await checkDaemon(port, { quiet: true }))) {
-    try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch { /* no lock to clean */ }
+    try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch (e) { if (logFn) logFn(`[daemon] Lock cleanup skipped: ${e.message || e}`); }
     return { port };
   }
 
@@ -159,7 +159,7 @@ async function ensureDaemon(projectDir, logFn) {
     port = getDaemonPort(succDir, { quiet: true });
     if (port && (await checkDaemon(port, { quiet: true }))) {
       if (logFn) logFn(`[daemon] Started on port ${port}`);
-      try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch { /* no lock to clean */ }
+      try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch (e) { if (logFn) logFn(`[daemon] Lock cleanup skipped: ${e.message || e}`); }
       return { port };
     }
   }
@@ -196,13 +196,13 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
         try {
           process.kill(pid, 0); // Signal 0 = check existence
           return null; // Daemon process alive but port not written yet
-        } catch {
-          // PID not running — fall through to restart
+        } catch (e) {
+          if (logFn) logFn(`[daemon-lazy] PID ${pid} not running (${e.code || e.message || e}), will restart`);
         }
       }
     }
-  } catch {
-    // PID file read error — fall through
+  } catch (e) {
+    if (logFn) logFn(`[daemon-lazy] PID file read failed: ${e.message || e}`);
   }
 
   // Atomic lock acquisition — prevent concurrent spawns
@@ -223,8 +223,9 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
         // Stale lock — remove and retry once
         fs.unlinkSync(lockFile);
         fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
-      } catch {
-        return null; // Race lost or read error — another hook is handling it
+      } catch (e) {
+        if (logFn) logFn(`[daemon-lazy] Lock race lost or read error: ${e.message || e}`);
+        return null;
       }
     } else {
       // Other write error — still attempt spawn (daemon has its own dedup)
@@ -233,7 +234,7 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
 
   if (logFn) logFn('[daemon-lazy] Daemon not running, spawning in background');
   if (!startDaemon(projectDir, logFn)) {
-    try { fs.unlinkSync(lockFile); } catch { /* cleanup best-effort */ }
+    try { fs.unlinkSync(lockFile); } catch (e) { if (logFn) logFn(`[daemon-lazy] Lock cleanup failed: ${e.message || e}`); }
   }
 
   return null;
