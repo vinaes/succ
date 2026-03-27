@@ -16,7 +16,7 @@ import betweennessCentrality from 'graphology-metrics/centrality/betweenness.js'
 import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra.js';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
 import { getProjectRoot } from '../config.js';
-import { logInfo } from '../fault-logger.js';
+import { logInfo, logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Graph Cache
@@ -35,7 +35,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 function safeProjectKey(): string {
   try {
     return getProjectRoot();
-  } catch {
+  } catch (err) {
+    logWarn('graphology', 'Failed to get project root, using default cache key', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return '__default__';
   }
 }
@@ -50,6 +53,13 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
   const cached = graphCache.get(projectKey);
   if (cached && !forceRefresh && now - cached.timestamp < CACHE_TTL_MS) {
     return cached.graph;
+  }
+
+  // Evict stale entries from other projects to prevent unbounded cache growth
+  for (const [key, entry] of graphCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      graphCache.delete(key);
+    }
   }
 
   // Use DirectedGraph so that directional relationships (A→B vs B→A) and

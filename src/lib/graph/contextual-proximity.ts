@@ -126,10 +126,13 @@ export async function createProximityLinks(
 
   // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls)
   const uniqueIds = [...new Set(filtered.flatMap((p) => [p.node_1, p.node_2]))];
-  const linkResults = await Promise.all(uniqueIds.map((id) => getMemoryLinks(id)));
+  const linkSettled = await Promise.allSettled(uniqueIds.map((id) => getMemoryLinks(id)));
   const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>>>();
   for (let i = 0; i < uniqueIds.length; i++) {
-    linksById.set(uniqueIds[i], linkResults[i]);
+    const r = linkSettled[i];
+    if (r.status === 'fulfilled') {
+      linksById.set(uniqueIds[i], r.value);
+    }
   }
 
   let created = 0;
