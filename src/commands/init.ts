@@ -50,8 +50,10 @@ function isCloudProvider(url: string): boolean {
       hostname === 'openai.com' ||
       hostname.endsWith('.openai.com')
     );
-  } catch {
-    logWarn('init', 'Invalid URL provided during cloud provider check');
+  } catch (e) {
+    logWarn('init', 'Invalid URL provided during cloud provider check', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     return false;
   }
 }
@@ -778,8 +780,10 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
           console.log('  settings that will override the global config for this project.');
           console.log('  Remove the `llm` key from .succ/config.json to use global settings.\n');
         }
-      } catch {
-        logWarn('init', 'Failed to parse project config while checking LLM overrides');
+      } catch (e) {
+        logWarn('init', 'Failed to parse project config while checking LLM overrides', {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
 

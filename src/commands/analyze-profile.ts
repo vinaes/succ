@@ -482,31 +482,35 @@ export async function gatherProjectContext(
   const priorityFiles = [...new Set([...profile.entryPoints, ...profile.keyFiles])];
   const selectedFiles: string[] = [];
   const selectedSet = new Set<string>();
+  const dedupeKey = (p: string) => p.replace(/\\/g, '/');
 
   for (const f of priorityFiles) {
+    const key = dedupeKey(f);
     const filePath = path.join(projectRoot, f);
-    if (fs.existsSync(filePath) && !selectedSet.has(f)) {
+    if (fs.existsSync(filePath) && !selectedSet.has(key)) {
       selectedFiles.push(f);
-      selectedSet.add(f);
+      selectedSet.add(key);
     }
   }
 
   // Also read key files from identified systems/features
   for (const sys of profile.systems) {
-    if (sys.keyFile && !selectedSet.has(sys.keyFile)) {
+    const key = sys.keyFile ? dedupeKey(sys.keyFile) : '';
+    if (sys.keyFile && !selectedSet.has(key)) {
       const filePath = path.join(projectRoot, sys.keyFile);
       if (fs.existsSync(filePath)) {
         selectedFiles.push(sys.keyFile);
-        selectedSet.add(sys.keyFile);
+        selectedSet.add(key);
       }
     }
   }
   for (const feat of profile.features) {
-    if (feat.keyFile && !selectedSet.has(feat.keyFile)) {
+    const key = feat.keyFile ? dedupeKey(feat.keyFile) : '';
+    if (feat.keyFile && !selectedSet.has(key)) {
       const filePath = path.join(projectRoot, feat.keyFile);
       if (fs.existsSync(filePath)) {
         selectedFiles.push(feat.keyFile);
-        selectedSet.add(feat.keyFile);
+        selectedSet.add(key);
       }
     }
   }
@@ -525,9 +529,10 @@ export async function gatherProjectContext(
   const maxTotal = fast ? 15 : 40;
   for (const [, dirFiles] of dirMap) {
     for (const f of dirFiles.slice(0, maxPerDir)) {
-      if (!selectedSet.has(f) && selectedFiles.length < maxTotal) {
+      const key = dedupeKey(f);
+      if (!selectedSet.has(key) && selectedFiles.length < maxTotal) {
         selectedFiles.push(f);
-        selectedSet.add(f);
+        selectedSet.add(key);
       }
     }
   }

@@ -203,9 +203,9 @@ export function registerIndexingTools(server: McpServer) {
               tree.delete();
             }
           } catch (error) {
-            return createErrorResponse(
-              `Error extracting symbols: ${error instanceof Error ? error.message : String(error)}`
-            );
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error extracting symbols', { error: msg });
+            return createErrorResponse(`Error extracting symbols: ${msg}`);
           }
         }
 
@@ -236,8 +236,9 @@ export function registerIndexingTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error: unknown) {
-            logWarn('indexing-scan', getErrorMessage(error));
-            return createErrorResponse(`Error during scan: ${getErrorMessage(error)}`);
+            const msg = getErrorMessage(error);
+            logWarn('indexing', 'Error during scan', { error: msg });
+            return createErrorResponse(`Error during scan: ${msg}`);
           }
         }
 
