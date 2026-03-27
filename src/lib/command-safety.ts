@@ -6,6 +6,7 @@
  */
 
 import type { CommandSafetyGuardConfig, CommandSafetyPattern } from './config-types.js';
+import { logWarn } from './fault-logger.js';
 
 export interface DangerousPattern {
   pattern: RegExp;
@@ -643,7 +644,8 @@ export function checkDangerous(
     try {
       if (new RegExp(allowed).test(trimmed)) return null;
     } catch {
-      // Invalid regex — try as literal exact match fallback
+      logWarn('command-safety', `Invalid allowlist regex pattern: ${allowed}`);
+      // Fallback: try as literal exact match
       if (trimmed === allowed) return null;
     }
   }
@@ -677,7 +679,7 @@ export function checkDangerous(
         };
       }
     } catch {
-      // Invalid regex — skip
+      logWarn('command-safety', `Invalid custom pattern regex: ${custom.pattern}`);
     }
   }
 
