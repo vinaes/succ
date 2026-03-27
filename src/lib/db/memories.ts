@@ -25,7 +25,12 @@ function logDeletion(caller: string, count: number, ids: number[], reason?: stri
       ids.length <= 20 ? ids.join(',') : `${ids.slice(0, 20).join(',')}... (${ids.length} total)`;
     const reasonStr = reason ? ` | ${reason}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count} | ids=[${idStr}]${reasonStr}\n`;
-    fs.promises.appendFile(logFile, line).catch(() => {});
+    fs.promises.appendFile(logFile, line).catch((err) => {
+      logWarn(
+        'memories',
+        `Audit log write failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    });
   } catch (error) {
     logWarn('memories', 'Failed to write memory audit log entry', {
       error: error instanceof Error ? error.message : String(error),
@@ -1328,7 +1333,9 @@ export function saveMemoriesBatch(
     }
 
     // Trigger graph auto-export once for all memories
-    triggerAutoExport();
+    triggerAutoExport().catch((err) => {
+      logWarn('memories', err instanceof Error ? err.message : 'Auto-export failed');
+    });
   }
 
   // Sort results by original index
