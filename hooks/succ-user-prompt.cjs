@@ -74,8 +74,8 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) daemonAlive = true;
-    } catch {
-      // intentionally empty — daemon not reachable
+    } catch (e) {
+      log(`Daemon activity notification failed: ${e.message || e}`);
     }
   }
 
@@ -107,8 +107,8 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
           promptsSinceLastSuggestion =
             parseInt(fs.readFileSync(cooldownFile, 'utf8').trim(), 10) || 0;
         }
-      } catch {
-        // intentionally empty
+      } catch (e) {
+        log(`Cooldown file read failed: ${e.message || e}`);
       }
 
       // Only suggest if cooldown has passed
@@ -155,8 +155,8 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
         // Cooldown not passed, increment counter
         try {
           fs.writeFileSync(cooldownFile, String(promptsSinceLastSuggestion + 1), 'utf8');
-        } catch {
-          // intentionally empty
+        } catch (e) {
+          log(`Cooldown file write failed: ${e.message || e}`);
         }
       }
     }

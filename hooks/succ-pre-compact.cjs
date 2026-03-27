@@ -24,8 +24,8 @@ function log(succDir, message) {
     const logFile = path.join(tmpDir, 'hooks.log');
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logFile, `[${timestamp}] [pre-compact] ${message}\n`);
-  } catch {
-    // intentionally empty — logging failed, not critical
+  } catch (e) {
+    console.error(`[succ:pre-compact] Log write failed: ${e.message || e}`);
   }
 }
 
@@ -57,7 +57,9 @@ process.stdin.on('end', async () => {
       return;
     }
 
-    const sessionId = (hookInput.session_id || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 128);
+    const sessionId = (hookInput.session_id || 'unknown')
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .slice(0, 128);
     const transcriptPath = hookInput.transcript_path;
 
     log(
@@ -87,6 +89,7 @@ process.stdin.on('end', async () => {
     const toolNameById = {}; // { id: name }
 
     const lines = content.split('\n');
+    let malformedLines = 0;
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -95,6 +98,7 @@ process.stdin.on('end', async () => {
       try {
         entry = JSON.parse(trimmed);
       } catch {
+        malformedLines++;
         continue;
       }
 
@@ -173,6 +177,7 @@ process.stdin.on('end', async () => {
         totals.total += chars;
       }
     }
+    if (malformedLines > 0) log(succDir, `Skipped ${malformedLines} malformed transcript lines`);
 
     // Convert to tokens (chars / 4)
     const tokenTotals = {};
@@ -236,9 +241,15 @@ process.stdin.on('end', async () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(stats),
           signal: AbortSignal.timeout(2000),
-        }).catch(() => {
-          /* fire and forget */
-        });
+        })
+          .then((res) => {
+            if (!res.ok) {
+              log(succDir, `Daemon notify failed: ${res.status} ${res.statusText}`);
+            }
+          })
+          .catch((e) => {
+            log(succDir, `Daemon notify failed: ${e.message || e}`);
+          });
       }
     } catch (e) {
       log(succDir, `Daemon notify failed: ${e.message || e}`);
@@ -254,8 +265,8 @@ process.stdin.on('end', async () => {
         projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
       }
       log(path.join(projectDir, '.succ'), `PreCompact error: ${err.message || err}`);
-    } catch {
-      /* last-resort catch — logging itself failed, nothing we can do */
+    } catch (e) {
+      console.error(`[succ:pre-compact] Last-resort error handler failed: ${e.message || e}`);
     }
     process.exitCode = 0;
   }

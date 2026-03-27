@@ -31,7 +31,8 @@ function isGitWorktree(dir) {
     const gitPath = path.join(dir, '.git');
     const stat = fs.statSync(gitPath);
     return stat.isFile();
-  } catch {
+  } catch (e) {
+    console.error(`[succ:worktree] isGitWorktree statSync failed: ${e.message || e}`);
     return false;
   }
 }
@@ -56,11 +57,14 @@ function resolveMainRepoRoot(worktreeDir) {
     // On Windows, git may return 8.3 short paths — normalize to long paths
     try {
       mainRoot = fs.realpathSync.native(mainRoot);
-    } catch {
-      /* keep as-is */
+    } catch (e) {
+      console.error(`[succ:worktree] realpathSync.native failed for mainRoot: ${e.message || e}`);
     }
     return mainRoot;
-  } catch {
+  } catch (gitErr) {
+    console.error(
+      `[succ:worktree] git rev-parse failed, falling back to .git parse: ${gitErr.message || gitErr}`
+    );
     // Fallback: parse .git file
     try {
       const content = fs.readFileSync(path.join(worktreeDir, '.git'), 'utf-8').trim();
@@ -72,13 +76,15 @@ function resolveMainRepoRoot(worktreeDir) {
         // Normalize 8.3 short names on Windows (same as happy-path above)
         try {
           fallbackRoot = fs.realpathSync.native(fallbackRoot);
-        } catch {
-          /* keep as-is */
+        } catch (realpathErr) {
+          console.error(
+            `[succ:worktree] realpathSync.native failed for fallbackRoot: ${realpathErr.message || realpathErr}`
+          );
         }
         return fallbackRoot;
       }
-    } catch {
-      /* intentionally empty */
+    } catch (parseErr) {
+      console.error(`[succ:worktree] .git file parse failed: ${parseErr.message || parseErr}`);
     }
     return null;
   }
@@ -110,8 +116,10 @@ function resolveSuccDir(projectDir) {
   try {
     fs.symlinkSync(mainSucc, localSucc, 'junction');
     return localSucc;
-  } catch {
-    // Junction failed — return main repo path directly
+  } catch (e) {
+    console.error(
+      `[succ:worktree] Junction creation failed, using main repo path: ${e.message || e}`
+    );
     return mainSucc;
   }
 }

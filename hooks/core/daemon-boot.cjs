@@ -22,14 +22,16 @@ const { resolveMainRepoRoot } = require('./worktree.cjs');
  * @param {string} succDir - Path to .succ directory
  * @returns {number|null}
  */
-function getDaemonPort(succDir) {
+function getDaemonPort(succDir, { quiet = false } = {}) {
   try {
     const portFile = path.join(succDir, '.tmp', 'daemon.port');
     if (fs.existsSync(portFile)) {
       return parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
     }
-  } catch {
-    // intentionally empty — port file read failed
+  } catch (e) {
+    if (!quiet) {
+      console.error(`[succ:daemon] Port file read failed: ${e.message || e}`);
+    }
   }
   return null;
 }
@@ -39,15 +41,17 @@ function getDaemonPort(succDir) {
  * @param {number} port
  * @returns {Promise<boolean>}
  */
-async function checkDaemon(port) {
+async function checkDaemon(port, { quiet = false } = {}) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/health`, {
       signal: AbortSignal.timeout(2000),
     });
     const data = await response.json();
     return data?.status === 'ok';
-  } catch {
-    // intentionally empty — daemon not reachable
+  } catch (e) {
+    if (!quiet) {
+      console.error(`[succ:daemon] Health check failed: ${e.message || e}`);
+    }
     return false;
   }
 }
@@ -80,8 +84,8 @@ function startDaemon(projectDir, logFn) {
         if (fs.existsSync(candidate)) {
           servicePath = candidate;
         }
-      } catch {
-        // intentionally empty — .package-root read failed
+      } catch (e) {
+        console.error(`[succ:daemon] .package-root read failed: ${e.message || e}`);
       }
     }
     // Fallback: __dirname (works when hooks run directly from npm package)
@@ -139,8 +143,8 @@ async function ensureDaemon(projectDir, logFn) {
     if (resolved) succDir = resolved;
   }
 
-  let port = getDaemonPort(succDir);
-  if (port && (await checkDaemon(port))) {
+  let port = getDaemonPort(succDir, { quiet: true });
+  if (port && (await checkDaemon(port, { quiet: true }))) {
     return { port };
   }
 
@@ -151,8 +155,8 @@ async function ensureDaemon(projectDir, logFn) {
   // Poll for daemon to become ready (max 3 seconds = 30 × 100ms)
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 100));
-    port = getDaemonPort(succDir);
-    if (port && (await checkDaemon(port))) {
+    port = getDaemonPort(succDir, { quiet: true });
+    if (port && (await checkDaemon(port, { quiet: true }))) {
       if (logFn) logFn(`[daemon] Started on port ${port}`);
       return { port };
     }

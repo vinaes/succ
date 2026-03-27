@@ -45,8 +45,8 @@ adapter.runHook('stop-reflection', async ({ hookInput, succDir }) => {
         }),
         signal: AbortSignal.timeout(2000),
       });
-    } catch {
-      // intentionally empty
+    } catch (e) {
+      console.error(`[succ:stop] Daemon stop notification failed: ${e.message || e}`);
     }
   };
 
