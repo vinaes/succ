@@ -205,31 +205,36 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
     // PID file read error — fall through
   }
 
-  // Check lock file — another hook may have just triggered a spawn
+  // Atomic lock acquisition — prevent concurrent spawns
   const lockFile = path.join(tmpDir, 'daemon.starting');
-  try {
-    if (fs.existsSync(lockFile)) {
-      const lockTime = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
-      if (lockTime && Date.now() - lockTime < 10000) {
-        return null; // Recent spawn attempt (< 10s) — don't duplicate
-      }
-    }
-  } catch {
-    // Lock file read error — fall through to spawn
-  }
-
-  // No daemon, no recent spawn — start one in background
   try {
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });
     }
-    fs.writeFileSync(lockFile, String(Date.now()), 'utf8');
-  } catch {
-    // Lock write failed — still attempt spawn (daemon has its own dedup)
+    fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
+  } catch (e) {
+    if (e && e.code === 'EEXIST') {
+      // Lock file exists — check if it's recent
+      try {
+        const lockTime = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
+        if (lockTime && Date.now() - lockTime < 10000) {
+          return null; // Recent spawn attempt (< 10s) — don't duplicate
+        }
+        // Stale lock — remove and retry once
+        fs.unlinkSync(lockFile);
+        fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
+      } catch {
+        return null; // Race lost or read error — another hook is handling it
+      }
+    } else {
+      // Other write error — still attempt spawn (daemon has its own dedup)
+    }
   }
 
   if (logFn) logFn('[daemon-lazy] Daemon not running, spawning in background');
-  startDaemon(projectDir, logFn);
+  if (!startDaemon(projectDir, logFn)) {
+    try { fs.unlinkSync(lockFile); } catch { /* cleanup best-effort */ }
+  }
 
   return null;
 }

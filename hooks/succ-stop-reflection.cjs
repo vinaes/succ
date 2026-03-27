@@ -24,6 +24,10 @@ adapter.runHook('stop-reflection', async ({ hookInput, projectDir, succDir }) =>
     ? path.basename(transcriptPath, '.jsonl')
     : hookInput.session_id || null;
 
+  if (!sessionId) {
+    process.exit(0);
+  }
+
   const daemonPort = ensureDaemonLazy(projectDir, succDir);
 
   // Check if this is a service session (e.g., reflection subagent)
@@ -31,7 +35,7 @@ adapter.runHook('stop-reflection', async ({ hookInput, projectDir, succDir }) =>
 
   // Notify daemon of stop activity (awaited)
   const notifyDaemon = async () => {
-    if (!daemonPort || !sessionId) return;
+    if (!daemonPort) return;
 
     try {
       await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
