@@ -67,7 +67,10 @@ export function registerResources(server: McpServer) {
     { description: 'Read a file from the brain vault. Use brain://list to see available files.' },
     async (uri, variables) => {
       const brainPath = getBrainPath();
-      const filePath = variables.path as string;
+      const filePath = variables.path as string | undefined;
+      if (!filePath) {
+        return { contents: [{ uri: uri.href, text: 'Error: Missing required path parameter' }] };
+      }
       const fullPath = path.join(brainPath, filePath);
 
       // Security: use path.resolve for proper path traversal protection
