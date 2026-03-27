@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 
 // ─── Tier 1 Injection Detection (inline — structural patterns) ──────
 
@@ -107,7 +107,7 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
     process.exit(0);
   }
 
-  const daemonPort = getDaemonPort(succDir);
+  const daemonPort = ensureDaemonLazy(projectDir, succDir);
   if (!daemonPort) {
     process.exit(0);
   }

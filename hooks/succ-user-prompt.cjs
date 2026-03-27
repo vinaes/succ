@@ -13,7 +13,7 @@
 const path = require('path');
 const fs = require('fs');
 const adapter = require('./core/adapter.cjs');
-const { getDaemonPort } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
@@ -29,7 +29,7 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
   const transcriptPath = hookInput.transcript_path || '';
   const sessionId = transcriptPath ? path.basename(transcriptPath, '.jsonl') : null;
 
-  const daemonPort = getDaemonPort(succDir);
+  const daemonPort = ensureDaemonLazy(projectDir, succDir);
 
   // Check if this is a service session (e.g., reflection subagent)
   const isServiceSession = process.env.SUCC_SERVICE_SESSION === '1';
