@@ -324,8 +324,9 @@ function hasExistingSuccConfig(configPath: string, format: 'object' | 'array' | 
   if (!fs.existsSync(configPath)) return false;
   try {
     if (format === 'toml') {
-      const parsed = parseToml(fs.readFileSync(configPath, 'utf8')) as any;
-      return !!parsed?.mcp_servers?.succ;
+      const parsed = parseToml(fs.readFileSync(configPath, 'utf8'));
+      const mcpServers = parsed?.mcp_servers as Record<string, unknown> | undefined;
+      return !!mcpServers?.succ;
     }
 
     const content = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -367,7 +368,7 @@ function configureEditor(editorKey: string, editor: EditorConfig, projectDir?: s
   if (fs.existsSync(configPath)) {
     try {
       if (editor.format === 'toml') {
-        config = parseToml(fs.readFileSync(configPath, 'utf8')) as any;
+        config = parseToml(fs.readFileSync(configPath, 'utf8'));
       } else {
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       }

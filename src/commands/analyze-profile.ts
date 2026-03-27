@@ -180,6 +180,7 @@ export async function profileProjectWithAST(projectRoot: string): Promise<Projec
     .map((f) => f.file);
 
   // 8. Build systems from directory grouping
+  const exportsByFile = new Map(fileExports.map((fe) => [fe.file, fe.exports]));
   const dirSymbols = new Map<string, { files: string[]; symbolCount: number; topFile: string }>();
   for (const fe of fileExports) {
     const dir = path.dirname(fe.file);
@@ -187,7 +188,7 @@ export async function profileProjectWithAST(projectRoot: string): Promise<Projec
     if (existing) {
       existing.files.push(fe.file);
       existing.symbolCount += fe.exports;
-      if (fe.exports > (fileExports.find((f) => f.file === existing.topFile)?.exports ?? 0)) {
+      if (fe.exports > (exportsByFile.get(existing.topFile) ?? 0)) {
         existing.topFile = fe.file;
       }
     } else {
@@ -480,25 +481,33 @@ export async function gatherProjectContext(
   // Read LLM-identified entry points and key files first
   const priorityFiles = [...new Set([...profile.entryPoints, ...profile.keyFiles])];
   const selectedFiles: string[] = [];
+  const selectedSet = new Set<string>();
 
   for (const f of priorityFiles) {
     const filePath = path.join(projectRoot, f);
-    if (fs.existsSync(filePath) && !selectedFiles.includes(f)) {
+    if (fs.existsSync(filePath) && !selectedSet.has(f)) {
       selectedFiles.push(f);
+      selectedSet.add(f);
     }
   }
 
   // Also read key files from identified systems/features
   for (const sys of profile.systems) {
-    if (sys.keyFile && !selectedFiles.includes(sys.keyFile)) {
+    if (sys.keyFile && !selectedSet.has(sys.keyFile)) {
       const filePath = path.join(projectRoot, sys.keyFile);
-      if (fs.existsSync(filePath)) selectedFiles.push(sys.keyFile);
+      if (fs.existsSync(filePath)) {
+        selectedFiles.push(sys.keyFile);
+        selectedSet.add(sys.keyFile);
+      }
     }
   }
   for (const feat of profile.features) {
-    if (feat.keyFile && !selectedFiles.includes(feat.keyFile)) {
+    if (feat.keyFile && !selectedSet.has(feat.keyFile)) {
       const filePath = path.join(projectRoot, feat.keyFile);
-      if (fs.existsSync(filePath)) selectedFiles.push(feat.keyFile);
+      if (fs.existsSync(filePath)) {
+        selectedFiles.push(feat.keyFile);
+        selectedSet.add(feat.keyFile);
+      }
     }
   }
 
@@ -516,8 +525,9 @@ export async function gatherProjectContext(
   const maxTotal = fast ? 15 : 40;
   for (const [, dirFiles] of dirMap) {
     for (const f of dirFiles.slice(0, maxPerDir)) {
-      if (!selectedFiles.includes(f) && selectedFiles.length < maxTotal) {
+      if (!selectedSet.has(f) && selectedFiles.length < maxTotal) {
         selectedFiles.push(f);
+        selectedSet.add(f);
       }
     }
   }
