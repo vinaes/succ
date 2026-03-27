@@ -185,6 +185,19 @@ if (profile !== 'full' && profile !== 'auto') {
   applyToolProfile(registeredTools, profile);
 }
 
+// Shared cleanup-and-exit for stdin close / error (non-signal shutdown paths)
+function stdinCleanupAndExit(exitCode: number = 0) {
+  closeStorageDispatcher()
+    .catch((e) => logWarn('mcp', `Storage dispatcher close failed: ${getErrorMessage(e)}`))
+    .finally(() => {
+      cleanupEmbeddings();
+      cleanupQualityScoring();
+      closeDb();
+      closeGlobalDb();
+      process.exit(exitCode);
+    });
+}
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
   process.stderr.write(
@@ -200,7 +213,10 @@ process.on('unhandledRejection', (error) => {
     .catch((e) =>
       logWarn('mcp', `cleanupReranker failed during unhandled rejection: ${getErrorMessage(e)}`)
     )
-    .finally(() => {
+    .finally(async () => {
+      await closeStorageDispatcher().catch((e) =>
+        logWarn('mcp', `Storage dispatcher close failed: ${getErrorMessage(e)}`)
+      );
       closeDb();
       closeGlobalDb();
       process.exit(1);
@@ -235,11 +251,12 @@ async function main() {
   process.stdin.on('end', () => {
     mcpLog('stdin closed, shutting down');
     logInfo('mcp', 'Shutting down (stdin closed)');
-    process.exit(0);
+    stdinCleanupAndExit(0);
   });
   process.stdin.on('error', (err) => {
+    logWarn('mcp', `stdin error: ${err.message}`);
     mcpLog(`stdin error: ${err.message}`);
-    process.exit(0);
+    stdinCleanupAndExit(1);
   });
 
   mcpLog('Initializing storage...');
