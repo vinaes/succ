@@ -7,6 +7,7 @@ dist/
 # succ generated files (local to each machine)
 .claude/
 .succ/
+CLAUDE.md
 
 # MCP config (local)
 .mcp.json
