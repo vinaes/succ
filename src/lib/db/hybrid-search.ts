@@ -294,16 +294,26 @@ export function hybridSearchCode(
     .split(/[\s,]+/)
     .filter(Boolean);
 
-  // Pre-compile regex filter if provided (limit length to prevent ReDoS)
+  // Pre-compile regex filter if provided (limit length and reject ReDoS-prone patterns)
   let regexFilter: RegExp | null = null;
   if (filters?.regex && filters.regex.length <= 500) {
-    try {
-      regexFilter = new RegExp(filters.regex, 'i');
-    } catch (error) {
-      logWarn('hybrid-search', 'Invalid regex filter, skipping regex constraint', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      /* invalid regex — skip */
+    // Reject patterns with nested quantifiers that cause catastrophic backtracking
+    const hasNestedQuantifiers = /(\+|\*|\{)\s*\)(\+|\*|\?)|\(\?[^)]*(\+|\*)\)(\+|\*|\?)/.test(
+      filters.regex
+    );
+    if (hasNestedQuantifiers) {
+      logWarn(
+        'hybrid-search',
+        'Regex filter rejected: nested quantifiers may cause catastrophic backtracking'
+      );
+    } else {
+      try {
+        regexFilter = new RegExp(filters.regex, 'i');
+      } catch (error) {
+        logWarn('hybrid-search', 'Invalid regex filter, skipping regex constraint', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 

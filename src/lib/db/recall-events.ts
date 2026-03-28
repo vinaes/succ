@@ -110,7 +110,7 @@ export function getRecallStatsRow(memoryId: number): RecallStatsRow {
        MAX(created_at) as last_recalled
      FROM recall_events
      WHERE memory_id = ?`
-  ).get(memoryId) as any;
+  ).get(memoryId) as RecallStatsRow | undefined;
 
   return {
     total_recalls: row?.total_recalls ?? 0,
@@ -132,7 +132,7 @@ export function getRecallSummaryRow(): RecallSummaryRow {
     `SELECT COUNT(*) as total, COUNT(DISTINCT memory_id) as unique_mems,
             SUM(was_used) as total_used
      FROM recall_events`
-  ).get() as any;
+  ).get() as RecallSummaryRow | undefined;
 
   return {
     total: row?.total ?? 0,
@@ -148,7 +148,7 @@ export function getNeverUsedCount(): number {
      WHERE memory_id NOT IN (
        SELECT DISTINCT memory_id FROM recall_events WHERE was_used = 1
      )`
-  ).get() as any;
+  ).get() as { count: number } | undefined;
 
   return row?.count ?? 0;
 }
@@ -211,7 +211,7 @@ export function getBoostDataForMemory(memoryId: number): BoostRow {
     `SELECT COUNT(*) as total, SUM(was_used) as used
      FROM recall_events
      WHERE memory_id = ?`
-  ).get(memoryId) as any;
+  ).get(memoryId) as { total: number; used: number } | undefined;
 
   return {
     memory_id: memoryId,
