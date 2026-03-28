@@ -87,7 +87,7 @@
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
     "minimatch": "^10.2.4",
-    "onnxruntime-node": "1.24.1",
+    "onnxruntime-node": "1.24.3",
     "ora": "^9.3.0",
     "p-limit": "^7.3.0",
     "parse-diff": "^0.11.1",
@@ -135,6 +135,6 @@
     "node": ">=20.0.0"
   },
   "overrides": {
-    "onnxruntime-node": "1.24.1"
+    "onnxruntime-node": "1.24.3"
   }
 }
