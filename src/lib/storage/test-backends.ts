@@ -134,8 +134,8 @@ async function testSqliteDefault(): Promise<BackendTestResult> {
   } finally {
     try {
       dbModule?.closeDb();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
   }
 }
@@ -219,8 +219,8 @@ async function testPostgresPgvector(): Promise<BackendTestResult> {
   } finally {
     try {
       await backend?.close();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
   }
 }
@@ -332,13 +332,13 @@ async function testPostgresQdrant(): Promise<BackendTestResult> {
   } finally {
     try {
       await backend?.close();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
     try {
       await vectorStore?.close();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
   }
 }
@@ -445,13 +445,13 @@ async function testSqliteQdrant(): Promise<BackendTestResult> {
   } finally {
     try {
       dbModule?.closeDb();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
     try {
       await vectorStore?.close();
-    } catch {
-      // cleanup best-effort
+    } catch (err) {
+      console.error('cleanup failed:', err);
     }
   }
 }

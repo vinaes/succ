@@ -510,7 +510,15 @@ export function importFromFile(filePath: string): {
   globalMemories: number;
 } {
   const json = fs.readFileSync(filePath, 'utf-8');
-  const data = JSON.parse(json) as ExportData;
+  let data: ExportData;
+  try {
+    data = JSON.parse(json) as ExportData;
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON in import file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    );
+  }
   return importData(data);
 }
 
@@ -532,7 +540,15 @@ export function getExportStats(filePath: string): {
   };
 } {
   const json = fs.readFileSync(filePath, 'utf-8');
-  const data = JSON.parse(json) as ExportData;
+  let data: ExportData;
+  try {
+    data = JSON.parse(json) as ExportData;
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON in export file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    );
+  }
 
   return {
     version: data.version,

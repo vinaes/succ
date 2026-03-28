@@ -138,8 +138,15 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
   async deleteGlobalMemory(id: number): Promise<boolean> {
     if (this.backend === 'postgresql' && this.postgres) {
       const deleted = await this.postgres.deleteGlobalMemory(id);
-      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant)
-        await this.qdrant.deleteGlobalMemoryVector(id);
+      if (deleted && this.vectorBackend === 'qdrant' && this.qdrant) {
+        try {
+          await this.qdrant.deleteGlobalMemoryVector(id);
+        } catch (err) {
+          logWarn('storage', `Qdrant global vector delete failed for memory ${id}`, {
+            error: String(err),
+          });
+        }
+      }
       return deleted;
     }
     const sqlite = await this.getSqliteFns();
