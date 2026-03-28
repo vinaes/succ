@@ -684,7 +684,9 @@ export function checkDangerous(
       const regex = new RegExp(custom.pattern, custom.flags || '');
       if (regex.test(command)) {
         return {
-          reason: custom.reason || `Blocked by custom pattern: ${custom.pattern}`,
+          reason:
+            custom.reason ||
+            `Blocked by custom pattern at index ${idx} (length: ${custom.pattern.length})`,
           mode: config.mode as 'deny' | 'ask',
         };
       }
