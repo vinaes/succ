@@ -908,14 +908,19 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
 
   if (fs.existsSync(daemonPidFile)) {
     const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf-8').trim(), 10);
-    daemonRunning = isProcessRunning(pid);
+    if (!Number.isNaN(pid)) {
+      daemonRunning = isProcessRunning(pid);
+    }
     if (fs.existsSync(daemonPortFile)) {
-      daemonPort = parseInt(fs.readFileSync(daemonPortFile, 'utf-8').trim(), 10);
+      const parsedPort = parseInt(fs.readFileSync(daemonPortFile, 'utf-8').trim(), 10);
+      if (!Number.isNaN(parsedPort)) {
+        daemonPort = parsedPort;
+      }
     }
     statuses.push({
       name: 'daemon',
       running: daemonRunning,
-      pid,
+      pid: Number.isNaN(pid) ? undefined : pid,
       pidFile: daemonPidFile,
       logFile: fs.existsSync(daemonLogFile) ? daemonLogFile : undefined,
     });

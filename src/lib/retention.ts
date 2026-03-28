@@ -354,28 +354,3 @@ function percent(part: number, total: number): string {
   if (total === 0) return '0%';
   return `${Math.round((part / total) * 100)}%`;
 }
-
-/**
- * Format retention stats for MCP tool output (JSON-friendly).
- */
-export function formatRetentionStatsForMcp(stats: RetentionStats): string {
-  return JSON.stringify(
-    {
-      total: stats.totalMemories,
-      tiers: {
-        keep: stats.keepCount,
-        warn: stats.warnCount,
-        delete: stats.deleteCount,
-      },
-      averages: {
-        effective_score: stats.avgEffectiveScore,
-        quality_score: stats.avgQualityScore,
-        age_days: stats.avgAgeDays,
-        access_count: stats.avgAccessCount,
-      },
-      distribution: stats.scoreDistribution,
-    },
-    null,
-    2
-  );
-}

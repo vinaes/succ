@@ -6,9 +6,6 @@ import { NativeOrtSession } from './ort-session.js';
 import { detectExecutionProvider } from './ort-provider.js';
 import { NetworkError, ValidationError } from './errors.js';
 
-// Track which GPU backend is being used
-let gpuBackend: string | null = null;
-
 export interface EmbeddingResponse {
   data: Array<{
     embedding: number[];
@@ -290,7 +287,6 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
       logWarn('embeddings', providerResult.warning);
     }
 
-    gpuBackend = providerResult.provider;
     logInfo(
       'embeddings',
       `Loading native ORT session: ${embeddingModel} (${providerResult.provider}, fallback: ${providerResult.fallbackChain.slice(1).join(' → ') || 'none'})`
@@ -304,7 +300,7 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
 
     try {
       await session.init();
-      gpuBackend = session.provider;
+
       logInfo('embeddings', `Model loaded (${session.provider})`);
       // If cleanup ran while we were initialising, dispose this session
       // immediately rather than assigning it to the module-level variable.
@@ -323,7 +319,6 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
       return session;
     } catch (error: unknown) {
       nativeSession = null;
-      gpuBackend = null;
       nativeSessionFailedAt = Date.now();
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -338,13 +333,6 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
   });
 
   return nativeSessionInit;
-}
-
-/**
- * Get the currently active backend (webgpu/cpu)
- */
-export function getGpuBackend(): string | null {
-  return gpuBackend;
 }
 
 /**
