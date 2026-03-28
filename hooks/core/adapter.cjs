@@ -17,6 +17,9 @@
 
 'use strict';
 
+/** Normalize error to string safely — works for non-Error thrown values. */
+function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+
 // ─── Agent Detection ─────────────────────────────────────────────────
 
 /**
@@ -180,7 +183,7 @@ function normalizeInput(agent, stdinJson) {
       try {
         normalized.tool_input = JSON.parse(stdinJson.toolArgs);
       } catch (e) {
-        console.error(`[succ:adapter] Copilot toolArgs JSON parse failed: ${e.message || e}`);
+        console.error(`[succ:adapter] Copilot toolArgs JSON parse failed: ${errMsg(e)}`);
         normalized.tool_input = stdinJson.toolArgs;
       }
     }
@@ -439,14 +442,14 @@ function runHook(hookName, callback) {
           }
           succDir = resolved;
         } catch (e) {
-          console.error(`[succ:adapter] Worktree module load failed: ${e.message || e}`);
+          console.error(`[succ:adapter] Worktree module load failed: ${errMsg(e)}`);
           process.exit(0);
         }
       }
 
       await callback({ agent, hookInput, projectDir, succDir });
     } catch (e) {
-      console.error(`[succ:adapter] Hook ${hookName} failed (fail-open): ${e.message || e}`);
+      console.error(`[succ:adapter] Hook ${hookName} failed (fail-open): ${errMsg(e)}`);
       process.exit(0);
     }
   });

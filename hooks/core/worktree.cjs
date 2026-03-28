@@ -20,6 +20,9 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+/** Normalize error to string safely — works for non-Error thrown values. */
+function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+
 /**
  * Check if a directory is a git worktree (not the main repo).
  * In a worktree, .git is a file containing "gitdir: ...", not a directory.
@@ -32,7 +35,7 @@ function isGitWorktree(dir) {
     const stat = fs.statSync(gitPath);
     return stat.isFile();
   } catch (e) {
-    console.error(`[succ:worktree] isGitWorktree statSync failed: ${e.message || e}`);
+    console.error(`[succ:worktree] isGitWorktree statSync failed: ${errMsg(e)}`);
     return false;
   }
 }
@@ -58,12 +61,12 @@ function resolveMainRepoRoot(worktreeDir) {
     try {
       mainRoot = fs.realpathSync.native(mainRoot);
     } catch (e) {
-      console.error(`[succ:worktree] realpathSync.native failed for mainRoot: ${e.message || e}`);
+      console.error(`[succ:worktree] realpathSync.native failed for mainRoot: ${errMsg(e)}`);
     }
     return mainRoot;
   } catch (gitErr) {
     console.error(
-      `[succ:worktree] git rev-parse failed, falling back to .git parse: ${gitErr.message || gitErr}`
+      `[succ:worktree] git rev-parse failed, falling back to .git parse: ${errMsg(gitErr)}`
     );
     // Fallback: parse .git file
     try {
@@ -78,13 +81,13 @@ function resolveMainRepoRoot(worktreeDir) {
           fallbackRoot = fs.realpathSync.native(fallbackRoot);
         } catch (realpathErr) {
           console.error(
-            `[succ:worktree] realpathSync.native failed for fallbackRoot: ${realpathErr.message || realpathErr}`
+            `[succ:worktree] realpathSync.native failed for fallbackRoot: ${errMsg(realpathErr)}`
           );
         }
         return fallbackRoot;
       }
     } catch (parseErr) {
-      console.error(`[succ:worktree] .git file parse failed: ${parseErr.message || parseErr}`);
+      console.error(`[succ:worktree] .git file parse failed: ${errMsg(parseErr)}`);
     }
     return null;
   }
@@ -118,7 +121,7 @@ function resolveSuccDir(projectDir) {
     return localSucc;
   } catch (e) {
     console.error(
-      `[succ:worktree] Junction creation failed, using main repo path: ${e.message || e}`
+      `[succ:worktree] Junction creation failed, using main repo path: ${errMsg(e)}`
     );
     return mainSucc;
   }
