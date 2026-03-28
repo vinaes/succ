@@ -16,6 +16,7 @@
  *   - "func $NAME($$$ARGS) { $$$BODY }" — find Go functions
  */
 
+import pLimit from 'p-limit';
 import { logWarn } from '../fault-logger.js';
 import { getErrorMessage } from '../errors.js';
 
@@ -87,8 +88,9 @@ async function registerAllDynamicLanguages(sg: typeof import('@ast-grep/napi')):
       try {
         const mod = await import(pkg);
         return { name, registration: mod.default ?? mod };
-      } catch {
-        // Package not installed — skip silently
+      } catch (_err) {
+        // Package not installed — expected for optional language support
+        logWarn('ast-grep', `Optional lang package ${pkg} not available`);
         return null;
       }
     })
@@ -276,13 +278,18 @@ export async function searchPatternInFiles(
   lang?: string,
   limit: number = 50
 ): Promise<PatternMatch[]> {
-  const results: PatternMatch[] = [];
+  const concurrency = pLimit(5);
 
-  for (const file of files) {
-    if (results.length >= limit) break;
-    const matches = await searchPatternInContent(file.content, file.filePath, pattern, lang);
+  const allMatches = await Promise.all(
+    files.map((file) =>
+      concurrency(() => searchPatternInContent(file.content, file.filePath, pattern, lang))
+    )
+  );
+
+  const results: PatternMatch[] = [];
+  for (const matches of allMatches) {
     for (const match of matches) {
-      if (results.length >= limit) break;
+      if (results.length >= limit) return results;
       results.push(match);
     }
   }
@@ -348,8 +355,9 @@ export async function isAstGrepAvailable(): Promise<boolean> {
   try {
     await getAstGrep();
     return true;
-  } catch {
-    logWarn('ast-grep', 'ast-grep not available');
+  } catch (_err) {
+    // getAstGrep() already logs the detailed warning — only trace here
+    logWarn('ast-grep', `availability check failed: ${getErrorMessage(_err)}`);
     return false;
   }
 }

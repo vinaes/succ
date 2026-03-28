@@ -126,20 +126,20 @@ export function registerSearchTools(server: McpServer) {
       extract,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
-      // Check if project is initialized
-      if (isGlobalOnlyMode()) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable project-local search.\n\nTip: Use succ_recall for global memories that work across all projects.`,
-            },
-          ],
-        };
-      }
-
       try {
+        await applyProjectPath(project_path);
+        // Check if project is initialized
+        if (isGlobalOnlyMode()) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable project-local search.\n\nTip: Use succ_recall for global memories that work across all projects.`,
+              },
+            ],
+          };
+        }
+
         // Special case: "*" means "show recent documents" (no semantic search)
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
@@ -354,20 +354,20 @@ export function registerSearchTools(server: McpServer) {
       extract,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
-      // Check if project is initialized
-      if (isGlobalOnlyMode()) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable code search.`,
-            },
-          ],
-        };
-      }
-
       try {
+        await applyProjectPath(project_path);
+        // Check if project is initialized
+        if (isGlobalOnlyMode()) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable code search.`,
+              },
+            ],
+          };
+        }
+
         const queryEmbedding = await getEmbedding(query);
         // Build filters from optional params
         const filters = regex || symbol_type ? { regex, symbolType: symbol_type } : undefined;
