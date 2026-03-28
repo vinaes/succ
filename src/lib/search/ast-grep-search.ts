@@ -79,9 +79,7 @@ async function getAstGrep(): Promise<typeof import('@ast-grep/napi')> {
  * Try to import and register all available @ast-grep/lang-* packages.
  * Missing packages are silently skipped — only installed ones activate.
  */
-async function registerAllDynamicLanguages(
-  sg: typeof import('@ast-grep/napi')
-): Promise<void> {
+async function registerAllDynamicLanguages(sg: typeof import('@ast-grep/napi')): Promise<void> {
   const registrations: Record<string, unknown> = {};
 
   const results = await Promise.allSettled(
@@ -96,18 +94,20 @@ async function registerAllDynamicLanguages(
     })
   );
 
+  const loadedNames: string[] = [];
   for (const result of results) {
     if (result.status === 'fulfilled' && result.value) {
       registrations[result.value.name] = result.value.registration;
-      registeredDynamicLangs.add(result.value.name);
+      loadedNames.push(result.value.name);
     }
   }
 
   if (Object.keys(registrations).length > 0) {
     try {
-      sg.registerDynamicLanguage(
-        registrations as Parameters<typeof sg.registerDynamicLanguage>[0]
-      );
+      sg.registerDynamicLanguage(registrations as Parameters<typeof sg.registerDynamicLanguage>[0]);
+      for (const name of loadedNames) {
+        registeredDynamicLangs.add(name);
+      }
     } catch (err) {
       logWarn('ast-grep', `Failed to register dynamic languages: ${getErrorMessage(err)}`);
     }
@@ -229,14 +229,14 @@ export async function searchPatternInContent(
   pattern: string,
   lang?: string
 ): Promise<PatternMatch[]> {
-  const sg = await getAstGrep();
-
-  const ext = getExtension(filePath);
-  const langName = lang ?? getLangForExtension(ext);
-  if (!langName) return [];
-  if (!isLangAvailable(langName)) return [];
-
   try {
+    const sg = await getAstGrep();
+
+    const ext = getExtension(filePath);
+    const langName = lang ?? getLangForExtension(ext);
+    if (!langName) return [];
+    if (!isLangAvailable(langName)) return [];
+
     const root = sg.parse(langName, content);
     const matches = root.root().findAll(pattern);
     const metavarNames = extractMetavarNames(pattern);
