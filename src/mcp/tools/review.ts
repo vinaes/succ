@@ -10,6 +10,7 @@ import { generateReviewContext } from '../../lib/review/context-pack.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { closeDb } from '../../lib/storage/index.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 export function registerReviewTools(server: McpServer) {
   server.registerTool(
@@ -137,13 +138,13 @@ export function registerReviewTools(server: McpServer) {
         };
       } catch (error) {
         logWarn('review', 'Review context generation failed', {
-          error: error instanceof Error ? error.message : String(error),
+          error: getErrorMessage(error),
         });
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error generating review context: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error generating review context: ${getErrorMessage(error)}`,
             },
           ],
           isError: true,

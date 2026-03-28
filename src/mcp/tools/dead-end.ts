@@ -14,6 +14,7 @@ import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../l
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
 import { projectPathParam, applyProjectPath } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 export function registerDeadEndTools(server: McpServer) {
   server.registerTool(
@@ -145,7 +146,7 @@ export function registerDeadEndTools(server: McpServer) {
           ],
         };
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         logWarn('dead-end', 'Error recording dead-end', { error: errorMsg });
         return {
           content: [

@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
+import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir, invalidateConfigCache } from '../../lib/config.js';
@@ -144,7 +145,7 @@ export function registerConfigTools(server: McpServer) {
             // Load existing config
             let config: Record<string, unknown> = {};
             if (fs.existsSync(configPath)) {
-              config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+              config = JSON.parse(await readFile(configPath, 'utf-8'));
             }
 
             // Parse value (handle booleans and numbers)
@@ -177,10 +178,10 @@ export function registerConfigTools(server: McpServer) {
             }
 
             // Ensure config directory exists (recursive handles existing dirs)
-            fs.mkdirSync(configDir, { recursive: true });
+            await mkdir(configDir, { recursive: true });
 
             // Save config and invalidate cached values
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            await writeFile(configPath, JSON.stringify(config, null, 2));
             invalidateConfigCache();
 
             return createToolResponse(
@@ -202,10 +203,10 @@ export function registerConfigTools(server: McpServer) {
               compress: compress ?? false,
             });
 
-            const stat = fs.statSync(outputPath);
+            const fileStat = await stat(outputPath);
 
             return createToolResponse(
-              `Checkpoint created successfully!\n\nFile: ${outputPath}\nProject: ${cp.project_name}\nSize: ${formatSize(stat.size)}\n\nContents:\n  Memories: ${cp.stats.memories_count}\n  Documents: ${cp.stats.documents_count}\n  Memory links: ${cp.stats.links_count}\n  Centrality scores: ${cp.stats.centrality_count || 0}\n  Brain files: ${cp.stats.brain_files_count}\n\nTo restore: succ checkpoint restore "${outputPath}"`
+              `Checkpoint created successfully!\n\nFile: ${outputPath}\nProject: ${cp.project_name}\nSize: ${formatSize(fileStat.size)}\n\nContents:\n  Memories: ${cp.stats.memories_count}\n  Documents: ${cp.stats.documents_count}\n  Memory links: ${cp.stats.links_count}\n  Centrality scores: ${cp.stats.centrality_count || 0}\n  Brain files: ${cp.stats.brain_files_count}\n\nTo restore: succ checkpoint restore "${outputPath}"`
             );
           } catch (error) {
             return handleErrorResponse(
