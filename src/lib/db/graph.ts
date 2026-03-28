@@ -163,7 +163,7 @@ export function createMemoryLink(
           'graph',
           'Race condition: duplicate link disappeared between constraint violation and SELECT'
         );
-        return { id: 0, created: false };
+        return { id: -1, created: false };
       }
       return { id: existing.id, created: false };
     }
