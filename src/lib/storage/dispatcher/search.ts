@@ -1,3 +1,4 @@
+import safeRegex from 'safe-regex2';
 import { StorageDispatcherBase } from './base.js';
 import { logWarn } from '../../fault-logger.js';
 import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
@@ -300,12 +301,9 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
 
     let regexFilter: RegExp | null = null;
     if (filters.regex && filters.regex.length <= 500) {
-      // Reject patterns with nested quantifiers that cause catastrophic backtracking (ReDoS)
-      if (
-        /([+*]|\{\d).*([+*]|\{\d)/.test(filters.regex) &&
-        /\(.*[+*?].*\)[+*?{]/.test(filters.regex)
-      ) {
-        logWarn('storage', 'Regex filter rejected: potential ReDoS (nested quantifiers)', {
+      // Validate against ReDoS using safe-regex2 (AST-based star-height analysis)
+      if (!safeRegex(filters.regex)) {
+        logWarn('storage', 'Regex filter rejected: ReDoS vulnerability detected', {
           regex: filters.regex,
         });
       } else {
