@@ -10,7 +10,7 @@
  * - ON CONFLICT instead of INSERT OR REPLACE
  */
 
-import type { Pool, PoolConfig } from 'pg';
+import type { Pool, PoolConfig, QueryResultRow } from 'pg';
 import type {
   DocumentBatch,
   DocumentBatchWithHash,
@@ -86,6 +86,10 @@ export interface PostgresBackendConfig {
   password?: string;
   ssl?: boolean | { rejectUnauthorized?: boolean; ca?: string };
   poolSize?: number;
+  /** Idle connection timeout in ms (default: 30000) */
+  idleTimeoutMillis?: number;
+  /** Log EXPLAIN ANALYZE for queries exceeding this threshold in ms (default: 100). Set 0 to disable. */
+  slowQueryThresholdMs?: number;
 }
 
 export class PostgresBackend {
@@ -93,10 +97,16 @@ export class PostgresBackend {
   private config: PostgresBackendConfig;
   private initialized = false;
   private projectId: string | null = null;
+  /** Threshold in ms for EXPLAIN ANALYZE logging. 0 = disabled. */
+  private slowQueryThresholdMs: number;
+  /** Cache for prepared statement names (query text -> prepared name) */
+  private preparedStatements: Map<string, string> = new Map();
+  private preparedCounter = 0;
 
   constructor(config: PostgresBackendConfig, projectId?: string) {
     this.config = config;
     this.projectId = projectId?.toLowerCase() ?? null;
+    this.slowQueryThresholdMs = config.slowQueryThresholdMs ?? 100;
   }
 
   /**
@@ -122,6 +132,7 @@ export class PostgresBackend {
 
     const poolConfig: PoolConfig = {
       max: this.config.poolSize ?? 10,
+      idleTimeoutMillis: this.config.idleTimeoutMillis ?? 30_000,
       connectionTimeoutMillis: 10_000,
     };
 
@@ -179,6 +190,103 @@ export class PostgresBackend {
       });
       return 384;
     }
+  }
+
+  // ==========================================================================
+  // Prepared Statement Cache
+  // ==========================================================================
+
+  /**
+   * Get or register a prepared statement name for a query.
+   * pg.Pool automatically prepares statements per-connection when given a `name`.
+   */
+  private getPreparedName(queryKey: string): string {
+    let name = this.preparedStatements.get(queryKey);
+    if (!name) {
+      name = `succ_ps_${++this.preparedCounter}`;
+      this.preparedStatements.set(queryKey, name);
+    }
+    return name;
+  }
+
+  /**
+   * Execute a query using a named prepared statement for frequent queries.
+   * Falls back to regular query on error and logs the failure.
+   *
+   * pg.Pool caches prepared statements per-connection when a `name` is provided.
+   * This avoids repeated query parsing for frequently executed statements.
+   */
+  async queryPrepared<T extends QueryResultRow = QueryResultRow>(
+    queryKey: string,
+    text: string,
+    values?: unknown[]
+  ): Promise<import('pg').QueryResult<T>> {
+    const pool = await this.getPool();
+    try {
+      return await pool.query<T>({
+        name: this.getPreparedName(queryKey),
+        text,
+        values,
+      });
+    } catch (error) {
+      // If prepared statement fails (e.g., schema change), fall back to unprepared
+      logWarn('postgresql', `Prepared statement "${queryKey}" failed, falling back to unprepared`, {
+        error: getErrorMessage(error),
+      });
+      return await pool.query<T>(text, values);
+    }
+  }
+
+  // ==========================================================================
+  // Slow Query Analysis
+  // ==========================================================================
+
+  /**
+   * Log EXPLAIN ANALYZE for a query that exceeded the slow query threshold.
+   * Only runs when slowQueryThresholdMs > 0. Non-blocking — errors are logged and swallowed.
+   */
+  private async logSlowQuery(
+    queryText: string,
+    params: unknown[],
+    durationMs: number
+  ): Promise<void> {
+    if (this.slowQueryThresholdMs <= 0) return;
+    if (durationMs < this.slowQueryThresholdMs) return;
+
+    try {
+      const pool = await this.getPool();
+      const explainResult = await pool.query(`EXPLAIN ANALYZE ${queryText}`, params);
+      const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
+      logWarn(
+        'postgresql',
+        `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN ANALYZE:\n${plan}`
+      );
+    } catch (error) {
+      logWarn('postgresql', `Failed to run EXPLAIN ANALYZE for slow query (${durationMs}ms)`, {
+        error: getErrorMessage(error),
+      });
+    }
+  }
+
+  /**
+   * Execute a query with timing. If it exceeds the slow query threshold,
+   * run EXPLAIN ANALYZE and log the plan.
+   */
+  async queryWithTiming<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: unknown[]
+  ): Promise<import('pg').QueryResult<T>> {
+    const pool = await this.getPool();
+    const start = Date.now();
+    const result = await pool.query<T>(text, values);
+    const durationMs = Date.now() - start;
+
+    // Fire-and-forget EXPLAIN ANALYZE for slow queries
+    if (durationMs >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
+      void this.logSlowQuery(text, values ?? [], durationMs);
+    }
+
+    return result;
   }
 
   /**
@@ -736,6 +844,37 @@ export class PostgresBackend {
         });
       }
     }
+
+    // ========================================================================
+    // Area 9: Composite indexes for frequent query patterns
+    // ========================================================================
+
+    // Composite index for memory search filtering (project_id + source_type + invalidated_by)
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_project_source_type ON memories(project_id, source_type, type)'
+    );
+
+    // Composite index for active memories per project (most common query pattern)
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_memories_project_active
+      ON memories(project_id, created_at DESC)
+      WHERE invalidated_by IS NULL
+    `);
+
+    // GIN index on tags for fast JSONB array containment queries
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags)'
+    );
+
+    // Composite index for documents (project + file_path for deletion queries)
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_project_filepath ON documents(project_id, file_path)'
+    );
+
+    // Composite index for documents (project + symbol_type for code search)
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_project_symbol ON documents(project_id, symbol_type) WHERE symbol_type IS NOT NULL'
+    );
   }
 
   /**
@@ -746,6 +885,8 @@ export class PostgresBackend {
       await this.pool.end();
       this.pool = null;
       this.initialized = false;
+      this.preparedStatements.clear();
+      this.preparedCounter = 0;
     }
   }
 
@@ -999,7 +1140,6 @@ export class PostgresBackend {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before searching documents');
     }
-    const pool = await this.getPool();
 
     // pgvector cosine distance: <=> returns distance (0 = identical, 2 = opposite)
     // similarity = 1 - distance/2 for normalized vectors
@@ -1013,7 +1153,14 @@ export class PostgresBackend {
       whereExtra += ` AND symbol_type = $${params.length}`;
     }
 
-    const result = await pool.query<{
+    const queryText = `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
+              1 - (embedding <=> $1) as similarity
+       FROM documents
+       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
+       ORDER BY embedding <=> $1
+       LIMIT $4`;
+
+    const result = await this.queryWithTiming<{
       file_path: string;
       content: string;
       start_line: number;
@@ -1022,15 +1169,7 @@ export class PostgresBackend {
       symbol_name: string | null;
       symbol_type: string | null;
       signature: string | null;
-    }>(
-      `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
-              1 - (embedding <=> $1) as similarity
-       FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
-       ORDER BY embedding <=> $1
-       LIMIT $4`,
-      params
-    );
+    }>(queryText, params);
 
     return result.rows;
   }
@@ -1831,7 +1970,8 @@ export class PostgresBackend {
     const pool = await this.getPool();
     const projectId = isGlobal ? null : this.projectId;
 
-    const result = await pool.query<{ id: number }>(
+    const result = await this.queryPrepared<{ id: number }>(
+      'saveMemory',
       `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
@@ -1921,7 +2061,12 @@ export class PostgresBackend {
     query += ` ORDER BY embedding <=> $1 LIMIT $${paramIndex}`;
     params.push(limit);
 
+    const start = Date.now();
     const result = await pool.query(query, params);
+    const elapsed = Date.now() - start;
+    if (elapsed >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
+      void this.logSlowQuery(query, params, elapsed);
+    }
 
     let memories = result.rows.map((row) => ({
       id: row.id,
@@ -1959,8 +2104,8 @@ export class PostgresBackend {
   }
 
   async getMemoryById(id: number): Promise<Memory | null> {
-    const pool = await this.getPool();
-    const result = await pool.query(
+    const result = await this.queryPrepared(
+      'getMemoryById',
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
               correction_count, is_invariant, priority_score, confidence, source_type, created_at
@@ -4532,5 +4677,7 @@ export function createPostgresBackend(config: StorageConfig): PostgresBackend {
     password: pgConfig.password,
     ssl: pgConfig.ssl,
     poolSize: pgConfig.pool_size,
+    idleTimeoutMillis: pgConfig.idle_timeout,
+    slowQueryThresholdMs: pgConfig.slow_query_threshold_ms,
   });
 }

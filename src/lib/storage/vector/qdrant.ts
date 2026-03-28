@@ -425,8 +425,8 @@ export class QdrantVectorStore implements VectorStore {
         },
       },
       hnsw_config: {
-        m: 16,
-        ef_construct: 100,
+        m: 32,
+        ef_construct: 200,
       },
     };
 
@@ -455,6 +455,8 @@ export class QdrantVectorStore implements VectorStore {
       await client.createPayloadIndex(name, { field_name: 'doc_type', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'symbol_type', field_schema: 'keyword' });
+      // Area 9: file_path index for deletion and path-based filtering
+      await client.createPayloadIndex(name, { field_name: 'file_path', field_schema: 'keyword' });
     } else {
       // memories + global_memories
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
@@ -465,6 +467,9 @@ export class QdrantVectorStore implements VectorStore {
       await client.createPayloadIndex(name, { field_name: 'created_at', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'tags', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'type', field_schema: 'keyword' });
+      // Area 9: Additional indexes for frequent filter patterns
+      await client.createPayloadIndex(name, { field_name: 'source_type', field_schema: 'keyword' });
+      await client.createPayloadIndex(name, { field_name: 'confidence', field_schema: 'float' });
     }
   }
 

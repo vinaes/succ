@@ -42,6 +42,10 @@ export interface PostgresConfig {
   ssl?: boolean | { rejectUnauthorized?: boolean; ca?: string };
   /** Connection pool size (default: 10) */
   pool_size?: number;
+  /** Idle connection timeout in ms (default: 30000). Connections idle longer than this are closed. */
+  idle_timeout?: number;
+  /** Log EXPLAIN ANALYZE for queries exceeding this threshold in ms (default: 100). Set 0 to disable. */
+  slow_query_threshold_ms?: number;
 }
 
 export interface QdrantConfig {
