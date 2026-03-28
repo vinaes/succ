@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getStorageDispatcher } from '../../lib/storage/index.js';
 import { getSuccDir } from '../../lib/config.js';
+import { getErrorMessage } from '../../lib/errors.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
@@ -60,7 +61,7 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         const dispatcher = await getStorageDispatcher();
         await dispatcher.flushSessionCounters('daemon-session');
       } catch (err) {
-        ctx.log(`[session] Failed to flush session counters: ${err}`);
+        ctx.log(`[session] Failed to flush session counters: ${getErrorMessage(err)}`);
       }
 
       const removed = manager.unregister(session_id);
@@ -81,7 +82,7 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
               `[session] Processing complete for ${session_id}: summary=${result.summary.length}chars, learnings=${result.learnings.length}, saved=${result.saved}`
             );
           } catch (err) {
-            ctx.log(`[session] Processing failed for ${session_id}: ${err}`);
+            ctx.log(`[session] Processing failed for ${session_id}: ${getErrorMessage(err)}`);
           } finally {
             manager.decrementPendingWork();
             ctx.checkShutdown();

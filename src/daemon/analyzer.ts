@@ -15,6 +15,7 @@ import { saveMemory, hybridSearchDocs } from '../lib/storage/index.js';
 import { scoreMemory, passesQualityThreshold } from '../lib/quality.js';
 import { callLLM } from '../lib/llm.js';
 import { logWarn } from '../lib/fault-logger.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { DISCOVERY_SYSTEM, DISCOVERY_PROMPT } from '../prompts/index.js';
 
 // ============================================================================
@@ -192,7 +193,7 @@ async function runDiscoveryAgent(
     );
     return parseDiscoveries(result);
   } catch (err) {
-    log(`[analyze] Error running discovery: ${err}`);
+    log(`[analyze] Error running discovery: ${getErrorMessage(err)}`);
     return [];
   }
 }
@@ -412,7 +413,7 @@ async function runAnalysis(mode: 'claude' | 'api', log: (msg: string) => void): 
 
     log(`[analyze] Run completed (total memories: ${analyzerState.memoriesCreated})`);
   } catch (err) {
-    log(`[analyze] Error: ${err}`);
+    log(`[analyze] Error: ${getErrorMessage(err)}`);
   } finally {
     analyzerState.running = false;
   }
