@@ -16,7 +16,7 @@ import betweennessCentrality from 'graphology-metrics/centrality/betweenness.js'
 import { bidirectional as dijkstraBidirectional } from 'graphology-shortest-path/dijkstra.js';
 import { getAllMemoryLinksForExport, getAllMemoriesForExport } from '../storage/index.js';
 import { getProjectRoot } from '../config.js';
-import { logInfo } from '../fault-logger.js';
+import { logInfo, logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Graph Cache
@@ -35,7 +35,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 function safeProjectKey(): string {
   try {
     return getProjectRoot();
-  } catch {
+  } catch (error) {
+    logWarn('graphology', 'getProjectRoot() failed, using default cache key', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return '__default__';
   }
 }

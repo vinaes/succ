@@ -68,11 +68,21 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
     normalized: normalized.get(memId) ?? 0,
   }));
 
-  // Chunk writes to avoid unbounded fan-out on large graphs
+  // Chunk writes to avoid unbounded fan-out on large graphs.
+  // Use Promise.allSettled so one failed upsert doesn't abort the entire batch.
   const CHUNK_SIZE = 50;
   for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
-    await Promise.all(chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized)));
+    const results = await Promise.allSettled(
+      chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized))
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logWarn('centrality', 'Failed to upsert centrality score', {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    }
   }
 
   return { updated: entries.length };
