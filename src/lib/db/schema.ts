@@ -8,6 +8,23 @@ import { getModelDimension } from '../embeddings.js';
 export let sqliteVecAvailable = true;
 
 /**
+ * Run a migration SQL statement, ignoring expected "already exists" errors.
+ * Any unexpected error is logged via logWarn.
+ */
+function safeMigrate(database: Database.Database, sql: string, description: string): void {
+  try {
+    database.prepare(sql).run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('duplicate column name')) {
+      return;
+    }
+    logWarn('schema', `Migration failed (${description})`, { error: msg, sql });
+    throw err;
+  }
+}
+
+/**
  * Load sqlite-vec extension into database
  */
 export function loadSqliteVec(database: Database.Database): boolean {
@@ -130,7 +147,7 @@ export function initDb(database: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS skills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
       description TEXT NOT NULL,
       source TEXT NOT NULL,
       path TEXT,
@@ -141,8 +158,10 @@ export function initDb(database: Database.Database): void {
       last_used TEXT,
       cached_at TEXT,
       cache_expires TEXT,
+      project_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(project_id, name)
     );
 
     CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
@@ -150,202 +169,199 @@ export function initDb(database: Database.Database): void {
   `);
 
   // Migration: add type column if missing (for existing databases)
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`).run();
-  } catch {
-    // expected: column already exists
-  }
-
-  // Create index on type after migration
-  try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`).run();
-  } catch {
-    // Index may already exist
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`,
+    'memories.type'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`,
+    'idx_memories_type'
+  );
 
   // Migration: add quality_score and quality_factors columns
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)`)
-      .run();
-  } catch {
-    // Index may already exist
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN quality_score REAL`,
+    'memories.quality_score'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN quality_factors TEXT`,
+    'memories.quality_factors'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score)`,
+    'idx_memories_quality'
+  );
 
   // Migration: add access_count and last_accessed columns for retention decay
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`,
+    'memories.access_count'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN last_accessed TEXT`,
+    'memories.last_accessed'
+  );
 
   // Migration: add valid_from and valid_until columns for temporal awareness
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(database, `ALTER TABLE memories ADD COLUMN valid_from TEXT`, 'memories.valid_from');
+  safeMigrate(database, `ALTER TABLE memories ADD COLUMN valid_until TEXT`, 'memories.valid_until');
 
   // Migration: add temporal fields to memory_links
-  try {
-    database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_from TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memory_links ADD COLUMN valid_until TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memory_links ADD COLUMN valid_from TEXT`,
+    'memory_links.valid_from'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memory_links ADD COLUMN valid_until TEXT`,
+    'memory_links.valid_until'
+  );
 
   // Migration: add model and estimated_cost columns to token_stats
-  try {
-    database.prepare(`ALTER TABLE token_stats ADD COLUMN model TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE token_stats ADD COLUMN estimated_cost REAL DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(database, `ALTER TABLE token_stats ADD COLUMN model TEXT`, 'token_stats.model');
+  safeMigrate(
+    database,
+    `ALTER TABLE token_stats ADD COLUMN estimated_cost REAL DEFAULT 0`,
+    'token_stats.estimated_cost'
+  );
 
-  // Migration: add project_id column to skills table for project scoping
+  // Migration: rebuild skills table with UNIQUE(project_id, name) for project scoping.
+  // SQLite doesn't support ALTER CONSTRAINT, so we rebuild for existing databases.
+  // Fresh databases already have the correct schema from CREATE TABLE above.
   try {
-    database.prepare(`ALTER TABLE skills ADD COLUMN project_id TEXT`).run();
-    // Note: SQLite doesn't support dropping and recreating unique constraints easily.
-    // For existing databases, the old UNIQUE(name) constraint remains.
-    // The code handles this by using ON CONFLICT with name only for SQLite.
-  } catch {
-    // expected: column already exists
+    const hasProjectId = database
+      .prepare(`PRAGMA table_info(skills)`)
+      .all()
+      .some((col) => (col as { name: string }).name === 'project_id');
+    if (!hasProjectId) {
+      database
+        .prepare(
+          `CREATE TABLE skills_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        source TEXT NOT NULL,
+        path TEXT,
+        content TEXT,
+        embedding BLOB,
+        skyll_id TEXT,
+        usage_count INTEGER DEFAULT 0,
+        last_used TEXT,
+        cached_at TEXT,
+        cache_expires TEXT,
+        project_id TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, name)
+      )`
+        )
+        .run();
+      database.prepare(`INSERT INTO skills_new SELECT *, NULL FROM skills`).run();
+      database.prepare(`DROP TABLE skills`).run();
+      database.prepare(`ALTER TABLE skills_new RENAME TO skills`).run();
+      database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)`).run();
+      database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source)`).run();
+    }
+  } catch (err) {
+    logWarn('schema', 'Skills table rebuild migration failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`,
+    'idx_skills_project_id'
+  );
 
   // Migration: add invalidated_by column for soft-delete during consolidation
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`,
+    'memories.invalidated_by'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_invalidated_by ON memories(invalidated_by)`,
+    'idx_memories_invalidated_by'
+  );
 
   // Migration: add correction_count and is_invariant columns for working memory pins
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(
-        `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`
-      )
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`,
+    'memories.correction_count'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`,
+    'memories.is_invariant'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`,
+    'idx_memories_pinned'
+  );
 
   // Migration: add priority_score column for working memory ranking
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`,
+    'memories.priority_score'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`,
+    'idx_memories_priority'
+  );
 
   // Migration: add AST metadata columns to documents table (tree-sitter integration)
   for (const col of ['symbol_name TEXT', 'symbol_type TEXT', 'signature TEXT']) {
-    try {
-      database.prepare(`ALTER TABLE documents ADD COLUMN ${col}`).run();
-    } catch {
-      // expected: column already exists
-    }
+    safeMigrate(
+      database,
+      `ALTER TABLE documents ADD COLUMN ${col}`,
+      `documents.${col.split(' ')[0]}`
+    );
   }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type)`,
+    'idx_documents_symbol_type'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name)`,
+    'idx_documents_symbol_name'
+  );
 
   // Migration: add performance indexes for common query patterns
-  try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`).run();
-  } catch {
-    // Index already exists, ignore
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_valid_until ON memories(valid_until)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`,
+    'idx_memories_source'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from)`,
+    'idx_memories_valid_from'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_valid_until ON memories(valid_until)`,
+    'idx_memories_valid_until'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at)`,
+    'idx_documents_updated_at'
+  );
 
   // Migration: create learning_deltas table for session progress tracking
   database.exec(`
@@ -367,30 +383,30 @@ export function initDb(database: Database.Database): void {
 
   // Migration: add confidence and source_type columns for memory provenance
   // confidence: extraction correctness for auto-extracted memories (0.5 default, promoted to 0.7 on use). Distinct from quality_score (LLM content quality assessment).
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`,
+    'memories.confidence'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`,
+    'memories.source_type'
+  );
 
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
-  try {
-    database.prepare(`ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memory_links ADD COLUMN llm_enriched INTEGER DEFAULT 0`,
+    'memory_links.llm_enriched'
+  );
 
   // Migration: add metadata JSON column to memory_links (for bridge edges)
-  try {
-    database.prepare(`ALTER TABLE memory_links ADD COLUMN metadata TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memory_links ADD COLUMN metadata TEXT`,
+    'memory_links.metadata'
+  );
 
   // Migration: create memory_centrality cache table
   database.exec(`
@@ -730,124 +746,110 @@ export function initGlobalDb(database: Database.Database): void {
   `);
 
   // Migration: add type column if missing
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`).run();
-  } catch {
-    // expected: column already exists
-  }
-
-  // Create index on type after migration
-  try {
-    database.prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_type ON memories(type)`).run();
-  } catch {
-    // Index may already exist
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN type TEXT DEFAULT 'observation'`,
+    'global memories.type'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_type ON memories(type)`,
+    'idx_global_memories_type'
+  );
 
   // Migration: add quality_score and quality_factors columns
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN quality_score REAL`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN quality_factors TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`)
-      .run();
-  } catch {
-    // Index may already exist
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN quality_score REAL`,
+    'global memories.quality_score'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN quality_factors TEXT`,
+    'global memories.quality_factors'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_quality ON memories(quality_score)`,
+    'idx_global_memories_quality'
+  );
 
   // Migration: add access_count and last_accessed columns for retention decay
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN last_accessed TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN access_count REAL DEFAULT 0`,
+    'global memories.access_count'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN last_accessed TEXT`,
+    'global memories.last_accessed'
+  );
 
   // Migration: add valid_from and valid_until columns for temporal awareness
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN valid_from TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN valid_until TEXT`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN valid_from TEXT`,
+    'global memories.valid_from'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN valid_until TEXT`,
+    'global memories.valid_until'
+  );
 
   // Migration: add provenance columns to global memories
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`).run();
-  } catch {
-    // expected: column already exists
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN confidence REAL DEFAULT 0.5`,
+    'global memories.confidence'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`,
+    'global memories.source_type'
+  );
 
   // Migration: add invalidated_by column for soft-delete during consolidation
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(
-        `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`
-      )
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN invalidated_by INTEGER`,
+    'global memories.invalidated_by'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`,
+    'idx_global_memories_invalidated_by'
+  );
 
   // Migration: add correction_count and is_invariant columns for working memory pins
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(
-        `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`
-      )
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN correction_count INTEGER DEFAULT 0`,
+    'global memories.correction_count'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_invariant INTEGER DEFAULT 0`,
+    'global memories.is_invariant'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(correction_count, is_invariant)`,
+    'idx_global_memories_pinned'
+  );
 
   // Migration: add priority_score column for working memory ranking
-  try {
-    database.prepare(`ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`).run();
-  } catch {
-    // expected: column already exists
-  }
-  try {
-    database
-      .prepare(`CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`)
-      .run();
-  } catch {
-    // Index already exists, ignore
-  }
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN priority_score REAL DEFAULT NULL`,
+    'global memories.priority_score'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`,
+    'idx_global_memories_priority'
+  );
 
   // Migration: create sqlite-vec virtual table for global memories
   initGlobalVecTable(database);

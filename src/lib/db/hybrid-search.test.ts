@@ -341,16 +341,16 @@ describe('Hybrid Search E2E', () => {
   afterAll(async () => {
     try {
       closeDb();
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('closeDb cleanup error:', err instanceof Error ? err.message : String(err));
     }
     await new Promise((r) => setTimeout(r, 100));
     try {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
-    } catch {
-      // Ignore cleanup errors on Windows
+    } catch (err) {
+      console.error('temp dir cleanup error:', err instanceof Error ? err.message : String(err));
     }
   });
 
