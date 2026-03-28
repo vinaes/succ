@@ -82,12 +82,11 @@ export function registerRecallTool(server: McpServer): void {
       },
     },
     async ({ query, limit: rawLimit, tags, since, as_of_date, extract, history, project_path }) => {
-      await applyProjectPath(project_path);
-      const globalOnlyMode = isGlobalOnlyMode();
-      const retrievalConfig = getRetrievalConfig();
-      const limit = rawLimit ?? retrievalConfig.default_top_k;
-
       try {
+        await applyProjectPath(project_path);
+        const globalOnlyMode = isGlobalOnlyMode();
+        const retrievalConfig = getRetrievalConfig();
+        const limit = rawLimit ?? retrievalConfig.default_top_k;
         // Special case: "*" means "show recent memories" (no semantic search)
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
@@ -166,6 +165,43 @@ export function registerRecallTool(server: McpServer): void {
 
           const localCount = filteredLocal.length;
           const globalCount = filteredGlobal.length;
+
+          // Fetch audit history for wildcard results if requested
+          const wildcardAuditMap = new Map<
+            number,
+            Array<{ event_type: string; changed_by: string; created_at: string }>
+          >();
+          if (history) {
+            try {
+              const dispatcher = await getStorageDispatcher();
+              const localIds = allRecent
+                .filter((r) => !r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const auditEntries = await Promise.all(
+                localIds.map(async (id) => ({
+                  id,
+                  events: await dispatcher.getAuditHistory(id),
+                }))
+              );
+              for (const entry of auditEntries) {
+                if (entry.events.length > 0) {
+                  wildcardAuditMap.set(
+                    entry.id,
+                    entry.events.map((e) => ({
+                      event_type: e.event_type,
+                      changed_by: e.changed_by,
+                      created_at: e.created_at,
+                    }))
+                  );
+                }
+              }
+            } catch (histError) {
+              logWarn('mcp-memory', 'Failed to fetch audit history for wildcard recall', {
+                error: getErrorMessage(histError),
+              });
+            }
+          }
+
           const formatted = allRecent
             .map((m, i) => {
               const tagStr =
@@ -177,7 +213,22 @@ export function registerRecallTool(server: McpServer): void {
                 'similarity' in m && m.similarity
                   ? ` (${Math.round(m.similarity * 100)}% match)`
                   : '';
-              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
+
+              // Append audit history if available
+              let historyStr = '';
+              if (history && m.id && wildcardAuditMap.has(m.id as number)) {
+                const events = wildcardAuditMap.get(m.id as number)!;
+                historyStr =
+                  '\n\n**Edit History:**\n' +
+                  events
+                    .map(
+                      (e: { event_type: string; changed_by: string; created_at: string }) =>
+                        `- ${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                    )
+                    .join('\n');
+              }
+
+              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}\n`;
             })
             .join('\n---\n\n');
 
@@ -574,7 +625,7 @@ export function registerRecallTool(server: McpServer): void {
         await trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
 
         // Fetch audit history if requested
-        let auditMap = new Map<
+        const auditMap = new Map<
           number,
           Array<{ event_type: string; changed_by: string; created_at: string }>
         >();

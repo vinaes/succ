@@ -9,6 +9,8 @@ vi.mock('../../config.js', () => ({
   invalidateConfigCache: vi.fn(),
 }));
 
+// Note: These tests cover the SQLite path only. PostgreSQL audit coverage is
+// provided by the integration test suite (requires a running PG instance).
 describe('Memory Audit Trail', () => {
   let dispatcher: StorageDispatcher;
   const mockPrepareRun = vi.fn(() => ({ changes: 1 }));

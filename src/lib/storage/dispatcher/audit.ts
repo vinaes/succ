@@ -13,6 +13,8 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   ): Promise<void> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
+        // Cast needed: PostgresBackend.getPool() is public but the base StorageDispatcherBase
+        // types `postgres` as the imported type which doesn't surface getPool in its interface.
         const pool = await (this.postgres as any).getPool();
         await pool.query(
           `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by) VALUES ($1, $2, $3, $4, $5)`,
@@ -38,6 +40,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   async getAuditHistory(memoryId: number): Promise<MemoryAuditRecord[]> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
+        // See recordAuditEvent for cast rationale
         const pool = await (this.postgres as any).getPool();
         const result = await pool.query(
           `SELECT id, memory_id, event_type, old_content, new_content, changed_by, created_at FROM memory_audit WHERE memory_id = $1 ORDER BY created_at DESC`,
@@ -66,6 +69,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   async pruneAuditTrail(olderThanDays: number = 90): Promise<number> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
+        // See recordAuditEvent for cast rationale
         const pool = await (this.postgres as any).getPool();
         const result = await pool.query(
           `DELETE FROM memory_audit WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
