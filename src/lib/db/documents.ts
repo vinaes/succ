@@ -327,21 +327,37 @@ export function deleteDocumentsByPath(filePath: string): void {
         filePath
       ) as Array<{ id: number }>;
       if (docIds.length > 0) {
+        const SQLITE_IN_BATCH = 900;
+        const chunkArray = <T>(arr: T[], size: number): T[][] => {
+          const chunks: T[][] = [];
+          for (let i = 0; i < arr.length; i += size) {
+            chunks.push(arr.slice(i, i + size));
+          }
+          return chunks;
+        };
+
         const ids = docIds.map((d) => d.id);
-        const placeholders = ids.map(() => '?').join(',');
-        const mappings = getDb()
-          .prepare(
-            `SELECT vec_rowid, doc_id FROM vec_documents_map WHERE doc_id IN (${placeholders})`
-          )
-          .all(...ids) as Array<{ vec_rowid: number; doc_id: number }>;
+        const mappings: Array<{ vec_rowid: number; doc_id: number }> = [];
+        for (const chunk of chunkArray(ids, SQLITE_IN_BATCH)) {
+          const placeholders = chunk.map(() => '?').join(',');
+          const rows = getDb()
+            .prepare(
+              `SELECT vec_rowid, doc_id FROM vec_documents_map WHERE doc_id IN (${placeholders})`
+            )
+            .all(...chunk) as Array<{ vec_rowid: number; doc_id: number }>;
+          mappings.push(...rows);
+        }
         for (const mapping of mappings) {
           cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
         }
         if (mappings.length > 0) {
-          const mapPlaceholders = mappings.map(() => '?').join(',');
-          getDb()
-            .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${mapPlaceholders})`)
-            .run(...mappings.map((m) => m.doc_id));
+          const docIdsToDelete = mappings.map((m) => m.doc_id);
+          for (const chunk of chunkArray(docIdsToDelete, SQLITE_IN_BATCH)) {
+            const mapPlaceholders = chunk.map(() => '?').join(',');
+            getDb()
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${mapPlaceholders})`)
+              .run(...chunk);
+          }
         }
       }
     } catch (err) {
