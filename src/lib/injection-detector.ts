@@ -492,8 +492,11 @@ export function detectTier1(text: string, _depth = 0): InjectionResult | null {
             });
           }
         }
-      } catch {
-        // Not valid base64 — skip
+      } catch (err) {
+        console.warn(
+          '[injection] Base64 payload analysis failed:',
+          err instanceof Error ? err.message : String(err)
+        );
       }
       // Short-circuit if we already have definite severity
       if (best?.severity === 'definite') break;
