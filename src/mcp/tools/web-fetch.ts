@@ -167,12 +167,14 @@ export function registerWebFetchTools(server: McpServer) {
           u.password = '';
           u.search = '';
           redactedUrl = u.toString();
-        } catch {
-          logWarn(COMPONENT, 'URL redaction failed, using raw host');
+        } catch (redactError) {
+          logWarn(COMPONENT, 'URL redaction failed, using raw host', {
+            error: redactError instanceof Error ? redactError.message : String(redactError),
+          });
         }
         logWarn(COMPONENT, `Failed to fetch ${redactedUrl}`, { error: msg });
         return createErrorResponse(
-          `Failed to fetch ${url}: ${msg}`,
+          `Failed to fetch ${redactedUrl}: ${msg}`,
           COMPONENT,
           error instanceof Error ? error : undefined
         );

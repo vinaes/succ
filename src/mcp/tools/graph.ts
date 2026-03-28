@@ -514,12 +514,11 @@ ${relationStats}`;
             );
         }
       } catch (error) {
+        const errorMsg = getErrorMessage(error);
         logWarn('graph', `Graph tool error in action=${action}`, {
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMsg,
         });
-        return createErrorResponse(
-          `Error: ${error instanceof Error ? error.message : String(error)}`
-        );
+        return createErrorResponse(`Error: ${errorMsg}`);
       } finally {
         closeDb();
       }
