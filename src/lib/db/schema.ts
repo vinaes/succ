@@ -16,10 +16,11 @@ function safeMigrate(database: Database.Database, sql: string, description: stri
     database.prepare(sql).run();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('duplicate column name') || msg.includes('already exists')) {
+    if (msg.includes('duplicate column name')) {
       return;
     }
-    logWarn('schema', `Migration failed (${description}): ${msg}`);
+    logWarn('schema', `Migration failed (${description})`, { error: msg, sql });
+    throw err;
   }
 }
 
@@ -146,7 +147,7 @@ export function initDb(database: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS skills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
       description TEXT NOT NULL,
       source TEXT NOT NULL,
       path TEXT,
@@ -157,8 +158,10 @@ export function initDb(database: Database.Database): void {
       last_used TEXT,
       cached_at TEXT,
       cache_expires TEXT,
+      project_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(project_id, name)
     );
 
     CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
@@ -230,10 +233,48 @@ export function initDb(database: Database.Database): void {
     'token_stats.estimated_cost'
   );
 
-  // Migration: add project_id column to skills table for project scoping
-  // Note: SQLite doesn't support dropping and recreating unique constraints easily.
-  // For existing databases, the old UNIQUE(name) constraint remains.
-  safeMigrate(database, `ALTER TABLE skills ADD COLUMN project_id TEXT`, 'skills.project_id');
+  // Migration: rebuild skills table with UNIQUE(project_id, name) for project scoping.
+  // SQLite doesn't support ALTER CONSTRAINT, so we rebuild for existing databases.
+  // Fresh databases already have the correct schema from CREATE TABLE above.
+  try {
+    const hasProjectId = database
+      .prepare(`PRAGMA table_info(skills)`)
+      .all()
+      .some((col) => (col as { name: string }).name === 'project_id');
+    if (!hasProjectId) {
+      database
+        .prepare(
+          `CREATE TABLE skills_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        source TEXT NOT NULL,
+        path TEXT,
+        content TEXT,
+        embedding BLOB,
+        skyll_id TEXT,
+        usage_count INTEGER DEFAULT 0,
+        last_used TEXT,
+        cached_at TEXT,
+        cache_expires TEXT,
+        project_id TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, name)
+      )`
+        )
+        .run();
+      database.prepare(`INSERT INTO skills_new SELECT *, NULL FROM skills`).run();
+      database.prepare(`DROP TABLE skills`).run();
+      database.prepare(`ALTER TABLE skills_new RENAME TO skills`).run();
+      database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)`).run();
+      database.prepare(`CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source)`).run();
+    }
+  } catch (err) {
+    logWarn('schema', 'Skills table rebuild migration failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   safeMigrate(
     database,
     `CREATE INDEX IF NOT EXISTS idx_skills_project_id ON skills(project_id)`,

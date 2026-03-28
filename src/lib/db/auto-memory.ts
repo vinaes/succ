@@ -91,15 +91,7 @@ export function getAutoMemoryStatsRow(): AutoMemoryStatsRow {
        AVG(access_count) as avg_access
      FROM memories
      WHERE source_type = 'auto_extracted'`
-  ).get() as
-    | {
-        total: number;
-        low_confidence: number;
-        high_confidence: number;
-        never_accessed: number;
-        avg_access: number;
-      }
-    | undefined;
+  ).get() as AutoMemoryStatsRow | undefined;
 
   return {
     total: row?.total ?? 0,
