@@ -146,18 +146,24 @@ export async function createProximityLinks(
   let skipped = 0;
 
   for (const pair of filtered) {
-    // Skip if either node's links failed to fetch — we can't know if a link already exists
+    // Fetch pre-loaded links for both nodes (null means fetch failed)
     const linksA = linksById.get(pair.node_1);
     const linksB = linksById.get(pair.node_2);
-    if (linksA === null || linksB === null) {
+
+    // Skip only when BOTH fetches failed — we have no data to determine link existence.
+    // When at least one succeeded, we can check its outgoing/incoming edges for the pair.
+    if (linksA === null && linksB === null) {
       skipped++;
       continue;
     }
 
-    // Check if any link already exists between these two memories (using pre-fetched data)
+    // Check if any link already exists between these two memories (using pre-fetched data).
+    // A successful fetch that shows no link is sufficient proof of absence.
     const hasLink =
       linksA?.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
-      linksA?.incoming?.some((l: any) => l.source_id === pair.node_2);
+      linksA?.incoming?.some((l: any) => l.source_id === pair.node_2) ||
+      linksB?.outgoing?.some((l: any) => l.target_id === pair.node_1) ||
+      linksB?.incoming?.some((l: any) => l.source_id === pair.node_1);
 
     if (hasLink) {
       skipped++;

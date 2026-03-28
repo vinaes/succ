@@ -70,6 +70,10 @@ export async function generateCommunitySummaries(
         'community-summaries',
         `Removed ${result.oldSummariesRemoved} old community summaries`
       );
+      // Invalidate early so the graph reflects deletions even if every
+      // summarizeCommunity below returns null (no new links would trigger
+      // the per-community invalidation in that case).
+      invalidateGraphCache();
     } catch (error) {
       logWarn('community-summaries', 'Failed to remove old community summaries', {
         error: error instanceof Error ? error.message : String(error),
