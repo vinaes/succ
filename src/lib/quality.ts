@@ -464,10 +464,11 @@ export async function scoreWithApi(
       throw new NetworkError(`API error: ${response.status}`, response.status);
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const result = parseScoreResponse(data.choices?.[0]?.message?.content || '');
+    const data = await response.json();
+    if (!Array.isArray(data?.choices) || data.choices.length === 0) {
+      throw new ValidationError('API response missing choices array');
+    }
+    const result = parseScoreResponse(data.choices[0]?.message?.content || '');
     return { ...result, mode: 'api' };
   } catch (error) {
     logWarn('quality', 'API scoring failed, falling back to heuristics', { error: String(error) });
