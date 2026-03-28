@@ -8,6 +8,7 @@
  */
 
 import { getIdleWatcherConfig } from '../lib/config.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { logWarn } from '../lib/fault-logger.js';
 
 // ============================================================================
@@ -238,7 +239,9 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
       ) {
         // Fire and forget - don't await
         onPreGenerateBriefing(sessionId, session.transcriptPath).catch((err) => {
-          log(`[idle-watcher] Briefing pre-generation failed for ${sessionId}: ${err}`);
+          log(
+            `[idle-watcher] Briefing pre-generation failed for ${sessionId}: ${getErrorMessage(err)}`
+          );
         });
       }
 
@@ -254,7 +257,7 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
             await onIdle(sessionId, session);
             sessionManager.markReflection(sessionId);
           } catch (err) {
-            log(`[idle-watcher] Reflection failed for ${sessionId}: ${err}`);
+            log(`[idle-watcher] Reflection failed for ${sessionId}: ${getErrorMessage(err)}`);
           }
         }
       }

@@ -622,7 +622,7 @@ export async function shutdownDaemon(): Promise<void> {
   }
 
   const watcherPromise = stopWatcher(log).catch((err) =>
-    log(`[shutdown] Watcher stop failed: ${err}`)
+    log(`[shutdown] Watcher stop failed: ${getErrorMessage(err)}`)
   );
   stopAnalyzer(log);
 
@@ -639,9 +639,13 @@ export async function shutdownDaemon(): Promise<void> {
   // so in-flight requests don't hit a closed DB.
   await Promise.allSettled([watcherPromise, serverPromise, recallCleanupInFlight]);
 
-  await closeStorageDispatcher().catch((err) => log(`[shutdown] Storage close failed: ${err}`));
+  await closeStorageDispatcher().catch((err) =>
+    log(`[shutdown] Storage close failed: ${getErrorMessage(err)}`)
+  );
   cleanupEmbeddings();
-  await cleanupReranker().catch((err) => log(`[shutdown] Reranker cleanup failed: ${err}`));
+  await cleanupReranker().catch((err) =>
+    log(`[shutdown] Reranker cleanup failed: ${getErrorMessage(err)}`)
+  );
   cleanupQualityScoring();
   closeDb();
   closeGlobalDb();
