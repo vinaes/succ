@@ -20,6 +20,16 @@ import { callLLM, type LLMBackend } from './llm.js';
 import { formatTranscriptLines, type TranscriptMessage } from './transcript-utils.js';
 import { FACT_EXTRACTION_SYSTEM, FACT_EXTRACTION_PROMPT } from '../prompts/index.js';
 import { getLLMTaskConfig } from './config.js';
+import {
+  consolidateExtractedFacts,
+  executeUpdates,
+  executeDeletes,
+  isExtractionConsolidationEnabled,
+  CONSOLIDATION_SIMILARITY_THRESHOLD,
+  CONSOLIDATION_TOP_K,
+  CONSOLIDATION_LLM_TIMEOUT,
+} from './auto-memory/extraction-consolidation.js';
+import type { ExtractedFactInput } from './auto-memory/extraction-consolidation.js';
 
 /**
  * Extracted fact from session
@@ -317,6 +327,64 @@ export async function extractSessionSummary(
     return result;
   }
 
+  // Run extraction consolidation if enabled (mem0-style ADD/UPDATE/DELETE)
+  let factsToSave: ExtractedFact[] = facts;
+  if (!dryRun && isExtractionConsolidationEnabled()) {
+    try {
+      if (verbose) {
+        logInfo('session-summary', `Running extraction consolidation on ${facts.length} facts`);
+      }
+      const consolidation = await consolidateExtractedFacts(facts as ExtractedFactInput[], {
+        similarityThreshold: CONSOLIDATION_SIMILARITY_THRESHOLD,
+        topK: CONSOLIDATION_TOP_K,
+        llmTimeout: CONSOLIDATION_LLM_TIMEOUT,
+      });
+
+      // Execute UPDATE and DELETE decisions
+      if (consolidation.toUpdate.length > 0) {
+        const updated = await executeUpdates(consolidation.toUpdate);
+        if (verbose) {
+          logInfo('session-summary', `Consolidation: ${updated} memories updated`);
+        }
+      }
+      if (consolidation.toDelete.length > 0) {
+        const deleted = await executeDeletes(consolidation.toDelete);
+        if (verbose) {
+          logInfo('session-summary', `Consolidation: ${deleted} memories invalidated`);
+        }
+      }
+
+      // Merge ADD + fallbackAdd facts for normal save path
+      factsToSave = [
+        ...consolidation.toAdd.map((f) => ({
+          content: f.content,
+          type: f.type as ExtractedFact['type'],
+          confidence: f.confidence,
+          tags: f.tags,
+        })),
+        ...consolidation.fallbackAdd.map((f) => ({
+          content: f.content,
+          type: f.type as ExtractedFact['type'],
+          confidence: f.confidence,
+          tags: f.tags,
+        })),
+      ];
+
+      if (verbose) {
+        logInfo(
+          'session-summary',
+          `Consolidation: ${consolidation.toAdd.length} ADD, ${consolidation.toUpdate.length} UPDATE, ` +
+            `${consolidation.toDelete.length} DELETE, ${consolidation.skippedNone} NONE`
+        );
+      }
+    } catch (err) {
+      logWarn('session-summary', `Extraction consolidation failed, proceeding with normal save`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Fall through to normal save with all facts
+    }
+  }
+
   // Save facts as memories
   onProgress?.(2, 3, 'saving memories');
 
@@ -335,7 +403,7 @@ export async function extractSessionSummary(
   } else {
     const minQuality = config.thresholds.min_quality_for_summary ?? 0.5;
     const saveResult = await saveFactsAsMemories(
-      facts,
+      factsToSave,
       minQuality,
       verbose
         ? (current, total) => {

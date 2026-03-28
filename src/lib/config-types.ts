@@ -178,6 +178,8 @@ export interface AutoMemoryConfig {
   max_unused_days?: number;
   /** Confidence promotion threshold — promote after N accesses (default: 5) */
   confidence_promotion_accesses?: number;
+  /** Enable mem0-style extraction consolidation — LLM decides ADD/UPDATE/DELETE/NONE per fact (default: false) */
+  extraction_consolidation?: boolean;
 }
 
 /**
