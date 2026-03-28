@@ -1,13 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockMkdirSync, mockStatSync } =
-  vi.hoisted(() => ({
-    mockExistsSync: vi.fn(),
-    mockReadFileSync: vi.fn(),
-    mockWriteFileSync: vi.fn(),
-    mockMkdirSync: vi.fn(),
-    mockStatSync: vi.fn(() => ({ size: 2048 })),
-  }));
+const {
+  mockExistsSync,
+  mockReadFileSync,
+  mockWriteFileSync,
+  mockMkdirSync,
+  mockStatSync,
+  mockReadFile,
+  mockWriteFile,
+  mockMkdir,
+  mockStat,
+} = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockWriteFileSync: vi.fn(),
+  mockMkdirSync: vi.fn(),
+  mockStatSync: vi.fn(() => ({ size: 2048 })),
+  mockReadFile: vi.fn(async () => '{}'),
+  mockWriteFile: vi.fn(async () => {}),
+  mockMkdir: vi.fn(async () => undefined),
+  mockStat: vi.fn(async () => ({ size: 2048 })),
+}));
 
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
@@ -28,6 +41,13 @@ vi.mock('fs', async (importOriginal) => {
     statSync: mockStatSync,
   };
 });
+
+vi.mock('fs/promises', () => ({
+  readFile: mockReadFile,
+  writeFile: mockWriteFile,
+  mkdir: mockMkdir,
+  stat: mockStat,
+}));
 
 vi.mock('../profile.js', () => ({
   gateAction: vi.fn(() => null),
@@ -157,8 +177,8 @@ describe('config tool module', () => {
     });
 
     expect(result.isError).toBeUndefined();
-    expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
-    const [writtenPath, payload] = mockWriteFileSync.mock.calls[0] as [string, string];
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    const [writtenPath, payload] = mockWriteFile.mock.calls[0] as [string, string];
     expect(writtenPath).toBe(path.join('/project/.succ', 'config.json'));
     const parsed = JSON.parse(payload);
     expect(parsed.idle_reflection.enabled).toBe(true);

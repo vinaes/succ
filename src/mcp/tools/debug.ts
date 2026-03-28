@@ -15,6 +15,7 @@ import {
   createErrorResponse,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 import {
   generateSessionId,
   ensureDebugsDir,
@@ -337,7 +338,7 @@ export function registerDebugTools(server: McpServer) {
             return createErrorResponse(`Unknown action: ${action}`);
         }
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         logWarn('debug', 'Debug tool error', { error: errorMsg });
         return createErrorResponse(`Debug tool error: ${errorMsg}`);
       }

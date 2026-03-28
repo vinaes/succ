@@ -24,6 +24,7 @@ import {
   extractAnswerFromResults,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -258,7 +259,7 @@ export function registerSearchTools(server: McpServer) {
           ],
         };
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         logWarn('search', 'Error searching documents', { error: msg });
         return {
           content: [
@@ -482,7 +483,7 @@ export function registerSearchTools(server: McpServer) {
           ],
         };
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         logWarn('search', 'Error searching code', { error: msg });
         return {
           content: [

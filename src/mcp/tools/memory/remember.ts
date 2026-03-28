@@ -13,6 +13,7 @@ import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../.
 import { scanSensitive, formatMatches } from '../../../lib/sensitive-filter.js';
 import { parseDuration } from '../../../lib/temporal.js';
 import { logWarn } from '../../../lib/fault-logger.js';
+import { getErrorMessage } from '../../../lib/errors.js';
 import { projectPathParam, applyProjectPath } from '../../helpers.js';
 import { rememberWithLLMExtraction } from './memory-helpers.js';
 
@@ -161,7 +162,7 @@ export function registerRememberTool(server: McpServer): void {
           try {
             validFromDate = parseDuration(valid_from);
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = getErrorMessage(e);
             return {
               content: [
                 {
@@ -178,7 +179,7 @@ export function registerRememberTool(server: McpServer): void {
           try {
             validUntilDate = parseDuration(valid_until);
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = getErrorMessage(e);
             return {
               content: [
                 {
@@ -274,7 +275,7 @@ export function registerRememberTool(server: McpServer): void {
           );
         } catch (error) {
           logWarn('mcp-memory', 'Unable to append raw progress entry after remember save', {
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           });
         }
 
@@ -287,7 +288,7 @@ export function registerRememberTool(server: McpServer): void {
           ],
         };
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         logWarn('mcp-memory', 'Error saving memory', { error: errorMsg });
         return {
           content: [

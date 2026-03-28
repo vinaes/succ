@@ -14,6 +14,7 @@ import { scanSensitive, formatMatches } from '../../../lib/sensitive-filter.js';
 import { parseDuration } from '../../../lib/temporal.js';
 import { extractFactsWithLLM } from '../../../lib/session-summary.js';
 import { logWarn } from '../../../lib/fault-logger.js';
+import { getErrorMessage } from '../../../lib/errors.js';
 
 export interface MemoryToolResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -79,7 +80,7 @@ export async function rememberWithLLMExtraction(params: {
       snapshotBefore = await takeMemorySnapshot();
     } catch (error) {
       logWarn('mcp-memory', 'Unable to take memory snapshot before extraction save', {
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       });
     }
 
@@ -138,7 +139,7 @@ export async function rememberWithLLMExtraction(params: {
 
         prepared.push({ fact, content: factContent, embedding, tags: factTags, qualityScore });
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         logWarn('mcp-memory', `Error preparing fact for save: ${fact.type}`, { error: errorMsg });
         results.push(`✗ [${fact.type}] Error: ${errorMsg}`);
         skipped++;
@@ -215,7 +216,7 @@ export async function rememberWithLLMExtraction(params: {
         await appendProgressEntry(delta);
       } catch (error) {
         logWarn('mcp-memory', 'Unable to append progress entry after extraction save', {
-          error: error instanceof Error ? error.message : String(error),
+          error: getErrorMessage(error),
         });
       }
     }
@@ -230,7 +231,7 @@ export async function rememberWithLLMExtraction(params: {
     };
   } catch (error) {
     // If extraction fails, fall back to saving original content
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = getErrorMessage(error);
     return await saveSingleMemory({
       content,
       tags,
