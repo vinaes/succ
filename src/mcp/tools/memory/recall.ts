@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
+  getStorageDispatcher,
   hybridSearchMemories,
   hybridSearchGlobalMemories,
   getRecentMemories,
@@ -65,6 +66,12 @@ export function registerRecallTool(server: McpServer): void {
           .describe(
             'Extract a specific answer from results using LLM. Instead of returning raw results, returns a concise answer to this question. Adds latency but saves 50-80% output tokens.'
           ),
+        history: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, includes edit/mutation history for each returned memory. Shows create/update/delete/merge events over time.'
+          ),
         project_path: projectPathParam,
       },
       annotations: {
@@ -74,7 +81,7 @@ export function registerRecallTool(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    async ({ query, limit: rawLimit, tags, since, as_of_date, extract, project_path }) => {
+    async ({ query, limit: rawLimit, tags, since, as_of_date, extract, history, project_path }) => {
       await applyProjectPath(project_path);
       const globalOnlyMode = isGlobalOnlyMode();
       const retrievalConfig = getRetrievalConfig();
@@ -566,6 +573,42 @@ export function registerRecallTool(server: McpServer): void {
           .map((r) => r.id as number);
         await trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
 
+        // Fetch audit history if requested
+        let auditMap = new Map<
+          number,
+          Array<{ event_type: string; changed_by: string; created_at: string }>
+        >();
+        if (history) {
+          try {
+            const dispatcher = await getStorageDispatcher();
+            const localIds = allResults
+              .filter((r) => !r.isGlobal && r.id)
+              .map((r) => r.id as number);
+            const auditEntries = await Promise.all(
+              localIds.map(async (id) => ({
+                id,
+                events: await dispatcher.getAuditHistory(id),
+              }))
+            );
+            for (const entry of auditEntries) {
+              if (entry.events.length > 0) {
+                auditMap.set(
+                  entry.id,
+                  entry.events.map((e) => ({
+                    event_type: e.event_type,
+                    changed_by: e.changed_by,
+                    created_at: e.created_at,
+                  }))
+                );
+              }
+            }
+          } catch (histError) {
+            logWarn('mcp-memory', 'Failed to fetch audit history', {
+              error: getErrorMessage(histError),
+            });
+          }
+        }
+
         const formatted = allResults
           .map((m, i) => {
             const similarity = (m.similarity * 100).toFixed(0);
@@ -591,7 +634,21 @@ export function registerRecallTool(server: McpServer): void {
             // Dead-end warning prefix
             const deadEndPrefix = result._isDeadEnd ? '**WARNING: Dead End** ' : '';
 
-            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}`;
+            // Append audit history if available
+            let historyStr = '';
+            if (history && m.id && auditMap.has(m.id as number)) {
+              const events = auditMap.get(m.id as number)!;
+              historyStr =
+                '\n\n**Edit History:**\n' +
+                events
+                  .map(
+                    (e: { event_type: string; changed_by: string; created_at: string }) =>
+                      `- ${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                  )
+                  .join('\n');
+            }
+
+            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}`;
           })
           .join('\n\n---\n\n');
 

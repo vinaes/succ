@@ -1,4 +1,5 @@
 import { StorageDispatcherBase } from './base.js';
+import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
@@ -11,6 +12,7 @@ import type {
   MemoryStats,
   SourceType,
   WorkingMemoryRecord,
+  AuditChangedBy,
 } from '../types.js';
 
 export class MemoriesDispatcherMixin extends StorageDispatcherBase {
@@ -143,6 +145,18 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       this._sessionCounters.memoriesCreated++;
       this._sessionCounters.typesCreated[type] =
         (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+
+      // Record audit trail for memory creation
+      try {
+        const changedBy: AuditChangedBy =
+          sourceType === 'auto_extracted' ? 'extraction' : source === 'hook' ? 'hook' : 'user';
+        await this.recordAuditEvent(savedId, 'create', null, content, changedBy);
+      } catch (auditError) {
+        logWarn('storage', 'Audit trail recording failed for saveMemory', {
+          memoryId: savedId,
+          error: getErrorMessage(auditError),
+        });
+      }
 
       // Auto-detect invariant content and set is_invariant + compute priority_score
       // Hybrid: regex fast path (8 languages) + embedding similarity fallback (any language)
@@ -400,10 +414,37 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     // Tier 1 immutability guard: pinned memories cannot be invalidated
     await this._guardPinned(memoryId);
 
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.invalidateMemory(memoryId, supersededById);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.invalidateMemory(memoryId, supersededById);
+    let oldContent: string | null = null;
+    try {
+      const memory = await this.getMemoryById(memoryId);
+      if (memory) oldContent = memory.content;
+    } catch (fetchError) {
+      logWarn('storage', 'Failed to fetch memory content for audit before invalidation', {
+        memoryId,
+        error: getErrorMessage(fetchError),
+      });
+    }
+
+    let result: boolean;
+    if (this.backend === 'postgresql' && this.postgres) {
+      result = await this.postgres.invalidateMemory(memoryId, supersededById);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      result = sqlite.invalidateMemory(memoryId, supersededById);
+    }
+
+    if (result) {
+      try {
+        await this.recordAuditEvent(memoryId, 'delete', oldContent, null, 'consolidation');
+      } catch (auditError) {
+        logWarn('storage', 'Audit trail recording failed for invalidateMemory', {
+          memoryId,
+          error: getErrorMessage(auditError),
+        });
+      }
+    }
+
+    return result;
   }
 
   async restoreInvalidatedMemory(memoryId: number): Promise<boolean> {

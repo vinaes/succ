@@ -480,6 +480,7 @@ export function initDb(database: Database.Database): void {
   `);
 
   // ========================================================================
+<<<<<<< HEAD
   // Area 9: Composite indexes for frequent query patterns
   // ========================================================================
 
@@ -510,6 +511,25 @@ export function initDb(database: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_documents_filepath_updated ON documents(file_path, updated_at)`,
     'idx_documents_filepath_updated'
   );
+=======
+  // Area 10: Memory mutation audit trail
+  // ========================================================================
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      old_content TEXT,
+      new_content TEXT,
+      changed_by TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
+  `);
+>>>>>>> 80162dd (feat(storage): add memory mutation audit trail for edit history tracking)
 
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);

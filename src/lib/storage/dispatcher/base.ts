@@ -1,7 +1,13 @@
 import { logError } from '../../fault-logger.js';
 import type { PostgresBackend } from '../backends/postgresql.js';
 import type { QdrantVectorStore } from '../vector/qdrant.js';
-import type { MemoryRecord, MemoryStats } from '../types.js';
+import type {
+  AuditChangedBy,
+  AuditEventType,
+  MemoryAuditRecord,
+  MemoryRecord,
+  MemoryStats,
+} from '../types.js';
 
 export interface StorageDispatcherInit {
   backend: 'sqlite' | 'postgresql';
@@ -97,6 +103,24 @@ export class StorageDispatcherBase {
 
   async _filterOutPinned(_ids: number[]): Promise<number[]> {
     throw new Error('StorageDispatcher mixin method _filterOutPinned not initialized');
+  }
+
+  async recordAuditEvent(
+    _memoryId: number,
+    _eventType: AuditEventType,
+    _oldContent: string | null,
+    _newContent: string | null,
+    _changedBy: AuditChangedBy
+  ): Promise<void> {
+    throw new Error('StorageDispatcher mixin method recordAuditEvent not initialized');
+  }
+
+  async getAuditHistory(_memoryId: number): Promise<MemoryAuditRecord[]> {
+    throw new Error('StorageDispatcher mixin method getAuditHistory not initialized');
+  }
+
+  async pruneAuditTrail(_olderThanDays?: number): Promise<number> {
+    throw new Error('StorageDispatcher mixin method pruneAuditTrail not initialized');
   }
 
   // Qdrant circuit breaker — disable after consecutive failures to stop log spam

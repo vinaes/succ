@@ -550,6 +550,26 @@ export interface WebSearchHistorySummary {
 }
 
 // ============================================================================
+// Memory Audit Trail Types
+// ============================================================================
+
+export const AUDIT_EVENT_TYPES = ['create', 'update', 'delete', 'merge', 'version'] as const;
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+export const AUDIT_CHANGED_BY = ['hook', 'user', 'consolidation', 'extraction'] as const;
+export type AuditChangedBy = (typeof AUDIT_CHANGED_BY)[number];
+
+export interface MemoryAuditRecord {
+  id: number;
+  memory_id: number;
+  event_type: AuditEventType;
+  old_content: string | null;
+  new_content: string | null;
+  changed_by: AuditChangedBy;
+  created_at: string;
+}
+
+// ============================================================================
 // Vector Search Types (for VectorStore interface)
 // ============================================================================
 
