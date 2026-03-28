@@ -381,12 +381,12 @@ async function classifySensitivityLlamaGuard(
 
     // Use highest severity category
     let bestLevel: SecurityLevel = 0;
-    let allCompartments: Compartment[] = [];
+    const allCompartments: Compartment[] = [];
     for (const cat of categories) {
       const mapping = SENSITIVITY_LG_MAP[cat];
       if (mapping) {
         if (mapping.level > bestLevel) bestLevel = mapping.level as SecurityLevel;
-        allCompartments = [...allCompartments, ...mapping.compartments];
+        allCompartments.push(...mapping.compartments);
       } else {
         logWarn('guardrails', `Llama Guard returned unmapped category: ${cat}`);
       }
