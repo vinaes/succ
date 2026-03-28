@@ -1,5 +1,5 @@
 /**
- * Repo Map Generation — Aider-style compact repository overview.
+ * Repo Map Generation — compact repository overview.
  *
  * Generates a compact text map: file path + exported symbols, one line per file.
  * Uses tree-sitter AST for accurate symbol extraction (13 languages).

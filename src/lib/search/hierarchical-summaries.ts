@@ -1,5 +1,5 @@
 /**
- * Hierarchical Summaries — RAPTOR-style multi-level abstraction.
+ * Hierarchical Summaries — multi-level abstraction.
  *
  * Generates zoom-level summaries: file → directory → module → repo.
  * Different query granularity needs different zoom levels:

@@ -79,7 +79,7 @@ function git(args: string[], cwd: string): string {
   if (result.status !== 0) {
     throw new Error(`git ${args[0]} failed: ${result.stderr || result.error?.message}`);
   }
-  return ((result.stdout as string) ?? '').trim();
+  return (result.stdout ?? '').trim();
 }
 
 function getCurrentBranch(cwd: string): string {
@@ -347,13 +347,14 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
 
         // Get execution order
         const sorted = topologicalSort(tasks);
+        const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
         for (const task of sorted) {
           if (task.status === 'completed' || task.status === 'skipped') continue;
           if (!allDependenciesMet(task, tasks)) {
             // Check if dependencies are failed — skip this task
             const hasFailedDep = task.depends_on.some((depId) => {
-              const dep = tasks.find((t) => t.id === depId);
+              const dep = taskMap.get(depId);
               return dep && dep.status === 'failed';
             });
             if (hasFailedDep) {
@@ -418,8 +419,9 @@ export async function runPrd(prdId: string, options: RunOptions = {}): Promise<R
           }
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`Warning: Branch teardown issue: ${msg}`);
+        logWarn('runner', 'Branch teardown failed after PRD execution', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -585,8 +587,9 @@ async function executeTask(
 
         // Track actually modified files
         taskAttempt.files_actually_modified = getModifiedFiles(root);
+        const predictedFiles = new Set(task.files_to_modify);
         const unpredicted = taskAttempt.files_actually_modified.filter(
-          (f) => !task.files_to_modify.includes(f)
+          (f) => !predictedFiles.has(f)
         );
         if (unpredicted.length > 0) {
           const warning = `Task ${task.id} modified unpredicted files: ${unpredicted.join(', ')}`;
@@ -597,8 +600,9 @@ async function executeTask(
         console.log('  [git] No changes to commit');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  [!] Git commit failed: ${msg}`);
+      logWarn('runner', 'Git commit failed after task completion', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     break; // Success — no more attempts needed

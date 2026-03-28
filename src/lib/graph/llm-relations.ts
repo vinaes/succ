@@ -4,8 +4,8 @@
  * Instead of blind "similar_to" links, uses LLM to determine
  * the actual relationship between memories (caused_by, leads_to, etc.)
  *
- * Inspired by rahulnyk/knowledge_graph's approach of using LLM
- * to extract ontological relationships from text.
+ * Uses LLM to extract ontological relationships from text,
+ * classifying actual relationship types between memories.
  */
 
 import { callLLM } from '../llm.js';

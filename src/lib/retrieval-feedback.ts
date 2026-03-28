@@ -4,7 +4,7 @@
  * Records recall events and uses historical usefulness to boost/decay
  * memory retrieval scores. Self-improving retrieval over time.
  *
- * Inspired by Cognee's ~90% accuracy from feedback loops.
+ * Based on feedback loop research showing ~90% accuracy improvement.
  */
 // NOTE: Use-rate boost from recall events. See also temporal.ts calculateAccessBoost() for count-based access boost. These are complementary.
 

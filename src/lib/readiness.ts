@@ -2,7 +2,7 @@
  * Readiness Gate — Search Confidence Assessment
  *
  * Assesses search result quality before returning MCP responses.
- * Inspired by Empirica's epistemic framework (know >= 0.70 readiness gate).
+ * Uses an epistemic confidence framework (know >= 0.70 readiness gate).
  *
  * Non-blocking: never prevents results from being returned.
  * Adds confidence metadata so AI agents can calibrate trust.

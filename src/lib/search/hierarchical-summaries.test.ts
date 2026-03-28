@@ -1,5 +1,5 @@
 /**
- * Tests for hierarchical summaries (RAPTOR-style)
+ * Tests for hierarchical summaries
  */
 
 import { describe, it, expect } from 'vitest';

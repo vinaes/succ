@@ -2,7 +2,7 @@
  * PRD State Management
  *
  * File-based CRUD for PRD state in .succ/prds/.
- * NOT using StorageBackend — this is file-based like Ralph.
+ * NOT using StorageBackend — this is file-based state management.
  * .succ/prds/ should be in .gitignore (state management, not code).
  */
 

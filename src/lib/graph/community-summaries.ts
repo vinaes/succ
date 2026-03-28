@@ -1,12 +1,12 @@
 /**
- * Community Summaries — GraphRAG-style abstract theme extraction.
+ * Community Summaries — graph-based abstract theme extraction.
  *
  * After Louvain community detection, generates LLM summaries per cluster
  * and stores them as special `community-summary` tagged memory nodes.
  * These enable thematic/abstract search across the knowledge graph.
  */
 // NOTE: See also reflection-synthesizer.ts which extracts patterns/learnings from communities.
-// This module generates retrieval-oriented GraphRAG summaries; that one generates actionable insights.
+// This module generates retrieval-oriented community summaries; that one generates actionable insights.
 
 import {
   detectLouvainCommunities,

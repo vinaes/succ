@@ -34,7 +34,7 @@ function gitSync(args: string[], cwd: string): string {
   if (result.status !== 0) {
     throw new Error(`git ${args[0]} failed: ${result.stderr || result.error?.message}`);
   }
-  return ((result.stdout as string) ?? '').trim();
+  return (result.stdout ?? '').trim();
 }
 
 // ============================================================================
