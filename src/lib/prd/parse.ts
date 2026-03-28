@@ -11,7 +11,7 @@ import { PRD_PARSE_SYSTEM, PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
 import type { Task } from './types.js';
-import { ValidationError } from '../errors.js';
+import { ValidationError, getErrorMessage } from '../errors.js';
 
 // ============================================================================
 // Raw task shape from LLM (before normalization)
@@ -176,8 +176,8 @@ function tryParse(text: string): unknown | null {
     logWarn('parse', 'JSON parse failed on raw LLM output, trying malformation fixes');
     try {
       return JSON.parse(fixMalformedJson(text));
-    } catch {
-      logWarn('parse', 'JSON parse failed after malformation fixes');
+    } catch (err) {
+      logWarn('parse', `JSON parse failed after malformation fixes: ${getErrorMessage(err)}`);
       return null;
     }
   }

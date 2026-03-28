@@ -18,6 +18,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+/** Normalize error to string safely — works for non-Error thrown values. */
+function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+
 /**
  * Deep-merge `source` into `target` (one level — nested objects are shallow-merged).
  * Arrays from source replace arrays in target entirely.
@@ -73,7 +76,7 @@ function loadMergedConfig(projectDir) {
         merged = mergeConfig(merged, raw);
       } catch (err) {
         // Fail-open: warn but continue with defaults so hooks don't break
-        console.error(`[succ] Config parse error in ${configPath}: ${err.message || err}`);
+        console.error(`[succ] Config parse error in ${configPath}: ${errMsg(err)}`);
       }
     }
   }

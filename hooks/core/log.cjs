@@ -17,6 +17,9 @@
 const fs = require('fs');
 const path = require('path');
 
+/** Normalize error to string safely — works for non-Error thrown values. */
+function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+
 /**
  * Append a timestamped log entry to .succ/.tmp/hooks.log.
  *
@@ -34,7 +37,7 @@ function log(succDir, hookName, message) {
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logFile, `[${timestamp}] [${hookName}] ${message}\n`);
   } catch (e) {
-    console.error(`[succ:log] Failed to write hooks.log: ${e.message || e}`);
+    console.error(`[succ:log] Failed to write hooks.log: ${errMsg(e)}`);
   }
 }
 
