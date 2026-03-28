@@ -572,7 +572,7 @@ export async function scoreMemory(
 
   switch (taskCfg.mode) {
     case 'local':
-      return scoreWithLocal(content);
+      return scoreWithLocal(content, existingSimilarity);
 
     case 'api':
       if (!taskCfg.model) {
