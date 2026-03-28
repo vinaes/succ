@@ -9,6 +9,7 @@
  */
 
 import fs from 'fs';
+import fsp from 'fs/promises';
 import path from 'path';
 import { getLanguageForExtension, getWasmFileForLanguage } from './types.js';
 
@@ -288,13 +289,13 @@ function findLocalGrammar(wasmFileName: string): string | null {
 async function downloadGrammar(wasmFileName: string, destPath: string): Promise<boolean> {
   // Ensure grammars directory exists
   const dir = path.dirname(destPath);
-  fs.mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
 
   // Strategy 1: Copy from locally installed tree-sitter-wasms package
   const localPath = findLocalGrammar(wasmFileName);
   if (localPath) {
     try {
-      fs.copyFileSync(localPath, destPath);
+      await fsp.copyFile(localPath, destPath);
       return true;
     } catch (error) {
       logWarn('parser', 'Failed to copy local grammar WASM to grammars cache directory', {
@@ -329,7 +330,7 @@ async function downloadGrammar(wasmFileName: string, destPath: string): Promise<
         continue; // Not a valid WASM file
       }
 
-      fs.writeFileSync(destPath, buffer);
+      await fsp.writeFile(destPath, buffer);
       return true;
     } catch (error) {
       logWarn('parser', 'Failed to download grammar WASM from CDN source, trying next', {
