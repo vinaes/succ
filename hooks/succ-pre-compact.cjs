@@ -40,7 +40,7 @@ process.stdin.on('end', async () => {
   try {
     const rawInput = JSON.parse(input);
     const agent = adapter.detectAgent(rawInput);
-    const hookInput = adapter.normalizeInput(agent, 'PreCompact', rawInput);
+    const hookInput = adapter.normalizeInput(agent, rawInput);
 
     // Resolve project dir
     let projectDir = (hookInput.cwd || process.cwd()).replace(/\\/g, '/');
