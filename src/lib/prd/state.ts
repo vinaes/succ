@@ -96,10 +96,11 @@ export function loadIndex(): PrdIndexEntry[] {
   try {
     return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', 'Failed to parse PRD index, returning empty list', {
+    logWarn('prd-state', 'Corrupt PRD index file, refusing to return empty (would wipe index)', {
       error: error instanceof Error ? error.message : String(error),
+      path: indexPath,
     });
-    return [];
+    throw new Error(`PRD index is corrupt and cannot be parsed: ${indexPath}`);
   }
 }
 
@@ -158,8 +159,9 @@ export function loadPrd(prdId: string): Prd | null {
   try {
     return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', `Failed to parse PRD ${prdId}, returning null`, {
+    logWarn('prd-state', `CORRUPT PRD file for ${prdId} — returning null but file exists and is unreadable`, {
       error: error instanceof Error ? error.message : String(error),
+      path: jsonPath,
     });
     return null;
   }
@@ -236,8 +238,9 @@ export function loadTasks(prdId: string): Task[] {
   try {
     return JSON.parse(fs.readFileSync(tasksPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', `Failed to parse tasks for PRD ${prdId}, returning empty list`, {
+    logWarn('prd-state', `CORRUPT tasks file for PRD ${prdId} — returning empty but file exists`, {
       error: error instanceof Error ? error.message : String(error),
+      path: tasksPath,
     });
     return [];
   }
@@ -264,8 +267,9 @@ export function loadExecution(prdId: string): PrdExecution | null {
   try {
     return JSON.parse(fs.readFileSync(execPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', `Failed to parse execution state for PRD ${prdId}, returning null`, {
+    logWarn('prd-state', `CORRUPT execution state for PRD ${prdId} — returning null but file exists`, {
       error: error instanceof Error ? error.message : String(error),
+      path: execPath,
     });
     return null;
   }
