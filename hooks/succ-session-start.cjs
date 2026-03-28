@@ -482,8 +482,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                     }
                   }
                 }
-              } catch {
+              } catch (e) {
                 malformedLines++;
+                if (malformedLines <= 3) log(`Malformed transcript line: ${e.message || e}`);
               }
             }
             if (malformedLines > 0) log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
@@ -491,8 +492,8 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             for (const k of Object.keys(postByType)) {
               postByType[k] = Math.ceil(postByType[k] / 4);
             }
-          } catch {
-            log('Skipping compact stats delta: failed to analyze post-compact transcript');
+          } catch (e) {
+            log(`Skipping compact stats delta: failed to analyze post-compact transcript: ${e.message || e}`);
           }
         }
 

@@ -100,7 +100,7 @@ export function loadIndex(): PrdIndexEntry[] {
       error: error instanceof Error ? error.message : String(error),
       path: indexPath,
     });
-    throw new Error(`PRD index is corrupt and cannot be parsed: ${indexPath}`);
+    throw new Error(`PRD index is corrupt and cannot be parsed: ${indexPath}`, { cause: error });
   }
 }
 
@@ -159,10 +159,14 @@ export function loadPrd(prdId: string): Prd | null {
   try {
     return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', `CORRUPT PRD file for ${prdId} — returning null but file exists and is unreadable`, {
-      error: error instanceof Error ? error.message : String(error),
-      path: jsonPath,
-    });
+    logWarn(
+      'prd-state',
+      `CORRUPT PRD file for ${prdId} — returning null but file exists and is unreadable`,
+      {
+        error: error instanceof Error ? error.message : String(error),
+        path: jsonPath,
+      }
+    );
     return null;
   }
 }
@@ -267,10 +271,14 @@ export function loadExecution(prdId: string): PrdExecution | null {
   try {
     return JSON.parse(fs.readFileSync(execPath, 'utf-8'));
   } catch (error) {
-    logWarn('prd-state', `CORRUPT execution state for PRD ${prdId} — returning null but file exists`, {
-      error: error instanceof Error ? error.message : String(error),
-      path: execPath,
-    });
+    logWarn(
+      'prd-state',
+      `CORRUPT execution state for PRD ${prdId} — returning null but file exists`,
+      {
+        error: error instanceof Error ? error.message : String(error),
+        path: execPath,
+      }
+    );
     return null;
   }
 }
