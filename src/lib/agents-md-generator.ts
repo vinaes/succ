@@ -4,7 +4,7 @@
  * Auto-generates a .claude/AGENTS.md file from high-value memories
  * (decisions, patterns, dead-ends, learnings).
  *
- * Inspired by Ralph's AGENTS.md auto-update pattern.
+ * Auto-updates AGENTS.md with relevant project conventions.
  */
 
 import fs from 'fs';

@@ -68,7 +68,7 @@ export function registerGraphTools(server: McpServer) {
             'bridge',
           ])
           .describe(
-            'Action: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize (GraphRAG community summaries), co_change (git co-change analysis), bridge (auto-create code↔knowledge edges, or find memories for a code path via file_path)'
+            'Action: create, delete, show, graph, auto, enrich, proximity, communities, centrality, export, cleanup, explore, shortest_path, why_related, critical_nodes, pagerank, summarize (community summaries), co_change (git co-change analysis), bridge (auto-create code↔knowledge edges, or find memories for a code path via file_path)'
           ),
         source_id: z.number().optional().describe('Source memory ID (for create/delete/show)'),
         target_id: z.number().optional().describe('Target memory ID (for create/delete)'),

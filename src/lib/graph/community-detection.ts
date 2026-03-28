@@ -4,8 +4,8 @@
  * Automatically groups memories into thematic communities
  * based on graph structure. Pure TypeScript, no external deps.
  *
- * Inspired by rahulnyk/knowledge_graph's Girvan-Newman approach,
- * but using Label Propagation which is faster and simpler.
+ * Uses Label Propagation which is faster and simpler than
+ * edge-betweenness approaches like Girvan-Newman.
  */
 
 import {

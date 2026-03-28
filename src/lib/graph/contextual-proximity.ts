@@ -2,7 +2,7 @@
  * Contextual Proximity — co-occurrence linking
  *
  * Memories that share the same source (session, file, context) are related.
- * Inspired by rahulnyk/knowledge_graph's contextual proximity approach:
+ * Uses contextual proximity via co-occurrence analysis:
  * self-join by source → co-occurrence matrix → weighted edges.
  */
 

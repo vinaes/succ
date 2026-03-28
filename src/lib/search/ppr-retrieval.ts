@@ -1,7 +1,7 @@
 /**
  * PPR-Enhanced Retrieval — Graph-backed search using Personalized PageRank.
  *
- * Pipeline (HippoRAG2/ProPEX-RAG inspired):
+ * Pipeline (PPR-seeded graph expansion):
  * 1. Embed query → find top-k semantically similar nodes
  * 2. Run PPR from those seed nodes across knowledge graph
  * 3. Expand result set with high-PPR-score neighbors

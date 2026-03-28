@@ -2,8 +2,8 @@
  * PRD-to-Task Pipeline — Type Definitions
  *
  * Core types for the PRD pipeline: generate PRD → parse into tasks → execute.
- * Inspired by Ralph (iterative loop), Anthropic best practices (git commits,
- * quality gates), and Claude Code Teams protocol.
+ * Core types for iterative PRD execution with quality gates
+ * and git-based checkpointing.
  */
 
 import crypto from 'crypto';
@@ -115,7 +115,7 @@ export interface PrdExecution {
   started_at: string;
   current_task_id: string | null;
   iteration: number; // number of full passes
-  max_iterations: number; // default: 3 (Ralph-style retry whole PRD)
+  max_iterations: number; // default: 3 (iterative retry over whole PRD)
   pid: number | null;
   team_name: string | null; // for team mode
   concurrency: number | null; // max parallel workers (team mode)

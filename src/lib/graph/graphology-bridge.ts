@@ -132,7 +132,7 @@ export function invalidateGraphCache(): void {
  *
  * PPR biases the random walk to restart at seed nodes, making it
  * discover nodes that are structurally relevant to the seeds.
- * This is SOTA for graph-enhanced retrieval (HippoRAG2: 95% accuracy).
+ * This is effective for graph-enhanced retrieval via biased random walks.
  *
  * @param seedNodeIds - Memory IDs to seed from (e.g., top-k search results)
  * @param topK - Number of top PPR-scored nodes to return
