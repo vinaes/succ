@@ -94,6 +94,12 @@ export async function generateHyDE(
     const allTexts = hypotheticals;
     const embeddings = await getEmbeddings(allTexts);
 
+    if (embeddings.length === 0) {
+      logWarn('hyde', 'getEmbeddings returned empty array, falling back to query embedding');
+      const embedding = await getEmbedding(query);
+      return { embedding, hypotheticals: [], used: false };
+    }
+
     // Average all embeddings
     const dim = embeddings[0].length;
     const averaged = new Array(dim).fill(0);

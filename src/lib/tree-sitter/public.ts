@@ -4,7 +4,7 @@
  * Wraps low-level parser + extractor into single-call functions.
  */
 
-import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { parseCode } from './parser.js';
 import { extractSymbols } from './extractor.js';
@@ -40,11 +40,13 @@ export async function extractSymbolsFromFile(
 ): Promise<ExtractSymbolsResult> {
   const absolutePath = path.resolve(filePath);
 
-  if (!fs.existsSync(absolutePath)) {
+  try {
+    await fsp.access(absolutePath);
+  } catch {
     throw new NotFoundError(`File not found: ${filePath}`);
   }
 
-  const content = fs.readFileSync(absolutePath, 'utf-8');
+  const content = await fsp.readFile(absolutePath, 'utf-8');
   const ext = absolutePath.split('.').pop() || '';
   const language = getLanguageForExtension(ext);
 

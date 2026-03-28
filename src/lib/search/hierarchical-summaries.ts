@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { logInfo, logWarn } from '../fault-logger.js';
 import { getProjectRoot } from '../config.js';
@@ -235,7 +236,7 @@ export async function generateHierarchicalSummaries(
 
   // 1. Collect all code files
   const files: FileInfo[] = [];
-  collectFiles(root, root, extensions, excludes, files, maxFiles);
+  await collectFiles(root, root, extensions, excludes, files, maxFiles);
 
   logInfo('hierarchical', `Collected ${files.length} files for summarization`);
 
@@ -476,19 +477,19 @@ export function inferSummaryLevel(query: string): SummaryLevel {
 // File Collection
 // ============================================================================
 
-function collectFiles(
+async function collectFiles(
   dir: string,
   root: string,
   extensions: Set<string>,
   excludes: Set<string>,
   result: FileInfo[],
   maxFiles: number
-): void {
+): Promise<void> {
   if (result.length >= maxFiles) return;
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch (error) {
     logWarn('hierarchical', `Failed to read directory: ${dir}`, {
       error: error instanceof Error ? error.message : String(error),
@@ -503,13 +504,13 @@ function collectFiles(
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      collectFiles(fullPath, root, extensions, excludes, result, maxFiles);
+      await collectFiles(fullPath, root, extensions, excludes, result, maxFiles);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (!extensions.has(ext)) continue;
 
       try {
-        const content = fs.readFileSync(fullPath, 'utf-8');
+        const content = await fsp.readFile(fullPath, 'utf-8');
         const lineCount = content.split('\n').length;
         const symbols = extractExportedSymbols(content, ext);
         const relativePath = path.relative(root, fullPath).replace(/\\/g, '/');
