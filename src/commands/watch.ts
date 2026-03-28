@@ -47,6 +47,13 @@ export async function startWatchDaemon(
       }),
     });
 
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(body));
+      console.error(`Failed to start watch service (HTTP ${response.status})`);
+      process.exit(1);
+    }
+
     const result = await response.json();
     if (result.success) {
       console.log(`   Status: Running`);
@@ -86,6 +93,12 @@ export async function stopWatchDaemon(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
     });
 
+    if (!response.ok) {
+      logWarn('watch', `Daemon returned ${response.status} for watch/stop`);
+      console.log('Watch service may not be running');
+      return;
+    }
+
     const result = await response.json();
     if (result.success) {
       console.log('👁️  Watch service stopped');
@@ -118,6 +131,12 @@ export async function watchDaemonStatus(): Promise<void> {
     const response = await fetch(`http://127.0.0.1:${port}/api/watch/status`, {
       method: 'GET',
     });
+
+    if (!response.ok) {
+      logWarn('watch', `Daemon returned ${response.status} for watch/status`);
+      console.log('   Status: Unknown (daemon error)');
+      return;
+    }
 
     const status = await response.json();
     console.log(`   Status: ${status.active ? 'Running' : 'Stopped'}`);
@@ -184,6 +203,7 @@ export async function watch(targetPath?: string, options: WatchOptions = {}): Pr
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/watch/status`);
+      if (!response.ok) return;
       const status = await response.json();
       if (status.lastChange > 0) {
         const lastChange = new Date(status.lastChange);
