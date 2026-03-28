@@ -48,12 +48,13 @@ export async function startWatchDaemon(
     });
 
     if (!response.ok) {
-      let errorMsg = '';
+      const rawBody = await response.text().catch(() => '');
+      let errorMsg = rawBody;
       try {
-        const body = await response.json();
-        errorMsg = body?.error ?? JSON.stringify(body);
+        const parsed = JSON.parse(rawBody);
+        errorMsg = parsed?.error ?? rawBody;
       } catch {
-        errorMsg = await response.text().catch(() => '');
+        // Not JSON — use raw text
       }
       logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(errorMsg));
       console.error(`Failed to start watch service (HTTP ${response.status})`);
@@ -141,17 +142,16 @@ export async function watchDaemonStatus(): Promise<void> {
     if (!response.ok) {
       logWarn('watch', `Daemon returned ${response.status} for watch/status`);
       console.log('   Status: Unknown (daemon error)');
-      return;
-    }
-
-    const status = await response.json();
-    console.log(`   Status: ${status.active ? 'Running' : 'Stopped'}`);
-    console.log(`   Patterns: ${status.patterns?.join(', ') || 'none'}`);
-    console.log(`   Code: ${status.includeCode ? 'enabled' : 'disabled'}`);
-    console.log(`   Watched files: ${status.watchedFiles || 0}`);
-    if (status.lastChange > 0) {
-      const lastChange = new Date(status.lastChange);
-      console.log(`   Last change: ${lastChange.toLocaleString()}`);
+    } else {
+      const status = await response.json();
+      console.log(`   Status: ${status.active ? 'Running' : 'Stopped'}`);
+      console.log(`   Patterns: ${status.patterns?.join(', ') || 'none'}`);
+      console.log(`   Code: ${status.includeCode ? 'enabled' : 'disabled'}`);
+      console.log(`   Watched files: ${status.watchedFiles || 0}`);
+      if (status.lastChange > 0) {
+        const lastChange = new Date(status.lastChange);
+        console.log(`   Last change: ${lastChange.toLocaleString()}`);
+      }
     }
   } catch (error) {
     logWarn('watch', 'Failed to fetch watch service status from daemon', {
