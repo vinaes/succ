@@ -138,9 +138,10 @@ export async function runTeam(tasks: Task[], options: TeamRunOptions): Promise<v
 
         // Skip tasks with failed dependencies
         let skipped = false;
+        const taskMap = new Map(tasks.map((t) => [t.id, t]));
         for (const t of pending) {
           const hasFailedDep = t.depends_on.some((depId) => {
-            const dep = tasks.find((d) => d.id === depId);
+            const dep = taskMap.get(depId);
             return dep && dep.status === 'failed';
           });
           if (hasFailedDep) {
