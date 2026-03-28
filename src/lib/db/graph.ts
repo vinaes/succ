@@ -157,7 +157,10 @@ export function createMemoryLink(
     ) {
       const existing = cachedPrepare(
         'SELECT id FROM memory_links WHERE source_id = ? AND target_id = ? AND relation = ?'
-      ).get(sourceId, targetId, relation) as { id: number };
+      ).get(sourceId, targetId, relation) as { id: number } | undefined;
+      if (!existing) {
+        throw error; // Row disappeared between constraint violation and SELECT
+      }
       return { id: existing.id, created: false };
     }
     throw error;

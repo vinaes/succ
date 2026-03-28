@@ -19,9 +19,13 @@ function logDocDeletion(caller: string, count: number, detail?: string): void {
     const timestamp = new Date().toISOString();
     const detailStr = detail ? ` | ${detail}` : '';
     const line = `[${timestamp}] [DELETE] ${caller} | count=${count}${detailStr}\n`;
-    fs.appendFileSync(logFile, line);
+    fs.promises.appendFile(logFile, line).catch((err) => {
+      logWarn('documents', 'Failed to write document deletion audit log entry', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   } catch (error) {
-    logWarn('documents', 'Failed to write document deletion audit log entry', {
+    logWarn('documents', 'Failed to construct document deletion audit log entry', {
       error: error instanceof Error ? error.message : String(error),
     });
     // Never let audit logging break actual operations
@@ -322,13 +326,22 @@ export function deleteDocumentsByPath(filePath: string): void {
       const docIds = cachedPrepare('SELECT id FROM documents WHERE file_path = ?').all(
         filePath
       ) as Array<{ id: number }>;
-      for (const { id } of docIds) {
-        const mapping = cachedPrepare(
-          'SELECT vec_rowid FROM vec_documents_map WHERE doc_id = ?'
-        ).get(id) as { vec_rowid: number } | undefined;
-        if (mapping) {
+      if (docIds.length > 0) {
+        const ids = docIds.map((d) => d.id);
+        const placeholders = ids.map(() => '?').join(',');
+        const mappings = getDb()
+          .prepare(
+            `SELECT vec_rowid, doc_id FROM vec_documents_map WHERE doc_id IN (${placeholders})`
+          )
+          .all(...ids) as Array<{ vec_rowid: number; doc_id: number }>;
+        for (const mapping of mappings) {
           cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
-          cachedPrepare('DELETE FROM vec_documents_map WHERE doc_id = ?').run(id);
+        }
+        if (mappings.length > 0) {
+          const mapPlaceholders = mappings.map(() => '?').join(',');
+          getDb()
+            .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${mapPlaceholders})`)
+            .run(...mappings.map((m) => m.doc_id));
         }
       }
     } catch (err) {

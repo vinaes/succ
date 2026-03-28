@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type Database from 'better-sqlite3';
 import { getDb, cachedPrepare } from './connection.js';
 import { sqliteVecAvailable, MemoryType, SourceType } from './schema.js';
 import { normalizeProvenance } from '../provenance.js';
@@ -1247,8 +1248,8 @@ export function saveMemoriesBatch(
     `);
 
     // Prepare vec_memories statements if available
-    let insertVec: any;
-    let insertMap: any;
+    let insertVec: Database.Statement | undefined;
+    let insertMap: Database.Statement | undefined;
     if (sqliteVecAvailable) {
       insertVec = database.prepare('INSERT INTO vec_memories(embedding) VALUES (?)');
       insertMap = database.prepare(
