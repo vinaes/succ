@@ -174,7 +174,7 @@ export async function trackTokenSavings(
               fullSourceTokens += countTokens(content);
               break;
             } catch {
-              // candidate not readable, try next
+              logWarn('helpers', `Token savings: candidate not readable: ${candidate}`);
             }
           }
         } catch (error) {
