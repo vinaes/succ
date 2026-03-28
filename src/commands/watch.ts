@@ -48,8 +48,14 @@ export async function startWatchDaemon(
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(body));
+      let errorMsg = '';
+      try {
+        const body = await response.json();
+        errorMsg = body?.error ?? JSON.stringify(body);
+      } catch {
+        errorMsg = await response.text().catch(() => '');
+      }
+      logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(errorMsg));
       console.error(`Failed to start watch service (HTTP ${response.status})`);
       process.exit(1);
     }
