@@ -501,6 +501,22 @@ export function importData(data: ExportData): {
 }
 
 /**
+ * Read and parse a JSON export file, returning typed ExportData.
+ * Shared by importFromFile and getExportStats to avoid duplicated parse logic.
+ */
+function parseExportJson(filePath: string, kind: string): ExportData {
+  const json = fs.readFileSync(filePath, 'utf-8');
+  try {
+    return JSON.parse(json) as ExportData;
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON in ${kind} file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    );
+  }
+}
+
+/**
  * Import data from a JSON file.
  */
 export function importFromFile(filePath: string): {
@@ -509,16 +525,7 @@ export function importFromFile(filePath: string): {
   memoryLinks: number;
   globalMemories: number;
 } {
-  const json = fs.readFileSync(filePath, 'utf-8');
-  let data: ExportData;
-  try {
-    data = JSON.parse(json) as ExportData;
-  } catch (err) {
-    throw new Error(
-      `Invalid JSON in import file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err }
-    );
-  }
+  const data = parseExportJson(filePath, 'import');
   return importData(data);
 }
 
@@ -539,16 +546,7 @@ export function getExportStats(filePath: string): {
     tokenStats: number;
   };
 } {
-  const json = fs.readFileSync(filePath, 'utf-8');
-  let data: ExportData;
-  try {
-    data = JSON.parse(json) as ExportData;
-  } catch (err) {
-    throw new Error(
-      `Invalid JSON in export file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err }
-    );
-  }
+  const data = parseExportJson(filePath, 'export stats');
 
   return {
     version: data.version,
