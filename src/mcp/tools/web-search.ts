@@ -487,6 +487,27 @@ export function registerWebSearchTools(server: McpServer) {
               getWebSearchHistory({ tool_name, model, query_text, date_from, date_to, limit }),
               getWebSearchSummary(),
             ]);
+            // If both DB queries failed, rethrow so the outer catch surfaces a real error
+            if (recordsResult.status === 'rejected' && summaryResult.status === 'rejected') {
+              throw recordsResult.reason;
+            }
+            const dbWarnings: string[] = [];
+            if (recordsResult.status === 'rejected') {
+              const errMsg =
+                recordsResult.reason instanceof Error
+                  ? recordsResult.reason.message
+                  : String(recordsResult.reason);
+              logWarn('web-search', 'Failed to fetch search history records', { error: errMsg });
+              dbWarnings.push(`⚠ Search history unavailable: ${errMsg}`);
+            }
+            if (summaryResult.status === 'rejected') {
+              const errMsg =
+                summaryResult.reason instanceof Error
+                  ? summaryResult.reason.message
+                  : String(summaryResult.reason);
+              logWarn('web-search', 'Failed to fetch search summary', { error: errMsg });
+              dbWarnings.push(`⚠ Search summary unavailable: ${errMsg}`);
+            }
             const records = recordsResult.status === 'fulfilled' ? recordsResult.value : [];
             const summary =
               summaryResult.status === 'fulfilled'
@@ -498,24 +519,11 @@ export function registerWebSearchTools(server: McpServer) {
                     today_cost_usd: 0,
                     by_tool: {},
                   };
-            if (recordsResult.status === 'rejected') {
-              logWarn('web-search', 'Failed to fetch search history records', {
-                error:
-                  recordsResult.reason instanceof Error
-                    ? recordsResult.reason.message
-                    : String(recordsResult.reason),
-              });
-            }
-            if (summaryResult.status === 'rejected') {
-              logWarn('web-search', 'Failed to fetch search summary', {
-                error:
-                  summaryResult.reason instanceof Error
-                    ? summaryResult.reason.message
-                    : String(summaryResult.reason),
-              });
-            }
 
             const lines: string[] = [];
+            if (dbWarnings.length > 0) {
+              lines.push(...dbWarnings, '');
+            }
 
             // Summary section
             lines.push('## Web Search Summary');

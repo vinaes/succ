@@ -153,13 +153,19 @@ export function registerIndexingTools(server: McpServer) {
             const path = await import('path');
 
             const absolutePath = path.default.resolve(file!);
+            let content: string;
             try {
-              await fs.access(absolutePath);
-            } catch {
-              return createErrorResponse(`File not found: ${file}`);
+              content = await fs.readFile(absolutePath, 'utf-8');
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code === 'ENOENT') {
+                return createErrorResponse(`File not found: ${file}`);
+              }
+              if (code === 'EACCES' || code === 'EPERM') {
+                return createErrorResponse(`Permission denied: ${file}`);
+              }
+              throw error;
             }
-
-            const content = await fs.readFile(absolutePath, 'utf-8');
             const { parseCode } = await import('../../lib/tree-sitter/parser.js');
             const { extractSymbols } = await import('../../lib/tree-sitter/extractor.js');
             const { getLanguageForExtension } = await import('../../lib/tree-sitter/types.js');
