@@ -65,8 +65,8 @@ export async function initStorageDispatcher(): Promise<void> {
     } catch (error) {
       logError(
         'storage',
-        `Qdrant init failed, falling back to builtin: ${(error as Error).message}`,
-        error as Error
+        `Qdrant init failed, falling back to builtin: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error : new Error(String(error))
       );
       _qdrantStore = null;
     }

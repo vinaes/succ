@@ -300,13 +300,23 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
 
     let regexFilter: RegExp | null = null;
     if (filters.regex && filters.regex.length <= 500) {
-      try {
-        regexFilter = new RegExp(filters.regex, 'i');
-      } catch (error) {
-        logWarn('storage', 'Invalid regex filter passed to hybridSearchCode; skipping regex', {
+      // Reject patterns with nested quantifiers that cause catastrophic backtracking (ReDoS)
+      if (
+        /([+*]|\{\d).*([+*]|\{\d)/.test(filters.regex) &&
+        /\(.*[+*?].*\)[+*?{]/.test(filters.regex)
+      ) {
+        logWarn('storage', 'Regex filter rejected: potential ReDoS (nested quantifiers)', {
           regex: filters.regex,
-          error: error instanceof Error ? error.message : String(error),
         });
+      } else {
+        try {
+          regexFilter = new RegExp(filters.regex, 'i');
+        } catch (error) {
+          logWarn('storage', 'Invalid regex filter passed to hybridSearchCode; skipping regex', {
+            regex: filters.regex,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
 
