@@ -250,6 +250,8 @@ const readdirSyncMock = vi.fn<(...args: unknown[]) => unknown>();
 const readFileSyncMock = vi.fn<(...args: unknown[]) => unknown>();
 const existsSyncMock = vi.fn<(...args: unknown[]) => unknown>(() => false);
 const watchMock = vi.fn(() => ({ close: vi.fn() }));
+const readdirAsyncMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+const readFileAsyncMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 
 vi.mock('fs', async (importOriginal) => {
   const orig = (await importOriginal()) as Record<string, unknown>;
@@ -269,6 +271,11 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
+vi.mock('fs/promises', () => ({
+  readdir: (...args: unknown[]) => readdirAsyncMock(...args),
+  readFile: (...args: unknown[]) => readFileAsyncMock(...args),
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers: configure mock fs for a flat file tree
 // ---------------------------------------------------------------------------
@@ -280,45 +287,54 @@ interface MockDirent {
   isSymbolicLink: () => boolean;
 }
 
-function buildFsMock(files: Record<string, string>) {
-  readdirSyncMock.mockImplementation((dir: unknown, opts?: unknown) => {
-    const dirStr = String(dir).replace(/\\/g, '/');
-    const prefix = dirStr.endsWith('/') ? dirStr : dirStr + '/';
+function readdirImpl(dir: unknown, opts?: unknown) {
+  const dirStr = String(dir).replace(/\\/g, '/');
+  const prefix = dirStr.endsWith('/') ? dirStr : dirStr + '/';
 
-    const directChildren = new Map<string, 'file' | 'dir'>();
-    for (const p of Object.keys(files)) {
-      const normalized = p.replace(/\\/g, '/');
-      if (normalized.startsWith(prefix)) {
-        const rest = normalized.slice(prefix.length);
-        const seg = rest.split('/')[0];
-        if (!seg) continue;
-        if (rest.includes('/')) {
-          directChildren.set(seg, 'dir');
-        } else if (!directChildren.has(seg)) {
-          directChildren.set(seg, 'file');
-        }
+  const directChildren = new Map<string, 'file' | 'dir'>();
+  for (const p of Object.keys(currentFiles)) {
+    const normalized = p.replace(/\\/g, '/');
+    if (normalized.startsWith(prefix)) {
+      const rest = normalized.slice(prefix.length);
+      const seg = rest.split('/')[0];
+      if (!seg) continue;
+      if (rest.includes('/')) {
+        directChildren.set(seg, 'dir');
+      } else if (!directChildren.has(seg)) {
+        directChildren.set(seg, 'file');
       }
     }
+  }
 
-    if (opts && typeof opts === 'object' && (opts as Record<string, unknown>).withFileTypes) {
-      return Array.from(directChildren.entries()).map(
-        ([name, kind]): MockDirent => ({
-          name,
-          isDirectory: () => kind === 'dir',
-          isFile: () => kind === 'file',
-          isSymbolicLink: () => false,
-        })
-      );
-    }
+  if (opts && typeof opts === 'object' && (opts as Record<string, unknown>).withFileTypes) {
+    return Array.from(directChildren.entries()).map(
+      ([name, kind]): MockDirent => ({
+        name,
+        isDirectory: () => kind === 'dir',
+        isFile: () => kind === 'file',
+        isSymbolicLink: () => false,
+      })
+    );
+  }
 
-    return Array.from(directChildren.keys());
-  });
+  return Array.from(directChildren.keys());
+}
 
-  readFileSyncMock.mockImplementation((p: unknown) => {
-    const content = files[String(p).replace(/\\/g, '/')];
-    if (content === undefined) throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' });
-    return content;
-  });
+function readFileImpl(p: unknown) {
+  const content = currentFiles[String(p).replace(/\\/g, '/')];
+  if (content === undefined) throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' });
+  return content;
+}
+
+let currentFiles: Record<string, string> = {};
+
+function buildFsMock(files: Record<string, string>) {
+  currentFiles = files;
+
+  readdirSyncMock.mockImplementation(readdirImpl);
+  readFileSyncMock.mockImplementation(readFileImpl);
+  readdirAsyncMock.mockImplementation(async (...args: unknown[]) => readdirImpl(...args));
+  readFileAsyncMock.mockImplementation(async (...args: unknown[]) => readFileImpl(...args));
 
   existsSyncMock.mockImplementation((p: unknown) => String(p).replace(/\\/g, '/') in files);
 }
@@ -336,8 +352,11 @@ describe('generateRepoMap', () => {
   beforeEach(() => {
     readdirSyncMock.mockReset();
     readFileSyncMock.mockReset();
+    readdirAsyncMock.mockReset();
+    readFileAsyncMock.mockReset();
     existsSyncMock.mockReset();
     watchMock.mockClear();
+    currentFiles = {};
   });
 
   it('returns an empty result for an empty directory', async () => {

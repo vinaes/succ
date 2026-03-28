@@ -11,7 +11,7 @@ import { PRD_PARSE_SYSTEM, PRD_PARSE_PROMPT } from '../../prompts/prd.js';
 import { gatherCodebaseContext, formatContext } from './codebase-context.js';
 import { createTask } from './types.js';
 import type { Task } from './types.js';
-import { ValidationError } from '../errors.js';
+import { ValidationError, getErrorMessage } from '../errors.js';
 
 // ============================================================================
 // Raw task shape from LLM (before normalization)
@@ -176,8 +176,8 @@ function tryParse(text: string): unknown | null {
     logWarn('parse', 'JSON parse failed on raw LLM output, trying malformation fixes');
     try {
       return JSON.parse(fixMalformedJson(text));
-    } catch {
-      logWarn('parse', 'JSON parse failed after malformation fixes');
+    } catch (err) {
+      logWarn('parse', `JSON parse failed after malformation fixes: ${getErrorMessage(err)}`);
       return null;
     }
   }
@@ -320,9 +320,11 @@ function validateTasks(tasks: Task[], warnings: string[]): void {
     for (let j = i + 1; j < tasks.length; j++) {
       const a = tasks[i];
       const b = tasks[j];
-      const overlap = a.files_to_modify.filter((f) => b.files_to_modify.includes(f));
+      const bFiles = new Set(b.files_to_modify);
+      const overlap = a.files_to_modify.filter((f) => bFiles.has(f));
       if (overlap.length > 0) {
-        const hasDep = a.depends_on.includes(b.id) || b.depends_on.includes(a.id);
+        const bDeps = new Set(b.depends_on);
+        const hasDep = a.depends_on.includes(b.id) || bDeps.has(a.id);
         if (!hasDep) {
           warnings.push(
             `Tasks ${a.id} and ${b.id} both modify ${overlap.join(', ')} but have no dependency — potential conflict`

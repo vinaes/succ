@@ -154,6 +154,7 @@ describe('web-fetch tool module', () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Failed to fetch https://example.com: network down');
+    // Error response uses redacted URL (URL.toString() adds trailing slash)
+    expect(result.content[0].text).toContain('Failed to fetch https://example.com/: network down');
   });
 });

@@ -339,6 +339,7 @@ export function startAnalyzer(config: AnalyzerConfig, log: (msg: string) => void
 
   // Schedule periodic runs
   analyzerState.intervalId = setInterval(() => runAnalysis(mode, log), intervalMinutes * 60 * 1000);
+  analyzerState.intervalId.unref();
 
   log(`[analyze] Started (interval: ${intervalMinutes} min, mode: ${mode})`);
 

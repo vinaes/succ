@@ -176,10 +176,8 @@ export function registerConfigTools(server: McpServer) {
               current[keys[keys.length - 1]] = parsedValue;
             }
 
-            // Ensure config directory exists
-            if (!fs.existsSync(configDir)) {
-              fs.mkdirSync(configDir, { recursive: true });
-            }
+            // Ensure config directory exists (recursive handles existing dirs)
+            fs.mkdirSync(configDir, { recursive: true });
 
             // Save config and invalidate cached values
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));

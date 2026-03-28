@@ -165,7 +165,7 @@ ${truncated}
 
 Summary:`;
 
-  return callLLM(prompt);
+  return await callLLM(prompt);
 }
 
 // ============================================================================
@@ -189,7 +189,7 @@ ${fileDescriptions}
 
 Summary:`;
 
-  return callLLM(prompt);
+  return await callLLM(prompt);
 }
 
 // ============================================================================

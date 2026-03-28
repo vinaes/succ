@@ -10,6 +10,7 @@
  */
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { logInfo, logWarn } from '../fault-logger.js';
@@ -187,7 +188,7 @@ async function walkDir(
 ): Promise<void> {
   let dirEntries: fs.Dirent[];
   try {
-    dirEntries = fs.readdirSync(dir, { withFileTypes: true });
+    dirEntries = await fsp.readdir(dir, { withFileTypes: true });
   } catch (error) {
     logWarn('repo-map', `Failed to read directory: ${dir}`, {
       error: error instanceof Error ? error.message : String(error),
@@ -213,7 +214,7 @@ async function walkDir(
       if (!extensions.has(ext)) continue;
 
       try {
-        const content = fs.readFileSync(fullPath, 'utf-8');
+        const content = await fsp.readFile(fullPath, 'utf-8');
         const lineCount = content.split('\n').length;
         const symbols = await extractFileSymbols(content, fullPath, maxSymbols, symbolTypesFilter);
 

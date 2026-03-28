@@ -303,20 +303,30 @@ export function prdToIndexEntry(prd: Prd): PrdIndexEntry {
  * Compute updated PrdStats from tasks
  */
 export function computeStats(tasks: Task[]): PrdStats {
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let totalAttempts = 0;
+  let totalDuration = 0;
+
+  for (const t of tasks) {
+    if (t.status === 'completed') completed++;
+    else if (t.status === 'failed') failed++;
+    else if (t.status === 'skipped') skipped++;
+    totalAttempts += t.attempts.length;
+    for (const a of t.attempts) {
+      if (a.completed_at) {
+        totalDuration += new Date(a.completed_at).getTime() - new Date(a.started_at).getTime();
+      }
+    }
+  }
+
   return {
     total_tasks: tasks.length,
-    completed_tasks: tasks.filter((t) => t.status === 'completed').length,
-    failed_tasks: tasks.filter((t) => t.status === 'failed').length,
-    skipped_tasks: tasks.filter((t) => t.status === 'skipped').length,
-    total_attempts: tasks.reduce((sum, t) => sum + t.attempts.length, 0),
-    total_duration_ms: tasks.reduce((sum, t) => {
-      return (
-        sum +
-        t.attempts.reduce((aSum, a) => {
-          if (!a.completed_at) return aSum;
-          return aSum + (new Date(a.completed_at).getTime() - new Date(a.started_at).getTime());
-        }, 0)
-      );
-    }, 0),
+    completed_tasks: completed,
+    failed_tasks: failed,
+    skipped_tasks: skipped,
+    total_attempts: totalAttempts,
+    total_duration_ms: totalDuration,
   };
 }

@@ -145,8 +145,17 @@ export async function enrichExistingLinks(
   }
 
   const memories = new Map<number, MemoryInfo>();
-  for (const id of memoryIds) {
-    const mem = await getMemoryById(id);
+  const idArray = Array.from(memoryIds);
+  const fetchResults = await Promise.allSettled(idArray.map((id) => getMemoryById(id)));
+  for (let i = 0; i < idArray.length; i++) {
+    const result = fetchResults[i];
+    if (result.status === 'rejected') {
+      logWarn('llm-relations', `Failed to fetch memory ${idArray[i]} for enrichment`, {
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+      continue;
+    }
+    const mem = result.value;
     if (mem) {
       const tags: string[] = Array.isArray(mem.tags)
         ? mem.tags
@@ -166,7 +175,12 @@ export async function enrichExistingLinks(
               }
             })()
           : [];
-      memories.set(id, { id: mem.id, content: mem.content, type: mem.type || 'observation', tags });
+      memories.set(mem.id, {
+        id: mem.id,
+        content: mem.content,
+        type: mem.type || 'observation',
+        tags,
+      });
     }
   }
 

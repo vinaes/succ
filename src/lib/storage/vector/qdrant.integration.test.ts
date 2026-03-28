@@ -36,7 +36,8 @@ async function isQdrantAvailable(): Promise<boolean> {
     // Use root endpoint which returns version info
     const response = await fetch(`${QDRANT_URL}/`);
     return response.ok;
-  } catch {
+  } catch (err) {
+    console.error('Qdrant availability check failed:', err);
     return false;
   }
 }
@@ -49,8 +50,8 @@ async function deleteCollectionsViaApi(names: string[]): Promise<void> {
   for (const name of names) {
     try {
       await fetch(`${QDRANT_URL}/collections/${name}`, { method: 'DELETE' });
-    } catch {
-      // Best effort — Qdrant may be down
+    } catch (err) {
+      console.error(`Best effort delete of collection ${name} failed:`, err);
     }
   }
 }
@@ -81,8 +82,8 @@ async function cleanupStaleTestCollections(): Promise<void> {
       console.log(`Cleaning up ${stale.length} stale test collections (>1h old)`);
       await deleteCollectionsViaApi(stale);
     }
-  } catch {
-    // Non-fatal — just skip cleanup
+  } catch (err) {
+    console.error('Stale collection cleanup failed:', err);
   }
 }
 
@@ -122,8 +123,8 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}documents`);
-        } catch {
-          // Collection might not exist
+        } catch (err) {
+          console.error('Collection delete failed (may not exist):', err);
         }
         // Brief delay for Qdrant to finish deletion before recreating
         await new Promise((r) => setTimeout(r, 200));
@@ -205,8 +206,8 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}memories`);
-        } catch {
-          // Collection might not exist
+        } catch (err) {
+          console.error('Collection delete failed (may not exist):', err);
         }
         // Brief delay for Qdrant to finish deletion before recreating
         await new Promise((r) => setTimeout(r, 200));
@@ -243,8 +244,8 @@ describe('Qdrant Vector Store Integration', async () => {
       if (client) {
         try {
           await client.deleteCollection(`${TEST_PREFIX}global_memories`);
-        } catch {
-          // Collection might not exist
+        } catch (err) {
+          console.error('Collection delete failed (may not exist):', err);
         }
         // Brief delay for Qdrant to finish deletion before recreating
         await new Promise((r) => setTimeout(r, 200));

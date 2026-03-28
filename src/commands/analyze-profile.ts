@@ -482,7 +482,7 @@ export async function gatherProjectContext(
   const priorityFiles = [...new Set([...profile.entryPoints, ...profile.keyFiles])];
   const selectedFiles: string[] = [];
   const selectedSet = new Set<string>();
-  const dedupeKey = (p: string) => p.replace(/\\/g, '/');
+  const dedupeKey = (p: string) => path.posix.normalize(p.replace(/\\/g, '/'));
 
   for (const f of priorityFiles) {
     const key = dedupeKey(f);

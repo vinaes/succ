@@ -219,20 +219,29 @@ async function gatherCodeSearch(description: string): Promise<string> {
       ignore: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**', '**/dist/**'],
     });
 
-    for (const keyword of keywords.slice(0, 3)) {
+    // Cache file contents to avoid re-reading the same file for different keywords
+    const fileContentCache = new Map<string, string>();
+    const lowerKeywords = keywords.slice(0, 3).map((k) => k.toLowerCase());
+
+    for (const keyword of lowerKeywords) {
       for (const file of srcFiles) {
         if (results.length >= 8) break;
         if (seenFiles.has(file)) continue;
         const fullPath = path.join(root, file);
-        if (!fs.existsSync(fullPath)) continue;
 
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        if (content.toLowerCase().includes(keyword.toLowerCase())) {
+        let content = fileContentCache.get(file);
+        if (content === undefined) {
+          if (!fs.existsSync(fullPath)) continue;
+          content = fs.readFileSync(fullPath, 'utf-8');
+          fileContentCache.set(file, content);
+        }
+
+        if (content.toLowerCase().includes(keyword)) {
           seenFiles.add(file);
           const lines = content.split('\n');
           const matchingLines: string[] = [];
           for (let i = 0; i < lines.length; i++) {
-            if (lines[i].toLowerCase().includes(keyword.toLowerCase())) {
+            if (lines[i].toLowerCase().includes(keyword)) {
               const start = Math.max(0, i - 2);
               const end = Math.min(lines.length, i + 3);
               matchingLines.push(`  L${i + 1}: ${lines.slice(start, end).join('\n  ')}`);
@@ -314,14 +323,27 @@ async function gatherBrainDocs(_description: string): Promise<string> {
  * @returns CodebaseContext with formatted sections
  */
 export async function gatherCodebaseContext(description: string): Promise<CodebaseContext> {
-  const [file_tree, code_search_results, memories, brain_docs] = await Promise.all([
+  const results = await Promise.allSettled([
     gatherFileTree(),
     gatherCodeSearch(description),
     gatherMemories(description),
     gatherBrainDocs(description),
   ]);
 
-  return { file_tree, code_search_results, memories, brain_docs };
+  const getValue = <T>(result: PromiseSettledResult<T>, label: string, fallback: T): T => {
+    if (result.status === 'fulfilled') return result.value;
+    logWarn('codebase-context', `Failed to gather ${label}`, {
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    });
+    return fallback;
+  };
+
+  return {
+    file_tree: getValue(results[0], 'file tree', ''),
+    code_search_results: getValue(results[1], 'code search', ''),
+    memories: getValue(results[2], 'memories', ''),
+    brain_docs: getValue(results[3], 'brain docs', ''),
+  };
 }
 
 /**

@@ -35,9 +35,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 function safeProjectKey(): string {
   try {
     return getProjectRoot();
-  } catch (err) {
-    logWarn('graphology', 'Failed to get project root, using default cache key', {
-      error: err instanceof Error ? err.message : String(err),
+  } catch (error) {
+    logWarn('graphology', 'getProjectRoot() failed, using default cache key', {
+      error: error instanceof Error ? error.message : String(error),
     });
     return '__default__';
   }

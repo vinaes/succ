@@ -57,8 +57,22 @@ function parseMetadata(raw: string | null | undefined): Record<string, unknown> 
   }
 }
 
+/** Raw memory_links row from SQLite (metadata is unparsed JSON string) */
+interface RawMemoryLinkRow {
+  id: number;
+  source_id: number;
+  target_id: number;
+  relation: LinkRelation;
+  weight: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  created_at: string;
+  metadata: string | null;
+  llm_enriched?: number;
+}
+
 /** Parse raw SQLite row into MemoryLink with metadata */
-function parseLink(row: any): MemoryLink {
+function parseLink(row: RawMemoryLinkRow): MemoryLink {
   return {
     ...row,
     metadata: parseMetadata(row.metadata),
@@ -179,11 +193,15 @@ export function getMemoryLinks(memoryId: number): {
   incoming: MemoryLink[];
 } {
   const outgoing = (
-    cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(memoryId) as any[]
+    cachedPrepare('SELECT * FROM memory_links WHERE source_id = ?').all(
+      memoryId
+    ) as RawMemoryLinkRow[]
   ).map(parseLink);
 
   const incoming = (
-    cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(memoryId) as any[]
+    cachedPrepare('SELECT * FROM memory_links WHERE target_id = ?').all(
+      memoryId
+    ) as RawMemoryLinkRow[]
   ).map(parseLink);
 
   return { outgoing, incoming };
@@ -490,7 +508,7 @@ export function getMemoryLinksAsOf(
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as RawMemoryLinkRow[]
   ).map(parseLink);
 
   const incoming = (
@@ -500,7 +518,7 @@ export function getMemoryLinksAsOf(
         AND created_at <= ?
         AND (valid_from IS NULL OR valid_from <= ?)
         AND (valid_until IS NULL OR valid_until > ?)
-    `).all(memoryId, asOfStr, asOfStr, asOfStr) as any[]
+    `).all(memoryId, asOfStr, asOfStr, asOfStr) as RawMemoryLinkRow[]
   ).map(parseLink);
 
   return { outgoing, incoming };
