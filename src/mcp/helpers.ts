@@ -12,6 +12,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import fsp from 'fs/promises';
 import { z } from 'zod';
 import {
   closeDb,
@@ -146,7 +147,7 @@ export async function trackTokenSavings(
         }
       } catch (error) {
         logWarn('helpers', 'Failed to fetch memory stats for recall token savings estimation', {
-          error: error instanceof Error ? error.message : String(error),
+          error: getErrorMessage(error),
         });
         // Fallback: no savings for recall
       }
@@ -168,15 +169,17 @@ export async function trackTokenSavings(
           ];
 
           for (const candidate of candidates) {
-            if (fs.existsSync(candidate)) {
-              const content = fs.readFileSync(candidate, 'utf-8');
+            try {
+              const content = await fsp.readFile(candidate, 'utf-8');
               fullSourceTokens += countTokens(content);
               break;
+            } catch {
+              // candidate not readable, try next
             }
           }
         } catch (error) {
           logWarn('helpers', 'Failed to read source file for token savings estimation', {
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           });
           // File not readable, skip
         }

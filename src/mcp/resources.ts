@@ -13,6 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import { getProjectRoot, getSuccDir } from '../lib/config.js';
 import { logWarn } from '../lib/fault-logger.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { getBrainPath } from './helpers.js';
 
 export function registerResources(server: McpServer) {
@@ -35,7 +36,7 @@ export function registerResources(server: McpServer) {
         try {
           entries = fs.readdirSync(dir, { withFileTypes: true });
         } catch (err) {
-          logWarn('resources', `Cannot read directory ${dir}: ${err}`);
+          logWarn('resources', `Cannot read directory ${dir}: ${getErrorMessage(err)}`);
           return;
         }
         for (const entry of entries) {
@@ -99,7 +100,7 @@ export function registerResources(server: McpServer) {
         const content = fs.readFileSync(realPath, 'utf-8');
         return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }] };
       } catch (err) {
-        logWarn('resources', `Failed to read brain file ${filePath}: ${err}`);
+        logWarn('resources', `Failed to read brain file ${filePath}: ${getErrorMessage(err)}`);
         return { contents: [{ uri: uri.href, text: `File not found: ${filePath}` }] };
       }
     }
