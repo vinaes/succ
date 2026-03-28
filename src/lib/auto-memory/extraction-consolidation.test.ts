@@ -1,7 +1,7 @@
 /**
  * Tests for extraction-consolidation.ts
  *
- * Tests the mem0-style ADD/UPDATE/DELETE consolidation logic
+ * Tests the intelligent ADD/UPDATE/DELETE consolidation logic
  * that runs between fact extraction and storage.
  */
 

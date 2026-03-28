@@ -1,12 +1,12 @@
 /**
- * Extraction Consolidation — mem0-style ADD/UPDATE/DELETE decisions
+ * Extraction Consolidation — intelligent ADD/UPDATE/DELETE decisions
  *
  * After fact extraction (Phase 1), this module runs a consolidation step
  * (Phase 1.5) before saving to storage:
  *
  * For each extracted fact:
  *   1. Embed the fact and search top-5 similar existing memories
- *   2. Remap real IDs to sequential integers (mem0 trick — prevents LLM UUID hallucination)
+ *   2. Remap real IDs to sequential integers (ID remapping trick — prevents LLM UUID hallucination)
  *   3. Call LLM to decide: ADD / UPDATE / DELETE / NONE
  *   4. Execute the decision:
  *      - ADD: save as new memory (normal path)
@@ -170,11 +170,11 @@ export function parseConsolidationResponse(response: string): {
 }
 
 /**
- * Run mem0-style consolidation on a batch of extracted facts.
+ * Run intelligent consolidation on a batch of extracted facts.
  *
  * For each fact:
  *   1. Embed and find top-5 similar existing memories
- *   2. Remap IDs to sequential integers (mem0 trick)
+ *   2. Remap IDs to sequential integers (ID remapping trick)
  *   3. LLM decides ADD/UPDATE/DELETE/NONE
  *   4. Collect results for the caller to execute
  *
@@ -228,7 +228,7 @@ export async function consolidateExtractedFacts(
         continue;
       }
 
-      // Step 2: Remap real IDs to sequential integers (mem0 trick)
+      // Step 2: Remap real IDs to sequential integers (ID remapping trick)
       // This prevents the LLM from hallucinating UUIDs or confusing large integer IDs
       const idMap = new Map<number, number>(); // seqId -> realId
       const reverseMap = new Map<number, number>(); // realId -> seqId
