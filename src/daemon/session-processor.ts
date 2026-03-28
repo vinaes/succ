@@ -26,6 +26,13 @@ import { logWarn } from '../lib/fault-logger.js';
 import { getErrorMessage } from '../lib/errors.js';
 import { formatTranscriptLines, type TranscriptContent } from '../lib/transcript-utils.js';
 import { FACT_EXTRACTION_SYSTEM, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
+import {
+  consolidateExtractedFacts,
+  executeUpdates,
+  executeDeletes,
+  isExtractionConsolidationEnabled,
+} from '../lib/auto-memory/extraction-consolidation.js';
+import type { ExtractedFactInput } from '../lib/auto-memory/extraction-consolidation.js';
 
 // ============================================================================
 // Types
@@ -399,9 +406,60 @@ export async function processSessionEnd(
       return result;
     }
 
+    // 2.5. Run extraction consolidation if enabled (mem0-style ADD/UPDATE/DELETE)
+    let factsToSave = facts;
+    if (isExtractionConsolidationEnabled()) {
+      try {
+        log(`[session-processor] Running extraction consolidation on ${facts.length} facts`);
+        const consolidation = await consolidateExtractedFacts(facts as ExtractedFactInput[], {
+          similarityThreshold: 0.75,
+          topK: 5,
+          llmTimeout: 30000,
+        });
+
+        // Execute UPDATE and DELETE decisions
+        if (consolidation.toUpdate.length > 0) {
+          const updated = await executeUpdates(consolidation.toUpdate);
+          log(`[session-processor] Consolidation: ${updated} memories updated`);
+        }
+        if (consolidation.toDelete.length > 0) {
+          const deleted = await executeDeletes(consolidation.toDelete);
+          log(`[session-processor] Consolidation: ${deleted} memories invalidated`);
+        }
+
+        // Merge ADD + fallbackAdd facts for normal save path
+        factsToSave = [
+          ...consolidation.toAdd.map((f) => ({
+            content: f.content,
+            type: f.type as ExtractedFact['type'],
+            confidence: f.confidence,
+            tags: f.tags,
+          })),
+          ...consolidation.fallbackAdd.map((f) => ({
+            content: f.content,
+            type: f.type as ExtractedFact['type'],
+            confidence: f.confidence,
+            tags: f.tags,
+          })),
+        ];
+
+        log(
+          `[session-processor] Consolidation: ${consolidation.toAdd.length} ADD, ` +
+            `${consolidation.toUpdate.length} UPDATE, ${consolidation.toDelete.length} DELETE, ` +
+            `${consolidation.skippedNone} NONE, ${consolidation.fallbackAdd.length} fallback`
+        );
+      } catch (err) {
+        logWarn(
+          'session-processor',
+          `Extraction consolidation failed, proceeding with normal save: ${err instanceof Error ? err.message : String(err)}`
+        );
+        // Fall through to normal save with all facts
+      }
+    }
+
     // 3. Save facts as memories
     const minQuality = idleConfig.thresholds?.min_quality_for_summary ?? 0.5;
-    const saveResult = await saveFactsAsMemories(facts, minQuality, log);
+    const saveResult = await saveFactsAsMemories(factsToSave, minQuality, log);
 
     result.factsSaved = saveResult.saved;
     result.factsSkipped = saveResult.skipped;
