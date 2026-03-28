@@ -1,6 +1,6 @@
 import { StorageDispatcherBase } from './base.js';
 import type { DocumentUpsertMeta } from '../vector/qdrant.js';
-import type { RecentDocumentRecord } from '../types.js';
+import type { DocumentBatch, DocumentBatchWithHash, RecentDocumentRecord } from '../types.js';
 
 export class DocumentsDispatcherMixin extends StorageDispatcherBase {
   async upsertDocument(
@@ -58,7 +58,7 @@ export class DocumentsDispatcherMixin extends StorageDispatcherBase {
     );
   }
 
-  async upsertDocumentsBatch(documents: any[]): Promise<void> {
+  async upsertDocumentsBatch(documents: DocumentBatch[]): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const ids = await this.postgres.upsertDocumentsBatch(documents);
       if (this.hasQdrant() && ids.length > 0) {
@@ -88,7 +88,7 @@ export class DocumentsDispatcherMixin extends StorageDispatcherBase {
     sqlite.upsertDocumentsBatch(documents);
   }
 
-  async upsertDocumentsBatchWithHashes(documents: any[]): Promise<void> {
+  async upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[]): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       const ids = await this.postgres.upsertDocumentsBatchWithHashes(documents);
       if (this.hasQdrant() && ids.length > 0) {

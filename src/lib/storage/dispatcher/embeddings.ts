@@ -1,6 +1,7 @@
 import { StorageDispatcherBase } from './base.js';
 import type { SqlMemoryRow } from './base.js';
 import type { MemoryType } from '../types.js';
+import { logWarn } from '../../fault-logger.js';
 
 export class EmbeddingsDispatcherMixin extends StorageDispatcherBase {
   async updateMemoryEmbedding(memoryId: number, embedding: number[]): Promise<void> {
@@ -161,9 +162,13 @@ export class EmbeddingsDispatcherMixin extends StorageDispatcherBase {
       const map = new Map<number, number[]>();
       for (const row of rows) {
         if (row.embedding) {
-          // pgvector returns embedding as JSON array string "[0.1,0.2,...]"
-          const vec = JSON.parse(row.embedding);
-          map.set(row.id, vec);
+          try {
+            // pgvector returns embedding as JSON array string "[0.1,0.2,...]"
+            const vec = JSON.parse(row.embedding);
+            map.set(row.id, vec);
+          } catch {
+            logWarn('storage', `Failed to parse embedding for memory ${row.id}, skipping`);
+          }
         }
       }
       return map;

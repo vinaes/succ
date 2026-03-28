@@ -1,3 +1,4 @@
+import safeRegex from 'safe-regex2';
 import { StorageDispatcherBase } from './base.js';
 import { logWarn } from '../../fault-logger.js';
 import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
@@ -300,13 +301,20 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
 
     let regexFilter: RegExp | null = null;
     if (filters.regex && filters.regex.length <= 500) {
-      try {
-        regexFilter = new RegExp(filters.regex, 'i');
-      } catch (error) {
-        logWarn('storage', 'Invalid regex filter passed to hybridSearchCode; skipping regex', {
+      // Validate against ReDoS using safe-regex2 (AST-based star-height analysis)
+      if (!safeRegex(filters.regex)) {
+        logWarn('storage', 'Regex filter rejected: ReDoS vulnerability detected', {
           regex: filters.regex,
-          error: error instanceof Error ? error.message : String(error),
         });
+      } else {
+        try {
+          regexFilter = new RegExp(filters.regex, 'i');
+        } catch (error) {
+          logWarn('storage', 'Invalid regex filter passed to hybridSearchCode; skipping regex', {
+            regex: filters.regex,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
 

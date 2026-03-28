@@ -1,5 +1,5 @@
 import { StorageDispatcherBase } from './base.js';
-import type { TokenStatsByEvent, TokenStatsSummary } from '../types.js';
+import type { TokenStatRecord, TokenStatsByEvent, TokenStatsSummary } from '../types.js';
 
 export class TokenStatsDispatcherMixin extends StorageDispatcherBase {
   async updateTokenFrequencies(tokens: string[]): Promise<void> {
@@ -61,7 +61,7 @@ export class TokenStatsDispatcherMixin extends StorageDispatcherBase {
   // Token Stats
   // ===========================================================================
 
-  async recordTokenStat(record: any): Promise<void> {
+  async recordTokenStat(record: TokenStatRecord): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres)
       return this.postgres.recordTokenStat(record);
     const sqlite = await this.getSqliteFns();
