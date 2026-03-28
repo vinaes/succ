@@ -110,9 +110,11 @@ export function validateTaskGraph(tasks: Task[]): ValidationResult {
     for (let j = i + 1; j < tasks.length; j++) {
       const a = tasks[i];
       const b = tasks[j];
-      const overlap = a.files_to_modify.filter((f) => b.files_to_modify.includes(f));
+      const bFiles = new Set(b.files_to_modify);
+      const overlap = a.files_to_modify.filter((f) => bFiles.has(f));
       if (overlap.length > 0) {
-        const hasDep = a.depends_on.includes(b.id) || b.depends_on.includes(a.id);
+        const bDeps = new Set(b.depends_on);
+        const hasDep = a.depends_on.includes(b.id) || bDeps.has(a.id);
         if (!hasDep) {
           warnings.push(
             `Tasks ${a.id} and ${b.id} both modify ${overlap.join(', ')} but have no dependency`

@@ -126,9 +126,9 @@ process.stdin.on('end', async () => {
             totals.text += chars;
             break;
 
-          case 'tool_use':
-            chars = block.input ? JSON.stringify(block.input).length : 0;
-            chars += (block.name || '').length + (block.id || '').length;
+          case 'tool_use': {
+            const inputLen = block.input ? JSON.stringify(block.input).length : 0;
+            chars = inputLen + (block.name || '').length + (block.id || '').length;
             totals.tool_use += chars;
 
             // Track per-tool stats
@@ -137,9 +137,7 @@ process.stdin.on('end', async () => {
               if (!toolCounts[block.name])
                 toolCounts[block.name] = { calls: 0, inputChars: 0, resultChars: 0 };
               toolCounts[block.name].calls++;
-              toolCounts[block.name].inputChars += block.input
-                ? JSON.stringify(block.input).length
-                : 0;
+              toolCounts[block.name].inputChars += inputLen;
             }
             break;
 

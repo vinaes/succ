@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.5.68",
+  "version": "1.5.69",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -87,12 +87,12 @@
     "inquirer": "^13.2.2",
     "is-installed-globally": "^1.0.0",
     "minimatch": "^10.2.4",
-    "onnxruntime-node": "1.24.1",
+    "onnxruntime-node": "1.24.3",
     "ora": "^9.3.0",
     "p-limit": "^7.3.0",
     "parse-diff": "^0.11.1",
     "smol-toml": "^1.6.0",
-    "sqlite-vec": "0.1.7-alpha.2",
+    "sqlite-vec": "0.1.7",
     "vscode-languageserver-protocol": "^3.17.5",
     "web-tree-sitter": "^0.26.5",
     "ws": "^8.19.0",
@@ -135,6 +135,6 @@
     "node": ">=20.0.0"
   },
   "overrides": {
-    "onnxruntime-node": "1.24.1"
+    "onnxruntime-node": "1.24.3"
   }
 }

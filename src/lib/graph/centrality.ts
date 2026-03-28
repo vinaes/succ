@@ -68,14 +68,27 @@ export async function updateCentralityCache(): Promise<{ updated: number }> {
     normalized: normalized.get(memId) ?? 0,
   }));
 
-  // Chunk writes to avoid unbounded fan-out on large graphs
+  // Chunk writes to avoid unbounded fan-out on large graphs.
+  // Use Promise.allSettled so one failed upsert doesn't abort the entire batch.
   const CHUNK_SIZE = 50;
+  let successCount = 0;
   for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
-    await Promise.all(chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized)));
+    const results = await Promise.allSettled(
+      chunk.map((e) => upsertCentralityScore(e.memId, e.degree, e.normalized))
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logWarn('centrality', 'Failed to upsert centrality score', {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      } else {
+        successCount++;
+      }
+    }
   }
 
-  return { updated: entries.length };
+  return { updated: successCount };
 }
 
 /**
@@ -108,19 +121,38 @@ export async function updateCentralityScores(): Promise<{ updated: number }> {
     if (score > maxScore) maxScore = score;
   }
 
-  let count = 0;
-  for (const [memId, score] of pageRankScores) {
-    const normalized = maxScore > 0 ? score / maxScore : 0;
-    // Note: the DB column is named `degree` (from original degree centrality)
-    // but we repurpose it to store the raw PageRank score. Only
-    // `normalized_degree` (0-1 range) is read by consumers
-    // (getCentralityScores), so the raw column's semantics don't affect
-    // downstream behavior.
-    await upsertCentralityScore(memId, score, normalized);
-    count++;
+  const entries = Array.from(pageRankScores.entries()).map(([memId, score]) => ({
+    memId,
+    score,
+    normalized: maxScore > 0 ? score / maxScore : 0,
+  }));
+
+  // Chunk writes to avoid unbounded fan-out on large graphs.
+  // Use Promise.allSettled so one failed upsert doesn't abort the entire batch.
+  // Note: the DB column is named `degree` (from original degree centrality)
+  // but we repurpose it to store the raw PageRank score. Only
+  // `normalized_degree` (0-1 range) is read by consumers
+  // (getCentralityScores), so the raw column's semantics don't affect
+  // downstream behavior.
+  const CHUNK_SIZE = 50;
+  let successCount = 0;
+  for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+    const chunk = entries.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.allSettled(
+      chunk.map((e) => upsertCentralityScore(e.memId, e.score, e.normalized))
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logWarn('centrality', 'Failed to upsert PageRank centrality score', {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      } else {
+        successCount++;
+      }
+    }
   }
 
-  return { updated: count };
+  return { updated: successCount };
 }
 
 /**

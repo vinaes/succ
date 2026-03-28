@@ -231,7 +231,9 @@ async function benchmarkQdrant() {
 
     // Cleanup - access private client via type assertion for benchmark cleanup
     const client = (store as any).client;
-    await client.deleteCollection('succ_bench_documents').catch(() => {});
+    await client.deleteCollection('succ_bench_documents').catch((err: unknown) => {
+      console.error('Benchmark Qdrant cleanup failed:', err);
+    });
     await store.close();
   } catch (error) {
     console.log(`  Skipped: ${error instanceof Error ? error.message : String(error)}`);

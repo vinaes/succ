@@ -30,7 +30,8 @@ async function isPostgresAvailable(): Promise<boolean> {
     await backend.getDocumentStats();
     await backend.close();
     return true;
-  } catch {
+  } catch (err) {
+    console.error('PostgreSQL availability check failed:', err);
     return false;
   }
 }
@@ -386,8 +387,8 @@ describe('PostgreSQL Backend Integration', async () => {
       // Clean up test skill
       try {
         await backend.deleteSkill(testSkillName);
-      } catch {
-        // intentional
+      } catch (err) {
+        console.error('Skill cleanup failed:', err);
       }
     });
 

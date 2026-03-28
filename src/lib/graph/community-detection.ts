@@ -261,7 +261,7 @@ export async function detectCommunitiesLP(
   const memIds = allMemories.map((mem) => mem.id);
   for (let i = 0; i < memIds.length; i += BATCH_SIZE) {
     const batch = memIds.slice(i, i + BATCH_SIZE);
-    await Promise.all(
+    const results = await Promise.allSettled(
       batch.map((memId) => {
         let tags = memoryTagMap.get(memId) ?? [];
 
@@ -280,6 +280,13 @@ export async function detectCommunitiesLP(
         return updateMemoryTags(memId, tags);
       })
     );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logWarn('community-detection', 'Failed to update memory tags during LP detection', {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    }
   }
 
   return { communities, isolated, iterations: lpResult.iterations };
@@ -344,7 +351,7 @@ async function applyCommunityTags(
 
   for (let i = 0; i < allMemories.length; i += BATCH_SIZE) {
     const batch = allMemories.slice(i, i + BATCH_SIZE);
-    await Promise.all(
+    const results = await Promise.allSettled(
       batch.map((mem) => {
         const communityId = memberToCommunity.get(mem.id);
 
@@ -377,6 +384,13 @@ async function applyCommunityTags(
         return Promise.resolve();
       })
     );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logWarn('community-detection', 'Failed to update memory tags during community tagging', {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    }
   }
 }
 
