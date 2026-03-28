@@ -96,8 +96,7 @@ try { doMore(); } catch (e) { handle(e); }
     });
 
     it('should search Go via dynamic language registration', async () => {
-      const goCode =
-        'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("hello")\n}\n';
+      const goCode = 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("hello")\n}\n';
       const matches = await searchPatternInContent(goCode, 'main.go', '$FN($$$ARGS)');
       expect(matches).toHaveLength(1);
       expect(matches[0].text).toContain('fmt.Println');

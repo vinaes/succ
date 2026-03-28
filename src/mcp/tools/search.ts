@@ -25,6 +25,7 @@ import {
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { getErrorMessage } from '../../lib/errors.js';
+import { searchPatternInContent, formatPatternResults } from '../../lib/search/ast-grep-search.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -319,6 +320,12 @@ export function registerSearchTools(server: McpServer) {
           .describe(
             'Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'
           ),
+        pattern: z
+          .string()
+          .optional()
+          .describe(
+            'Structural pattern for ast-grep matching (20 languages). Uses metavariables: $VAR (single node), $$VAR (optional), $$$VAR (multiple). Example: "try { $$$BODY } catch ($ERR) { $$$HANDLER }"'
+          ),
         extract: z
           .string()
           .optional()
@@ -343,6 +350,7 @@ export function registerSearchTools(server: McpServer) {
       include_paths,
       exclude_paths,
       output,
+      pattern,
       extract,
       project_path,
     }) => {
@@ -363,11 +371,11 @@ export function registerSearchTools(server: McpServer) {
         const queryEmbedding = await getEmbedding(query);
         // Build filters from optional params
         const filters = regex || symbol_type ? { regex, symbolType: symbol_type } : undefined;
-        // Overfetch if path filters are applied
+        // Overfetch if path filters or pattern matching are applied
         const hasPathFilters =
           (include_paths && include_paths.length > 0) ||
           (exclude_paths && exclude_paths.length > 0);
-        const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
+        const fetchLimit = hasPathFilters || pattern ? Math.min(limit * 5, 100) : limit;
         // Hybrid search: BM25 + vector with RRF fusion
         let codeResults = await hybridSearchCode(
           query,
@@ -381,6 +389,43 @@ export function registerSearchTools(server: McpServer) {
         // Apply path filters
         if (hasPathFilters) {
           codeResults = filterByPaths(codeResults, include_paths, exclude_paths).slice(0, limit);
+        }
+
+        // Structural pattern matching via ast-grep
+        if (pattern && codeResults.length > 0) {
+          const patternMatches = [];
+          for (const result of codeResults) {
+            const filePath = result.file_path.replace(/^code:/, '');
+            const matches = await searchPatternInContent(result.content, filePath, pattern);
+            for (const m of matches) {
+              patternMatches.push(m);
+              if (patternMatches.length >= limit) break;
+            }
+            if (patternMatches.length >= limit) break;
+          }
+
+          if (patternMatches.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `No structural matches for pattern "${pattern}" in ${codeResults.length} candidate results for "${query}".`,
+                },
+              ],
+            };
+          }
+
+          const patternFormatted = formatPatternResults(patternMatches, output);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}"):
+
+${patternFormatted}`,
+              },
+            ],
+          };
         }
 
         if (codeResults.length === 0) {
