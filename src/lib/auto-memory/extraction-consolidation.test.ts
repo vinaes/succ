@@ -411,13 +411,13 @@ describe('executeUpdates', () => {
     expect(executed).toBe(0);
   });
 
-  it('should cap confidence at 0.5 for auto-extracted', async () => {
+  it('should cap confidence at 0.9 for auto-extracted updates', async () => {
     vi.mocked(saveMemory).mockResolvedValue({ id: 100, isDuplicate: false });
 
     const updates: FactToUpdate[] = [
       {
         existingMemoryId: 1,
-        content: 'High confidence update that should still be capped at half for auto extracted',
+        content: 'High confidence update that should still be capped at 0.9 for auto extracted',
         type: 'decision',
         confidence: 0.95,
         tags: ['high-conf'],
@@ -426,9 +426,10 @@ describe('executeUpdates', () => {
 
     await executeUpdates(updates);
 
-    // Check that saveMemory was called with confidence capped at 0.5
+    // Check that saveMemory was called with confidence capped at 0.9
     const saveCall = vi.mocked(saveMemory).mock.calls[0];
-    expect(saveCall[4]?.confidence).toBeLessThanOrEqual(0.5);
+    expect(saveCall[4]?.confidence).toBeLessThanOrEqual(0.9);
+    expect(saveCall[4]?.confidence).toBe(0.9);
   });
 });
 
@@ -442,8 +443,10 @@ describe('executeDeletes', () => {
   });
 
   it('should invalidate existing memories', async () => {
-    vi.mocked(getMemoryById).mockResolvedValue({ id: 10, content: 'old' });
-    vi.mocked(invalidateMemory).mockResolvedValue(true);
+    vi.mocked(getMemoryById)
+      .mockResolvedValueOnce({ id: 10, content: 'old' })
+      .mockResolvedValueOnce({ id: 20, content: 'old' });
+    vi.mocked(invalidateMemory).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
 
     const executed = await executeDeletes([10, 20]);
 

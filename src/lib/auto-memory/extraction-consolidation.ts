@@ -25,7 +25,18 @@ import { logInfo, logWarn } from '../fault-logger.js';
 import { getErrorMessage } from '../errors.js';
 import { scoreMemory } from '../quality.js';
 import { getConfig } from '../config.js';
-import type { SourceType, Memory } from '../storage/types.js';
+import type { SourceType, MemoryType, Memory } from '../storage/types.js';
+
+// ============================================================================
+// Shared Constants
+// ============================================================================
+
+/** Default similarity threshold for finding related memories during consolidation */
+export const CONSOLIDATION_SIMILARITY_THRESHOLD = 0.75;
+/** Default max similar memories to compare per fact */
+export const CONSOLIDATION_TOP_K = 5;
+/** Default LLM timeout in ms for consolidation calls */
+export const CONSOLIDATION_LLM_TIMEOUT = 30000;
 
 // ============================================================================
 // Types
@@ -64,7 +75,7 @@ export interface ExtractionConsolidationResult {
 
 export interface FactToSave {
   content: string;
-  type: string;
+  type: MemoryType;
   confidence: number;
   tags: string[];
 }
@@ -74,7 +85,7 @@ export interface FactToUpdate {
   existingMemoryId: number;
   /** New content (potentially merged) */
   content: string;
-  type: string;
+  type: MemoryType;
   confidence: number;
   tags: string[];
 }
@@ -195,9 +206,9 @@ export async function consolidateExtractedFacts(
     dryRun?: boolean;
   }
 ): Promise<ExtractionConsolidationResult> {
-  const threshold = options?.similarityThreshold ?? 0.75;
-  const topK = options?.topK ?? 5;
-  const llmTimeout = options?.llmTimeout ?? 30000;
+  const threshold = options?.similarityThreshold ?? CONSOLIDATION_SIMILARITY_THRESHOLD;
+  const topK = options?.topK ?? CONSOLIDATION_TOP_K;
+  const llmTimeout = options?.llmTimeout ?? CONSOLIDATION_LLM_TIMEOUT;
   const dryRun = options?.dryRun ?? false;
 
   const result: ExtractionConsolidationResult = {
@@ -221,7 +232,7 @@ export async function consolidateExtractedFacts(
       if (similarMemories.length === 0 || dryRun) {
         result.toAdd.push({
           content: fact.content,
-          type: fact.type,
+          type: fact.type as MemoryType,
           confidence: fact.confidence,
           tags: fact.tags,
         });
@@ -231,12 +242,10 @@ export async function consolidateExtractedFacts(
       // Step 2: Remap real IDs to sequential integers (ID remapping trick)
       // This prevents the LLM from hallucinating UUIDs or confusing large integer IDs
       const idMap = new Map<number, number>(); // seqId -> realId
-      const reverseMap = new Map<number, number>(); // realId -> seqId
       const mappedMemories = similarMemories.map(
         (mem: Memory & { similarity?: number }, idx: number) => {
           const seqId = idx + 1;
           idMap.set(seqId, mem.id);
-          reverseMap.set(mem.id, seqId);
           return {
             seqId,
             content: mem.content,
@@ -263,7 +272,7 @@ export async function consolidateExtractedFacts(
         );
         result.fallbackAdd.push({
           content: fact.content,
-          type: fact.type,
+          type: fact.type as MemoryType,
           confidence: fact.confidence,
           tags: fact.tags,
         });
@@ -281,7 +290,7 @@ export async function consolidateExtractedFacts(
         case 'ADD':
           result.toAdd.push({
             content: fact.content,
-            type: fact.type,
+            type: fact.type as MemoryType,
             confidence: fact.confidence,
             tags: fact.tags,
           });
@@ -292,7 +301,7 @@ export async function consolidateExtractedFacts(
             result.toUpdate.push({
               existingMemoryId: realExistingId,
               content: parsed.mergedContent || fact.content,
-              type: fact.type,
+              type: fact.type as MemoryType,
               confidence: Math.min(fact.confidence + 0.1, 0.95), // Slight confidence boost for updates
               tags: fact.tags,
             });
@@ -304,7 +313,7 @@ export async function consolidateExtractedFacts(
             );
             result.toAdd.push({
               content: fact.content,
-              type: fact.type,
+              type: fact.type as MemoryType,
               confidence: fact.confidence,
               tags: fact.tags,
             });
@@ -326,7 +335,7 @@ export async function consolidateExtractedFacts(
           // Unexpected — fall back to ADD
           result.toAdd.push({
             content: fact.content,
-            type: fact.type,
+            type: fact.type as MemoryType,
             confidence: fact.confidence,
             tags: fact.tags,
           });
@@ -344,7 +353,7 @@ export async function consolidateExtractedFacts(
       );
       result.fallbackAdd.push({
         content: fact.content,
-        type: fact.type,
+        type: fact.type as MemoryType,
         confidence: fact.confidence,
         tags: fact.tags,
       });
@@ -382,8 +391,8 @@ export async function executeUpdates(
         [...new Set([...update.tags, 'auto_extracted', 'updated'])],
         undefined,
         {
-          type: update.type as any,
-          confidence: Math.min(update.confidence * 0.5, 0.5), // Auto-extracted cap
+          type: update.type,
+          confidence: Math.min(update.confidence, 0.9), // Cap auto-extracted updates at 0.9
           sourceType,
           qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
         }
@@ -440,7 +449,11 @@ export function isExtractionConsolidationEnabled(): boolean {
   try {
     const config = getConfig();
     return config.auto_memory?.extraction_consolidation === true;
-  } catch {
+  } catch (err) {
+    logWarn(
+      'extraction-consolidation',
+      `Failed to check consolidation config: ${getErrorMessage(err)}`
+    );
     return false;
   }
 }

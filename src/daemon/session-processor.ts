@@ -31,6 +31,9 @@ import {
   executeUpdates,
   executeDeletes,
   isExtractionConsolidationEnabled,
+  CONSOLIDATION_SIMILARITY_THRESHOLD,
+  CONSOLIDATION_TOP_K,
+  CONSOLIDATION_LLM_TIMEOUT,
 } from '../lib/auto-memory/extraction-consolidation.js';
 import type { ExtractedFactInput } from '../lib/auto-memory/extraction-consolidation.js';
 
@@ -412,9 +415,9 @@ export async function processSessionEnd(
       try {
         log(`[session-processor] Running extraction consolidation on ${facts.length} facts`);
         const consolidation = await consolidateExtractedFacts(facts as ExtractedFactInput[], {
-          similarityThreshold: 0.75,
-          topK: 5,
-          llmTimeout: 30000,
+          similarityThreshold: CONSOLIDATION_SIMILARITY_THRESHOLD,
+          topK: CONSOLIDATION_TOP_K,
+          llmTimeout: CONSOLIDATION_LLM_TIMEOUT,
         });
 
         // Execute UPDATE and DELETE decisions
@@ -467,13 +470,13 @@ export async function processSessionEnd(
 
     log(`[session-processor] Saved ${saveResult.saved} facts, skipped ${saveResult.skipped}`);
 
-    // Build learnings list from saved facts
-    result.learnings = facts
+    // Build learnings list from saved facts (use factsToSave, not original facts)
+    result.learnings = factsToSave
       .filter((f) => f.type === 'learning' || f.type === 'decision')
       .map((f) => f.content);
 
-    // Build summary from all facts
-    result.summary = facts.map((f) => `[${f.type}] ${f.content}`).join('\n\n');
+    // Build summary from saved facts (use factsToSave, not original facts)
+    result.summary = factsToSave.map((f) => `[${f.type}] ${f.content}`).join('\n\n');
 
     // 4. Generate next-session-context.md
     await generateNextSessionContext(content, result.learnings);

@@ -25,6 +25,9 @@ import {
   executeUpdates,
   executeDeletes,
   isExtractionConsolidationEnabled,
+  CONSOLIDATION_SIMILARITY_THRESHOLD,
+  CONSOLIDATION_TOP_K,
+  CONSOLIDATION_LLM_TIMEOUT,
 } from './auto-memory/extraction-consolidation.js';
 import type { ExtractedFactInput } from './auto-memory/extraction-consolidation.js';
 
@@ -332,9 +335,9 @@ export async function extractSessionSummary(
         logInfo('session-summary', `Running extraction consolidation on ${facts.length} facts`);
       }
       const consolidation = await consolidateExtractedFacts(facts as ExtractedFactInput[], {
-        similarityThreshold: 0.75,
-        topK: 5,
-        llmTimeout: 30000,
+        similarityThreshold: CONSOLIDATION_SIMILARITY_THRESHOLD,
+        topK: CONSOLIDATION_TOP_K,
+        llmTimeout: CONSOLIDATION_LLM_TIMEOUT,
       });
 
       // Execute UPDATE and DELETE decisions
