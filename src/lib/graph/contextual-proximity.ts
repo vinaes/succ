@@ -122,8 +122,8 @@ export async function createProximityLinks(
     return { created: 0, skipped: 0, total_pairs: filtered.length };
   }
 
-  // Find max count for weight normalization
-  const maxCount = Math.max(1, ...filtered.map((p) => p.count));
+  // Find max count for weight normalization (use reduce to avoid stack overflow on large arrays)
+  const maxCount = filtered.reduce((max, p) => (p.count > max ? p.count : max), 1);
 
   // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls).
   // Use Promise.allSettled so one failed fetch doesn't abort the entire batch.
