@@ -465,6 +465,9 @@ export async function scoreWithApi(
     }
 
     const data = await response.json();
+    if (!Array.isArray(data?.choices) || data.choices.length === 0) {
+      throw new ValidationError('API response missing choices array');
+    }
     const result = parseScoreResponse(data.choices[0]?.message?.content || '');
     return { ...result, mode: 'api' };
   } catch (error) {
