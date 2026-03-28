@@ -7,6 +7,7 @@
  */
 
 import { getAllMemoriesForExport, getMemoryLinks, createMemoryLink } from '../storage/index.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // Source Normalization
@@ -124,12 +125,20 @@ export async function createProximityLinks(
   // Find max count for weight normalization
   const maxCount = Math.max(1, ...filtered.map((p) => p.count));
 
-  // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls)
+  // Batch-fetch all links for relevant memory IDs before the loop (avoids N+1 DB calls).
+  // Use Promise.allSettled so one failed fetch doesn't abort the entire batch.
   const uniqueIds = [...new Set(filtered.flatMap((p) => [p.node_1, p.node_2]))];
-  const linkResults = await Promise.all(uniqueIds.map((id) => getMemoryLinks(id)));
+  const linkResults = await Promise.allSettled(uniqueIds.map((id) => getMemoryLinks(id)));
   const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>>>();
   for (let i = 0; i < uniqueIds.length; i++) {
-    linksById.set(uniqueIds[i], linkResults[i]);
+    const result = linkResults[i];
+    if (result.status === 'fulfilled') {
+      linksById.set(uniqueIds[i], result.value);
+    } else {
+      logWarn('contextual-proximity', `Failed to fetch links for memory ${uniqueIds[i]}`, {
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
   }
 
   let created = 0;
