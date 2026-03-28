@@ -11,6 +11,7 @@ import {
   createErrorResponse,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 import { generatePrd } from '../../lib/prd/generate.js';
 import { runPrd } from '../../lib/prd/runner.js';
 import { exportPrdToObsidian, exportAllPrds } from '../../lib/prd/export.js';
@@ -139,7 +140,7 @@ export function registerPrdTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('prd', 'Error generating PRD', { error: msg });
             return createErrorResponse(`Error generating PRD: ${msg}`);
           }
@@ -157,7 +158,7 @@ export function registerPrdTools(server: McpServer) {
             const lines = entries.map((e) => `${e.id} | ${e.status.padEnd(11)} | ${e.title}`);
             return createToolResponse(`PRDs:\n${lines.join('\n')}`);
           } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('prd', 'Error listing PRDs', { error: msg });
             return createErrorResponse(`Error listing PRDs: ${msg}`);
           }
@@ -202,7 +203,7 @@ export function registerPrdTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('prd', 'Error getting PRD status', { error: msg });
             return createErrorResponse(`Error: ${msg}`);
           }
@@ -242,7 +243,7 @@ export function registerPrdTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('prd', 'Error running PRD', { error: msg });
             return createErrorResponse(`Error running PRD: ${msg}`);
           }
@@ -266,7 +267,7 @@ export function registerPrdTools(server: McpServer) {
               `Exported ${result.prdId}: ${result.filesCreated} files → ${result.outputDir}\n\nGenerated:\n- Overview.md (summary + embedded dependency graph)\n- Timeline.md (Mermaid Gantt chart)\n- Dependencies.md (Mermaid flowchart DAG)\n- Tasks/*.md (per-task detail pages)`
             );
           } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('prd', 'Error exporting PRD', { error: msg });
             return createErrorResponse(`Error exporting PRD: ${msg}`);
           }

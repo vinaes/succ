@@ -19,6 +19,7 @@ import {
 import { fetchAsMarkdown, extractFromUrl } from '../../lib/md-fetch.js';
 
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 const COMPONENT = 'web-fetch';
 
 export function registerWebFetchTools(server: McpServer) {
@@ -86,7 +87,7 @@ export function registerWebFetchTools(server: McpServer) {
             }
           } catch (error) {
             logWarn('web-fetch', 'Failed to parse extraction schema JSON string', {
-              error: error instanceof Error ? error.message : String(error),
+              error: getErrorMessage(error),
             });
             return createErrorResponse('Invalid JSON schema string', COMPONENT);
           }
@@ -101,7 +102,7 @@ export function registerWebFetchTools(server: McpServer) {
               `Extracted from: ${result.url}\nValid: ${result.valid}\n\n${output}`
             );
           } catch (extractError: unknown) {
-            const msg = extractError instanceof Error ? extractError.message : String(extractError);
+            const msg = getErrorMessage(extractError);
             return createErrorResponse(
               `Failed to extract from ${url}: ${msg}`,
               COMPONENT,
@@ -159,7 +160,7 @@ export function registerWebFetchTools(server: McpServer) {
 
         return createToolResponse(lines);
       } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         let redactedUrl = url;
         try {
           const u = new URL(url);
@@ -169,7 +170,7 @@ export function registerWebFetchTools(server: McpServer) {
           redactedUrl = u.toString();
         } catch (redactError) {
           logWarn(COMPONENT, 'URL redaction failed, using raw host', {
-            error: redactError instanceof Error ? redactError.message : String(redactError),
+            error: getErrorMessage(redactError),
           });
         }
         logWarn(COMPONENT, `Failed to fetch ${redactedUrl}`, { error: msg });

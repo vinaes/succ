@@ -303,7 +303,7 @@ export function registerRecallTool(server: McpServer): void {
             }
           } catch (err) {
             logWarn('mcp-memory', 'Query expansion failed', {
-              error: err instanceof Error ? err.message : String(err),
+              error: getErrorMessage(err),
             });
           }
         }
@@ -439,7 +439,7 @@ export function registerRecallTool(server: McpServer): void {
             allResults = await applyCentralityBoost(allResults, config.graph_centrality);
           } catch (error) {
             logWarn('mcp-memory', 'Centrality boost skipped due runtime error', {
-              error: error instanceof Error ? error.message : String(error),
+              error: getErrorMessage(error),
             });
           }
         }
@@ -482,7 +482,7 @@ export function registerRecallTool(server: McpServer): void {
             );
           } catch (error) {
             logWarn('mcp-memory', 'MMR reranking skipped due runtime error', {
-              error: error instanceof Error ? error.message : String(error),
+              error: getErrorMessage(error),
             });
           }
         }

@@ -1,5 +1,6 @@
 import { TEMPORAL_SUBQUERY_SYSTEM } from '../../../prompts/index.js';
 import { logWarn } from '../../../lib/fault-logger.js';
+import { getErrorMessage } from '../../../lib/errors.js';
 
 export function extractTemporalSubqueries(query: string): string[] {
   // EN: "between X and Y" / RU: "между X и Y"
@@ -74,7 +75,7 @@ export async function extractTemporalSubqueriesAsync(query: string): Promise<str
     }
   } catch (error) {
     logWarn('mcp-memory', 'Temporal query LLM decomposition failed', {
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     });
   }
 

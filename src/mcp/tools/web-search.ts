@@ -29,6 +29,7 @@ import {
 } from '../../lib/storage/index.js';
 import type { WebSearchToolName } from '../../lib/storage/types.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 
 // Approximate pricing per 1M tokens (USD) — OpenRouter models with web search
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -90,7 +91,7 @@ async function recordSearchToDb(
     });
   } catch (err) {
     logWarn('web-search', 'Failed to record web search stats', {
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     });
   }
 }
@@ -107,7 +108,7 @@ async function checkBudget(dailyBudget: number): Promise<string | null> {
     }
   } catch (err) {
     logWarn('web-search', 'Failed to check daily budget, allowing search', {
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     });
   }
   return null;
@@ -131,7 +132,7 @@ function formatCitations(
       title = result?.title || new URL(url).hostname;
     } catch (error) {
       logWarn('web-search', 'Failed to parse citation URL for hostname extraction', {
-        error: error instanceof Error ? error.message : String(error),
+        error: getErrorMessage(error),
       });
       title = url;
     }
@@ -193,7 +194,7 @@ async function saveResultToMemory(
     }
     return `\n_Saved to memory (id: ${result.id})._`;
   } catch (err) {
-    return `\n_Failed to save to memory: ${err instanceof Error ? err.message : String(err)}_`;
+    return `\n_Failed to save to memory: ${getErrorMessage(err)}_`;
   }
 }
 
@@ -333,7 +334,7 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('web-search', 'Quick search failed', { error: msg });
             return createErrorResponse(`Quick search failed: ${msg}`);
           }
@@ -403,7 +404,7 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('web-search', 'Web search failed', { error: msg });
             return createErrorResponse(`Web search failed: ${msg}`);
           }
@@ -475,7 +476,7 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(text);
           } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('web-search', 'Deep research failed', { error: msg });
             return createErrorResponse(`Deep research failed: ${msg}`);
           }
@@ -493,18 +494,12 @@ export function registerWebSearchTools(server: McpServer) {
             }
             const dbWarnings: string[] = [];
             if (recordsResult.status === 'rejected') {
-              const errMsg =
-                recordsResult.reason instanceof Error
-                  ? recordsResult.reason.message
-                  : String(recordsResult.reason);
+              const errMsg = getErrorMessage(recordsResult.reason);
               logWarn('web-search', 'Failed to fetch search history records', { error: errMsg });
               dbWarnings.push(`⚠ Search history unavailable: ${errMsg}`);
             }
             if (summaryResult.status === 'rejected') {
-              const errMsg =
-                summaryResult.reason instanceof Error
-                  ? summaryResult.reason.message
-                  : String(summaryResult.reason);
+              const errMsg = getErrorMessage(summaryResult.reason);
               logWarn('web-search', 'Failed to fetch search summary', { error: errMsg });
               dbWarnings.push(`⚠ Search summary unavailable: ${errMsg}`);
             }
@@ -562,7 +557,7 @@ export function registerWebSearchTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             logWarn('web-search', 'Failed to retrieve search history', { error: msg });
             return createErrorResponse(`Failed to retrieve search history: ${msg}`);
           }

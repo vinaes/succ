@@ -28,6 +28,7 @@ import {
 import { formatTokens, compressionPercent } from '../../lib/token-counter.js';
 import { analyzeRetention } from '../../lib/retention.js';
 import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
 import {
   projectPathParam,
   applyProjectPath,
@@ -137,7 +138,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to check index freshness for status overview', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
               // Skip freshness check if it fails
             }
@@ -167,7 +168,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to analyze memory retention health for status overview', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
               // Skip retention health if it fails
             }
@@ -204,7 +205,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to load current session counters for status overview', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
               /* ignore */
             }
@@ -222,7 +223,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to fetch web search history summary for status overview', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
               /* ignore */
             }
@@ -244,7 +245,7 @@ export function registerStatusTools(server: McpServer) {
                 );
               } catch (error) {
                 logWarn('status', 'Failed to reach md.succ.ai health check endpoint', {
-                  error: error instanceof Error ? error.message : String(error),
+                  error: getErrorMessage(error),
                 });
                 status.push('', '## Services', `  🔴 md.succ.ai: unreachable (${mdBase})`);
               }
@@ -270,7 +271,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to check update cache', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
             }
 
@@ -278,9 +279,7 @@ export function registerStatusTools(server: McpServer) {
 
             return createToolResponse(statusText);
           } catch (error) {
-            return createErrorResponse(
-              `Error getting status: ${error instanceof Error ? error.message : String(error)}`
-            );
+            return createErrorResponse(`Error getting status: ${getErrorMessage(error)}`);
           } finally {
             closeDb();
           }
@@ -364,7 +363,7 @@ export function registerStatusTools(server: McpServer) {
               }
             } catch (error) {
               logWarn('status', 'Failed to fetch web search history summary for stats view', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               });
               /* ignore */
             }
@@ -387,9 +386,7 @@ export function registerStatusTools(server: McpServer) {
 
             return createToolResponse(lines.join('\n'));
           } catch (error) {
-            return createErrorResponse(
-              `Error getting stats: ${error instanceof Error ? error.message : String(error)}`
-            );
+            return createErrorResponse(`Error getting stats: ${getErrorMessage(error)}`);
           } finally {
             closeDb();
           }
@@ -402,9 +399,7 @@ export function registerStatusTools(server: McpServer) {
             const result = await calculateAIReadinessScore();
             return createToolResponse(formatAIReadinessScore(result));
           } catch (error) {
-            return createErrorResponse(
-              `Error calculating score: ${error instanceof Error ? error.message : String(error)}`
-            );
+            return createErrorResponse(`Error calculating score: ${getErrorMessage(error)}`);
           } finally {
             closeDb();
           }
