@@ -417,7 +417,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
           const portFile = getDaemonPortFile();
           if (fs.existsSync(portFile)) {
             const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-            if (!isNaN(port)) {
+            if (!isNaN(port) && port > 0) {
               log(`[daemon] Another daemon already running (pid=${existingPid}, port=${port})`);
               process.exit(0);
             }

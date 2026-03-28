@@ -277,6 +277,7 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
           ),
         checkIntervalSeconds * 1000
       );
+      intervalId.unref();
     },
 
     stop(): void {
