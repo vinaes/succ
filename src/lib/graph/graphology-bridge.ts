@@ -55,6 +55,13 @@ export async function getGraph(forceRefresh = false): Promise<Graph> {
     return cached.graph;
   }
 
+  // Evict stale entries from other projects to prevent unbounded cache growth
+  for (const [key, entry] of graphCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      graphCache.delete(key);
+    }
+  }
+
   // Use DirectedGraph so that directional relationships (A→B vs B→A) and
   // multi-relational edges between the same pair of memories are preserved.
   // All graph algorithms used here (PageRank, betweenness, Louvain, Dijkstra)

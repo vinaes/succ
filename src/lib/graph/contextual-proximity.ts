@@ -129,7 +129,7 @@ export async function createProximityLinks(
   // Use Promise.allSettled so one failed fetch doesn't abort the entire batch.
   const uniqueIds = [...new Set(filtered.flatMap((p) => [p.node_1, p.node_2]))];
   const linkResults = await Promise.allSettled(uniqueIds.map((id) => getMemoryLinks(id)));
-  const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>>>();
+  const linksById = new Map<number, Awaited<ReturnType<typeof getMemoryLinks>> | null>();
   for (let i = 0; i < uniqueIds.length; i++) {
     const result = linkResults[i];
     if (result.status === 'fulfilled') {
@@ -138,6 +138,8 @@ export async function createProximityLinks(
       logWarn('contextual-proximity', `Failed to fetch links for memory ${uniqueIds[i]}`, {
         error: result.reason instanceof Error ? result.reason.message : String(result.reason),
       });
+      // Store null sentinel so downstream code can distinguish "fetch failed" from "no links"
+      linksById.set(uniqueIds[i], null);
     }
   }
 
@@ -145,11 +147,24 @@ export async function createProximityLinks(
   let skipped = 0;
 
   for (const pair of filtered) {
-    // Check if any link already exists between these two memories (using pre-fetched data)
+    // Fetch pre-loaded links for both nodes (null means fetch failed)
     const linksA = linksById.get(pair.node_1);
+    const linksB = linksById.get(pair.node_2);
+
+    // Skip only when BOTH fetches failed — we have no data to determine link existence.
+    // When at least one succeeded, we can check its outgoing/incoming edges for the pair.
+    if (linksA === null && linksB === null) {
+      skipped++;
+      continue;
+    }
+
+    // Check if any link already exists between these two memories (using pre-fetched data).
+    // A successful fetch that shows no link is sufficient proof of absence.
     const hasLink =
       linksA?.outgoing?.some((l: any) => l.target_id === pair.node_2) ||
-      linksA?.incoming?.some((l: any) => l.source_id === pair.node_2);
+      linksA?.incoming?.some((l: any) => l.source_id === pair.node_2) ||
+      linksB?.outgoing?.some((l: any) => l.target_id === pair.node_1) ||
+      linksB?.incoming?.some((l: any) => l.source_id === pair.node_1);
 
     if (hasLink) {
       skipped++;

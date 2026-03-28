@@ -8,7 +8,11 @@
 // NOTE: See also reflection-synthesizer.ts which extracts patterns/learnings from communities.
 // This module generates retrieval-oriented GraphRAG summaries; that one generates actionable insights.
 
-import { detectLouvainCommunities, type LouvainCommunity } from './graphology-bridge.js';
+import {
+  detectLouvainCommunities,
+  invalidateGraphCache,
+  type LouvainCommunity,
+} from './graphology-bridge.js';
 import { getMemoryById, saveMemory, deleteMemoriesByTag } from '../storage/index.js';
 import { getEmbedding } from '../embeddings.js';
 import { callLLM } from '../llm.js';
@@ -66,6 +70,10 @@ export async function generateCommunitySummaries(
         'community-summaries',
         `Removed ${result.oldSummariesRemoved} old community summaries`
       );
+      // Invalidate early so the graph reflects deletions even if every
+      // summarizeCommunity below returns null (no new links would trigger
+      // the per-community invalidation in that case).
+      invalidateGraphCache();
     } catch (error) {
       logWarn('community-summaries', 'Failed to remove old community summaries', {
         error: error instanceof Error ? error.message : String(error),
@@ -105,14 +113,24 @@ async function summarizeCommunity(community: LouvainCommunity): Promise<number |
   const memberContents: string[] = [];
   const promptSampleIds = allMemberIds.slice(0, MAX_MEMORIES_PER_PROMPT);
 
-  for (const memId of promptSampleIds) {
-    const mem = await getMemoryById(memId);
-    if (mem) {
+  const memResults = await Promise.allSettled(promptSampleIds.map((id) => getMemoryById(id)));
+  for (let i = 0; i < promptSampleIds.length; i++) {
+    const r = memResults[i];
+    if (r.status === 'rejected') {
+      logWarn(
+        'community-summaries',
+        `Failed to fetch memory ${promptSampleIds[i]} for community ${community.id}`,
+        {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        }
+      );
+    } else if (r.value) {
+      const mem = r.value;
       const truncated =
         mem.content.length > MAX_CONTENT_PER_MEMORY
           ? mem.content.substring(0, MAX_CONTENT_PER_MEMORY) + '...'
           : mem.content;
-      memberContents.push(`[#${memId}] ${truncated}`);
+      memberContents.push(`[#${promptSampleIds[i]}] ${truncated}`);
     }
   }
 
@@ -151,15 +169,28 @@ Write a concise 2-3 sentence summary that captures the shared theme, key insight
   });
 
   // Link the summary to ALL community member memories (not just the prompt sample)
-  for (const memId of allMemberIds) {
-    try {
-      await createMemoryLink(saveResult.id, memId, 'related');
-    } catch (err) {
-      logWarn('community-summaries', `Failed to link summary ${saveResult.id} to member ${memId}`, {
-        error: err instanceof Error ? err.message : String(err),
-      });
+  const LINK_BATCH_SIZE = 50;
+  for (let i = 0; i < allMemberIds.length; i += LINK_BATCH_SIZE) {
+    const batch = allMemberIds.slice(i, i + LINK_BATCH_SIZE);
+    const settled = await Promise.allSettled(
+      batch.map((memId) => createMemoryLink(saveResult.id, memId, 'related'))
+    );
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
+      if (r.status === 'rejected') {
+        logWarn(
+          'community-summaries',
+          `Failed to link summary ${saveResult.id} to member ${batch[j]}`,
+          {
+            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          }
+        );
+      }
     }
   }
+
+  // Invalidate cached graph so new links are picked up by subsequent operations
+  invalidateGraphCache();
 
   return saveResult.id;
 }
