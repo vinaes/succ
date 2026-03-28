@@ -10,11 +10,54 @@
 
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import path from 'path';
-import fs from 'fs';
+import fsp from 'fs/promises';
 import { getProjectRoot, getSuccDir } from '../lib/config.js';
 import { logWarn } from '../lib/fault-logger.js';
 import { getErrorMessage } from '../lib/errors.js';
 import { getBrainPath } from './helpers.js';
+
+/**
+ * Async recursive directory walk — replaces sync walkDir.
+ * Returns relative paths of .md files under `dir`.
+ */
+async function walkDir(dir: string, prefix: string = ''): Promise<string[]> {
+  const files: string[] = [];
+  let entries: import('fs').Dirent[];
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    logWarn('resources', `Cannot read directory ${dir}: ${getErrorMessage(err)}`);
+    return files;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dir, entry.name);
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      const subFiles = await walkDir(fullPath, relativePath);
+      files.push(...subFiles);
+    } else if (entry.name.endsWith('.md')) {
+      files.push(relativePath);
+    }
+  }
+  return files;
+}
+
+/**
+ * Try to read a file, returning its content or null if not found.
+ * Only logs on unexpected errors (not ENOENT).
+ */
+async function tryReadFile(filePath: string): Promise<string | null> {
+  try {
+    return await fsp.readFile(filePath, 'utf-8');
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      logWarn('resources', `Unexpected error reading ${filePath}: ${getErrorMessage(err)}`);
+    }
+    return null;
+  }
+}
 
 export function registerResources(server: McpServer) {
   // Resource: List brain vault files
@@ -24,33 +67,16 @@ export function registerResources(server: McpServer) {
     { description: 'List all files in the brain vault' },
     async () => {
       const brainPath = getBrainPath();
-      if (!fs.existsSync(brainPath)) {
+      try {
+        await fsp.access(brainPath);
+      } catch {
+        logWarn('resources', 'Brain vault directory not found');
         return {
           contents: [{ uri: 'brain://list', text: 'Brain vault not initialized. Run: succ init' }],
         };
       }
 
-      const files: string[] = [];
-      function walkDir(dir: string, prefix: string = '') {
-        let entries: fs.Dirent[];
-        try {
-          entries = fs.readdirSync(dir, { withFileTypes: true });
-        } catch (err) {
-          logWarn('resources', `Cannot read directory ${dir}: ${getErrorMessage(err)}`);
-          return;
-        }
-        for (const entry of entries) {
-          if (entry.name.startsWith('.')) continue;
-          const fullPath = path.join(dir, entry.name);
-          const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-          if (entry.isDirectory()) {
-            walkDir(fullPath, relativePath);
-          } else if (entry.name.endsWith('.md')) {
-            files.push(relativePath);
-          }
-        }
-      }
-      walkDir(brainPath);
+      const files = await walkDir(brainPath);
 
       const text =
         files.length > 0
@@ -85,19 +111,19 @@ export function registerResources(server: McpServer) {
 
       try {
         // Resolve all symlinks in the entire path hierarchy to prevent traversal via symlinked parents
-        const realBrain = fs.realpathSync(brainPath);
-        const realPath = fs.realpathSync(fullPath);
+        const realBrain = await fsp.realpath(brainPath);
+        const realPath = await fsp.realpath(fullPath);
         if (realPath !== realBrain && !realPath.startsWith(realBrain + path.sep)) {
           return { contents: [{ uri: uri.href, text: 'Error: Path traversal not allowed' }] };
         }
 
         // Keep explicit no-symlink policy for the leaf node
-        const stats = fs.lstatSync(fullPath);
+        const stats = await fsp.lstat(fullPath);
         if (stats.isSymbolicLink()) {
           return { contents: [{ uri: uri.href, text: 'Error: Symbolic links not allowed' }] };
         }
 
-        const content = fs.readFileSync(realPath, 'utf-8');
+        const content = await fsp.readFile(realPath, 'utf-8');
         return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: content }] };
       } catch (err) {
         logWarn('resources', `Failed to read brain file ${filePath}: ${getErrorMessage(err)}`);
@@ -113,7 +139,10 @@ export function registerResources(server: McpServer) {
     { description: 'Get the brain vault index or CLAUDE.md' },
     async () => {
       const brainPath = getBrainPath();
-      if (!fs.existsSync(brainPath)) {
+      try {
+        await fsp.access(brainPath);
+      } catch {
+        logWarn('resources', 'Brain vault directory not found for index');
         return { contents: [{ uri: 'brain://index', text: 'Brain vault not initialized.' }] };
       }
 
@@ -123,19 +152,12 @@ export function registerResources(server: McpServer) {
       const claudePath = path.join(brainPath, 'CLAUDE.md');
       const memoriesPath = path.join(brainPath, 'Memories.md');
 
-      if (fs.existsSync(projectMocPath)) {
-        const content = fs.readFileSync(projectMocPath, 'utf-8');
-        return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
-      }
-
-      if (fs.existsSync(claudePath)) {
-        const content = fs.readFileSync(claudePath, 'utf-8');
-        return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
-      }
-
-      if (fs.existsSync(memoriesPath)) {
-        const content = fs.readFileSync(memoriesPath, 'utf-8');
-        return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
+      const candidates = [projectMocPath, claudePath, memoriesPath];
+      for (const candidate of candidates) {
+        const content = await tryReadFile(candidate);
+        if (content !== null) {
+          return { contents: [{ uri: 'brain://index', mimeType: 'text/markdown', text: content }] };
+        }
       }
 
       return {
@@ -168,8 +190,8 @@ export function registerResources(server: McpServer) {
       ];
 
       for (const soulPath of soulPaths) {
-        if (fs.existsSync(soulPath)) {
-          const content = fs.readFileSync(soulPath, 'utf-8');
+        const content = await tryReadFile(soulPath);
+        if (content !== null) {
           return {
             contents: [
               {
