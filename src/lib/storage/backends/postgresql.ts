@@ -858,31 +858,32 @@ export class PostgresBackend {
     // Area 9: Composite indexes for frequent query patterns
     // ========================================================================
 
-    // Composite index for memory search filtering (project_id + source_type + invalidated_by)
+    // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
     await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_memories_project_source_type ON memories(project_id, source_type, type)'
+      'CREATE INDEX IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
     );
 
     // Composite index for active memories per project (most common query pattern)
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_memories_project_active
-      ON memories(project_id, created_at DESC)
+      ON memories(LOWER(project_id), created_at DESC)
       WHERE invalidated_by IS NULL
     `);
 
-    // GIN index on tags for fast JSONB containment queries (jsonb_path_ops supports @> operator)
+    // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
+    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
     );
 
-    // Composite index for documents (project + file_path for deletion queries)
+    // Composite index for documents — use LOWER(project_id) to match query predicates
     await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_documents_project_filepath ON documents(project_id, file_path)'
+      'CREATE INDEX IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
     );
 
     // Composite index for documents (project + symbol_type for code search)
     await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_documents_project_symbol ON documents(project_id, symbol_type) WHERE symbol_type IS NOT NULL'
+      'CREATE INDEX IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
     );
   }
 
@@ -1987,7 +1988,7 @@ export class PostgresBackend {
       [
         projectId,
         content,
-        tags.length > 0 ? JSON.stringify(tags) : null,
+        tags.length > 0 ? JSON.stringify(tags.map((t) => t.toLowerCase())) : null,
         source ?? null,
         type,
         qualityScore ?? null,
@@ -2176,16 +2177,13 @@ export class PostgresBackend {
               correction_count, is_invariant, priority_score, confidence, source_type, created_at
        FROM memories
        WHERE tags IS NOT NULL
-         AND EXISTS (
-           SELECT 1 FROM jsonb_array_elements_text(tags) elem
-           WHERE LOWER(elem) = LOWER($1)
-         )
+         AND tags @> $1::jsonb
          AND invalidated_by IS NULL
          AND (LOWER(project_id) = $3 OR project_id IS NULL)
        ORDER BY priority_score DESC NULLS LAST, created_at DESC, id DESC
        LIMIT $2
        OFFSET $4`,
-      [tag, limit, this.projectId, offset]
+      [JSON.stringify([tag.toLowerCase()]), limit, this.projectId, offset]
     );
 
     return result.rows.map((row) => ({
@@ -3159,7 +3157,7 @@ export class PostgresBackend {
   async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
     const pool = await this.getPool();
     await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [
-      JSON.stringify(tags),
+      JSON.stringify(tags.map((t) => t.toLowerCase())),
       memoryId,
       this.projectId,
     ]);
@@ -3814,7 +3812,7 @@ export class PostgresBackend {
           [
             this.projectId,
             memory.content,
-            memory.tags.length > 0 ? JSON.stringify(memory.tags) : null,
+            memory.tags.length > 0 ? JSON.stringify(memory.tags.map((t) => t.toLowerCase())) : null,
             memory.source ?? null,
             memory.type,
             memory.qualityScore?.score ?? null,
@@ -3983,16 +3981,14 @@ export class PostgresBackend {
 
   async deleteMemoriesByTag(tag: string): Promise<number> {
     const pool = await this.getPool();
-    // JSONB array containment: tags is a JSONB array, check if any element matches (case-insensitive)
+    // JSONB containment with @> operator — uses GIN(tags jsonb_path_ops) index.
+    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
     const result = await pool.query(
       `DELETE FROM memories
        WHERE tags IS NOT NULL
-         AND EXISTS (
-           SELECT 1 FROM jsonb_array_elements_text(tags) elem
-           WHERE LOWER(elem) = LOWER($1)
-         )
+         AND tags @> $1::jsonb
          AND (LOWER(project_id) = LOWER($2) OR project_id IS NULL)`,
-      [tag, this.projectId]
+      [JSON.stringify([tag.toLowerCase()]), this.projectId]
     );
     return result.rowCount ?? 0;
   }
