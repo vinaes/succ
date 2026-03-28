@@ -40,7 +40,7 @@ Or if running from source:
 | Tool | Actions | Description |
 |------|---------|-------------|
 | `succ_search` | — | Hybrid search in brain vault (BM25 + semantic). Output modes: `full`, `lean` |
-| `succ_search_code` | — | Search indexed code (hybrid BM25 + semantic). Regex/symbol filters. Output modes: `full`, `lean`, `signatures` |
+| `succ_search_code` | — | Search indexed code (hybrid BM25 + semantic). Regex/symbol/structural pattern (ast-grep) filters. Output modes: `full`, `lean`, `signatures` |
 | `succ_index` | `doc`, `code`, `refresh`, `analyze`, `symbols`, `scan` | Index files, refresh stale entries, analyze with LLM, extract AST symbols, recursive code scanning |
 | `succ_remember` | — | Save to memory (supports `global`, `files` for file-linking, `hook-rule` tags for dynamic pre-tool rules) |
 | `succ_recall` | — | Recall memories (searches both local and global) |
@@ -185,6 +185,7 @@ Higher threshold (default 0.2) filters out loosely related results — returns o
 | `limit` | number | 5 | Maximum results |
 | `threshold` | number | 0.25 | Similarity threshold (0-1) |
 | `regex` | string | — | Regex filter — only return results matching this pattern |
+| `pattern` | string | — | Structural AST pattern via ast-grep. Metavariables: `$VAR` (one node), `$$VAR` (zero+), `$$$VAR` (zero+ greedy). 20 languages supported |
 | `symbol_type` | `"function"` \| `"method"` \| `"class"` \| `"interface"` \| `"type_alias"` | — | Filter by AST symbol type |
 | `output` | `"full"` \| `"lean"` \| `"signatures"` | `"full"` | `lean` = file+lines, `signatures` = symbol names+signatures only |
 
@@ -227,6 +228,26 @@ Returns file paths and line ranges only — minimal tokens for navigation:
 2. src/lib/config.ts:42-103 (68.9%)
 ```
 
+**Structural pattern search (ast-grep):**
+```
+query: "error handling"
+pattern: "try { $$$BODY } catch ($ERR) { $$$HANDLER }"
+```
+Find all try/catch blocks using structural AST matching. Metavariables: `$VAR` matches one node, `$$VAR` matches zero or more, `$$$VAR` matches zero or more (greedy). Works across 20 languages: TypeScript, JavaScript, TSX, CSS, HTML (built-in) + Python, Go, Rust, Java, C, C++, C#, Ruby, Kotlin, Swift, Bash, Scala, PHP, JSON, YAML (dynamic).
+
+**Find all console.log calls:**
+```
+query: "logging"
+pattern: "console.log($$$ARGS)"
+```
+The `pattern` parameter works alongside hybrid search: `query` narrows candidates semantically, then `pattern` filters results structurally.
+
+**Find await expressions:**
+```
+query: "async operations"
+pattern: "await $EXPR"
+```
+
 **Combine filters:**
 ```
 query: "search"
@@ -234,7 +255,7 @@ regex: "export async function"
 symbol_type: "function"
 limit: 10
 ```
-Regex and symbol_type filters stack — both must match for a result to be included.
+Regex, pattern, and symbol_type filters stack — all specified filters must match for a result to be included.
 
 </details>
 
@@ -335,7 +356,7 @@ MCP tools are designed for **lightweight, single-item operations** that Claude c
 | **Index code (full)** | `succ index-code` | — | Heavy: scans entire codebase |
 | **Index code (file)** | — | `succ_index action="code"` | Light: single file on demand |
 | **Search brain** | `succ search` | `succ_search` | Both light, MCP adds output modes |
-| **Search code** | — | `succ_search_code` | Light: hybrid search with regex/symbol filters |
+| **Search code** | — | `succ_search_code` | Light: hybrid search with regex/symbol/structural pattern filters |
 | **Reindex stale** | — | `succ_index action="refresh"` | Light: mtime+hash detection |
 | **Extract symbols** | — | `succ_index action="symbols"` | Light: tree-sitter AST (13 languages) |
 | **Analyze (full)** | `succ analyze` | — | Heavy: runs multiple agents, generates docs |

@@ -54,6 +54,7 @@ succ analyze
 | Feature | Description |
 |---------|-------------|
 | **Hybrid Search** | Semantic embeddings + BM25 keyword matching with cross-encoder reranking and AST symbol boost |
+| **Structural Pattern Search** | ast-grep structural matching across 20 languages — find code by AST shape, not just text (e.g. `try { $$$BODY } catch ($ERR) { }`) |
 | **AST Code Indexing** | Tree-sitter parsing for 21 languages — 13 with full symbol extraction, 8 grammar-only |
 | **Code Scanning** | Recursive code discovery and indexing via `succ_index action="scan"` with .succignore support |
 | **Brain Vault** | Obsidian-compatible markdown knowledge base with hierarchical summaries |
@@ -598,7 +599,7 @@ It is not supported for unattended background processing, cloud deployments, or 
 
 ## Hybrid Search
 
-Combines semantic embeddings with BM25 keyword search. Code search includes AST symbol boost, regex post-filtering, and symbol type filtering (function, method, class, interface, type_alias). Three output modes: `full` (code blocks), `lean` (file+lines), `signatures` (symbol names only).
+Combines semantic embeddings with BM25 keyword search. Code search includes AST symbol boost, regex post-filtering, symbol type filtering (function, method, class, interface, type_alias), and structural pattern matching via ast-grep (20 languages). Three output modes: `full` (code blocks), `lean` (file+lines), `signatures` (symbol names only).
 
 | Aspect | Documents | Code |
 |--------|-----------|------|

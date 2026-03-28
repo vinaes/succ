@@ -281,7 +281,7 @@ export function registerSearchTools(server: McpServer) {
     'succ_search_code',
     {
       description:
-        'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
+        'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter, symbol_type filter, and structural pattern matching via ast-grep (20 languages). Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Structural pattern: succ_search_code(query="error handling", pattern="try { $$$BODY } catch ($ERR) { $$$HANDLER }")\n- Find all console.log calls: succ_search_code(query="logging", pattern="console.log($$$ARGS)")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
       inputSchema: {
         query: z
           .string()

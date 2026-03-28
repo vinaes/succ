@@ -179,7 +179,7 @@ You have access to succ MCP tools. Use them:
 - **succ_remember** content="what you learned" type="learning" — Record important decisions or patterns you discover
 - **succ_dead_end** approach="what you tried" why_failed="why it failed" — Record failed approaches so future tasks don't repeat them
 - **succ_search** query="topic" — Search project documentation
-- **succ_search_code** query="function name" — Search source code
+- **succ_search_code** query="function name" — Search source code (supports regex, symbol_type, and structural pattern matching via ast-grep)
 
 Always pass project_path to these tools.
 
