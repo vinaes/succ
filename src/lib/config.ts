@@ -908,12 +908,12 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
 
   if (fs.existsSync(daemonPidFile)) {
     const pid = parseInt(fs.readFileSync(daemonPidFile, 'utf-8').trim(), 10);
-    if (!Number.isNaN(pid)) {
+    if (!Number.isNaN(pid) && pid > 0) {
       daemonRunning = isProcessRunning(pid);
     }
     if (fs.existsSync(daemonPortFile)) {
       const parsedPort = parseInt(fs.readFileSync(daemonPortFile, 'utf-8').trim(), 10);
-      if (!Number.isNaN(parsedPort)) {
+      if (!Number.isNaN(parsedPort) && parsedPort > 0) {
         daemonPort = parsedPort;
       }
     }
