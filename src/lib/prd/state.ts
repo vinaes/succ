@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 import type { Prd, PrdExecution, PrdIndexEntry, Task } from './types.js';
 import { prdToIndexEntry } from './types.js';
 
@@ -92,7 +93,14 @@ export function loadIndex(): PrdIndexEntry[] {
   if (!fs.existsSync(indexPath)) {
     return [];
   }
-  return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  } catch (error) {
+    logWarn('prd-state', 'Failed to parse PRD index, returning empty list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 }
 
 /**
@@ -147,7 +155,14 @@ export function loadPrd(prdId: string): Prd | null {
   if (!fs.existsSync(jsonPath)) {
     return null;
   }
-  return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+  } catch (error) {
+    logWarn('prd-state', `Failed to parse PRD ${prdId}, returning null`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**
@@ -218,7 +233,14 @@ export function saveTasks(prdId: string, tasks: Task[]): void {
 export function loadTasks(prdId: string): Task[] {
   const tasksPath = getTasksPath(prdId);
   if (!fs.existsSync(tasksPath)) return [];
-  return JSON.parse(fs.readFileSync(tasksPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(tasksPath, 'utf-8'));
+  } catch (error) {
+    logWarn('prd-state', `Failed to parse tasks for PRD ${prdId}, returning empty list`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 }
 
 // ============================================================================
@@ -239,7 +261,14 @@ export function saveExecution(execution: PrdExecution): void {
 export function loadExecution(prdId: string): PrdExecution | null {
   const execPath = getExecutionPath(prdId);
   if (!fs.existsSync(execPath)) return null;
-  return JSON.parse(fs.readFileSync(execPath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(execPath, 'utf-8'));
+  } catch (error) {
+    logWarn('prd-state', `Failed to parse execution state for PRD ${prdId}, returning null`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 // ============================================================================
