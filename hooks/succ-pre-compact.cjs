@@ -97,8 +97,9 @@ process.stdin.on('end', async () => {
       let entry;
       try {
         entry = JSON.parse(trimmed);
-      } catch {
+      } catch (e) {
         malformedLines++;
+        if (malformedLines <= 3) log(succDir, `Malformed transcript line: ${e.message || e}`);
         continue;
       }
 
@@ -140,6 +141,7 @@ process.stdin.on('end', async () => {
               toolCounts[block.name].inputChars += inputLen;
             }
             break;
+          }
 
           case 'tool_result': {
             const rc = block.content;
