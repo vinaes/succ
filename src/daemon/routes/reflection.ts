@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { NotFoundError, ValidationError } from '../../lib/errors.js';
+import { NotFoundError, ValidationError, getErrorMessage } from '../../lib/errors.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import {
@@ -87,7 +87,7 @@ async function writeReflection(
       systemPrompt: REFLECTION_SYSTEM,
     });
   } catch (err) {
-    log(`[reflection] LLM call failed: ${err}`);
+    log(`[reflection] LLM call failed: ${getErrorMessage(err)}`);
     reflectionText = null;
   }
 
@@ -174,7 +174,7 @@ export async function preGenerateBriefing(
       briefingFailures.set(sessionId, { count: (prev?.count ?? 0) + 1, lastAttempt: Date.now() });
     }
   } catch (error) {
-    ctx.log(`[briefing] Pre-generation error: ${error}`);
+    ctx.log(`[briefing] Pre-generation error: ${getErrorMessage(error)}`);
     const prev = briefingFailures.get(sessionId);
     briefingFailures.set(sessionId, { count: (prev?.count ?? 0) + 1, lastAttempt: Date.now() });
   } finally {
@@ -213,7 +213,9 @@ export async function performReflection(
       }
       session.lastTranscriptSize = currentSize;
     } catch (error) {
-      ctx.log(`[reflection] Failed to stat transcript file for size check: ${error}`);
+      ctx.log(
+        `[reflection] Failed to stat transcript file for size check: ${getErrorMessage(error)}`
+      );
     }
 
     const memStats = await getMemoryStats();
@@ -279,7 +281,7 @@ export async function performReflection(
           flushBudgets();
         }
       } catch (err) {
-        ctx.log(`[observer] Mid-session extraction failed: ${err}`);
+        ctx.log(`[observer] Mid-session extraction failed: ${getErrorMessage(err)}`);
       }
     }
 
@@ -373,7 +375,7 @@ export async function performReflection(
             const result = await createProximityLinks({ minCooccurrence: 2 });
             ctx.log(`[reflection] Created ${result.created} proximity links`);
           } catch (err) {
-            ctx.log(`[reflection] Proximity failed: ${err}`);
+            ctx.log(`[reflection] Proximity failed: ${getErrorMessage(err)}`);
           }
 
           if (
@@ -405,13 +407,13 @@ export async function performReflection(
                 );
               }
             } catch (err) {
-              ctx.log(`[reflection] Synthesis failed: ${err}`);
+              ctx.log(`[reflection] Synthesis failed: ${getErrorMessage(err)}`);
             }
           }
 
           session.lastLinkCount = (session.lastLinkCount ?? 0) + cleanupResult.orphansConnected;
         } catch (err) {
-          ctx.log(`[reflection] Graph cleanup failed: ${err}`);
+          ctx.log(`[reflection] Graph cleanup failed: ${getErrorMessage(err)}`);
         }
       } else {
         ctx.log(`[reflection] Skipping graph cleanup (no changes)`);
@@ -431,13 +433,13 @@ export async function performReflection(
           ctx.log(`[reflection] Reflection written`);
         }
       } catch (err) {
-        ctx.log(`[reflection] Write reflection error: ${err}`);
+        ctx.log(`[reflection] Write reflection error: ${getErrorMessage(err)}`);
       }
     }
 
     ctx.log(`[reflection] Completed reflection for session ${sessionId}`);
   } catch (err) {
-    ctx.log(`[reflection] Error for session ${sessionId}: ${err}`);
+    ctx.log(`[reflection] Error for session ${sessionId}: ${getErrorMessage(err)}`);
   }
 }
 

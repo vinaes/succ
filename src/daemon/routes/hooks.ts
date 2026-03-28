@@ -914,29 +914,34 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             try {
               const memContent = fs.readFileSync(filePath, 'utf8');
               const bullets = parseMemoryMdBullets(memContent);
-              await Promise.allSettled(
-                bullets.map(async (bullet) => {
-                  try {
-                    // Scan each bullet for injection before persisting (Tier 1+2 + Tier 2.C semantic)
-                    const memSafe = await isMemorySafeAsync(bullet.text);
-                    if (!memSafe.safe) {
-                      ctx.log(
-                        `[hooks/memory-sync] Skipping MEMORY.md bullet with injection: ${memSafe.result?.description}`
+              // Process bullets with bounded concurrency to avoid SQLITE_BUSY
+              const BULLET_CONCURRENCY = 5;
+              for (let bi = 0; bi < bullets.length; bi += BULLET_CONCURRENCY) {
+                const chunk = bullets.slice(bi, bi + BULLET_CONCURRENCY);
+                await Promise.allSettled(
+                  chunk.map(async (bullet) => {
+                    try {
+                      // Scan each bullet for injection before persisting (Tier 1+2 + Tier 2.C semantic)
+                      const memSafe = await isMemorySafeAsync(bullet.text);
+                      if (!memSafe.safe) {
+                        ctx.log(
+                          `[hooks/memory-sync] Skipping MEMORY.md bullet with injection: ${memSafe.result?.description}`
+                        );
+                        return;
+                      }
+                      const embedding = await getEmbedding(bullet.text);
+                      await saveMemory(bullet.text, embedding, bullet.tags, 'memory-md-sync', {
+                        type: 'observation',
+                      });
+                    } catch (err) {
+                      logWarn(
+                        'hooks',
+                        `Memory bullet save failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
                       );
-                      return;
                     }
-                    const embedding = await getEmbedding(bullet.text);
-                    await saveMemory(bullet.text, embedding, bullet.tags, 'memory-md-sync', {
-                      type: 'observation',
-                    });
-                  } catch (err) {
-                    logWarn(
-                      'hooks',
-                      `Memory bullet save failed (fail-open): ${err instanceof Error ? err.message : String(err)}`
-                    );
-                  }
-                })
-              );
+                  })
+                );
+              }
             } catch (err) {
               logWarn(
                 'hooks',

@@ -106,9 +106,11 @@ export function loadIgnorePatterns(projectRoot: string): string[] {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0 && !line.startsWith('#'));
-  } catch (e: any) {
-    if (e?.code === 'ENOENT') return [];
-    throw new Error(`Failed to read ${ignorePath}: ${e?.message ?? e}`, { cause: e });
+  } catch (e: unknown) {
+    if (e instanceof Error && (e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new Error(`Failed to read ${ignorePath}: ${e instanceof Error ? e.message : String(e)}`, {
+      cause: e,
+    });
   }
 }
 
@@ -156,17 +158,18 @@ export function discoverCodeFiles(options: DiscoverOptions): DiscoverResult {
     });
     rawFiles = output.split('\n').filter((f) => f.length > 0);
     source = 'git';
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Fall back to directory walk only when git is not installed (ENOENT) or
     // the directory is not a git repository (exit code 128).  All other git
     // failures (permission errors, corrupt objects, …) are re-thrown so they
     // are visible rather than silently falling back to a potentially wrong set
     // of files.
+    const execErr = e as NodeJS.ErrnoException & { status?: number; stderr?: string };
     const isNotGit =
-      e?.code === 'ENOENT' ||
-      (e?.status === 128 &&
-        typeof e?.stderr === 'string' &&
-        e.stderr.includes('not a git repository'));
+      execErr?.code === 'ENOENT' ||
+      (execErr?.status === 128 &&
+        typeof execErr?.stderr === 'string' &&
+        execErr.stderr.includes('not a git repository'));
     if (!isNotGit) throw e;
     logWarn('scan-code', `git ls-files failed, falling back to directory walk: ${e}`);
     rawFiles = recursiveWalk(projectRoot, projectRoot, discoveryErrors);
@@ -438,10 +441,10 @@ export async function scanCode(options: {
           const relative = path.relative(projectRoot, filePath).replace(/\\/g, '/');
           errorDetails.push(`${relative}: ${result.error ?? 'unknown error'}`);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         errors++;
         const relative = path.relative(projectRoot, filePath).replace(/\\/g, '/');
-        errorDetails.push(`${relative}: ${error?.message ?? 'unknown error'}`);
+        errorDetails.push(`${relative}: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         processed++;
         if (processed % 50 === 0) {

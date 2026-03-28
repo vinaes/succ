@@ -23,6 +23,7 @@ import { scoreMemory } from '../lib/quality.js';
 import { scanSensitive } from '../lib/sensitive-filter.js';
 import { callLLM } from '../lib/llm.js';
 import { logWarn } from '../lib/fault-logger.js';
+import { getErrorMessage } from '../lib/errors.js';
 import { formatTranscriptLines, type TranscriptContent } from '../lib/transcript-utils.js';
 import { FACT_EXTRACTION_SYSTEM, SESSION_PROGRESS_EXTRACTION_PROMPT } from '../prompts/index.js';
 
@@ -197,7 +198,7 @@ async function extractFactsFromContent(
     const result = await runLLM(prompt, 45000, FACT_EXTRACTION_SYSTEM);
     return parseFactsResponse(result);
   } catch (err) {
-    log(`[session-processor] LLM extraction failed: ${err}`);
+    log(`[session-processor] LLM extraction failed: ${getErrorMessage(err)}`);
     return [];
   }
 }
@@ -297,7 +298,7 @@ async function saveFactsAsMemories(
         sourceType: 'auto_extracted',
       });
     } catch (err) {
-      log(`[session-processor] Failed to prepare fact for batch: ${err}`);
+      log(`[session-processor] Failed to prepare fact for batch: ${getErrorMessage(err)}`);
       skippedQuality++; // Count as skipped
     }
   }
@@ -426,11 +427,11 @@ export async function processSessionEnd(
         fs.unlinkSync(progressPath);
         log(`[session-processor] Cleaned up progress file`);
       } catch (err) {
-        log(`[session-processor] Failed to cleanup progress file: ${err}`);
+        log(`[session-processor] Failed to cleanup progress file: ${getErrorMessage(err)}`);
       }
     }
   } catch (err) {
-    log(`[session-processor] Error processing session: ${err}`);
+    log(`[session-processor] Error processing session: ${getErrorMessage(err)}`);
   }
 
   return result;

@@ -6,12 +6,13 @@
  */
 
 import fs from 'fs';
+import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import watcher from '@parcel/watcher';
 import type { AsyncSubscription, Event } from '@parcel/watcher';
 import { getProjectRoot } from '../lib/config.js';
-import { NotFoundError, ValidationError } from '../lib/errors.js';
+import { NotFoundError, ValidationError, getErrorMessage } from '../lib/errors.js';
 import { getEmbeddings } from '../lib/embeddings.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { withLock } from '../lib/lock.js';
@@ -102,7 +103,7 @@ async function indexDocFile(
   relativePath: string,
   log: (msg: string) => void
 ): Promise<void> {
-  const content = fs.readFileSync(filePath, 'utf-8');
+  const content = await fsp.readFile(filePath, 'utf-8');
   const hash = computeHash(content);
 
   // Check hash (fast path)
@@ -160,7 +161,7 @@ async function indexCode(
   relativePath: string,
   log: (msg: string) => void
 ): Promise<void> {
-  const content = fs.readFileSync(filePath, 'utf-8');
+  const content = await fsp.readFile(filePath, 'utf-8');
   const hash = computeHash(content);
 
   const existingHash = await getFileHash(`code:${relativePath}`);
@@ -247,26 +248,30 @@ export async function startWatcher(
     const codeFiles = validFiles.filter((f) => f.fileType === 'code');
     const docFiles = validFiles.filter((f) => f.fileType === 'doc');
 
-    // Process all files in parallel
-    const results = await Promise.allSettled([
-      ...codeFiles.map(async (f) => {
-        const action = f.event.type === 'create' ? '+' : '~';
-        log(`[watch] [${action}] ${f.relativePath}`);
-        watcherState!.lastChange = Date.now();
-        watcherState!.watchedFiles.add(f.relativePath);
-        await indexCode(f.event.path, f.relativePath, log);
-      }),
-      ...docFiles.map(async (f) => {
-        const action = f.event.type === 'create' ? '+' : '~';
-        log(`[watch] [${action}] ${f.relativePath}`);
-        watcherState!.lastChange = Date.now();
-        watcherState!.watchedFiles.add(f.relativePath);
-        await indexDocFile(f.event.path, f.relativePath, log);
-      }),
-    ]);
+    // Process files with bounded concurrency to avoid resource saturation
+    const BATCH_CONCURRENCY = 5;
+    const allFiles = [...codeFiles, ...docFiles];
+    const results: PromiseSettledResult<void>[] = [];
+
+    for (let i = 0; i < allFiles.length; i += BATCH_CONCURRENCY) {
+      const chunk = allFiles.slice(i, i + BATCH_CONCURRENCY);
+      const chunkResults = await Promise.allSettled(
+        chunk.map(async (f) => {
+          const action = f.event.type === 'create' ? '+' : '~';
+          log(`[watch] [${action}] ${f.relativePath}`);
+          watcherState!.lastChange = Date.now();
+          watcherState!.watchedFiles.add(f.relativePath);
+          if (f.fileType === 'code') {
+            await indexCode(f.event.path, f.relativePath, log);
+          } else {
+            await indexDocFile(f.event.path, f.relativePath, log);
+          }
+        })
+      );
+      results.push(...chunkResults);
+    }
 
     // Log any errors
-    const allFiles = [...codeFiles, ...docFiles];
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (result.status === 'rejected') {
@@ -311,7 +316,7 @@ export async function startWatcher(
           await removeDocFile(relativePath, log);
         }
       } catch (error) {
-        log(`[watch] Error removing ${relativePath}: ${error}`);
+        log(`[watch] Error removing ${relativePath}: ${getErrorMessage(error)}`);
       }
       return;
     }
@@ -347,7 +352,7 @@ export async function startWatcher(
     projectRoot,
     async (err, events) => {
       if (err) {
-        log(`[watch] Error: ${err}`);
+        log(`[watch] Error: ${getErrorMessage(err)}`);
         return;
       }
 
@@ -355,7 +360,7 @@ export async function startWatcher(
         try {
           await handleEvent(event);
         } catch (error) {
-          log(`[watch] Event handler error: ${error}`);
+          log(`[watch] Event handler error: ${getErrorMessage(error)}`);
         }
       }
     },

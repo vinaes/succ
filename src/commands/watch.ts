@@ -47,6 +47,20 @@ export async function startWatchDaemon(
       }),
     });
 
+    if (!response.ok) {
+      const rawBody = await response.text().catch(() => '');
+      let errorMsg = rawBody;
+      try {
+        const parsed = JSON.parse(rawBody);
+        errorMsg = parsed?.error ?? rawBody;
+      } catch {
+        // Not JSON — use raw text
+      }
+      logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(errorMsg));
+      console.error(`Failed to start watch service (HTTP ${response.status})`);
+      process.exit(1);
+    }
+
     const result = await response.json();
     if (result.success) {
       console.log(`   Status: Running`);
@@ -86,6 +100,12 @@ export async function stopWatchDaemon(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
     });
 
+    if (!response.ok) {
+      logWarn('watch', `Daemon returned ${response.status} for watch/stop`);
+      console.log('Watch service may not be running');
+      return;
+    }
+
     const result = await response.json();
     if (result.success) {
       console.log('👁️  Watch service stopped');
@@ -119,14 +139,19 @@ export async function watchDaemonStatus(): Promise<void> {
       method: 'GET',
     });
 
-    const status = await response.json();
-    console.log(`   Status: ${status.active ? 'Running' : 'Stopped'}`);
-    console.log(`   Patterns: ${status.patterns?.join(', ') || 'none'}`);
-    console.log(`   Code: ${status.includeCode ? 'enabled' : 'disabled'}`);
-    console.log(`   Watched files: ${status.watchedFiles || 0}`);
-    if (status.lastChange > 0) {
-      const lastChange = new Date(status.lastChange);
-      console.log(`   Last change: ${lastChange.toLocaleString()}`);
+    if (!response.ok) {
+      logWarn('watch', `Daemon returned ${response.status} for watch/status`);
+      console.log('   Status: Unknown (daemon error)');
+    } else {
+      const status = await response.json();
+      console.log(`   Status: ${status.active ? 'Running' : 'Stopped'}`);
+      console.log(`   Patterns: ${status.patterns?.join(', ') || 'none'}`);
+      console.log(`   Code: ${status.includeCode ? 'enabled' : 'disabled'}`);
+      console.log(`   Watched files: ${status.watchedFiles || 0}`);
+      if (status.lastChange > 0) {
+        const lastChange = new Date(status.lastChange);
+        console.log(`   Last change: ${lastChange.toLocaleString()}`);
+      }
     }
   } catch (error) {
     logWarn('watch', 'Failed to fetch watch service status from daemon', {
@@ -184,6 +209,7 @@ export async function watch(targetPath?: string, options: WatchOptions = {}): Pr
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/watch/status`);
+      if (!response.ok) return;
       const status = await response.json();
       if (status.lastChange > 0) {
         const lastChange = new Date(status.lastChange);
