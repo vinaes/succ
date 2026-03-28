@@ -233,25 +233,35 @@ export async function extractSymbols(
   const captures = query.captures(tree.rootNode);
   const symbols: SymbolInfo[] = [];
 
-  // Separate doc captures from definition captures
-  const docCaptures = captures.filter((c) => c.name === 'doc');
-  const nameCaptures = captures.filter((c) => c.name === 'name');
+  // Single-pass split of captures into doc, name, and definition groups
+  const docCaptures: QueryCapture[] = [];
+  const definitionCaptures: QueryCapture[] = [];
+  const nameCapturesByPattern = new Map<number, QueryCapture[]>();
 
-  // Group captures by pattern index — each match has a @name and a @definition.*
-  const definitionCaptures = captures.filter((c) => c.name.startsWith('definition.'));
+  for (const c of captures) {
+    if (c.name === 'doc') {
+      docCaptures.push(c);
+    } else if (c.name === 'name') {
+      const arr = nameCapturesByPattern.get(c.patternIndex);
+      if (arr) {
+        arr.push(c);
+      } else {
+        nameCapturesByPattern.set(c.patternIndex, [c]);
+      }
+    } else if (c.name.startsWith('definition.')) {
+      definitionCaptures.push(c);
+    }
+  }
 
   for (const defCapture of definitionCaptures) {
     const symbolType = captureNameToSymbolType(defCapture.name, defCapture.node.type);
     if (!symbolType) continue;
 
-    // Find the @name capture for this definition
-    // It should be a descendant of the definition node
+    // Find the @name capture for this definition (pre-indexed by patternIndex)
     const defNode = defCapture.node;
-    const nameCapture = nameCaptures.find(
-      (nc) =>
-        nc.patternIndex === defCapture.patternIndex &&
-        nc.node.startIndex >= defNode.startIndex &&
-        nc.node.endIndex <= defNode.endIndex
+    const candidateNames = nameCapturesByPattern.get(defCapture.patternIndex) ?? [];
+    const nameCapture = candidateNames.find(
+      (nc) => nc.node.startIndex >= defNode.startIndex && nc.node.endIndex <= defNode.endIndex
     );
 
     const name = nameCapture?.node.text;
