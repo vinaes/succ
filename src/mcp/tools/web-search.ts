@@ -483,10 +483,37 @@ export function registerWebSearchTools(server: McpServer) {
 
         case 'history': {
           try {
-            const [records, summary] = await Promise.all([
+            const [recordsResult, summaryResult] = await Promise.allSettled([
               getWebSearchHistory({ tool_name, model, query_text, date_from, date_to, limit }),
               getWebSearchSummary(),
             ]);
+            const records = recordsResult.status === 'fulfilled' ? recordsResult.value : [];
+            const summary =
+              summaryResult.status === 'fulfilled'
+                ? summaryResult.value
+                : {
+                    total_searches: 0,
+                    total_cost_usd: 0,
+                    today_searches: 0,
+                    today_cost_usd: 0,
+                    by_tool: {},
+                  };
+            if (recordsResult.status === 'rejected') {
+              logWarn('web-search', 'Failed to fetch search history records', {
+                error:
+                  recordsResult.reason instanceof Error
+                    ? recordsResult.reason.message
+                    : String(recordsResult.reason),
+              });
+            }
+            if (summaryResult.status === 'rejected') {
+              logWarn('web-search', 'Failed to fetch search summary', {
+                error:
+                  summaryResult.reason instanceof Error
+                    ? summaryResult.reason.message
+                    : String(summaryResult.reason),
+              });
+            }
 
             const lines: string[] = [];
 

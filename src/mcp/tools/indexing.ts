@@ -149,15 +149,17 @@ export function registerIndexingTools(server: McpServer) {
 
         case 'symbols': {
           try {
-            const fs = await import('fs');
+            const fs = await import('fs/promises');
             const path = await import('path');
 
             const absolutePath = path.default.resolve(file!);
-            if (!fs.default.existsSync(absolutePath)) {
+            try {
+              await fs.access(absolutePath);
+            } catch {
               return createErrorResponse(`File not found: ${file}`);
             }
 
-            const content = fs.default.readFileSync(absolutePath, 'utf-8');
+            const content = await fs.readFile(absolutePath, 'utf-8');
             const { parseCode } = await import('../../lib/tree-sitter/parser.js');
             const { extractSymbols } = await import('../../lib/tree-sitter/extractor.js');
             const { getLanguageForExtension } = await import('../../lib/tree-sitter/types.js');
