@@ -126,7 +126,9 @@ export function registerGraphTools(server: McpServer) {
             return createToolResponse(
               result.created
                 ? `Created link: memory #${source_id} --[${relation || 'related'}]--> memory #${target_id}`
-                : `Link already exists (id: ${result.id})`
+                : result.id < 0
+                  ? 'Link creation failed due to concurrent request — retry'
+                  : `Link already exists (id: ${result.id})`
             );
           }
 

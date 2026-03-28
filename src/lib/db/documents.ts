@@ -347,15 +347,18 @@ export function deleteDocumentsByPath(filePath: string): void {
             .all(...chunk) as Array<{ vec_rowid: number; doc_id: number }>;
           mappings.push(...rows);
         }
-        for (const mapping of mappings) {
-          cachedPrepare('DELETE FROM vec_documents WHERE rowid = ?').run(mapping.vec_rowid);
-        }
         if (mappings.length > 0) {
-          const docIdsToDelete = mappings.map((m) => m.doc_id);
-          for (const chunk of chunkArray(docIdsToDelete, SQLITE_IN_BATCH)) {
-            const mapPlaceholders = chunk.map(() => '?').join(',');
+          const vecRowids = mappings.map((m) => m.vec_rowid);
+          for (const chunk of chunkArray(vecRowids, SQLITE_IN_BATCH)) {
+            const placeholders = chunk.map(() => '?').join(',');
             getDb()
-              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${mapPlaceholders})`)
+              .prepare(`DELETE FROM vec_documents WHERE rowid IN (${placeholders})`)
+              .run(...chunk);
+          }
+          for (const chunk of chunkArray(ids, SQLITE_IN_BATCH)) {
+            const placeholders = chunk.map(() => '?').join(',');
+            getDb()
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
               .run(...chunk);
           }
         }
