@@ -54,7 +54,7 @@ export async function startWatchDaemon(
         const parsed = JSON.parse(rawBody);
         errorMsg = parsed?.error ?? rawBody;
       } catch {
-        // Not JSON — use raw text
+        logWarn('watch', 'Daemon response is not valid JSON, using raw text');
       }
       logError('watch', `Daemon returned ${response.status} for watch/start`, new Error(errorMsg));
       console.error(`Failed to start watch service (HTTP ${response.status})`);
