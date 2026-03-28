@@ -8,6 +8,7 @@
  */
 
 import { getIdleWatcherConfig } from '../lib/config.js';
+import { logWarn } from '../lib/fault-logger.js';
 
 // ============================================================================
 // Types
@@ -266,7 +267,16 @@ export function createIdleWatcher(options: IdleWatcherOptions): IdleWatcher {
       log(
         `[idle-watcher] Starting (check every ${checkIntervalSeconds}s, idle after ${idleMinutes}min)`
       );
-      intervalId = setInterval(() => check().catch(console.error), checkIntervalSeconds * 1000);
+      intervalId = setInterval(
+        () =>
+          check().catch((err) =>
+            logWarn(
+              'idle-watcher',
+              `Periodic check failed: ${err instanceof Error ? err.message : String(err)}`
+            )
+          ),
+        checkIntervalSeconds * 1000
+      );
     },
 
     stop(): void {

@@ -266,10 +266,11 @@ export async function startWatcher(
     ]);
 
     // Log any errors
+    const allFiles = [...codeFiles, ...docFiles];
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (result.status === 'rejected') {
-        const file = i < codeFiles.length ? codeFiles[i] : docFiles[i - codeFiles.length];
+        const file = allFiles[i];
         log(`[watch] Error indexing ${file.relativePath}: ${result.reason}`);
       }
     }

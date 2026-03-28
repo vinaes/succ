@@ -411,14 +411,16 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   if (fs.existsSync(existingPidFile)) {
     try {
       const existingPid = parseInt(fs.readFileSync(existingPidFile, 'utf8').trim(), 10);
-      if (existingPid && existingPid !== process.pid) {
+      if (!isNaN(existingPid) && existingPid && existingPid !== process.pid) {
         try {
           process.kill(existingPid, 0);
           const portFile = getDaemonPortFile();
           if (fs.existsSync(portFile)) {
             const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-            log(`[daemon] Another daemon already running (pid=${existingPid}, port=${port})`);
-            process.exit(0);
+            if (!isNaN(port)) {
+              log(`[daemon] Another daemon already running (pid=${existingPid}, port=${port})`);
+              process.exit(0);
+            }
           }
         } catch (error) {
           logWarn('service', 'Failed to signal existing daemon process for liveness check', {
