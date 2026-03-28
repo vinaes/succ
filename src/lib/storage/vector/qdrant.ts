@@ -83,6 +83,10 @@ interface QdrantClientLike {
   getCollection(name: string): Promise<QdrantCollectionInfo>;
   deleteCollection(name: string): Promise<unknown>;
   createCollection(name: string, config: QdrantCollectionConfig): Promise<unknown>;
+  updateCollection(
+    name: string,
+    args?: { hnsw_config?: Record<string, unknown>; quantization_config?: Record<string, unknown> }
+  ): Promise<unknown>;
   createPayloadIndex(
     name: string,
     params: { field_name: string; field_schema: string | Record<string, unknown> }
@@ -112,6 +116,7 @@ interface QdrantErrorLike {
     };
   };
 }
+import { getErrorMessage } from '../../errors.js';
 
 let QdrantClient: QdrantClientConstructor | null = null;
 
@@ -379,6 +384,9 @@ export class QdrantVectorStore implements VectorStore {
         await this.createMultiVectorCollection(name, type);
       }
 
+      // Apply HNSW tuning and ensure payload indexes for existing collections
+      await this.applyCollectionTuning(name, type);
+
       this.initialized[key] = true;
     } catch (error: unknown) {
       const qdrantError = asQdrantError(error);
@@ -403,6 +411,30 @@ export class QdrantVectorStore implements VectorStore {
       } else {
         throw error;
       }
+    }
+  }
+
+  /**
+   * Apply HNSW tuning and ensure payload indexes exist for an already-created collection.
+   * Called on startup so that config changes reach existing collections, not just new ones.
+   */
+  private async applyCollectionTuning(
+    name: string,
+    type: 'documents' | 'memories' | 'global_memories'
+  ): Promise<void> {
+    try {
+      const client = await this.getClient();
+      await client.updateCollection(name, {
+        hnsw_config: { m: 32, ef_construct: 200 },
+      });
+      // Ensure payload indexes exist (idempotent — Qdrant ignores duplicates)
+      await this.createPayloadIndexes(name, type);
+    } catch (error) {
+      logWarn(
+        'qdrant',
+        `Failed to apply tuning to existing collection "${name}", will use current settings`,
+        { error: getErrorMessage(error) }
+      );
     }
   }
 

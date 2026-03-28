@@ -88,7 +88,7 @@ export interface PostgresBackendConfig {
   poolSize?: number;
   /** Idle connection timeout in ms (default: 30000) */
   idleTimeoutMillis?: number;
-  /** Log EXPLAIN ANALYZE for queries exceeding this threshold in ms (default: 100). Set 0 to disable. */
+  /** Log EXPLAIN for queries exceeding this threshold in ms (default: 100). Set 0 to disable. */
   slowQueryThresholdMs?: number;
 }
 
@@ -97,7 +97,7 @@ export class PostgresBackend {
   private config: PostgresBackendConfig;
   private initialized = false;
   private projectId: string | null = null;
-  /** Threshold in ms for EXPLAIN ANALYZE logging. 0 = disabled. */
+  /** Threshold in ms for EXPLAIN logging. 0 = disabled. */
   private slowQueryThresholdMs: number;
   /** Cache for prepared statement names (query text -> prepared name) */
   private preparedStatements: Map<string, string> = new Map();
@@ -229,7 +229,19 @@ export class PostgresBackend {
         values,
       });
     } catch (error) {
-      // If prepared statement fails (e.g., schema change), fall back to unprepared
+      // Only retry SELECT queries — retrying writes (INSERT/UPDATE/DELETE) risks duplicates
+      const isSelect = /^\s*SELECT\b/i.test(text);
+      if (!isSelect) {
+        logWarn(
+          'postgresql',
+          `Prepared statement "${queryKey}" failed for write query, not retrying`,
+          {
+            error: getErrorMessage(error),
+          }
+        );
+        throw error;
+      }
+      // If prepared SELECT fails (e.g., schema change), fall back to unprepared
       logWarn('postgresql', `Prepared statement "${queryKey}" failed, falling back to unprepared`, {
         error: getErrorMessage(error),
       });
@@ -242,7 +254,7 @@ export class PostgresBackend {
   // ==========================================================================
 
   /**
-   * Log EXPLAIN ANALYZE for a query that exceeded the slow query threshold.
+   * Log EXPLAIN for a query that exceeded the slow query threshold.
    * Only runs when slowQueryThresholdMs > 0. Non-blocking — errors are logged and swallowed.
    */
   private async logSlowQuery(
@@ -255,14 +267,11 @@ export class PostgresBackend {
 
     try {
       const pool = await this.getPool();
-      const explainResult = await pool.query(`EXPLAIN ANALYZE ${queryText}`, params);
+      const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
-      logWarn(
-        'postgresql',
-        `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN ANALYZE:\n${plan}`
-      );
+      logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {
-      logWarn('postgresql', `Failed to run EXPLAIN ANALYZE for slow query (${durationMs}ms)`, {
+      logWarn('postgresql', `Failed to run EXPLAIN for slow query (${durationMs}ms)`, {
         error: getErrorMessage(error),
       });
     }
@@ -270,7 +279,7 @@ export class PostgresBackend {
 
   /**
    * Execute a query with timing. If it exceeds the slow query threshold,
-   * run EXPLAIN ANALYZE and log the plan.
+   * run EXPLAIN and log the plan.
    */
   async queryWithTiming<T extends QueryResultRow = QueryResultRow>(
     text: string,
@@ -281,7 +290,7 @@ export class PostgresBackend {
     const result = await pool.query<T>(text, values);
     const durationMs = Date.now() - start;
 
-    // Fire-and-forget EXPLAIN ANALYZE for slow queries
+    // Fire-and-forget EXPLAIN for slow queries
     if (durationMs >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
       void this.logSlowQuery(text, values ?? [], durationMs);
     }
@@ -861,9 +870,9 @@ export class PostgresBackend {
       WHERE invalidated_by IS NULL
     `);
 
-    // GIN index on tags for fast JSONB array containment queries
+    // GIN index on tags for fast JSONB containment queries (jsonb_path_ops supports @> operator)
     await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags)'
+      'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
     );
 
     // Composite index for documents (project + file_path for deletion queries)
