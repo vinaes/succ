@@ -398,7 +398,7 @@ export async function remember(content: string, options: RememberOptions = {}): 
     const message = getErrorMessage(error);
     logError(
       'memories',
-      `Error saving memory:: ${message}`,
+      `Error saving memory: ${message}`,
       error instanceof Error ? error : undefined
     );
 
@@ -679,7 +679,7 @@ export async function memoryStats(): Promise<void> {
     const message = getErrorMessage(error);
     logError(
       'memories',
-      `Error getting stats:: ${message}`,
+      `Error getting stats: ${message}`,
       error instanceof Error ? error : undefined
     );
 
