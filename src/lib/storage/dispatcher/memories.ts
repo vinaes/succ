@@ -188,11 +188,20 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
 
       // Auto-extracted memories get forget_after = created + 90 days
       if (sourceType === 'auto_extracted') {
+        const forgetDate = new Date();
+        forgetDate.setDate(forgetDate.getDate() + 90);
+        const forgetDateISO = forgetDate.toISOString();
         try {
-          const { setForgetAfter } = await import('../../db/auto-memory.js');
-          const forgetDate = new Date();
-          forgetDate.setDate(forgetDate.getDate() + 90);
-          setForgetAfter(savedId, forgetDate.toISOString());
+          if (this.backend === 'postgresql' && this.postgres) {
+            const pool = await this.postgres.getPool();
+            await pool.query(`UPDATE memories SET forget_after = $1 WHERE id = $2`, [
+              forgetDateISO,
+              savedId,
+            ]);
+          } else {
+            const { setForgetAfter } = await import('../../db/auto-memory.js');
+            setForgetAfter(savedId, forgetDateISO);
+          }
         } catch (error) {
           logWarn('storage', 'Failed to set forget_after for auto-extracted memory', {
             error: error instanceof Error ? error.message : String(error),
@@ -384,6 +393,41 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     } else {
       const sqlite = await this.getSqliteFns();
       result = await sqlite.saveMemoriesBatch(memories, deduplicateThreshold, options);
+    }
+
+    // Set forget_after for auto-extracted memories in batch
+    if (result?.results?.length > 0) {
+      const autoExtractedSaved = result.results
+        .filter((r) => !r.isDuplicate && r.id != null)
+        .filter((r) => memories[r.index]?.sourceType === 'auto_extracted')
+        .map((r) => r.id as number);
+
+      if (autoExtractedSaved.length > 0) {
+        const forgetDate = new Date();
+        forgetDate.setDate(forgetDate.getDate() + 90);
+        const forgetDateISO = forgetDate.toISOString();
+
+        try {
+          if (this.backend === 'postgresql' && this.postgres) {
+            const pool = await this.postgres.getPool();
+            // Batch update all auto-extracted memories in one query
+            const placeholders = autoExtractedSaved.map((_, i) => `$${i + 2}`).join(', ');
+            await pool.query(
+              `UPDATE memories SET forget_after = $1 WHERE id IN (${placeholders})`,
+              [forgetDateISO, ...autoExtractedSaved]
+            );
+          } else {
+            const { setForgetAfter } = await import('../../db/auto-memory.js');
+            for (const id of autoExtractedSaved) {
+              setForgetAfter(id, forgetDateISO);
+            }
+          }
+        } catch (error) {
+          logWarn('storage', 'Failed to set forget_after for batch auto-extracted memories', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
 
     // Sync newly saved memories to Qdrant

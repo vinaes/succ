@@ -483,6 +483,20 @@ export function initDb(database: Database.Database): void {
     'memories.forget_after'
   );
 
+  // Backfill forget_after for existing auto-extracted memories (idempotent).
+  // Only targets rows that haven't been promoted (confidence < 0.7) and have no forget_after yet.
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+  } catch (_backfillErr) {
+    logWarn('schema', 'forget_after backfill skipped (source_type column may not exist yet)');
+  }
+
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
   safeMigrate(
     database,

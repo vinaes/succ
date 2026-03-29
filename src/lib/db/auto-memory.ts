@@ -50,14 +50,11 @@ export function promoteMemoryConfidence(memoryId: number): boolean {
  * Degrade a memory's confidence by a given amount (min 0.05).
  * Used when a memory is recalled but not used.
  */
-export function degradeMemoryConfidence(
-  memoryId: number,
-  amount: number = 0.05
-): boolean {
+export function degradeMemoryConfidence(memoryId: number, amount: number = 0.05): boolean {
   try {
     const result = cachedPrepare(
       `UPDATE memories SET confidence = MAX(0.05, COALESCE(confidence, 0.5) - ?)
-       WHERE id = ? AND COALESCE(confidence, 0.5) > 0.05`
+       WHERE id = ? AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05`
     ).run(amount, memoryId);
     return result.changes > 0;
   } catch (error) {
@@ -72,14 +69,11 @@ export function degradeMemoryConfidence(
  * Boost a memory's confidence by a given amount (cap at 0.95).
  * Used when a memory is recalled and actively used.
  */
-export function boostMemoryConfidence(
-  memoryId: number,
-  amount: number = 0.02
-): boolean {
+export function boostMemoryConfidence(memoryId: number, amount: number = 0.02): boolean {
   try {
     const result = cachedPrepare(
       `UPDATE memories SET confidence = MIN(0.95, COALESCE(confidence, 0.5) + ?)
-       WHERE id = ?`
+       WHERE id = ? AND source_type = 'auto_extracted'`
     ).run(amount, memoryId);
     return result.changes > 0;
   } catch (error) {
@@ -95,9 +89,10 @@ export function boostMemoryConfidence(
  */
 export function setForgetAfter(memoryId: number, forgetAfter: string | null): boolean {
   try {
-    const result = cachedPrepare(
-      `UPDATE memories SET forget_after = ? WHERE id = ?`
-    ).run(forgetAfter, memoryId);
+    const result = cachedPrepare(`UPDATE memories SET forget_after = ? WHERE id = ?`).run(
+      forgetAfter,
+      memoryId
+    );
     return result.changes > 0;
   } catch (error) {
     logWarn('auto-memory-db', `Failed to set forget_after for memory #${memoryId}`, {
@@ -115,7 +110,7 @@ export function collectExpiredMemoryIds(): number[] {
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE forget_after IS NOT NULL
-       AND forget_after < datetime('now')
+       AND datetime(forget_after) < datetime('now')
        AND invalidated_by IS NULL`
     ).all() as Array<{ id: number }>;
     return rows.map((r) => r.id);

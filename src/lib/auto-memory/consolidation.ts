@@ -159,9 +159,12 @@ export async function consolidateAutoMemories(options?: {
 
     for (const mem of toPromote) {
       if (promoteMemoryConfidence(mem.id)) {
-        result.promoted++;
         // Promoted memories become permanent — clear forget_after
-        setForgetAfter(mem.id, null);
+        if (setForgetAfter(mem.id, null)) {
+          result.promoted++;
+        } else {
+          logWarn('consolidation', `Failed to clear forget_after for promoted memory #${mem.id}`);
+        }
       }
     }
 
