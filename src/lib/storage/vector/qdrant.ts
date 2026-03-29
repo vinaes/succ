@@ -422,17 +422,29 @@ export class QdrantVectorStore implements VectorStore {
     name: string,
     type: 'documents' | 'memories' | 'global_memories'
   ): Promise<void> {
+    // updateCollection and createPayloadIndexes are independent and idempotent —
+    // wrap each separately so failure of one doesn't block the other.
+    const client = await this.getClient();
+
     try {
-      const client = await this.getClient();
       await client.updateCollection(name, {
         hnsw_config: { m: 32, ef_construct: 200 },
       });
+    } catch (error) {
+      logWarn(
+        'qdrant',
+        `Failed to update HNSW config for collection "${name}", will use current settings`,
+        { error: getErrorMessage(error) }
+      );
+    }
+
+    try {
       // Ensure payload indexes exist (idempotent — Qdrant ignores duplicates)
       await this.createPayloadIndexes(name, type);
     } catch (error) {
       logWarn(
         'qdrant',
-        `Failed to apply tuning to existing collection "${name}", will use current settings`,
+        `Failed to create payload indexes for collection "${name}", will use existing indexes`,
         { error: getErrorMessage(error) }
       );
     }

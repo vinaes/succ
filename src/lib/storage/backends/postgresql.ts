@@ -876,6 +876,16 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
     );
 
+    // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
+    // Idempotent — the WHERE clause skips rows that are already all-lowercase.
+    await pool.query(`
+      UPDATE memories SET tags = (
+        SELECT jsonb_agg(lower(elem))
+        FROM jsonb_array_elements_text(tags) AS elem
+      ) WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+      AND tags::text != lower(tags::text)
+    `);
+
     // Composite index for documents — use LOWER(project_id) to match query predicates
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
