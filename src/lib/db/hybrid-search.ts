@@ -605,7 +605,7 @@ export function hybridSearchMemories(
     const rows = cachedPrepare(`
       SELECT id, content, tags, source, type, created_at, embedding,
              last_accessed, access_count, valid_from, valid_until, quality_score
-      FROM memories WHERE embedding IS NOT NULL LIMIT ?
+      FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1 LIMIT ?
     `).all(BRUTE_FORCE_MAX_ROWS) as Array<MemoryRow & { embedding: Buffer }>;
 
     if (rows.length === 0) return [];

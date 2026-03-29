@@ -322,6 +322,38 @@ export function initDb(database: Database.Database): void {
     'idx_memories_priority'
   );
 
+  // Migration: add memory versioning columns
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1`,
+    'memories.version'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL`,
+    'memories.parent_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL`,
+    'memories.root_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_latest INTEGER DEFAULT 1`,
+    'memories.is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest)`,
+    'idx_memories_is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)`,
+    'idx_memories_root'
+  );
+
   // Migration: add AST metadata columns to documents table (tree-sitter integration)
   for (const col of ['symbol_name TEXT', 'symbol_type TEXT', 'signature TEXT']) {
     safeMigrate(
@@ -1084,6 +1116,33 @@ export function initGlobalDb(database: Database.Database): void {
     database,
     `ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL`,
     'global memories.source_context'
+  );
+
+  // Migration: add memory versioning columns
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1`,
+    'global memories.version'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL`,
+    'global memories.parent_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL`,
+    'global memories.root_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_latest INTEGER DEFAULT 1`,
+    'global memories.is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest)`,
+    'idx_global_memories_is_latest'
   );
 
   // Migration: create sqlite-vec virtual table for global memories

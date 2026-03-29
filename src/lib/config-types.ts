@@ -184,6 +184,8 @@ export interface AutoMemoryConfig {
   confidence_promotion_accesses?: number;
   /** Enable mem0-style extraction consolidation — LLM decides ADD/UPDATE/DELETE/NONE per fact (default: false) */
   extraction_consolidation?: boolean;
+  /** Enable ingestion-time version detection — LLM classifies updates/extends/derives (default: false) */
+  version_detection?: boolean;
 }
 
 /**

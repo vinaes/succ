@@ -149,6 +149,10 @@ export interface Memory {
   confidence: number | null;
   source_type: SourceType | null;
   source_context: string | null;
+  version?: number;
+  parent_memory_id?: number | null;
+  root_memory_id?: number | null;
+  is_latest?: boolean;
   created_at: string;
 }
 
@@ -355,6 +359,9 @@ export const LINK_RELATIONS = [
   'bug_in',
   'test_covers',
   'motivates',
+  'updates',
+  'extends',
+  'derives',
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];

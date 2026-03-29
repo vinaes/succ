@@ -811,6 +811,7 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)'
     );
 
+<<<<<<< HEAD
     // Migration: add source_context column for memory-then-chunk retrieval
     await pool.query(`
       DO $$ BEGIN
@@ -852,6 +853,24 @@ export class PostgresBackend {
         AND forget_after IS NULL
         AND (confidence IS NULL OR confidence < 0.7)
     `);
+
+    // Migration: add memory versioning columns
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'memories' AND column_name = 'version') THEN
+          ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1;
+          ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL;
+          ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL;
+          ALTER TABLE memories ADD COLUMN is_latest BOOLEAN DEFAULT TRUE;
+        END IF;
+      END $$;
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest) WHERE is_latest = TRUE'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)'
+    );
 
     // Learning deltas table for session progress tracking
     await pool.query(`

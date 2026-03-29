@@ -71,6 +71,64 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
+    // Version detection: classify relationship with similar existing memory
+    let versionInfo: {
+      parentMemoryId: number;
+      rootMemoryId: number;
+      version: number;
+      relation: 'updates' | 'extends' | 'derives';
+    } | null = null;
+
+    if (deduplicate) {
+      try {
+        const { getConfig } = await import('../../config.js');
+        const config = getConfig();
+        if (config.auto_memory?.version_detection) {
+          // Find the most similar memory in the 0.82-0.92 range for version detection
+          const candidate = await this.findSimilarMemory(embedding, 0.85);
+          if (candidate && candidate.similarity < 0.92) {
+            const { classifyVersionRelation } = await import(
+              '../../auto-memory/version-classifier.js'
+            );
+            const classification = await classifyVersionRelation(content, candidate);
+            if (classification) {
+              // Get existing memory's version info
+              const existing = await this.getMemoryById(candidate.id);
+              const rootId = existing?.root_memory_id ?? null;
+
+              versionInfo = {
+                parentMemoryId: candidate.id,
+                rootMemoryId: rootId ?? candidate.id,
+                version: (existing?.version ?? 1) + 1,
+                relation: classification.relation as 'updates' | 'extends' | 'derives',
+              };
+
+              // If 'updates': mark old memory as not latest
+              if (classification.relation === 'updates') {
+                try {
+                  const sqlite = this.backend !== 'postgresql' ? await this.getSqliteFns() : null;
+                  if (sqlite) {
+                    sqlite.getDb().prepare('UPDATE memories SET is_latest = 0 WHERE id = ?').run(candidate.id);
+                  } else if (this.postgres) {
+                    const pool = await (this.postgres as { getPool(): Promise<{ query(sql: string, params: unknown[]): Promise<unknown> }> }).getPool();
+                    await pool.query('UPDATE memories SET is_latest = FALSE WHERE id = $1', [candidate.id]);
+                  }
+                } catch (err) {
+                  logWarn('storage', 'Failed to mark old memory as not latest', {
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logWarn('storage', 'Version detection failed during saveMemory (continuing without)', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let savedId: number;
     let wasDuplicate = false;
 
@@ -194,6 +252,23 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         logWarn('storage', 'Invariant detection or priority recompute failed during saveMemory', {
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+
+      // Create version link if version detection found a relationship
+      if (versionInfo) {
+        try {
+          const { createMemoryLink } = await import('../../db/graph.js');
+          createMemoryLink(
+            savedId,
+            versionInfo.parentMemoryId,
+            versionInfo.relation,
+            versionInfo.version / 10 // weight proportional to version depth
+          );
+        } catch (error) {
+          logWarn('storage', 'Failed to create version link', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     } else {
       this._sessionCounters.memoriesDuplicated++;

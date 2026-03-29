@@ -23,6 +23,10 @@ export const LINK_RELATIONS = [
   'bug_in', // Error memory → code location
   'test_covers', // Test → function it tests
   'motivates', // Pattern → code module
+  // Version chain relations
+  'updates', // A updates/replaces B (new version)
+  'extends', // A extends B (adds detail, both current)
+  'derives', // A is derived/inferred from B
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
