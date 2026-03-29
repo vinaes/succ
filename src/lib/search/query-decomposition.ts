@@ -98,11 +98,18 @@ export async function decomposeQuery(query: string): Promise<DecompositionResult
       return { original: query, subQueries: [], wasDecomposed: false };
     }
 
+    const seen = new Set<string>();
     const subQueries = response
       .split('\n')
       .map((line) => line.replace(/^[\d\-*.)]+\s*/, '').trim())
       .filter((line) => line.length >= 5 && line.length <= 300)
       .filter((line) => !/^(sub-quer|here|the query|split)/i.test(line))
+      .filter((line) => {
+        const key = line.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .slice(0, 3);
 
     if (subQueries.length < 2) {

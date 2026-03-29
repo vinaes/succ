@@ -1,8 +1,10 @@
 import safeRegex from 'safe-regex2';
 import { StorageDispatcherBase } from './base.js';
-import { logWarn } from '../../fault-logger.js';
+import { logInfo, logWarn } from '../../fault-logger.js';
+import { getEmbedding } from '../../embeddings.js';
 import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
 import { rerank, type Rerankable } from '../../reranker.js';
+import { getErrorMessage } from '../../errors.js';
 import type {
   GlobalMemorySearchResult,
   HybridGlobalMemoryResult,
@@ -231,6 +233,77 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     const sqlite = await this.getSqliteFns();
     results = await sqlite.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh, alpha);
     return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
+  }
+
+  /**
+   * Run hybridSearchMemories for each sub-query, then merge via Reciprocal Rank Fusion.
+   * Routes through the storage dispatcher so all backends (SQLite, PostgreSQL, Qdrant) are supported.
+   */
+  async decomposedSearchMemories(
+    subQueries: string[],
+    originalQuery: string,
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.3,
+    alpha: number = 0.5
+  ): Promise<Array<MemorySearchResult | HybridMemoryResult>> {
+    if (subQueries.length === 0) {
+      return this.hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
+    }
+
+    try {
+      // Get embeddings for all sub-queries in parallel
+      const subEmbeddings = await Promise.all(subQueries.map((sq) => getEmbedding(sq)));
+
+      // Run search for each sub-query through the dispatcher (backend-agnostic)
+      const subResults = await Promise.all(
+        subQueries.map((sq, i) =>
+          this.hybridSearchMemories(sq, subEmbeddings[i], limit, threshold, alpha)
+        )
+      );
+
+      // Merge via RRF: each sub-query's results contribute rank-based scores
+      const RRF_K = 60;
+      const scoreMap = new Map<
+        number,
+        { score: number; result: MemorySearchResult | HybridMemoryResult }
+      >();
+
+      for (const results of subResults) {
+        for (let rank = 0; rank < results.length; rank++) {
+          const r = results[rank];
+          const id = 'id' in r ? (r as HybridMemoryResult).id : rank;
+          const rrfScore = 1 / (RRF_K + rank + 1);
+          const existing = scoreMap.get(id);
+          if (existing) {
+            existing.score += rrfScore;
+            if (r.similarity > existing.result.similarity) {
+              existing.result = r;
+            }
+          } else {
+            scoreMap.set(id, { score: rrfScore, result: r });
+          }
+        }
+      }
+
+      // Sort by combined RRF score, propagate as similarity for downstream ordering
+      const merged = Array.from(scoreMap.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((entry) => ({ ...entry.result, similarity: entry.score }));
+
+      logInfo(
+        'storage-search',
+        `Decomposed search: ${subQueries.length} sub-queries → ${merged.length} merged results`
+      );
+
+      return merged;
+    } catch (error) {
+      logWarn('storage-search', 'Decomposed search failed, falling back to single query', {
+        error: getErrorMessage(error),
+      });
+      return this.hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
+    }
   }
 
   async hybridSearchGlobalMemories(

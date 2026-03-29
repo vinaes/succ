@@ -5,6 +5,7 @@ import {
   getStorageDispatcher,
   hybridSearchMemories,
   hybridSearchGlobalMemories,
+  decomposedSearchMemories,
   getRecentMemories,
   getRecentGlobalMemories,
   closeDb,
@@ -370,18 +371,12 @@ export function registerRecallTool(server: McpServer): void {
               retrievalConfig.bm25_alpha
             );
           }
-        } else if (
-          retrievalConfig.query_decomposition_enabled &&
-          !globalOnlyMode
-        ) {
+        } else if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
           // Query decomposition: split complex queries into focused sub-queries
           try {
             const { decomposeQuery } = await import('../../../lib/search/query-decomposition.js');
             const decomposition = await decomposeQuery(query);
             if (decomposition.wasDecomposed) {
-              const { decomposedSearchMemories } = await import(
-                '../../../lib/db/hybrid-search.js'
-              );
               localResults = await decomposedSearchMemories(
                 decomposition.subQueries,
                 query,
@@ -401,7 +396,7 @@ export function registerRecallTool(server: McpServer): void {
             }
           } catch (err) {
             logWarn('recall', 'Query decomposition failed, using standard search', {
-              error: err instanceof Error ? err.message : String(err),
+              error: getErrorMessage(err),
             });
             localResults = await hybridSearchMemories(
               query,

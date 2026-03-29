@@ -1004,11 +1004,12 @@ export async function decomposedSearchMemories(
       }
     }
 
-    // Sort by combined RRF score and return top-K
+    // Sort by combined RRF score and propagate as similarity so downstream
+    // sorting by similarity preserves the RRF ordering.
     const merged = Array.from(scoreMap.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map((entry) => entry.result);
+      .map((entry) => ({ ...entry.result, similarity: entry.score }));
 
     logInfo(
       'hybrid-search',
