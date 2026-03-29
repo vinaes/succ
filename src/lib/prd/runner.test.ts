@@ -31,6 +31,7 @@ describe('isProcessRunning', () => {
 vi.mock('../config.js', () => ({
   getProjectRoot: () => '/fake/project',
   getConfig: () => ({}),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('./executor.js', () => ({

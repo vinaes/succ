@@ -40,6 +40,7 @@ vi.mock('../../../lib/config.js', () => ({
     query_expansion_enabled: false,
   })),
   getConfig: vi.fn(() => ({ dead_end_boost: 0 })),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({

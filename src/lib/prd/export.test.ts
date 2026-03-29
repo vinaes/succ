@@ -6,6 +6,7 @@ vi.mock('fs');
 vi.mock('./state.js');
 vi.mock('../config.js', () => ({
   getSuccDir: () => '/mock/.succ',
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 import fs from 'fs';

@@ -19,6 +19,7 @@ vi.mock('./config.js', () => ({
   getConfigWithOverride: vi.fn(),
   getLLMTaskConfig: vi.fn(),
   LOCAL_MODEL: 'Xenova/bge-small-en-v1.5',
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 // Mock ONNX and tokenizer to avoid loading real models in tests

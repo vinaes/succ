@@ -10,6 +10,7 @@ let tempDir: string;
 vi.mock('../config.js', () => ({
   getProjectRoot: () => tempDir,
   getSuccDir: () => path.join(tempDir, '.succ'),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('Codebase Context', () => {

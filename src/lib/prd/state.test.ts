@@ -27,6 +27,7 @@ let tempDir: string;
 
 vi.mock('../config.js', () => ({
   getSuccDir: () => tempDir,
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('PRD State', () => {
