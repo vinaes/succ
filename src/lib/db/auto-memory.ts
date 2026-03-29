@@ -47,6 +47,87 @@ export function promoteMemoryConfidence(memoryId: number): boolean {
 }
 
 /**
+ * Degrade a memory's confidence by a given amount (min 0.05).
+ * Used when a memory is recalled but not used.
+ */
+export function degradeMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.05
+): boolean {
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET confidence = MAX(0.05, COALESCE(confidence, 0.5) - ?)
+       WHERE id = ? AND COALESCE(confidence, 0.5) > 0.05`
+    ).run(amount, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to degrade confidence for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Boost a memory's confidence by a given amount (cap at 0.95).
+ * Used when a memory is recalled and actively used.
+ */
+export function boostMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.02
+): boolean {
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET confidence = MIN(0.95, COALESCE(confidence, 0.5) + ?)
+       WHERE id = ?`
+    ).run(amount, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to boost confidence for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Set forget_after date on a memory.
+ */
+export function setForgetAfter(memoryId: number, forgetAfter: string | null): boolean {
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET forget_after = ? WHERE id = ?`
+    ).run(forgetAfter, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to set forget_after for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Collect IDs of memories past their forget_after date.
+ */
+export function collectExpiredMemoryIds(): number[] {
+  try {
+    const rows = cachedPrepare(
+      `SELECT id FROM memories
+       WHERE forget_after IS NOT NULL
+       AND forget_after < datetime('now')
+       AND invalidated_by IS NULL`
+    ).all() as Array<{ id: number }>;
+    return rows.map((r) => r.id);
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to collect expired memories`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+/**
  * Collect IDs of old unused auto-extracted memories eligible for pruning.
  *
  * Returns IDs only — callers are responsible for deletion so that the storage

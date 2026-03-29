@@ -823,6 +823,18 @@ export class PostgresBackend {
       END $$;
     `);
 
+    // Migration: add forget_after column for automatic memory forgetting
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'forget_after'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN forget_after TIMESTAMPTZ DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+
     // Learning deltas table for session progress tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS learning_deltas (

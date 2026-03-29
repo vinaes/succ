@@ -13,6 +13,8 @@ import {
   getAutoExtractedMemories,
   promoteMemoryConfidence,
   collectPruneableAutoMemoryIds,
+  collectExpiredMemoryIds,
+  setForgetAfter,
   getAutoMemoryStatsRow,
   bufferToFloatArray,
 } from '../db/index.js';
@@ -27,6 +29,7 @@ export interface ConsolidationResult {
   merged: number;
   promoted: number;
   pruned: number;
+  forgotten: number;
   scanned: number;
 }
 
@@ -57,6 +60,7 @@ export async function consolidateAutoMemories(options?: {
     merged: 0,
     promoted: 0,
     pruned: 0,
+    forgotten: 0,
     scanned: 0,
   };
 
@@ -156,6 +160,8 @@ export async function consolidateAutoMemories(options?: {
     for (const mem of toPromote) {
       if (promoteMemoryConfidence(mem.id)) {
         result.promoted++;
+        // Promoted memories become permanent — clear forget_after
+        setForgetAfter(mem.id, null);
       }
     }
 
@@ -169,9 +175,15 @@ export async function consolidateAutoMemories(options?: {
       }
     }
 
+    // Step 4: Delete memories past their forget_after date.
+    const expiredIds = collectExpiredMemoryIds();
+    if (expiredIds.length > 0) {
+      result.forgotten = await deleteMemoriesByIds(expiredIds);
+    }
+
     logInfo(
       'consolidation',
-      `Auto-memory consolidation: ${result.merged} merged, ${result.promoted} promoted, ${result.pruned} pruned (${result.scanned} scanned)`
+      `Auto-memory consolidation: ${result.merged} merged, ${result.promoted} promoted, ${result.pruned} pruned, ${result.forgotten} forgotten (${result.scanned} scanned)`
     );
   } catch (error) {
     logWarn('consolidation', 'Consolidation failed', {

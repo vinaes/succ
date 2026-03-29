@@ -185,6 +185,20 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+
+      // Auto-extracted memories get forget_after = created + 90 days
+      if (sourceType === 'auto_extracted') {
+        try {
+          const { setForgetAfter } = await import('../../db/auto-memory.js');
+          const forgetDate = new Date();
+          forgetDate.setDate(forgetDate.getDate() + 90);
+          setForgetAfter(savedId, forgetDate.toISOString());
+        } catch (error) {
+          logWarn('storage', 'Failed to set forget_after for auto-extracted memory', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     } else {
       this._sessionCounters.memoriesDuplicated++;
     }

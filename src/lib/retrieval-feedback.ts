@@ -19,9 +19,12 @@ import {
   getBoostDataForMemory,
   getBoostDataForMemories,
   getNeverUsedMemoryRows,
+  degradeMemoryConfidence,
+  boostMemoryConfidence,
 } from './db/index.js';
 import { deleteOldRecallEvents } from './storage/index.js';
 import { sanitizeQuery } from './query-sanitizer.js';
+import { logWarn } from './fault-logger.js';
 
 // ============================================================================
 // Types
@@ -80,13 +83,28 @@ export function recordRecallEvent(
   similarityScore?: number
 ): number {
   const safeQuery = sanitizeQuery(query).preview256;
-  return insertRecallEvent(
+  const id = insertRecallEvent(
     memoryId,
     safeQuery,
     wasUsed,
     rankPosition ?? null,
     similarityScore ?? null
   );
+
+  // Adjust confidence based on usage feedback
+  try {
+    if (wasUsed) {
+      boostMemoryConfidence(memoryId, 0.02); // +0.02, cap 0.95
+    } else {
+      degradeMemoryConfidence(memoryId, 0.05); // -0.05, floor 0.05
+    }
+  } catch (err) {
+    logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${memoryId}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return id;
 }
 
 /**
@@ -113,6 +131,21 @@ export function recordRecallBatch(
   }));
 
   insertRecallEventsBatch(events);
+
+  // Adjust confidence for all recalled memories
+  try {
+    for (const event of events) {
+      if (event.wasUsed) {
+        boostMemoryConfidence(event.memoryId, 0.02);
+      } else {
+        degradeMemoryConfidence(event.memoryId, 0.05);
+      }
+    }
+  } catch (err) {
+    logWarn('retrieval-feedback', 'Batch confidence adjustment failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 // ============================================================================

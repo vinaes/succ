@@ -476,6 +476,13 @@ export function initDb(database: Database.Database): void {
     'memories.source_type'
   );
 
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'memories.forget_after'
+  );
+
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
   safeMigrate(
     database,
@@ -962,6 +969,13 @@ export function initGlobalDb(database: Database.Database): void {
     database,
     `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`,
     'idx_global_memories_invalidated_by'
+  );
+
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'global memories.forget_after'
   );
 
   // Migration: add correction_count and is_invariant columns for working memory pins
