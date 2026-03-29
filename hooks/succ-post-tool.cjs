@@ -113,7 +113,7 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
   }
 
   // Helper to save memory via daemon API (with injection scanning)
-  const succRemember = async (content, tagsStr) => {
+  const succRemember = async (content, tagsStr, sourceContext) => {
     try {
       // Scan for injection before saving to memory (prevents memory poisoning)
       if (isInjectionDetected(content)) {
@@ -122,14 +122,16 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
       }
 
       const tags = tagsStr.split(',');
+      const payload = {
+        content: content,
+        tags: tags,
+        source: 'auto-capture',
+      };
+      if (sourceContext) payload.source_context = sourceContext;
       const response = await fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: content,
-          tags: tags,
-          source: 'auto-capture',
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(3000),
       });
       if (!response.ok) {
@@ -183,7 +185,8 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
     if (/git\s+commit/i.test(cmd) && wasSuccess) {
       const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
       if (msgMatch) {
-        await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone');
+        const commitCtx = (toolOutput || '').slice(0, 500);
+        await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone', commitCtx || undefined);
       }
     }
 
@@ -254,7 +257,8 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         if (!agentAlreadySaved) {
           const desc = (toolInput.description || '').slice(0, 100);
           const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
-          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`);
+          const agentCtx = (toolInput.prompt || '').slice(0, 500);
+          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`, agentCtx || undefined);
         }
       }
     }

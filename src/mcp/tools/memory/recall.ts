@@ -250,7 +250,11 @@ export function registerRecallTool(server: McpServer): void {
                     .join('\n');
               }
 
-              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}\n`;
+              const srcCtx =
+                'source_context' in m && m.source_context
+                  ? `\n<source-context>\n${m.source_context}\n</source-context>\n`
+                  : '';
+              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}${srcCtx}\n`;
             })
             .join('\n---\n\n');
 
@@ -803,7 +807,13 @@ export function registerRecallTool(server: McpServer): void {
                   .join('\n');
             }
 
-            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}`;
+            // Source context: the original conversation/code excerpt that produced this memory
+            const sourceCtx =
+              result.source_context
+                ? `\n\n<source-context>\n${result.source_context}\n</source-context>`
+                : '';
+
+            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}${sourceCtx}`;
           })
           .join('\n\n---\n\n');
 

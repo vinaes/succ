@@ -59,6 +59,7 @@ export interface Memory {
   priority_score: number | null; // Precomputed priority for working memory ranking
   confidence: number | null;
   source_type: SourceType | null;
+  source_context: string | null;
   created_at: string;
 }
 
@@ -161,6 +162,7 @@ export function saveMemory(
     validUntil?: string | Date;
     confidence?: number;
     sourceType?: string;
+    sourceContext?: string;
   } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
   const {
@@ -172,6 +174,7 @@ export function saveMemory(
     validFrom,
     validUntil,
     sourceType: rawSourceType = 'human',
+    sourceContext,
   } = options;
   let { confidence = 0.5 } = options;
 
@@ -207,8 +210,8 @@ export function saveMemory(
     : null;
 
   const result = cachedPrepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, embedding)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
     content,
     tagsJson,
@@ -220,6 +223,7 @@ export function saveMemory(
     validUntilStr,
     confidence,
     sourceType,
+    sourceContext ?? null,
     embeddingBlob
   );
 
@@ -447,6 +451,7 @@ export function searchMemories(
           priority_score: number | null;
           confidence: number | null;
           source_type: string | null;
+          source_context: string | null;
           created_at: string;
         }>;
 
@@ -497,6 +502,7 @@ export function searchMemories(
               priority_score: row.priority_score ?? null,
               confidence: row.confidence ?? null,
               source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
               created_at: row.created_at,
               similarity,
             });
@@ -540,6 +546,7 @@ export function searchMemories(
     priority_score: number | null;
     confidence: number | null;
     source_type: string | null;
+    source_context: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -588,6 +595,7 @@ export function searchMemories(
         priority_score: row.priority_score ?? null,
         confidence: row.confidence ?? null,
         source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
         created_at: row.created_at,
         similarity,
       });
@@ -603,7 +611,7 @@ export function searchMemories(
  */
 export function getRecentMemories(limit: number = 10): Memory[] {
   const rows = cachedPrepare(`
-      SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, created_at
+      SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
       FROM memories
       WHERE invalidated_by IS NULL
       ORDER BY created_at DESC
@@ -627,6 +635,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   }));
 }
@@ -932,7 +941,7 @@ export function deleteMemoriesByTag(tag: string): number {
  */
 export function getMemoryById(id: number): Memory | null {
   const row = cachedPrepare(
-    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, created_at FROM memories WHERE id = ?'
+    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at FROM memories WHERE id = ?'
   ).get(id) as Record<string, any> | undefined;
 
   if (!row) return null;
@@ -954,6 +963,7 @@ export function getMemoryById(id: number): Memory | null {
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   };
 }
@@ -968,7 +978,7 @@ export function getMemoriesByIds(ids: number[]): Memory[] {
   const placeholders = ids.map(() => '?').join(', ');
   const rows = db
     .prepare(
-      `SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, created_at FROM memories WHERE id IN (${placeholders})`
+      `SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at FROM memories WHERE id IN (${placeholders})`
     )
     .all(...ids) as Record<string, any>[];
 
@@ -989,6 +999,7 @@ export function getMemoriesByIds(ids: number[]): Memory[] {
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
+    source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   }));
 }
@@ -1003,7 +1014,7 @@ export function getMemoriesByTag(tag: string, limit: number = 5, offset: number 
     `
     SELECT DISTINCT m.id, m.content, m.tags, m.source, m.type, m.quality_score, m.quality_factors,
            m.access_count, m.last_accessed, m.valid_from, m.valid_until,
-           m.correction_count, m.is_invariant, m.priority_score, m.confidence, m.source_type, m.created_at
+           m.correction_count, m.is_invariant, m.priority_score, m.confidence, m.source_type, m.source_context, m.created_at
     FROM memories m, json_each(m.tags) t
     WHERE LOWER(t.value) = LOWER(?)
       AND m.invalidated_by IS NULL
@@ -1030,6 +1041,7 @@ export function getMemoriesByTag(tag: string, limit: number = 5, offset: number 
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   }));
 }
@@ -1113,6 +1125,7 @@ export function searchMemoriesAsOf(
     priority_score: number | null;
     confidence: number | null;
     source_type: string | null;
+    source_context: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -1151,6 +1164,7 @@ export function searchMemoriesAsOf(
         priority_score: row.priority_score ?? null,
         confidence: row.confidence ?? null,
         source_type: (row.source_type ?? null) as SourceType | null,
+              source_context: (row.source_context ?? null) as string | null,
         created_at: row.created_at,
         similarity,
       });
@@ -1176,6 +1190,7 @@ export interface MemoryBatchInput {
   validUntil?: string | Date;
   confidence?: number;
   sourceType?: SourceType;
+  sourceContext?: string;
 }
 
 export interface MemoryBatchResult {
@@ -1278,8 +1293,8 @@ export function saveMemoriesBatch(
   // Batch insert all non-duplicates in a transaction
   if (toInsert.length > 0) {
     const insertStmt = database.prepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // Prepare vec_memories statements if available
@@ -1327,7 +1342,8 @@ export function saveMemoriesBatch(
           validFromStr,
           validUntilStr,
           confidence,
-          sourceType
+          sourceType,
+          input.sourceContext ?? null
         );
 
         const memoryId = Number(result.lastInsertRowid);

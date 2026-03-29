@@ -112,6 +112,7 @@ export async function getAllMemoriesWithEmbeddings(): Promise<
       valid_until: row.valid_until ?? null,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: null,
       created_at: row.created_at,
       embedding: row.embedding as number[],
     }));

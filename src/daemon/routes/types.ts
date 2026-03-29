@@ -88,6 +88,7 @@ export const RememberBodySchema = z.object({
   global: z.boolean().optional(),
   valid_from: z.string().optional(),
   valid_until: z.string().optional(),
+  source_context: z.string().optional(),
 });
 export const ReflectBodySchema = z.object({
   session_id: z.string().optional(),

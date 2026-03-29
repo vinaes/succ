@@ -385,6 +385,7 @@ export async function saveMemory(
     autoLink?: boolean;
     confidence?: number;
     sourceType?: import('./types.js').SourceType;
+    sourceContext?: string;
   }
 ): Promise<{
   id: number;
@@ -421,6 +422,7 @@ export async function saveMemory(
     validUntil,
     confidence: options?.confidence,
     sourceType: options?.sourceType,
+    sourceContext: options?.sourceContext,
   });
 
   // Convert dispatcher result to backward-compatible format

@@ -1378,6 +1378,7 @@ export class QdrantVectorStore implements VectorStore {
         if (raw === null) return null;
         return (SOURCE_TYPES as readonly string[]).includes(raw) ? (raw as SourceType) : null;
       })(),
+      source_context: asNullableString(payload.source_context),
       created_at: asString(payload.created_at),
       similarity: point.score,
     };

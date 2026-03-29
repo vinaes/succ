@@ -32,6 +32,7 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
         global = false,
         valid_from,
         valid_until,
+        source_context,
       } = parseRequestBody(RememberBodySchema, body, 'content required');
 
       const contentHash = content.slice(0, 200) + '|' + (tags || []).join(',');
@@ -69,6 +70,7 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
             qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
             validFrom: valid_from,
             validUntil: valid_until,
+            sourceContext: source_context,
           });
         }
 
