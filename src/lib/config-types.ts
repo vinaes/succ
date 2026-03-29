@@ -473,6 +473,8 @@ export interface RetrievalConfig {
   mmr_lambda?: number; // MMR balance: 1=pure relevance, 0=pure diversity (default: 0.8)
   query_expansion_enabled?: boolean; // LLM-based query expansion for richer recall (default: false)
   query_expansion_mode?: 'claude' | 'api'; // LLM backend for expansion (default: from llm.type)
+  graph_ppr_enabled?: boolean; // Use PPR graph traversal as 3rd RRF signal in memory search (default: false)
+  graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
 }
 
 export interface ObserverConfig {
@@ -690,6 +692,8 @@ export interface ConfigDisplay {
     mmr_lambda: number;
     query_expansion_enabled: boolean;
     query_expansion_mode: string;
+    graph_ppr_enabled: boolean;
+    graph_ppr_weight: number;
   };
   // Web search settings
   web_search: {

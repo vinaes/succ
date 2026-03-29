@@ -663,6 +663,84 @@ export function hybridSearchMemories(
 }
 
 /**
+ * Graph-enhanced memory search: BM25 + vector + PPR as third RRF signal.
+ * Runs standard hybrid search first, then uses top results as PPR seed nodes
+ * to discover graph-connected memories. Merges all three via weighted RRF.
+ *
+ * @param query - Search query
+ * @param queryEmbedding - Query embedding vector
+ * @param limit - Max results
+ * @param threshold - Minimum similarity
+ * @param alpha - BM25/vector balance
+ * @param graphWeight - PPR signal weight in RRF (0-1, default 0.3)
+ */
+export async function graphEnhancedSearchMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5,
+  graphWeight: number = 0.3
+): Promise<HybridMemoryResult[]> {
+  // Step 1: Standard BM25 + vector search
+  const baseResults = hybridSearchMemories(query, queryEmbedding, limit * 2, threshold, alpha);
+
+  if (baseResults.length === 0) return baseResults;
+
+  // Step 2: Run PPR from top results as seed nodes
+  let pprScores: Map<number, number>;
+  try {
+    const { personalizedPageRank } = await import('../graph/graphology-bridge.js');
+    const seedIds = baseResults.slice(0, Math.min(10, baseResults.length)).map((r) => r.id);
+    const pprResults = await personalizedPageRank(seedIds, limit * 3);
+    pprScores = new Map(pprResults.map((r: { memoryId: number; score: number }) => [r.memoryId, r.score]));
+  } catch (err) {
+    logWarn('hybrid-search', 'PPR graph signal failed, returning base results', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return baseResults.slice(0, limit);
+  }
+
+  if (pprScores.size === 0) return baseResults.slice(0, limit);
+
+  // Step 3: Three-signal RRF merge
+  const RRF_K = 60;
+  const textWeight = 1 - graphWeight; // BM25+vector share this weight
+
+  const scoreMap = new Map<number, { score: number; result: HybridMemoryResult | null }>();
+
+  // BM25+vector signal (from base results, already RRF-fused)
+  for (let rank = 0; rank < baseResults.length; rank++) {
+    const r = baseResults[rank];
+    const rrfScore = textWeight / (RRF_K + rank + 1);
+    scoreMap.set(r.id, { score: rrfScore, result: r });
+  }
+
+  // PPR graph signal
+  const pprRanked = Array.from(pprScores.entries())
+    .sort((a, b) => b[1] - a[1]);
+  for (let rank = 0; rank < pprRanked.length; rank++) {
+    const [memId] = pprRanked[rank];
+    const rrfScore = graphWeight / (RRF_K + rank + 1);
+    const existing = scoreMap.get(memId);
+    if (existing) {
+      existing.score += rrfScore;
+    } else {
+      // PPR discovered a new memory not in base results — we don't have full data for it
+      // Just boost if it appears in base results, don't add new ones without content
+      scoreMap.set(memId, { score: rrfScore, result: null });
+    }
+  }
+
+  // Sort by combined score, filter to entries with full result data
+  return Array.from(scoreMap.values())
+    .filter((e) => e.result !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((e) => e.result!);
+}
+
+/**
  * Hybrid search for global memories (BM25 + vector with RRF fusion)
  */
 export function hybridSearchGlobalMemories(
