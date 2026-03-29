@@ -103,6 +103,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -139,6 +140,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);

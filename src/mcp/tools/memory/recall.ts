@@ -252,7 +252,7 @@ export function registerRecallTool(server: McpServer): void {
 
               const srcCtx =
                 'source_context' in m && m.source_context
-                  ? `\n<source-context>\n${m.source_context}\n</source-context>\n`
+                  ? `\n<source-context>\n${String(m.source_context).replace(/<\/source-context>/gi, '&lt;/source-context&gt;')}\n</source-context>\n`
                   : '';
               return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}${srcCtx}\n`;
             })
@@ -808,10 +808,9 @@ export function registerRecallTool(server: McpServer): void {
             }
 
             // Source context: the original conversation/code excerpt that produced this memory
-            const sourceCtx =
-              result.source_context
-                ? `\n\n<source-context>\n${result.source_context}\n</source-context>`
-                : '';
+            const sourceCtx = result.source_context
+              ? `\n\n<source-context>\n${String(result.source_context).replace(/<\/source-context>/gi, '&lt;/source-context&gt;')}\n</source-context>`
+              : '';
 
             return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}${sourceCtx}`;
           })

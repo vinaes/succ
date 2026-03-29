@@ -595,7 +595,7 @@ export function searchMemories(
         priority_score: row.priority_score ?? null,
         confidence: row.confidence ?? null,
         source_type: (row.source_type ?? null) as SourceType | null,
-              source_context: (row.source_context ?? null) as string | null,
+        source_context: (row.source_context ?? null) as string | null,
         created_at: row.created_at,
         similarity,
       });
@@ -635,7 +635,7 @@ export function getRecentMemories(limit: number = 10): Memory[] {
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
-              source_context: (row.source_context ?? null) as string | null,
+    source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   }));
 }
@@ -963,7 +963,7 @@ export function getMemoryById(id: number): Memory | null {
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
-              source_context: (row.source_context ?? null) as string | null,
+    source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   };
 }
@@ -1041,7 +1041,7 @@ export function getMemoriesByTag(tag: string, limit: number = 5, offset: number 
     priority_score: row.priority_score ?? null,
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
-              source_context: (row.source_context ?? null) as string | null,
+    source_context: (row.source_context ?? null) as string | null,
     created_at: row.created_at,
   }));
 }
@@ -1164,7 +1164,7 @@ export function searchMemoriesAsOf(
         priority_score: row.priority_score ?? null,
         confidence: row.confidence ?? null,
         source_type: (row.source_type ?? null) as SourceType | null,
-              source_context: (row.source_context ?? null) as string | null,
+        source_context: (row.source_context ?? null) as string | null,
         created_at: row.created_at,
         similarity,
       });
