@@ -220,6 +220,8 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         graph_ppr_enabled: rc.graph_ppr_enabled,
         graph_ppr_weight: rc.graph_ppr_weight,
         query_decomposition_enabled: rc.query_decomposition_enabled,
+        rrf_k: rc.rrf_k,
+        adaptive_alpha: rc.adaptive_alpha,
       };
     })(),
     web_search: (() => {

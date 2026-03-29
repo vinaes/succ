@@ -10,6 +10,8 @@ import {
 } from '../../lib/storage/index.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { matchRules } from '../../lib/hook-rules.js';
+import { getRetrievalConfig } from '../../lib/config.js';
+import { classifyQuery } from '../../lib/db/hybrid-search.js';
 import type { Memory } from '../../lib/storage/types.js';
 import {
   EmptyBodySchema,
@@ -43,7 +45,9 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
         threshold = 0.3,
       } = parseRequestBody(SearchBodySchema, body, 'query required');
       const queryEmbedding = await getEmbedding(query);
-      const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold);
+      const rc = getRetrievalConfig();
+      const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
+      const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
 
       const accesses = results.flatMap((result) => {
         if (!result || typeof result !== 'object' || !('memory_id' in result)) {
@@ -66,7 +70,9 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
         threshold = 0.3,
       } = parseRequestBody(SearchBodySchema, body, 'query required');
       const queryEmbedding = await getEmbedding(query);
-      const results = await hybridSearchCode(query, queryEmbedding, limit, threshold);
+      const rc = getRetrievalConfig();
+      const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
+      const results = await hybridSearchCode(query, queryEmbedding, limit, threshold, alpha);
       return { results };
     },
 
@@ -79,7 +85,9 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
       }
 
       const queryEmbedding = await getEmbedding(query);
-      const results = await hybridSearchMemories(query, queryEmbedding, limit, 0.3);
+      const rc = getRetrievalConfig();
+      const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
+      const results = await hybridSearchMemories(query, queryEmbedding, limit, 0.3, alpha);
 
       const accesses = results.flatMap((result) => {
         if (!result || typeof result !== 'object' || !('id' in result)) {

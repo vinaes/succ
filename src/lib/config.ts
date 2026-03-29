@@ -1019,6 +1019,8 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     graph_ppr_enabled: userConfig.graph_ppr_enabled ?? false,
     graph_ppr_weight: userConfig.graph_ppr_weight ?? 0.3,
     query_decomposition_enabled: userConfig.query_decomposition_enabled ?? false,
+    rrf_k: userConfig.rrf_k ?? 60,
+    adaptive_alpha: userConfig.adaptive_alpha ?? true,
   };
 }
 
