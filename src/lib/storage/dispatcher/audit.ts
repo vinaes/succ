@@ -9,7 +9,8 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
     eventType: AuditEventType,
     oldContent: string | null,
     newContent: string | null,
-    changedBy: AuditChangedBy
+    changedBy: AuditChangedBy,
+    global: boolean = false
   ): Promise<void> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
@@ -22,7 +23,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
         );
       } else {
         const sqlite = await this.getSqliteFns();
-        const db = sqlite.getDb();
+        const db = global ? sqlite.getGlobalDb() : sqlite.getDb();
         db.prepare(
           `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by) VALUES (?, ?, ?, ?, ?)`
         ).run(memoryId, eventType, oldContent, newContent, changedBy);
@@ -37,7 +38,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
     }
   }
 
-  async getAuditHistory(memoryId: number): Promise<MemoryAuditRecord[]> {
+  async getAuditHistory(memoryId: number, global: boolean = false): Promise<MemoryAuditRecord[]> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
         // See recordAuditEvent for cast rationale
@@ -53,7 +54,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
         }));
       } else {
         const sqlite = await this.getSqliteFns();
-        const db = sqlite.getDb();
+        const db = global ? sqlite.getGlobalDb() : sqlite.getDb();
         return db
           .prepare(
             `SELECT id, memory_id, event_type, old_content, new_content, changed_by, created_at FROM memory_audit WHERE memory_id = ? ORDER BY created_at DESC`
@@ -66,7 +67,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
     }
   }
 
-  async pruneAuditTrail(olderThanDays: number = 90): Promise<number> {
+  async pruneAuditTrail(olderThanDays: number = 90, global: boolean = false): Promise<number> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
         // See recordAuditEvent for cast rationale
@@ -78,9 +79,15 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
         return result.rowCount ?? 0;
       } else {
         const sqlite = await this.getSqliteFns();
-        const db = sqlite.getDb();
-        const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
-        return db.prepare(`DELETE FROM memory_audit WHERE created_at < ?`).run(cutoff).changes;
+        const db = global ? sqlite.getGlobalDb() : sqlite.getDb();
+        // Use datetime() to normalize both sides — created_at is TEXT DEFAULT CURRENT_TIMESTAMP
+        // (format: YYYY-MM-DD HH:MM:SS) and plain text < comparison with toISOString() would fail
+        // because space (ASCII 32) sorts before T (ASCII 84).
+        return db
+          .prepare(
+            `DELETE FROM memory_audit WHERE datetime(created_at) < datetime('now', '-' || ? || ' days')`
+          )
+          .run(olderThanDays).changes;
       }
     } catch (error) {
       logWarn('audit', 'Failed to prune audit trail', {

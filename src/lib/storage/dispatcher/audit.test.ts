@@ -35,11 +35,15 @@ describe('Memory Audit Trail', () => {
     },
   ]);
   const mockPrepare = vi.fn(() => ({ run: mockPrepareRun, all: mockPrepareAll }));
-  const sqliteMock: Record<string, any> = { getDb: vi.fn(() => ({ prepare: mockPrepare })) };
+  const sqliteMock: Record<string, any> = {
+    getDb: vi.fn(() => ({ prepare: mockPrepare })),
+    getGlobalDb: vi.fn(() => ({ prepare: mockPrepare })),
+  };
 
   beforeEach(async () => {
     resetStorageDispatcher();
     dispatcher = await getStorageDispatcher();
+    // Patch private _sqliteFns directly — no public accessor exists for injecting a mock SQLite backend
     (dispatcher as any)._sqliteFns = sqliteMock;
     vi.clearAllMocks();
   });

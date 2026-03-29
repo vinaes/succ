@@ -110,16 +110,17 @@ export class StorageDispatcherBase {
     _eventType: AuditEventType,
     _oldContent: string | null,
     _newContent: string | null,
-    _changedBy: AuditChangedBy
+    _changedBy: AuditChangedBy,
+    _global?: boolean
   ): Promise<void> {
     throw new Error('StorageDispatcher mixin method recordAuditEvent not initialized');
   }
 
-  async getAuditHistory(_memoryId: number): Promise<MemoryAuditRecord[]> {
+  async getAuditHistory(_memoryId: number, _global?: boolean): Promise<MemoryAuditRecord[]> {
     throw new Error('StorageDispatcher mixin method getAuditHistory not initialized');
   }
 
-  async pruneAuditTrail(_olderThanDays?: number): Promise<number> {
+  async pruneAuditTrail(_olderThanDays?: number, _global?: boolean): Promise<number> {
     throw new Error('StorageDispatcher mixin method pruneAuditTrail not initialized');
   }
 

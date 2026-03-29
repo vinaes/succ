@@ -591,13 +591,68 @@ export function registerRecallTool(server: McpServer): void {
             };
           }
 
+          // Fetch audit history for fallback memories if requested
+          let fallbackAuditMap = new Map<
+            number,
+            Array<{ event_type: string; changed_by: string; created_at: string }>
+          >();
+          if (history) {
+            try {
+              const dispatcher = await getStorageDispatcher();
+              const localFallbackIds = recent
+                .filter((r) => !r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const globalFallbackIds = recent
+                .filter((r) => r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const auditEntries = await Promise.all([
+                ...localFallbackIds.map(async (id) => ({
+                  id,
+                  events: await dispatcher.getAuditHistory(id, false),
+                })),
+                ...globalFallbackIds.map(async (id) => ({
+                  id,
+                  events: await dispatcher.getAuditHistory(id, true),
+                })),
+              ]);
+              for (const entry of auditEntries) {
+                if (entry.events.length > 0) {
+                  fallbackAuditMap.set(
+                    entry.id,
+                    entry.events.map((e) => ({
+                      event_type: e.event_type,
+                      changed_by: e.changed_by,
+                      created_at: e.created_at,
+                    }))
+                  );
+                }
+              }
+            } catch (histError) {
+              logWarn('mcp-memory', 'Failed to fetch audit history for fallback memories', {
+                error: getErrorMessage(histError),
+              });
+            }
+          }
+
           const recentFormatted = recent
             .map((m, i) => {
               const memTags = parseTags(m.tags);
               const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
               const date = new Date(m.created_at).toLocaleDateString();
               const scope = m.isGlobal ? '[GLOBAL] ' : '';
-              return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`;
+              let historyStr = '';
+              if (history && m.id && fallbackAuditMap.has(m.id as number)) {
+                const events = fallbackAuditMap.get(m.id as number)!;
+                historyStr =
+                  '\n  Edit History: ' +
+                  events
+                    .map(
+                      (e) =>
+                        `${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                    )
+                    .join('; ');
+              }
+              return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}${historyStr}`;
             })
             .join('\n');
 
@@ -635,12 +690,19 @@ export function registerRecallTool(server: McpServer): void {
             const localIds = allResults
               .filter((r) => !r.isGlobal && r.id)
               .map((r) => r.id as number);
-            const auditEntries = await Promise.all(
-              localIds.map(async (id) => ({
+            const globalIds = allResults
+              .filter((r) => r.isGlobal && r.id)
+              .map((r) => r.id as number);
+            const auditEntries = await Promise.all([
+              ...localIds.map(async (id) => ({
                 id,
-                events: await dispatcher.getAuditHistory(id),
-              }))
-            );
+                events: await dispatcher.getAuditHistory(id, false),
+              })),
+              ...globalIds.map(async (id) => ({
+                id,
+                events: await dispatcher.getAuditHistory(id, true),
+              })),
+            ]);
             for (const entry of auditEntries) {
               if (entry.events.length > 0) {
                 auditMap.set(
