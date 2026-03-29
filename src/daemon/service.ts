@@ -154,6 +154,8 @@ function getDaemonLogFile(): string {
   return path.join(succDir, 'daemon.log');
 }
 
+let stderrBroken = false;
+
 function log(message: string): void {
   const timestamp = new Date().toISOString();
   const line = `[${timestamp}] ${message}\n`;
@@ -166,7 +168,15 @@ function log(message: string): void {
     });
   }
 
-  process.stderr.write(line);
+  if (!stderrBroken) {
+    try {
+      process.stderr.write(line);
+    } catch (err) {
+      if (isErrnoException(err) && err.code === 'EPIPE') {
+        stderrBroken = true;
+      }
+    }
+  }
 }
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
@@ -574,6 +584,11 @@ function setupShutdownHandlers(): void {
 
   // Prevent silent crashes — log and keep running
   process.on('uncaughtException', (err) => {
+    // EPIPE from stderr write — mark broken and skip log to avoid recursion
+    if (isErrnoException(err) && err.code === 'EPIPE') {
+      stderrBroken = true;
+      return;
+    }
     log(`[daemon] UNCAUGHT EXCEPTION: ${err.message}\n${err.stack}`);
   });
   process.on('unhandledRejection', (reason) => {

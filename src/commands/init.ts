@@ -483,8 +483,8 @@ export async function init(options: InitOptions = {}): Promise<void> {
         {
           hooks: [
             useHttp
-              ? httpHook('stop', 60, 'succ: recording activity...')
-              : cmdHook('succ-stop-reflection.cjs', 60, 'succ: recording activity...'),
+              ? httpHook('stop', 10, 'succ: recording activity...')
+              : cmdHook('succ-stop-reflection.cjs', 10, 'succ: recording activity...'),
           ],
         },
       ],
@@ -523,26 +523,34 @@ export async function init(options: InitOptions = {}): Promise<void> {
         },
       ],
 
-      // New hooks (HTTP only, no command fallback needed)
-      ...(useHttp
-        ? {
-            PermissionRequest: [
-              {
-                hooks: [httpHook('permission', 5, 'succ: checking permission rules...')],
-              },
-            ],
-            SubagentStop: [
-              {
-                hooks: [httpHook('subagent-stop', 5, 'succ: saving agent results...')],
-              },
-            ],
-            TaskCompleted: [
-              {
-                hooks: [httpHook('task-completed', 5, 'succ: consolidating...')],
-              },
-            ],
-          }
-        : {}),
+      // New hooks (HTTP when supported, command fallback)
+      PermissionRequest: [
+        {
+          hooks: [
+            useHttp
+              ? httpHook('permission', 5, 'succ: checking permission rules...')
+              : cmdHook('succ-permission.cjs', 5, 'succ: checking permission rules...'),
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            useHttp
+              ? httpHook('subagent-stop', 5, 'succ: saving agent results...')
+              : cmdHook('succ-subagent-stop.cjs', 5, 'succ: saving agent results...'),
+          ],
+        },
+      ],
+      TaskCompleted: [
+        {
+          hooks: [
+            useHttp
+              ? httpHook('task-completed', 5, 'succ: consolidating...')
+              : cmdHook('succ-task-completed.cjs', 5, 'succ: consolidating...'),
+          ],
+        },
+      ],
     };
 
     let finalSettings: Record<string, any>;

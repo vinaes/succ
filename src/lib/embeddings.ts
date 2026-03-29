@@ -77,6 +77,9 @@ let nativeSessionInit: Promise<NativeOrtSession> | null = null;
 // Incremented each time cleanupEmbeddings() runs so a concurrent init can
 // detect that the cleanup already happened and self-dispose the new session.
 let nativeSessionGeneration = 0;
+// Circuit breaker: after init failure, don't retry for 60 seconds
+let nativeSessionFailedAt = 0;
+const SESSION_RETRY_COOLDOWN_MS = 60_000;
 
 // Worker pool for parallel local embeddings (lazy init)
 let embeddingPool: EmbeddingPool | null = null;
@@ -89,6 +92,7 @@ export function cleanupEmbeddings(): void {
   // Increment generation so any in-flight getNativeSession() init knows to
   // self-dispose the session it creates rather than assigning it to the module var.
   nativeSessionGeneration++;
+  nativeSessionFailedAt = 0; // Reset circuit breaker so next call retries
 
   if (nativeSession) {
     nativeSession
@@ -258,6 +262,15 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
     return nativeSessionInit;
   }
 
+  // Circuit breaker: don't retry if init recently failed
+  if (nativeSessionFailedAt && Date.now() - nativeSessionFailedAt < SESSION_RETRY_COOLDOWN_MS) {
+    throw new Error(
+      'Embedding model init recently failed — retrying in ' +
+        Math.ceil((SESSION_RETRY_COOLDOWN_MS - (Date.now() - nativeSessionFailedAt)) / 1000) +
+        's'
+    );
+  }
+
   // Capture generation at init start. If cleanupEmbeddings() runs while the
   // session is loading, the counter will be higher and we self-dispose instead
   // of leaving a live session behind a null pointer.
@@ -311,6 +324,7 @@ export async function getNativeSession(): Promise<NativeOrtSession> {
     } catch (error: unknown) {
       nativeSession = null;
       gpuBackend = null;
+      nativeSessionFailedAt = Date.now();
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to load embedding model '${embeddingModel}'. ` +
