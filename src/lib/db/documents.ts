@@ -377,6 +377,86 @@ export function deleteDocumentsByPath(filePath: string): void {
   invalidateBm25ForPath(filePath);
 }
 
+/**
+ * Mark all document chunks for a file path as superseded (soft-delete).
+ * Used during re-indexing to preserve old versions before inserting new ones.
+ */
+export function supersedeDocumentsByPath(filePath: string): number {
+  try {
+    const result = cachedPrepare(
+      `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+    ).run(filePath);
+    return result.changes;
+  } catch (err) {
+    logWarn('documents', `Failed to supersede documents for ${filePath}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+}
+
+/**
+ * Purge superseded document chunks older than N days.
+ * Called during cleanup to prevent unbounded growth.
+ */
+export function purgeSupersededDocuments(olderThanDays: number = 30): number {
+  try {
+    // Get IDs of superseded docs to clean up vec tables too
+    const rows = cachedPrepare(
+      `SELECT id FROM documents WHERE superseded_at IS NOT NULL AND superseded_at < datetime('now', '-' || ? || ' days')`
+    ).all(olderThanDays) as Array<{ id: number }>;
+
+    if (rows.length === 0) return 0;
+
+    const ids = rows.map((r) => r.id);
+
+    // Clean vec tables if available
+    if (sqliteVecAvailable) {
+      try {
+        const BATCH = 900;
+        for (let i = 0; i < ids.length; i += BATCH) {
+          const chunk = ids.slice(i, i + BATCH);
+          const placeholders = chunk.map(() => '?').join(',');
+          const mappings = getDb()
+            .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+            .all(...chunk) as Array<{ vec_rowid: number }>;
+          if (mappings.length > 0) {
+            const vecIds = mappings.map((m) => m.vec_rowid);
+            const vecPh = vecIds.map(() => '?').join(',');
+            getDb().prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`).run(...vecIds);
+          }
+          getDb()
+            .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+            .run(...chunk);
+        }
+      } catch (err) {
+        logWarn('documents', 'Vector cleanup failed during superseded purge', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Delete the actual document rows
+    const BATCH = 900;
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const chunk = ids.slice(i, i + BATCH);
+      const placeholders = chunk.map(() => '?').join(',');
+      const result = getDb()
+        .prepare(`DELETE FROM documents WHERE id IN (${placeholders})`)
+        .run(...chunk);
+      deleted += result.changes;
+    }
+
+    return deleted;
+  } catch (err) {
+    logWarn('documents', 'Failed to purge superseded documents', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+}
+
 export function searchDocuments(
   queryEmbedding: number[],
   limit: number = 5,

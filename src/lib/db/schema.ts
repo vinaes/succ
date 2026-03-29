@@ -363,6 +363,23 @@ export function initDb(database: Database.Database): void {
     'idx_documents_updated_at'
   );
 
+  // Migration: add bi-temporal columns to documents
+  safeMigrate(
+    database,
+    `ALTER TABLE documents ADD COLUMN superseded_at TEXT DEFAULT NULL`,
+    'documents.superseded_at'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE documents ADD COLUMN git_commit_date TEXT DEFAULT NULL`,
+    'documents.git_commit_date'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)`,
+    'idx_documents_superseded'
+  );
+
   // Migration: create learning_deltas table for session progress tracking
   database.exec(`
     CREATE TABLE IF NOT EXISTS learning_deltas (

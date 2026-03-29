@@ -282,6 +282,17 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_documents_search_vector ON documents USING GIN(search_vector)'
     );
 
+    // Migration: add bi-temporal columns to documents
+    await pool.query(
+      'ALTER TABLE documents ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ DEFAULT NULL'
+    );
+    await pool.query(
+      'ALTER TABLE documents ADD COLUMN IF NOT EXISTS git_commit_date TIMESTAMPTZ DEFAULT NULL'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)'
+    );
+
     // Metadata table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS metadata (
