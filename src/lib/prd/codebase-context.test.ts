@@ -8,6 +8,7 @@ import type { CodebaseContext } from './types.js';
 let tempDir: string;
 
 vi.mock('../config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getProjectRoot: () => tempDir,
   getSuccDir: () => path.join(tempDir, '.succ'),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),

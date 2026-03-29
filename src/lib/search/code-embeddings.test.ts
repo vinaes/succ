@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getConfig: vi.fn(() => ({})),
   getConfigWithOverride: vi.fn(() => ({})),
   getLLMTaskConfig: vi.fn(() => ({

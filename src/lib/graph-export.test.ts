@@ -12,6 +12,7 @@ let tempDir: string;
 // Mock config
 vi.mock('./config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue(null),
     getConfig: () => ({
       graph_auto_export: false,
       graph_export_format: 'obsidian',

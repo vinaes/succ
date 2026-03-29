@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock config before importing reranker
 vi.mock('./config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getConfig: vi.fn(() => ({
     llm: {
       reranker: {

@@ -1144,6 +1144,11 @@ export function initGlobalDb(database: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest)`,
     'idx_global_memories_is_latest'
   );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)`,
+    'idx_global_memories_root'
+  );
 
   // Migration: create sqlite-vec virtual table for global memories
   initGlobalVecTable(database);

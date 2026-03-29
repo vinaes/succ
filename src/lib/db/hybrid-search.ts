@@ -576,7 +576,9 @@ export function hybridSearchMemories(
             `
           SELECT id, content, tags, source, type, created_at,
                  last_accessed, access_count, valid_from, valid_until, quality_score
-          FROM memories WHERE id IN (${placeholders})
+          FROM memories
+          WHERE id IN (${placeholders})
+            AND COALESCE(is_latest, 1) = 1
         `
           )
           .all(...docIds) as MemoryRow[];
@@ -635,7 +637,9 @@ export function hybridSearchMemories(
           `
         SELECT id, content, tags, source, type, created_at,
                last_accessed, access_count, valid_from, valid_until, quality_score
-        FROM memories WHERE id IN (${placeholders})
+        FROM memories
+        WHERE id IN (${placeholders})
+          AND COALESCE(is_latest, 1) = 1
       `
         )
         .all(...missingIds) as MemoryRow[];

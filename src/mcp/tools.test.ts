@@ -140,6 +140,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   isGlobalOnlyMode: vi.fn(() => false),
   getConfig: vi.fn(() => ({
     sensitive_filter_enabled: false,

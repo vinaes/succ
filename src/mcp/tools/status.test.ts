@@ -46,6 +46,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getDaemonStatuses: vi.fn(async () => [{ name: 'daemon', running: false }]),
   isGlobalOnlyMode: vi.fn(() => false),
   getIdleReflectionConfig: vi.fn(() => ({ operations: { session_summary: true } })),

@@ -263,6 +263,7 @@ vi.mock('../config.js', () => {
   let _projectRoot = '';
   let _config: Record<string, unknown> = {};
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue(null),
     getProjectRoot: () => _projectRoot,
     getConfig: () => _config,
     __setProjectRoot: (root: string) => {

@@ -30,6 +30,10 @@ export const LINK_RELATIONS = [
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
+const LINK_RELATION_SET = new Set<string>(LINK_RELATIONS);
+export function isLinkRelation(value: string): value is LinkRelation {
+  return LINK_RELATION_SET.has(value);
+}
 
 export interface MemoryLink {
   id: number;
@@ -120,6 +124,9 @@ export function createMemoryLink(
     metadata?: Record<string, unknown>;
   }
 ): { id: number; created: boolean } {
+  if (!isLinkRelation(String(relation))) {
+    throw new Error(`Invalid link relation: ${String(relation)}`);
+  }
   // Convert Date objects to ISO strings
   const validFromStr = options?.validFrom
     ? options.validFrom instanceof Date

@@ -48,14 +48,16 @@ export async function classifyVersionRelation(
   existingMemory: { id: number; content: string; similarity: number }
 ): Promise<VersionClassification | null> {
   try {
-    const prompt = VERSION_PROMPT
-      .replace('{existing}', existingMemory.content.slice(0, 500))
-      .replace('{new}', newContent.slice(0, 500));
+    const prompt = VERSION_PROMPT.replace(
+      '{existing}',
+      existingMemory.content.slice(0, 500)
+    ).replace('{new}', newContent.slice(0, 500));
 
     const response = await callLLM(prompt, {
       maxTokens: 10,
       temperature: 0.1,
       systemPrompt: VERSION_SYSTEM,
+      timeout: 5000,
     });
 
     const relation = response.trim().toLowerCase() as VersionRelation;

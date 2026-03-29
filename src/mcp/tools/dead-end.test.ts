@@ -8,6 +8,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getConfig: vi.fn(() => ({
     sensitive_filter_enabled: true,
     sensitive_auto_redact: false,

@@ -87,9 +87,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
           // Find the most similar memory in the 0.82-0.92 range for version detection
           const candidate = await this.findSimilarMemory(embedding, 0.85);
           if (candidate && candidate.similarity < 0.92) {
-            const { classifyVersionRelation } = await import(
-              '../../auto-memory/version-classifier.js'
-            );
+            const { classifyVersionRelation } =
+              await import('../../auto-memory/version-classifier.js');
             const classification = await classifyVersionRelation(content, candidate);
             if (classification) {
               // Get existing memory's version info
@@ -104,15 +103,13 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
               };
 
               // If 'updates': mark old memory as not latest
+              // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
+              // this update — concurrent saves could both mark the same candidate as
+              // not-latest and fork the version chain. Acceptable for v1 since the
+              // feature is config-gated and the LLM call serializes most concurrent saves.
               if (classification.relation === 'updates') {
                 try {
-                  const sqlite = this.backend !== 'postgresql' ? await this.getSqliteFns() : null;
-                  if (sqlite) {
-                    sqlite.getDb().prepare('UPDATE memories SET is_latest = 0 WHERE id = ?').run(candidate.id);
-                  } else if (this.postgres) {
-                    const pool = await (this.postgres as { getPool(): Promise<{ query(sql: string, params: unknown[]): Promise<unknown> }> }).getPool();
-                    await pool.query('UPDATE memories SET is_latest = FALSE WHERE id = $1', [candidate.id]);
-                  }
+                  await this.markMemoryNotLatest(candidate.id);
                 } catch (err) {
                   logWarn('storage', 'Failed to mark old memory as not latest', {
                     error: err instanceof Error ? err.message : String(err),

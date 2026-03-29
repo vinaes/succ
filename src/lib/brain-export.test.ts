@@ -10,6 +10,7 @@ import {
 // Mock fs and config
 vi.mock('fs');
 vi.mock('./config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getSuccDir: vi.fn(() => '/mock/.succ'),
   getProjectRoot: vi.fn(() => '/mock/project'),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),

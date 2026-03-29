@@ -42,6 +42,7 @@ const tempDir = path.join(
 // Mock config
 vi.mock('../config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue(null),
     getConfig: () => ({
       chunk_size: 500,
       chunk_overlap: 50,

@@ -41,6 +41,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),
   getIdleReflectionConfig: vi.fn(() => ({

@@ -6,6 +6,7 @@
 
 import type {
   SuccConfig,
+  AutoMemoryConfig,
   IdleWatcherConfig,
   RetentionPolicyConfig,
   CompactBriefingConfig,
@@ -74,6 +75,19 @@ export const DEFAULT_ERROR_REPORTING_CONFIG = {
   sentry_dsn: '',
   sentry_environment: 'production',
   sentry_sample_rate: 1.0,
+};
+
+// Default auto memory config
+export const DEFAULT_AUTO_MEMORY_CONFIG: Required<AutoMemoryConfig> = {
+  enabled: true,
+  phase1_on_session_end: true,
+  phase2_interval_hours: 4,
+  quality_threshold: 0.7,
+  secret_redaction: true,
+  max_unused_days: 90,
+  confidence_promotion_accesses: 5,
+  extraction_consolidation: false,
+  version_detection: false,
 };
 
 // Default idle reflection config

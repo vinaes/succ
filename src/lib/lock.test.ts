@@ -11,6 +11,7 @@ vi.mock('./config.js', () => {
     `succ-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue(null),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
     getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),

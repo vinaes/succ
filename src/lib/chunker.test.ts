@@ -12,6 +12,7 @@ import {
 
 // Mock config
 vi.mock('./config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue(null),
   getConfig: () => ({
     chunk_size: 500,
     chunk_overlap: 50,

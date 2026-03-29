@@ -85,6 +85,10 @@ export class StorageDispatcherBase {
     throw new Error('StorageDispatcher mixin method setMemoryInvariant not initialized');
   }
 
+  async markMemoryNotLatest(_memoryId: number): Promise<void> {
+    throw new Error('StorageDispatcher mixin method markMemoryNotLatest not initialized');
+  }
+
   async recomputePriorityScore(_memoryId: number): Promise<void> {
     throw new Error('StorageDispatcher mixin method recomputePriorityScore not initialized');
   }

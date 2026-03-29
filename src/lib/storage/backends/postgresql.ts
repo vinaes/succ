@@ -811,7 +811,6 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)'
     );
 
-<<<<<<< HEAD
     // Migration: add source_context column for memory-then-chunk retrieval
     await pool.query(`
       DO $$ BEGIN
@@ -854,13 +853,31 @@ export class PostgresBackend {
         AND (confidence IS NULL OR confidence < 0.7)
     `);
 
-    // Migration: add memory versioning columns
+    // Migration: add memory versioning columns (each column checked individually)
     await pool.query(`
       DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'memories' AND column_name = 'version') THEN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'version'
+        ) THEN
           ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'parent_memory_id'
+        ) THEN
           ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'root_memory_id'
+        ) THEN
           ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'is_latest'
+        ) THEN
           ALTER TABLE memories ADD COLUMN is_latest BOOLEAN DEFAULT TRUE;
         END IF;
       END $$;
@@ -868,9 +885,7 @@ export class PostgresBackend {
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest) WHERE is_latest = TRUE'
     );
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)'
-    );
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)');
 
     // Learning deltas table for session progress tracking
     await pool.query(`
@@ -2578,6 +2593,11 @@ export class PostgresBackend {
        WHERE id = $1`,
       [memoryId]
     );
+  }
+
+  async markMemoryNotLatest(memoryId: number): Promise<void> {
+    const pool = await this.getPool();
+    await pool.query(`UPDATE memories SET is_latest = FALSE WHERE id = $1`, [memoryId]);
   }
 
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
