@@ -59,6 +59,20 @@ vi.mock('../lib/config.js', () => ({
     sensitive_auto_redact: false,
     quality_threshold: 0.3,
   })),
+  getRetrievalConfig: vi.fn(() => ({
+    bm25_alpha: 0.4,
+    default_top_k: 10,
+    temporal_auto_skip: true,
+    preference_quality_boost: true,
+    quality_boost_enabled: false,
+    quality_boost_weight: 0.15,
+    mmr_enabled: false,
+    mmr_lambda: 0.8,
+    query_expansion_enabled: false,
+    query_expansion_mode: 'api',
+    rrf_k: 60,
+    adaptive_alpha: true,
+  })),
   getDaemonStatuses: vi.fn(async () => ({})),
   isProjectInitialized: vi.fn(() => true),
   isGlobalOnlyMode: vi.fn(() => false),
@@ -89,6 +103,10 @@ vi.mock('../lib/config.js', () => ({
     graph_ppr_enabled: false,
     graph_ppr_weight: 0.3,
   })),
+}));
+
+vi.mock('../lib/query-classifier.js', () => ({
+  classifyQuery: vi.fn(() => ({ type: 'mixed', alpha: 0.5 })),
 }));
 
 vi.mock('../lib/quality.js', () => ({

@@ -11,7 +11,7 @@ import {
 import { getEmbedding } from '../../lib/embeddings.js';
 import { matchRules } from '../../lib/hook-rules.js';
 import { getRetrievalConfig } from '../../lib/config.js';
-import { classifyQuery } from '../../lib/db/hybrid-search.js';
+import { classifyQuery } from '../../lib/query-classifier.js';
 import type { Memory } from '../../lib/storage/types.js';
 import {
   EmptyBodySchema,
