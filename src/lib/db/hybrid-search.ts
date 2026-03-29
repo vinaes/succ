@@ -6,6 +6,7 @@ import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { getTokenFrequency, getTotalTokenCount } from './token-frequency.js';
 import { SearchResult } from './types.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import {
   getCodeBm25Index,
   getDocsBm25Index,
@@ -693,10 +694,12 @@ export async function graphEnhancedSearchMemories(
     const { personalizedPageRank } = await import('../graph/graphology-bridge.js');
     const seedIds = baseResults.slice(0, Math.min(10, baseResults.length)).map((r) => r.id);
     const pprResults = await personalizedPageRank(seedIds, limit * 3);
-    pprScores = new Map(pprResults.map((r: { memoryId: number; score: number }) => [r.memoryId, r.score]));
+    pprScores = new Map(
+      pprResults.map((r: { memoryId: number; score: number }) => [r.memoryId, r.score])
+    );
   } catch (err) {
     logWarn('hybrid-search', 'PPR graph signal failed, returning base results', {
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     });
     return baseResults.slice(0, limit);
   }
@@ -717,8 +720,7 @@ export async function graphEnhancedSearchMemories(
   }
 
   // PPR graph signal
-  const pprRanked = Array.from(pprScores.entries())
-    .sort((a, b) => b[1] - a[1]);
+  const pprRanked = Array.from(pprScores.entries()).sort((a, b) => b[1] - a[1]);
   for (let rank = 0; rank < pprRanked.length; rank++) {
     const [memId] = pprRanked[rank];
     const rrfScore = graphWeight / (RRF_K + rank + 1);

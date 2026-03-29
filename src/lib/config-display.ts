@@ -421,6 +421,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(
     `  Query expansion: ${display.retrieval.query_expansion_enabled} (mode: ${display.retrieval.query_expansion_mode})`
   );
+  lines.push(
+    `  Graph PPR: ${display.retrieval.graph_ppr_enabled} (weight: ${display.retrieval.graph_ppr_weight})`
+  );
   lines.push('');
 
   // Web Search

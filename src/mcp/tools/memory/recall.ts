@@ -257,9 +257,8 @@ export function registerRecallTool(server: McpServer): void {
         } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
           // Graph-enhanced search: BM25 + vector + PPR as third signal
           try {
-            const { graphEnhancedSearchMemories } = await import(
-              '../../../lib/db/hybrid-search.js'
-            );
+            const { graphEnhancedSearchMemories } =
+              await import('../../../lib/db/hybrid-search.js');
             localResults = await graphEnhancedSearchMemories(
               query,
               queryEmbedding,
@@ -270,7 +269,7 @@ export function registerRecallTool(server: McpServer): void {
             );
           } catch (err) {
             logWarn('recall', 'Graph-enhanced search failed, falling back to standard', {
-              error: err instanceof Error ? err.message : String(err),
+              error: getErrorMessage(err),
             });
             localResults = await hybridSearchMemories(
               query,
