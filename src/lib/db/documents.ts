@@ -8,6 +8,7 @@ import { cosineSimilarity } from '../embeddings.js';
 import { invalidateCodeBm25Index, invalidateDocsBm25Index } from './bm25-indexes.js';
 import { getSuccDir } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 
 /**
  * Log document deletion events to .succ/document-audit.log for debugging.
@@ -386,10 +387,13 @@ export function supersedeDocumentsByPath(filePath: string): number {
     const result = cachedPrepare(
       `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
     ).run(filePath);
+    if (result.changes > 0) {
+      invalidateBm25ForPath(filePath);
+    }
     return result.changes;
   } catch (err) {
     logWarn('documents', `Failed to supersede documents for ${filePath}`, {
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     });
     return 0;
   }
@@ -423,7 +427,9 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
           if (mappings.length > 0) {
             const vecIds = mappings.map((m) => m.vec_rowid);
             const vecPh = vecIds.map(() => '?').join(',');
-            getDb().prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`).run(...vecIds);
+            getDb()
+              .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`)
+              .run(...vecIds);
           }
           getDb()
             .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
@@ -431,7 +437,7 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
         }
       } catch (err) {
         logWarn('documents', 'Vector cleanup failed during superseded purge', {
-          error: err instanceof Error ? err.message : String(err),
+          error: getErrorMessage(err),
         });
       }
     }
@@ -448,10 +454,15 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
       deleted += result.changes;
     }
 
+    if (deleted > 0) {
+      invalidateCodeBm25Index();
+      invalidateDocsBm25Index();
+    }
+
     return deleted;
   } catch (err) {
     logWarn('documents', 'Failed to purge superseded documents', {
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     });
     return 0;
   }

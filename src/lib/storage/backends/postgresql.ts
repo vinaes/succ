@@ -292,6 +292,11 @@ export class PostgresBackend {
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)'
     );
+    // Partial unique index: only current (non-superseded) rows must be unique per project+path+chunk.
+    // This allows superseded rows to coexist with new versions of the same chunk.
+    await pool.query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_chunk_current ON documents(project_id, file_path, chunk_index) WHERE superseded_at IS NULL'
+    );
 
     // Metadata table
     await pool.query(`
@@ -763,18 +768,14 @@ export class PostgresBackend {
       throw new StorageError('Project ID must be set before upserting documents');
     }
     const pool = await this.getPool();
+    // Supersede existing current row before inserting the new version
+    await pool.query(
+      `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
+      [this.projectId, filePath, chunkIndex]
+    );
     const result = await pool.query<{ id: number }>(
       `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-       ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
-         content = EXCLUDED.content,
-         start_line = EXCLUDED.start_line,
-         end_line = EXCLUDED.end_line,
-         embedding = EXCLUDED.embedding,
-         symbol_name = EXCLUDED.symbol_name,
-         symbol_type = EXCLUDED.symbol_type,
-         signature = EXCLUDED.signature,
-         updated_at = NOW()
        RETURNING id`,
       [
         this.projectId,
@@ -818,18 +819,14 @@ export class PostgresBackend {
       await client.query('BEGIN');
 
       for (const doc of documents) {
+        // Supersede existing current row before inserting the new version
+        await client.query(
+          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
+          [this.projectId, doc.filePath, doc.chunkIndex]
+        );
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-           ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
-             content = EXCLUDED.content,
-             start_line = EXCLUDED.start_line,
-             end_line = EXCLUDED.end_line,
-             embedding = EXCLUDED.embedding,
-             symbol_name = EXCLUDED.symbol_name,
-             symbol_type = EXCLUDED.symbol_type,
-             signature = EXCLUDED.signature,
-             updated_at = NOW()
            RETURNING id`,
           [
             this.projectId,
@@ -889,18 +886,14 @@ export class PostgresBackend {
       const processedFiles = new Set<string>();
 
       for (const doc of documents) {
+        // Supersede existing current row before inserting the new version
+        await client.query(
+          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
+          [this.projectId, doc.filePath, doc.chunkIndex]
+        );
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-           ON CONFLICT(project_id, file_path, chunk_index) DO UPDATE SET
-             content = EXCLUDED.content,
-             start_line = EXCLUDED.start_line,
-             end_line = EXCLUDED.end_line,
-             embedding = EXCLUDED.embedding,
-             symbol_name = EXCLUDED.symbol_name,
-             symbol_type = EXCLUDED.symbol_type,
-             signature = EXCLUDED.signature,
-             updated_at = NOW()
            RETURNING id`,
           [
             this.projectId,
@@ -1037,7 +1030,7 @@ export class PostgresBackend {
     if (ids.length === 0) return [];
     const pool = await this.getPool();
 
-    let query = `SELECT id, file_path, content, start_line, end_line FROM documents WHERE id = ANY($1)`;
+    let query = `SELECT id, file_path, content, start_line, end_line FROM documents WHERE id = ANY($1) AND superseded_at IS NULL`;
     const params: unknown[] = [ids];
 
     if (options?.codeOnly) {
@@ -1141,15 +1134,15 @@ export class PostgresBackend {
     // If project_id is set, get stats for that project; otherwise get global stats
     if (this.projectId) {
       const totalDocs = await pool.query<{ count: string }>(
-        'SELECT COUNT(*) as count FROM documents WHERE LOWER(project_id) = $1',
+        'SELECT COUNT(*) as count FROM documents WHERE LOWER(project_id) = $1 AND superseded_at IS NULL',
         [this.projectId]
       );
       const totalFiles = await pool.query<{ count: string }>(
-        'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE LOWER(project_id) = $1',
+        'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE LOWER(project_id) = $1 AND superseded_at IS NULL',
         [this.projectId]
       );
       const lastIndexed = await pool.query<{ last: string | null }>(
-        'SELECT MAX(updated_at) as last FROM documents WHERE LOWER(project_id) = $1',
+        'SELECT MAX(updated_at) as last FROM documents WHERE LOWER(project_id) = $1 AND superseded_at IS NULL',
         [this.projectId]
       );
 
@@ -1162,13 +1155,13 @@ export class PostgresBackend {
 
     // No project set = aggregate stats across all projects
     const totalDocs = await pool.query<{ count: string }>(
-      'SELECT COUNT(*) as count FROM documents'
+      'SELECT COUNT(*) as count FROM documents WHERE superseded_at IS NULL'
     );
     const totalFiles = await pool.query<{ count: string }>(
-      'SELECT COUNT(DISTINCT file_path) as count FROM documents'
+      'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE superseded_at IS NULL'
     );
     const lastIndexed = await pool.query<{ last: string | null }>(
-      'SELECT MAX(updated_at) as last FROM documents'
+      'SELECT MAX(updated_at) as last FROM documents WHERE superseded_at IS NULL'
     );
 
     return {
@@ -1437,7 +1430,7 @@ export class PostgresBackend {
       signature: string | null;
     }>(
       `SELECT id, file_path, content, start_line, end_line, symbol_name, symbol_type, signature
-       FROM documents WHERE id = ANY($1)`,
+       FROM documents WHERE id = ANY($1) AND superseded_at IS NULL`,
       [fusedIds]
     );
 

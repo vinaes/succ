@@ -189,7 +189,7 @@ export function hybridSearchCode(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...docIds) as Array<{
@@ -248,7 +248,7 @@ export function hybridSearchCode(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...missingIds) as Array<{
@@ -476,7 +476,7 @@ export function hybridSearchDocs(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...missingIds) as Array<{
