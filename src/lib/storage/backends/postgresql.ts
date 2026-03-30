@@ -835,9 +835,10 @@ export class PostgresBackend {
       END $$;
     `);
 
-    // Backfill forget_after for existing auto-extracted memories (idempotent).
-    // Best-effort heuristic for initial migration only: uses forget_after IS NULL
-    // to identify memories that haven't been assigned a forgetting schedule yet.
+    // Backfill forget_after for existing auto-extracted memories.
+    // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
+    // have already been backfilled (or had forget_after set at INSERT time) are
+    // skipped on subsequent startups. No migration marker needed.
     // Promoted memories will have their forget_after cleared by consolidation.
     await pool.query(`
       UPDATE memories
@@ -2210,7 +2211,8 @@ export class PostgresBackend {
     isGlobal: boolean = false,
     confidence: number = 0.5,
     sourceType: string = 'human',
-    sourceContext?: string
+    sourceContext?: string,
+    forgetAfter?: string | null
   ): Promise<number> {
     // Validate provenance fields
     ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
@@ -2220,8 +2222,8 @@ export class PostgresBackend {
 
     const result = await this.queryPrepared<{ id: number }>(
       'saveMemory',
-      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         projectId,
@@ -2237,6 +2239,7 @@ export class PostgresBackend {
         confidence,
         sourceType,
         sourceContext ?? null,
+        forgetAfter ?? null,
       ]
     );
 
@@ -3954,7 +3957,11 @@ export class PostgresBackend {
       validUntil?: string | Date;
       confidence?: number;
       sourceType?: string;
+<<<<<<< HEAD
       sourceContext?: string;
+=======
+      forgetAfter?: string | null;
+>>>>>>> 7b5387eb (fix(storage): include forget_after in INSERT path, remove post-save raw DB calls)
     }>,
     deduplicateThreshold: number = 0.92,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
@@ -4052,8 +4059,8 @@ export class PostgresBackend {
         );
 
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING id`,
           [
             this.projectId,
@@ -4069,6 +4076,7 @@ export class PostgresBackend {
             confidence,
             sourceType,
             memory.sourceContext ?? null,
+            memory.forgetAfter ?? null,
           ]
         );
 

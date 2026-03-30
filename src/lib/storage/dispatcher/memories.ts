@@ -72,6 +72,12 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     let savedId: number;
     let wasDuplicate = false;
 
+    // Compute forget_after at save time so it's included in the INSERT
+    const forgetAfter =
+      sourceType === 'auto_extracted'
+        ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
     if (this.backend === 'postgresql' && this.postgres) {
       savedId = await this.postgres.saveMemory(
         content,
@@ -86,7 +92,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         false, // isGlobal
         confidence,
         sourceType,
-        sourceContext
+        sourceContext,
+        forgetAfter
       );
 
       // Sync to Qdrant with full payload
@@ -121,6 +128,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         confidence,
         sourceType,
         sourceContext,
+        forgetAfter,
       });
 
       savedId = result.id;
@@ -184,27 +192,6 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         logWarn('storage', 'Invariant detection or priority recompute failed during saveMemory', {
           error: error instanceof Error ? error.message : String(error),
         });
-      }
-
-      // Auto-extracted memories get forget_after = created + 90 days
-      // Use DB-native timestamps to avoid Node.js/DB clock skew
-      if (sourceType === 'auto_extracted') {
-        try {
-          if (this.backend === 'postgresql' && this.postgres) {
-            const pool = await this.postgres.getPool();
-            await pool.query(
-              `UPDATE memories SET forget_after = NOW() + INTERVAL '90 days' WHERE id = $1`,
-              [savedId]
-            );
-          } else {
-            const { setForgetAfterDays } = await import('../../db/auto-memory.js');
-            setForgetAfterDays(savedId, 90);
-          }
-        } catch (error) {
-          logWarn('storage', 'Failed to set forget_after for auto-extracted memory', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
       }
     } else {
       this._sessionCounters.memoriesDuplicated++;
@@ -385,58 +372,21 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     deduplicateThreshold?: number,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
   ): Promise<MemoryBatchResult> {
+    // Pre-compute forget_after for auto-extracted memories so it's included in the INSERT
+    const enriched = memories.map((mem) => ({
+      ...mem,
+      forgetAfter:
+        mem.sourceType === 'auto_extracted'
+          ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+          : (mem.forgetAfter ?? undefined),
+    }));
+
     let result: MemoryBatchResult;
     if (this.backend === 'postgresql' && this.postgres) {
-      result = await this.postgres.saveMemoriesBatch(memories, deduplicateThreshold, options);
+      result = await this.postgres.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     } else {
       const sqlite = await this.getSqliteFns();
-      result = await sqlite.saveMemoriesBatch(memories, deduplicateThreshold, options);
-    }
-
-    // Set forget_after for auto-extracted memories in batch
-    if (result?.results?.length > 0) {
-      const autoExtractedSaved = result.results
-        .filter((r) => !r.isDuplicate && r.id != null)
-        .filter((r) => memories[r.index]?.sourceType === 'auto_extracted')
-        .map((r) => r.id as number);
-
-      if (autoExtractedSaved.length > 0) {
-        // Use DB-native timestamps to avoid Node.js/DB clock skew
-        try {
-          if (this.backend === 'postgresql' && this.postgres) {
-            const pool = await this.postgres.getPool();
-            // Batch update all auto-extracted memories in one query
-            const placeholders = autoExtractedSaved.map((_, i) => `$${i + 1}`).join(', ');
-            await pool.query(
-              `UPDATE memories SET forget_after = NOW() + INTERVAL '90 days' WHERE id IN (${placeholders})`,
-              autoExtractedSaved
-            );
-          } else {
-            // Chunked writes with CONCURRENCY=5 to avoid SQLITE_BUSY on large batches
-            const { setForgetAfterDays } = await import('../../db/auto-memory.js');
-            const CONCURRENCY = 5;
-            for (let i = 0; i < autoExtractedSaved.length; i += CONCURRENCY) {
-              const chunk = autoExtractedSaved.slice(i, i + CONCURRENCY);
-              const results = await Promise.allSettled(
-                chunk.map(async (id) => {
-                  setForgetAfterDays(id, 90);
-                })
-              );
-              for (const r of results) {
-                if (r.status === 'rejected') {
-                  logWarn('storage', 'Failed to set forget_after for batch memory chunk', {
-                    error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-                  });
-                }
-              }
-            }
-          }
-        } catch (error) {
-          logWarn('storage', 'Failed to set forget_after for batch auto-extracted memories', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      result = await sqlite.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     }
 
     // Sync newly saved memories to Qdrant

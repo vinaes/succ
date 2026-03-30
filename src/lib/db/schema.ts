@@ -483,9 +483,10 @@ export function initDb(database: Database.Database): void {
     'memories.forget_after'
   );
 
-  // Backfill forget_after for existing auto-extracted memories (idempotent).
-  // Best-effort heuristic for initial migration only: uses forget_after IS NULL
-  // to identify memories that haven't been assigned a forgetting schedule yet.
+  // Backfill forget_after for existing auto-extracted memories.
+  // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
+  // have already been backfilled (or had forget_after set at INSERT time) are
+  // skipped on subsequent startups. No migration marker needed.
   // Promoted memories will have their forget_after cleared by consolidation.
   try {
     database.exec(`
@@ -993,7 +994,8 @@ export function initGlobalDb(database: Database.Database): void {
     'global memories.forget_after'
   );
 
-  // Backfill forget_after for existing auto-extracted global memories (idempotent).
+  // Backfill forget_after for existing auto-extracted global memories.
+  // Idempotent: `forget_after IS NULL` skips already-backfilled rows.
   try {
     database.exec(`
       UPDATE memories
