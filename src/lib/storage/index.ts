@@ -560,6 +560,11 @@ export async function getMemoriesByTag(
   return d.getMemoriesByTag(tag, limit, offset);
 }
 
+export async function collectExpiredMemoryIds(): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectExpiredMemoryIds();
+}
+
 export async function deleteMemoriesByIds(ids: number[]): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesByIds(ids);

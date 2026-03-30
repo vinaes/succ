@@ -667,6 +667,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return deleted;
   }
 
+  async collectExpiredMemoryIds(): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectExpiredMemoryIds();
+    }
+    const { collectExpiredMemoryIds: collectExpiredSqlite } = await import('../../db/index.js');
+    return collectExpiredSqlite();
+  }
+
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
     if (ids.length === 0) return 0;
     // Filter out pinned memories (Tier 1 immutability)

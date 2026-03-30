@@ -8,12 +8,11 @@
  * - Update existing memories rather than creating duplicates
  */
 
-import { deleteMemoriesByIds } from '../storage/index.js';
+import { deleteMemoriesByIds, collectExpiredMemoryIds } from '../storage/index.js';
 import {
   getAutoExtractedMemories,
   promoteMemoryConfidence,
   collectPruneableAutoMemoryIds,
-  collectExpiredMemoryIds,
   setForgetAfter,
   getAutoMemoryStatsRow,
   bufferToFloatArray,
@@ -179,7 +178,7 @@ export async function consolidateAutoMemories(options?: {
     }
 
     // Step 4: Delete memories past their forget_after date.
-    const expiredIds = collectExpiredMemoryIds();
+    const expiredIds = await collectExpiredMemoryIds();
     if (expiredIds.length > 0) {
       result.forgotten = await deleteMemoriesByIds(expiredIds);
     }

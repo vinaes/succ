@@ -484,14 +484,15 @@ export function initDb(database: Database.Database): void {
   );
 
   // Backfill forget_after for existing auto-extracted memories (idempotent).
-  // Only targets rows that haven't been promoted (confidence < 0.7) and have no forget_after yet.
+  // Best-effort heuristic for initial migration only: uses forget_after IS NULL
+  // to identify memories that haven't been assigned a forgetting schedule yet.
+  // Promoted memories will have their forget_after cleared by consolidation.
   try {
     database.exec(`
       UPDATE memories
       SET forget_after = datetime(created_at, '+90 days')
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
-        AND (confidence IS NULL OR confidence < 0.7)
     `);
   } catch (_backfillErr) {
     logWarn('schema', 'forget_after backfill skipped (source_type column may not exist yet)');

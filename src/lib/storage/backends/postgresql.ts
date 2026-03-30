@@ -836,13 +836,14 @@ export class PostgresBackend {
     `);
 
     // Backfill forget_after for existing auto-extracted memories (idempotent).
-    // Only targets rows that haven't been promoted (confidence < 0.7) and have no forget_after yet.
+    // Best-effort heuristic for initial migration only: uses forget_after IS NULL
+    // to identify memories that haven't been assigned a forgetting schedule yet.
+    // Promoted memories will have their forget_after cleared by consolidation.
     await pool.query(`
       UPDATE memories
       SET forget_after = created_at + INTERVAL '90 days'
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
-        AND (confidence IS NULL OR confidence < 0.7)
     `);
 
     // Learning deltas table for session progress tracking
@@ -4237,6 +4238,21 @@ export class PostgresBackend {
       [JSON.stringify([tag.toLowerCase()]), this.projectId]
     );
     return result.rowCount ?? 0;
+  }
+
+  async collectExpiredMemoryIds(): Promise<number[]> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)' : '';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{ id: number }>(
+      `SELECT id FROM memories
+       WHERE forget_after IS NOT NULL
+       AND forget_after < NOW()
+       AND invalidated_by IS NULL
+       ${scopeCond}`,
+      scopeParams
+    );
+    return result.rows.map((r) => r.id);
   }
 
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
