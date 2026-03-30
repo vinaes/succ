@@ -768,41 +768,59 @@ export class PostgresBackend {
       throw new StorageError('Project ID must be set before upserting documents');
     }
     const pool = await this.getPool();
-    // Supersede existing current row before inserting the new version
-    await pool.query(
-      `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-      [this.projectId, filePath, chunkIndex]
-    );
-    const result = await pool.query<{ id: number }>(
-      `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-       RETURNING id`,
-      [
-        this.projectId,
+    // Use a single client + transaction so the supersede-then-insert is atomic.
+    // Without this, readers could briefly see no current version for the file_path+chunk_index.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Supersede existing current row before inserting the new version
+      await client.query(
+        `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
+        [this.projectId, filePath, chunkIndex]
+      );
+      const result = await client.query<{ id: number }>(
+        `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         RETURNING id`,
+        [
+          this.projectId,
+          filePath,
+          chunkIndex,
+          content,
+          startLine,
+          endLine,
+          toPgVector(embedding),
+          symbolName ?? null,
+          symbolType ?? null,
+          signature ?? null,
+        ]
+      );
+      const docId = result.rows[0].id;
+
+      // Compute and store search_vector for full-text search
+      const tokens = filePath.startsWith('code:')
+        ? tokenizeCodeWithAST(content, signature ? tokenizeCode(signature) : [], symbolName)
+        : tokenizeDocs(content);
+      const tokenStr = tokens.join(' ');
+      await client.query(
+        `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
+        [tokenStr, docId]
+      );
+
+      await client.query('COMMIT');
+      return docId;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      logWarn('postgresql', 'upsertDocument transaction failed, rolled back', {
+        error: getErrorMessage(err),
         filePath,
         chunkIndex,
-        content,
-        startLine,
-        endLine,
-        toPgVector(embedding),
-        symbolName ?? null,
-        symbolType ?? null,
-        signature ?? null,
-      ]
-    );
-    const docId = result.rows[0].id;
-
-    // Compute and store search_vector for full-text search
-    const tokens = filePath.startsWith('code:')
-      ? tokenizeCodeWithAST(content, signature ? tokenizeCode(signature) : [], symbolName)
-      : tokenizeDocs(content);
-    const tokenStr = tokens.join(' ');
-    await pool.query(
-      `UPDATE documents SET search_vector = CASE WHEN $1 = '' THEN NULL ELSE to_tsvector('simple', $1) END WHERE id = $2`,
-      [tokenStr, docId]
-    );
-
-    return docId;
+      });
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async upsertDocumentsBatch(documents: DocumentBatch[]): Promise<number[]> {

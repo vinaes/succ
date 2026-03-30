@@ -413,46 +413,50 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
     if (rows.length === 0) return 0;
 
     const ids = rows.map((r) => r.id);
-
-    // Clean vec tables if available
-    if (sqliteVecAvailable) {
-      try {
-        const BATCH = 900;
-        for (let i = 0; i < ids.length; i += BATCH) {
-          const chunk = ids.slice(i, i + BATCH);
-          const placeholders = chunk.map(() => '?').join(',');
-          const mappings = getDb()
-            .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
-            .all(...chunk) as Array<{ vec_rowid: number }>;
-          if (mappings.length > 0) {
-            const vecIds = mappings.map((m) => m.vec_rowid);
-            const vecPh = vecIds.map(() => '?').join(',');
-            getDb()
-              .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`)
-              .run(...vecIds);
-          }
-          getDb()
-            .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
-            .run(...chunk);
-        }
-      } catch (err) {
-        logWarn('documents', 'Vector cleanup failed during superseded purge', {
-          error: getErrorMessage(err),
-        });
-      }
-    }
-
-    // Delete the actual document rows
     const BATCH = 900;
-    let deleted = 0;
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const chunk = ids.slice(i, i + BATCH);
-      const placeholders = chunk.map(() => '?').join(',');
-      const result = getDb()
-        .prepare(`DELETE FROM documents WHERE id IN (${placeholders})`)
-        .run(...chunk);
-      deleted += result.changes;
-    }
+
+    // Wrap vec cleanup + document deletion in a transaction so they stay consistent.
+    const database = getDb();
+    const deleted = database.transaction(() => {
+      // Clean vec tables if available
+      if (sqliteVecAvailable) {
+        try {
+          for (let i = 0; i < ids.length; i += BATCH) {
+            const chunk = ids.slice(i, i + BATCH);
+            const placeholders = chunk.map(() => '?').join(',');
+            const mappings = database
+              .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .all(...chunk) as Array<{ vec_rowid: number }>;
+            if (mappings.length > 0) {
+              const vecIds = mappings.map((m) => m.vec_rowid);
+              const vecPh = vecIds.map(() => '?').join(',');
+              database
+                .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`)
+                .run(...vecIds);
+            }
+            database
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .run(...chunk);
+          }
+        } catch (err) {
+          logWarn('documents', 'Vector cleanup failed during superseded purge', {
+            error: getErrorMessage(err),
+          });
+        }
+      }
+
+      // Delete the actual document rows
+      let count = 0;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        const placeholders = chunk.map(() => '?').join(',');
+        const result = database
+          .prepare(`DELETE FROM documents WHERE id IN (${placeholders})`)
+          .run(...chunk);
+        count += result.changes;
+      }
+      return count;
+    })();
 
     if (deleted > 0) {
       invalidateCodeBm25Index();
