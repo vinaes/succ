@@ -654,7 +654,9 @@ function checkDangerous(command, config) {
         };
       }
     } catch (e) {
-      console.error(`[succ:pre-tool] Invalid custom safety pattern "${custom.pattern}": ${e.message || e}`);
+      console.error(
+        `[succ:pre-tool] Invalid custom safety pattern "${custom.pattern}": ${e.message || e}`
+      );
     }
   }
 
@@ -742,6 +744,25 @@ function formatFileContext(memories, fileName) {
     (m) => `- [${escapeXml(m.type || 'observation')}] ${sanitize(m.content, 200)}`
   );
   return `<file-context file="${sanitizeFileName(fileName)}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
+}
+
+// ─── Context pressure advisory ───────────────────────────────────────
+
+function formatCompactAdvisory(usage) {
+  const usedK = Math.round((usage.tokens_used || 0) / 1000);
+  const limitK = Math.round((usage.tokens_limit || 0) / 1000);
+  const pct = Math.round(usage.usage_percent || 0);
+  switch (usage.urgency) {
+    case 'low':
+      return `<context-pressure level="low">Context ${pct}% used (${usedK}K/${limitK}K). Consider running /compact to keep session lean.</context-pressure>`;
+    case 'medium':
+      return `<context-pressure level="medium">[IMPORTANT] Context ${pct}% used (${usedK}K/${limitK}K). Run /compact now to maintain quality.</context-pressure>`;
+    case 'high':
+    case 'critical':
+      return `<context-pressure level="critical">[CRITICAL: Context ${pct}% used — ${usedK}K/${limitK}K tokens] You MUST run /compact immediately. Response quality is degrading.</context-pressure>`;
+    default:
+      return '';
+  }
 }
 
 // ─── Main ────────────────────────────────────────────────────────────
@@ -891,6 +912,35 @@ MEDIUM and below — commit is OK, mention findings in summary.
     });
     console.log(JSON.stringify(json));
     process.exit(exitCode);
+  }
+
+  // 5.5. Context pressure advisory (fail-open, 500ms timeout)
+  try {
+    const port = ensureDaemonLazy(projectDir, succDir);
+    if (port && hookInput.session_id) {
+      const usageRes = await fetch(
+        `http://127.0.0.1:${port}/api/context-usage?session_id=${encodeURIComponent(hookInput.session_id)}`,
+        { signal: AbortSignal.timeout(500) }
+      );
+      if (usageRes.ok) {
+        const usage = await usageRes.json();
+        if (usage.should_compact && !usage.cooldown_active) {
+          const advisory = formatCompactAdvisory(usage);
+          if (advisory) {
+            contextParts.push(advisory);
+            // ACK: mark cooldown AFTER successful advisory push (prevents consumed cooldown on hook failure)
+            fetch(
+              `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
+              { method: 'POST', signal: AbortSignal.timeout(300) }
+            ).catch(() => {
+              // fire-and-forget
+            });
+          }
+        }
+      }
+    }
+  } catch (_e) {
+    // fail-open: never block tool execution for context monitoring
   }
 
   // 6. Emit combined context

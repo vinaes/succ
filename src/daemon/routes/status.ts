@@ -1,6 +1,10 @@
+import * as fs from 'fs';
 import { getAnalyzerStatus } from '../analyzer.js';
 import { getWatcherStatus } from '../watcher.js';
 import { getMemoryStats, getStats } from '../../lib/storage/index.js';
+import { logWarn } from '../../lib/fault-logger.js';
+import { getErrorMessage } from '../../lib/errors.js';
+import { getContextMonitor } from './sessions.js';
 import { requireSessionManager, type RouteContext, type RouteMap } from './types.js';
 
 export function statusRoutes(ctx: RouteContext): RouteMap {
@@ -20,6 +24,29 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
       const analyzeStatus = getAnalyzerStatus();
       const manager = requireSessionManager(ctx);
 
+      // Collect per-session context usage for all active sessions
+      const contextUsageMap: Record<string, unknown> = {};
+      try {
+        const monitor = getContextMonitor();
+        for (const [sessionId, session] of manager.sessions) {
+          if (session.isService) continue;
+          if (!session.transcriptPath) continue;
+          let size = 0;
+          try {
+            size = fs.statSync(session.transcriptPath).size;
+          } catch (err) {
+            logWarn(
+              'status',
+              `Failed to stat transcript for ${sessionId}: ${getErrorMessage(err)}`
+            );
+          }
+          const usage = monitor.getUsage(sessionId, size);
+          if (usage) contextUsageMap[sessionId] = usage;
+        }
+      } catch (err) {
+        logWarn('status', `Failed to collect context usage: ${getErrorMessage(err)}`);
+      }
+
       return {
         daemon: {
           pid: process.pid,
@@ -32,6 +59,7 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
           watch: watchStatus,
           analyze: analyzeStatus,
         },
+        context_usage: contextUsageMap,
       };
     },
 

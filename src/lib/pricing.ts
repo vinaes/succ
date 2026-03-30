@@ -223,6 +223,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 import { logWarn } from './fault-logger.js';
+import { readTranscriptTail } from './context-limits.js';
 /**
  * Get current model from environment variable, Claude Code transcript, or default to sonnet
  *
@@ -296,15 +297,9 @@ function detectModelFromClaudeCode(): string | null {
 
   const latestSession = path.join(projectPath, sortedFiles[0].name);
 
-  // Read last few KB of file to find model (reading from end is faster for large files)
-  const stats = fs.statSync(latestSession);
-  const readSize = Math.min(stats.size, 50000); // Last 50KB should be enough
-  const fd = fs.openSync(latestSession, 'r');
-  const buffer = Buffer.alloc(readSize);
-  fs.readSync(fd, buffer, 0, readSize, Math.max(0, stats.size - readSize));
-  fs.closeSync(fd);
-
-  const content = buffer.toString('utf-8');
+  // Read last 50KB of file to find model — shared utility from context-limits
+  const content = readTranscriptTail(latestSession, 50_000);
+  if (!content) return null;
 
   // Find last occurrence of "model":"..." in assistant messages
   const modelMatches = content.match(/"model"\s*:\s*"([^"]+)"/g);

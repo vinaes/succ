@@ -31,6 +31,8 @@ export interface SessionState {
   // Mid-conversation observer state
   lastObservation?: number; // Timestamp of last mid-session observation
   lastObservationSize?: number; // Transcript size (bytes) at last observation
+  // Auto-compact context tracking
+  compactOffset?: number; // Transcript byte position at last compact event
 }
 
 export type ActivityType = 'user_prompt' | 'stop';
