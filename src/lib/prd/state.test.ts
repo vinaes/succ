@@ -26,7 +26,7 @@ import { createPrd, createTask, createExecution } from './types.js';
 let tempDir: string;
 
 vi.mock('../config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: () => tempDir,
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));

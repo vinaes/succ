@@ -9,7 +9,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   isGlobalOnlyMode: vi.fn(() => false),
   getReadinessGateConfig: vi.fn(() => ({ enabled: false })),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),

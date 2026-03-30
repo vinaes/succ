@@ -15,7 +15,7 @@ vi.mock('../helpers.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   isGlobalOnlyMode: vi.fn(() => false),
   getSuccDir: vi.fn(() => ''),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),

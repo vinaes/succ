@@ -37,7 +37,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: vi.fn(() => testTmpDir),
   getIdleReflectionConfig: vi.fn(() => ({
     agent_model: 'haiku',

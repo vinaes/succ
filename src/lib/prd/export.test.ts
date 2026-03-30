@@ -5,7 +5,7 @@ import type { Prd, Task, TaskAttempt, PrdExecution, QualityGate } from './types.
 vi.mock('fs');
 vi.mock('./state.js');
 vi.mock('../config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: () => '/mock/.succ',
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));

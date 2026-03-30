@@ -46,7 +46,7 @@ vi.mock('../quality.js', () => ({
 }));
 
 vi.mock('../config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({
     auto_memory: { extraction_consolidation: true },
   })),

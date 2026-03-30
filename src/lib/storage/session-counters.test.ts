@@ -17,7 +17,7 @@ import { StorageDispatcher, getStorageDispatcher, resetStorageDispatcher } from 
 
 // Mock config to avoid real file reads
 vi.mock('../config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({ storage: {} })),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),

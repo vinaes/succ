@@ -14,7 +14,7 @@ vi.mock('./llm.js', () => ({
 
 // Mock getConfig to enable guardrails
 vi.mock('./config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue(null),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({
     security: {
       guardrails: {
