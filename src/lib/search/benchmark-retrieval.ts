@@ -17,7 +17,6 @@ import {
   calculateLatencyStats,
   type AccuracyMetrics,
   type LatencyStats,
-  type BenchmarkQuery,
   type SearchResult as BenchmarkSearchResult,
 } from '../benchmark.js';
 import { logWarn, logInfo } from '../fault-logger.js';
@@ -530,7 +529,7 @@ export function formatComparison(comparison: BaselineComparison): string {
     lines.push('  IMPROVEMENTS (>5% better):');
     for (const i of comparison.improvements) {
       lines.push(
-        `    ${i.metric}: ${i.baseline.toFixed(3)} → ${i.current.toFixed(3)} (+${(i.deltaPct * 100).toFixed(1)}%)`
+        `    ${i.metric}: ${i.baseline.toFixed(3)} → ${i.current.toFixed(3)} (${i.deltaPct >= 0 ? '+' : ''}${(i.deltaPct * 100).toFixed(1)}%)`
       );
     }
   }
