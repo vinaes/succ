@@ -112,9 +112,9 @@ export function findSimilarMemory(
       for (const result of vecResults) {
         const similarity = 1 - result.distance;
         if (similarity >= threshold) {
-          const memory = cachedPrepare('SELECT id, content FROM memories WHERE id = ?').get(
-            result.memory_id
-          ) as { id: number; content: string } | undefined;
+          const memory = cachedPrepare(
+            'SELECT id, content FROM memories WHERE id = ? AND COALESCE(is_latest, 1) = 1'
+          ).get(result.memory_id) as { id: number; content: string } | undefined;
           if (memory) {
             return { id: memory.id, content: memory.content, similarity };
           }
@@ -129,7 +129,9 @@ export function findSimilarMemory(
   }
 
   // Brute-force fallback when sqlite-vec unavailable
-  const rows = cachedPrepare('SELECT id, content, embedding FROM memories').all() as Array<{
+  const rows = cachedPrepare(
+    'SELECT id, content, embedding FROM memories WHERE COALESCE(is_latest, 1) = 1'
+  ).all() as Array<{
     id: number;
     content: string;
     embedding: Buffer;

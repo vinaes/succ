@@ -101,21 +101,6 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
                 version: (existing?.version ?? 1) + 1,
                 relation: classification.relation as 'updates' | 'extends' | 'derives',
               };
-
-              // If 'updates': mark old memory as not latest
-              // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
-              // this update — concurrent saves could both mark the same candidate as
-              // not-latest and fork the version chain. Acceptable for v1 since the
-              // feature is config-gated and the LLM call serializes most concurrent saves.
-              if (classification.relation === 'updates') {
-                try {
-                  await this.markMemoryNotLatest(candidate.id);
-                } catch (err) {
-                  logWarn('storage', 'Failed to mark old memory as not latest', {
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
             }
           }
         }
@@ -254,8 +239,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       // Create version link if version detection found a relationship
       if (versionInfo) {
         try {
-          const { createMemoryLink } = await import('../../db/graph.js');
-          createMemoryLink(
+          await this.createMemoryLink(
             savedId,
             versionInfo.parentMemoryId,
             versionInfo.relation,
@@ -265,6 +249,21 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
           logWarn('storage', 'Failed to create version link', {
             error: error instanceof Error ? error.message : String(error),
           });
+        }
+
+        // If 'updates': mark old memory as not latest AFTER successful save
+        // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
+        // this update — concurrent saves could both mark the same candidate as
+        // not-latest and fork the version chain. Acceptable for v1 since the
+        // feature is config-gated and the LLM call serializes most concurrent saves.
+        if (versionInfo.relation === 'updates') {
+          try {
+            await this.markMemoryNotLatest(versionInfo.parentMemoryId);
+          } catch (err) {
+            logWarn('storage', 'Failed to mark old memory as not latest', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
       }
     } else {

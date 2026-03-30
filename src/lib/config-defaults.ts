@@ -127,6 +127,7 @@ export const DEFAULT_IDLE_REFLECTION_CONFIG: Required<IdleReflectionConfig> = {
 export const DEFAULT_CONFIG: SuccConfig = {
   chunk_size: 500,
   chunk_overlap: 50,
+  auto_memory: DEFAULT_AUTO_MEMORY_CONFIG,
 };
 
 /** Default API URL */

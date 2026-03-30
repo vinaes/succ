@@ -4,6 +4,7 @@ import type { QdrantVectorStore } from '../vector/qdrant.js';
 import type {
   AuditChangedBy,
   AuditEventType,
+  LinkRelation,
   MemoryAuditRecord,
   MemoryRecord,
   MemoryStats,
@@ -87,6 +88,18 @@ export class StorageDispatcherBase {
 
   async markMemoryNotLatest(_memoryId: number): Promise<void> {
     throw new Error('StorageDispatcher mixin method markMemoryNotLatest not initialized');
+  }
+
+  async createMemoryLink(
+    _sourceId: number,
+    _targetId: number,
+    _relation?: LinkRelation,
+    _weight?: number,
+    _validFrom?: string,
+    _validUntil?: string,
+    _metadata?: Record<string, unknown>
+  ): Promise<{ id: number; created: boolean }> {
+    throw new Error('StorageDispatcher mixin method createMemoryLink not initialized');
   }
 
   async recomputePriorityScore(_memoryId: number): Promise<void> {

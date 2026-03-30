@@ -137,6 +137,7 @@ const SCHEMA_DDL = `
     is_invariant INTEGER DEFAULT 0,
     priority_score REAL DEFAULT NULL,
     version INTEGER DEFAULT 1,
+    parent_memory_id INTEGER DEFAULT NULL,
     root_memory_id INTEGER DEFAULT NULL,
     is_latest INTEGER DEFAULT 1
   );
