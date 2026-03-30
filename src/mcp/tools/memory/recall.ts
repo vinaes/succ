@@ -29,6 +29,7 @@ import {
   extractAnswerFromResults,
   createErrorResponse,
 } from '../../helpers.js';
+import { gateAction } from '../../profile.js';
 import { logWarn } from '../../../lib/fault-logger.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
@@ -373,19 +374,42 @@ export function registerRecallTool(server: McpServer): void {
           }
         } else if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
           // Query decomposition: split complex queries into focused sub-queries
-          try {
-            const { decomposeQuery } = await import('../../../lib/search/query-decomposition.js');
-            const decomposition = await decomposeQuery(query);
-            if (decomposition.wasDecomposed) {
-              localResults = await decomposedSearchMemories(
-                decomposition.subQueries,
-                query,
-                queryEmbedding,
-                limit * 2,
-                0.3,
-                retrievalConfig.bm25_alpha
-              );
-            } else {
+          const decompositionGated = gateAction('succ_recall', 'decompose');
+          if (decompositionGated) {
+            // Profile too low for LLM decomposition — fall back to standard search
+            localResults = await hybridSearchMemories(
+              query,
+              queryEmbedding,
+              limit * 2,
+              0.3,
+              retrievalConfig.bm25_alpha
+            );
+          } else {
+            try {
+              const { decomposeQuery } = await import('../../../lib/search/query-decomposition.js');
+              const decomposition = await decomposeQuery(query);
+              if (decomposition.wasDecomposed) {
+                localResults = await decomposedSearchMemories(
+                  decomposition.subQueries,
+                  query,
+                  queryEmbedding,
+                  limit * 2,
+                  0.3,
+                  retrievalConfig.bm25_alpha
+                );
+              } else {
+                localResults = await hybridSearchMemories(
+                  query,
+                  queryEmbedding,
+                  limit * 2,
+                  0.3,
+                  retrievalConfig.bm25_alpha
+                );
+              }
+            } catch (err) {
+              logWarn('recall', 'Query decomposition failed, using standard search', {
+                error: getErrorMessage(err),
+              });
               localResults = await hybridSearchMemories(
                 query,
                 queryEmbedding,
@@ -394,17 +418,6 @@ export function registerRecallTool(server: McpServer): void {
                 retrievalConfig.bm25_alpha
               );
             }
-          } catch (err) {
-            logWarn('recall', 'Query decomposition failed, using standard search', {
-              error: getErrorMessage(err),
-            });
-            localResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit * 2,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
           }
         } else {
           // Standard single-pass search

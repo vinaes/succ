@@ -101,7 +101,12 @@ export async function decomposeQuery(query: string): Promise<DecompositionResult
     const seen = new Set<string>();
     const subQueries = response
       .split('\n')
-      .map((line) => line.replace(/^[\d\-*.)]+\s*/, '').trim())
+      .map((line) =>
+        line
+          .replace(/^\d+[.)]\s*/, '')
+          .replace(/^[-*]\s+/, '')
+          .trim()
+      )
       .filter((line) => line.length >= 5 && line.length <= 300)
       .filter((line) => !/^(sub-quer|here|the query|split)/i.test(line))
       .filter((line) => {

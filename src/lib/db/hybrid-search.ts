@@ -1,11 +1,11 @@
 import { getDb, getGlobalDb, cachedPrepare, cachedPrepareGlobal } from './connection.js';
-import { cosineSimilarity, getEmbedding } from '../embeddings.js';
+import { cosineSimilarity } from '../embeddings.js';
 import * as bm25 from '../bm25.js';
 import { bufferToFloatArray, floatArrayToBuffer } from './helpers.js';
 import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { getTokenFrequency, getTotalTokenCount } from './token-frequency.js';
 import { SearchResult } from './types.js';
-import { logWarn, logInfo } from '../fault-logger.js';
+import { logWarn } from '../fault-logger.js';
 import { getErrorMessage } from '../errors.js';
 import {
   getCodeBm25Index,
@@ -946,81 +946,4 @@ export function hybridSearchGlobalMemories(
   }
 
   return results;
-}
-
-// ============================================================================
-// Decomposed Memory Search (query decomposition + RRF merge)
-// ============================================================================
-
-/**
- * Run hybridSearchMemories for each sub-query in parallel, then merge via RRF.
- * Falls back to single-query search if decomposition fails or yields no sub-queries.
- *
- * @param subQueries - Decomposed sub-queries (from decomposeQuery)
- * @param originalQuery - Original query (used as fallback)
- * @param queryEmbedding - Embedding of the original query
- * @param limit - Max results
- * @param threshold - Minimum similarity
- * @param alpha - BM25/vector balance
- */
-export async function decomposedSearchMemories(
-  subQueries: string[],
-  originalQuery: string,
-  queryEmbedding: number[],
-  limit: number = 5,
-  threshold: number = 0.3,
-  alpha: number = 0.5
-): Promise<HybridMemoryResult[]> {
-  if (subQueries.length === 0) {
-    return hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
-  }
-
-  try {
-    // Get embeddings for all sub-queries in parallel
-    const subEmbeddings = await Promise.all(subQueries.map((sq) => getEmbedding(sq)));
-
-    // Run search for each sub-query
-    const subResults = subQueries.map((sq, i) =>
-      hybridSearchMemories(sq, subEmbeddings[i], limit, threshold, alpha)
-    );
-
-    // Merge via RRF: each sub-query's results contribute rank-based scores
-    const RRF_K = 60;
-    const scoreMap = new Map<number, { score: number; result: HybridMemoryResult }>();
-
-    for (const results of subResults) {
-      for (let rank = 0; rank < results.length; rank++) {
-        const r = results[rank];
-        const rrfScore = 1 / (RRF_K + rank + 1);
-        const existing = scoreMap.get(r.id);
-        if (existing) {
-          existing.score += rrfScore;
-          if (r.similarity > existing.result.similarity) {
-            existing.result = r;
-          }
-        } else {
-          scoreMap.set(r.id, { score: rrfScore, result: r });
-        }
-      }
-    }
-
-    // Sort by combined RRF score and propagate as similarity so downstream
-    // sorting by similarity preserves the RRF ordering.
-    const merged = Array.from(scoreMap.values())
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map((entry) => ({ ...entry.result, similarity: entry.score }));
-
-    logInfo(
-      'hybrid-search',
-      `Decomposed search: ${subQueries.length} sub-queries → ${merged.length} merged results`
-    );
-
-    return merged;
-  } catch (error) {
-    logWarn('hybrid-search', 'Decomposed search failed, falling back to single query', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
-  }
 }
