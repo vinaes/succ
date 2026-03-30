@@ -85,6 +85,23 @@ export function boostMemoryConfidence(memoryId: number, amount: number = 0.02): 
 }
 
 /**
+ * Set forget_after to DB-native now()+days, avoiding Node.js/DB clock skew.
+ */
+export function setForgetAfterDays(memoryId: number, days: number): boolean {
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET forget_after = datetime('now', '+' || ? || ' days') WHERE id = ?`
+    ).run(days, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to set forget_after (days) for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
  * Set forget_after date on a memory.
  */
 export function setForgetAfter(memoryId: number, forgetAfter: string | null): boolean {

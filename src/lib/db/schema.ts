@@ -993,6 +993,21 @@ export function initGlobalDb(database: Database.Database): void {
     'global memories.forget_after'
   );
 
+  // Backfill forget_after for existing auto-extracted global memories (idempotent).
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+    `);
+  } catch (_backfillErr) {
+    logWarn(
+      'schema',
+      'global forget_after backfill skipped (source_type column may not exist yet)'
+    );
+  }
+
   // Migration: add correction_count and is_invariant columns for working memory pins
   safeMigrate(
     database,

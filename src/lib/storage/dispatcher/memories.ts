@@ -187,20 +187,18 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
 
       // Auto-extracted memories get forget_after = created + 90 days
+      // Use DB-native timestamps to avoid Node.js/DB clock skew
       if (sourceType === 'auto_extracted') {
-        const forgetDate = new Date();
-        forgetDate.setDate(forgetDate.getDate() + 90);
-        const forgetDateISO = forgetDate.toISOString();
         try {
           if (this.backend === 'postgresql' && this.postgres) {
             const pool = await this.postgres.getPool();
-            await pool.query(`UPDATE memories SET forget_after = $1 WHERE id = $2`, [
-              forgetDateISO,
-              savedId,
-            ]);
+            await pool.query(
+              `UPDATE memories SET forget_after = NOW() + INTERVAL '90 days' WHERE id = $1`,
+              [savedId]
+            );
           } else {
-            const { setForgetAfter } = await import('../../db/auto-memory.js');
-            setForgetAfter(savedId, forgetDateISO);
+            const { setForgetAfterDays } = await import('../../db/auto-memory.js');
+            setForgetAfterDays(savedId, 90);
           }
         } catch (error) {
           logWarn('storage', 'Failed to set forget_after for auto-extracted memory', {
@@ -403,23 +401,34 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         .map((r) => r.id as number);
 
       if (autoExtractedSaved.length > 0) {
-        const forgetDate = new Date();
-        forgetDate.setDate(forgetDate.getDate() + 90);
-        const forgetDateISO = forgetDate.toISOString();
-
+        // Use DB-native timestamps to avoid Node.js/DB clock skew
         try {
           if (this.backend === 'postgresql' && this.postgres) {
             const pool = await this.postgres.getPool();
             // Batch update all auto-extracted memories in one query
-            const placeholders = autoExtractedSaved.map((_, i) => `$${i + 2}`).join(', ');
+            const placeholders = autoExtractedSaved.map((_, i) => `$${i + 1}`).join(', ');
             await pool.query(
-              `UPDATE memories SET forget_after = $1 WHERE id IN (${placeholders})`,
-              [forgetDateISO, ...autoExtractedSaved]
+              `UPDATE memories SET forget_after = NOW() + INTERVAL '90 days' WHERE id IN (${placeholders})`,
+              autoExtractedSaved
             );
           } else {
-            const { setForgetAfter } = await import('../../db/auto-memory.js');
-            for (const id of autoExtractedSaved) {
-              setForgetAfter(id, forgetDateISO);
+            // Chunked writes with CONCURRENCY=5 to avoid SQLITE_BUSY on large batches
+            const { setForgetAfterDays } = await import('../../db/auto-memory.js');
+            const CONCURRENCY = 5;
+            for (let i = 0; i < autoExtractedSaved.length; i += CONCURRENCY) {
+              const chunk = autoExtractedSaved.slice(i, i + CONCURRENCY);
+              const results = await Promise.allSettled(
+                chunk.map(async (id) => {
+                  setForgetAfterDays(id, 90);
+                })
+              );
+              for (const r of results) {
+                if (r.status === 'rejected') {
+                  logWarn('storage', 'Failed to set forget_after for batch memory chunk', {
+                    error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+                  });
+                }
+              }
             }
           }
         } catch (error) {

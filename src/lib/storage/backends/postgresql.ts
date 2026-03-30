@@ -4242,7 +4242,9 @@ export class PostgresBackend {
 
   async collectExpiredMemoryIds(): Promise<number[]> {
     const pool = await this.getPool();
-    const scopeCond = this.projectId ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)' : '';
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query<{ id: number }>(
       `SELECT id FROM memories

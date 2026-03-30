@@ -152,6 +152,7 @@ export {
   degradeMemoryConfidence,
   boostMemoryConfidence,
   setForgetAfter,
+  setForgetAfterDays,
   collectExpiredMemoryIds,
   collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
