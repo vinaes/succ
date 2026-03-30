@@ -258,6 +258,7 @@ export class PostgresBackend {
    * Only runs when slowQueryThresholdMs > 0. Non-blocking — errors are logged and swallowed.
    */
   private async logSlowQuery(
+    pool: Pool,
     queryText: string,
     params: unknown[],
     durationMs: number
@@ -266,7 +267,6 @@ export class PostgresBackend {
     if (durationMs < this.slowQueryThresholdMs) return;
 
     try {
-      const pool = await this.getPool();
       const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
@@ -290,9 +290,10 @@ export class PostgresBackend {
     const result = await pool.query<T>(text, values);
     const durationMs = Date.now() - start;
 
-    // Fire-and-forget EXPLAIN for slow queries
+    // Fire-and-forget EXPLAIN for slow queries — pass pool directly to avoid
+    // reacquiring it after close() has been called (pool would be null).
     if (durationMs >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
-      void this.logSlowQuery(text, values ?? [], durationMs);
+      void this.logSlowQuery(pool, text, values ?? [], durationMs);
     }
 
     return result;
@@ -877,14 +878,25 @@ export class PostgresBackend {
     );
 
     // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
-    // Idempotent — the WHERE clause skips rows that are already all-lowercase.
-    await pool.query(`
-      UPDATE memories SET tags = (
-        SELECT jsonb_agg(lower(elem))
-        FROM jsonb_array_elements_text(tags) AS elem
-      ) WHERE tags IS NOT NULL AND tags != '[]'::jsonb
-      AND tags::text != lower(tags::text)
-    `);
+    // Self-gating: the WHERE clause `tags::text != lower(tags::text)` ensures zero rows
+    // are updated once all tags are already lowercase, making this a fast no-op on
+    // subsequent initSchema() calls (planner short-circuits when no rows match).
+    // We also do a cheap COUNT check first to skip the UPDATE entirely in the common case.
+    const mixedCaseCheck = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM memories
+       WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+       AND tags::text != lower(tags::text)
+       LIMIT 1`
+    );
+    if (Number(mixedCaseCheck.rows[0]?.cnt) > 0) {
+      await pool.query(`
+        UPDATE memories SET tags = (
+          SELECT jsonb_agg(lower(elem))
+          FROM jsonb_array_elements_text(tags) AS elem
+        ) WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+        AND tags::text != lower(tags::text)
+      `);
+    }
 
     // Composite index for documents — use LOWER(project_id) to match query predicates
     await pool.query(
@@ -2085,7 +2097,7 @@ export class PostgresBackend {
     const result = await pool.query(query, params);
     const elapsed = Date.now() - start;
     if (elapsed >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
-      void this.logSlowQuery(query, params, elapsed);
+      void this.logSlowQuery(pool, query, params, elapsed);
     }
 
     let memories = result.rows.map((row) => ({
