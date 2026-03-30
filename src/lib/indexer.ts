@@ -13,6 +13,7 @@ import {
 } from './storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
 import { logError, logInfo } from './fault-logger.js';
+import { getErrorMessage } from './errors.js';
 
 import { enrichForEmbedding, type Chunk } from './chunker.js';
 export type { Chunk };
@@ -119,6 +120,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     interface FileData {
       filePath: string;
       relativePath: string;
+      content: string;
       hash: string;
       chunks: Chunk[];
       isNew: boolean;
@@ -163,7 +165,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       const chunks = await Promise.resolve(chunker(content, filePath));
       if (chunks.length === 0) return null;
 
-      return { filePath, relativePath, hash, chunks, isNew };
+      return { filePath, relativePath, content, hash, chunks, isNew };
     });
 
     const fileDataResults = await Promise.all(fileDataPromises);
@@ -212,15 +214,19 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
         if (contextualEnabled && allChunksWithMeta.length > 0) {
           try {
             const { enrichWithContext } = await import('./search/contextual-embeddings.js');
-            // Group chunks by file for context sharing
-            const fileContent = allChunksWithMeta[0]?.content ?? '';
-            embeddingTexts = await enrichWithContext(
-              allChunksWithMeta as Chunk[],
-              fileContent,
-              enrichForEmbedding
-            );
+            // Enrich per-file so each file gets its own context
+            const perFileTexts: string[] = [];
+            for (const file of validFiles) {
+              perFileTexts.push(
+                ...(await enrichWithContext(file.chunks, file.content, enrichForEmbedding))
+              );
+            }
+            embeddingTexts = perFileTexts;
           } catch (err) {
-            logError('indexer', `Contextual embeddings failed, falling back to structural: ${err instanceof Error ? err.message : String(err)}`);
+            logError(
+              'indexer',
+              `Contextual embeddings failed, falling back to structural: ${getErrorMessage(err)}`
+            );
             embeddingTexts = allChunksWithMeta.map((c) => enrichForEmbedding(c as Chunk));
           }
         } else {

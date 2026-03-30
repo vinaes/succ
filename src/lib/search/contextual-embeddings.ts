@@ -11,7 +11,11 @@
 
 import { callLLM } from '../llm.js';
 import { logWarn, logInfo } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import type { Chunk } from '../chunker.js';
+
+/** Circuit breaker: once an LLM call fails hard, skip all remaining calls. */
+let llmCircuitOpen = false;
 
 const CONTEXT_SYSTEM =
   'You describe code chunks in one sentence. Be precise and technical. ' +
@@ -27,31 +31,20 @@ Describe what this code chunk does in one sentence:
  * Generate a semantic context description for a code chunk using LLM.
  * Returns the description string, or null on failure (fail-open).
  */
-async function generateChunkContext(
-  chunk: Chunk,
-  fileContext: string
-): Promise<string | null> {
-  try {
-    const prompt = CONTEXT_PROMPT
-      .replace('{file_context}', fileContext.slice(0, 4000))
-      .replace('{chunk}', chunk.content.slice(0, 2000));
+async function generateChunkContext(chunk: Chunk, fileContext: string): Promise<string | null> {
+  const prompt = CONTEXT_PROMPT.replace('{file_context}', fileContext.slice(0, 4000)).replace(
+    '{chunk}',
+    chunk.content.slice(0, 2000)
+  );
 
-    const response = await callLLM(prompt, {
-      maxTokens: 100,
-      temperature: 0.1,
-      systemPrompt: CONTEXT_SYSTEM,
-    });
+  const response = await callLLM(prompt, {
+    maxTokens: 100,
+    temperature: 0.1,
+    systemPrompt: CONTEXT_SYSTEM,
+  });
 
-    const desc = response?.trim();
-    if (!desc || desc.length < 10 || desc.length > 300) return null;
-
-    return desc;
-  } catch (error) {
-    logWarn('contextual-embeddings', 'LLM context generation failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+  const desc = response?.trim();
+  return !desc || desc.length < 10 || desc.length > 300 ? null : desc;
 }
 
 /**
@@ -83,8 +76,25 @@ export async function enrichWithContext(
   for (const chunk of chunks) {
     const structuralEnrichment = enrichFn(chunk);
 
-    // Try LLM context generation
-    const description = await generateChunkContext(chunk, fileContext);
+    // Skip LLM calls if circuit breaker is open (previous hard failure)
+    if (llmCircuitOpen) {
+      results.push(structuralEnrichment);
+      continue;
+    }
+
+    // Try LLM context generation; trip circuit breaker on first hard failure
+    let description: string | null = null;
+    try {
+      description = await generateChunkContext(chunk, fileContext);
+    } catch (error) {
+      llmCircuitOpen = true;
+      logWarn(
+        'contextual-embeddings',
+        `LLM context generation failed; using structural fallback for remaining chunks: ${getErrorMessage(error)}`
+      );
+      results.push(structuralEnrichment);
+      continue;
+    }
 
     if (description) {
       results.push(`[Context: ${description}]\n${structuralEnrichment}`);
@@ -103,4 +113,9 @@ export async function enrichWithContext(
   }
 
   return results;
+}
+
+/** Reset the LLM circuit breaker (for testing or new indexing sessions). */
+export function resetLlmCircuitBreaker(): void {
+  llmCircuitOpen = false;
 }
