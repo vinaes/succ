@@ -91,16 +91,20 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
               await import('../../auto-memory/version-classifier.js');
             const classification = await classifyVersionRelation(content, candidate);
             if (classification) {
-              // Get existing memory's version info
+              // Get existing memory's version info and verify it's still the latest
               const existing = await this.getMemoryById(candidate.id);
-              const rootId = existing?.root_memory_id ?? null;
+              if (existing && existing.is_latest !== false) {
+                const rootId = existing.root_memory_id ?? null;
 
-              versionInfo = {
-                parentMemoryId: candidate.id,
-                rootMemoryId: rootId ?? candidate.id,
-                version: (existing?.version ?? 1) + 1,
-                relation: classification.relation as 'updates' | 'extends' | 'derives',
-              };
+                versionInfo = {
+                  parentMemoryId: candidate.id,
+                  rootMemoryId: rootId ?? candidate.id,
+                  version: (existing.version ?? 1) + 1,
+                  relation: classification.relation as 'updates' | 'extends' | 'derives',
+                };
+              }
+              // If parent was superseded between similarity check and reload, skip
+              // versioning — save as a new independent memory instead.
             }
           }
         }

@@ -4052,6 +4052,7 @@ export class PostgresBackend {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
                        FROM memories
                        WHERE (LOWER(project_id) = $2 OR project_id IS NULL)
+                         AND COALESCE(is_latest, TRUE) = TRUE
                          AND 1 - (embedding <=> $1) >= $3
                        ORDER BY embedding <=> $1
                        LIMIT 1`;
@@ -4060,6 +4061,7 @@ export class PostgresBackend {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
                        FROM memories
                        WHERE project_id IS NULL
+                         AND COALESCE(is_latest, TRUE) = TRUE
                          AND 1 - (embedding <=> $1) >= $2
                        ORDER BY embedding <=> $1
                        LIMIT 1`;

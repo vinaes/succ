@@ -61,6 +61,7 @@ export {
   DEFAULT_COMPACT_BRIEFING_CONFIG,
   DEFAULT_ERROR_REPORTING_CONFIG,
   DEFAULT_IDLE_REFLECTION_CONFIG,
+  DEFAULT_AUTO_MEMORY_CONFIG,
   DEFAULT_CONFIG,
   DEFAULT_API_URL,
 } from './config-defaults.js';
@@ -97,6 +98,7 @@ import {
   DEFAULT_IDLE_REFLECTION_CONFIG,
   DEFAULT_SLEEP_AGENT_CONFIG,
   DEFAULT_ERROR_REPORTING_CONFIG,
+  DEFAULT_AUTO_MEMORY_CONFIG,
 } from './config-defaults.js';
 
 // ============================================================================
@@ -195,6 +197,11 @@ export function getConfig(): SuccConfig {
   const result: SuccConfig = {
     ...DEFAULT_CONFIG,
     ...validated,
+    // Deep-merge auto_memory so partial user config inherits missing defaults
+    auto_memory: {
+      ...DEFAULT_AUTO_MEMORY_CONFIG,
+      ...(validated.auto_memory ?? {}),
+    },
   };
 
   // Update cache

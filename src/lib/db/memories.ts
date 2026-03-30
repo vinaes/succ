@@ -1243,7 +1243,9 @@ export function saveMemoriesBatch(
   }
 
   // Batch duplicate check: load all existing memories once
-  const existingRows = cachedPrepare('SELECT id, content, embedding FROM memories').all() as Array<{
+  const existingRows = cachedPrepare(
+    'SELECT id, content, embedding FROM memories WHERE COALESCE(is_latest, 1) = 1'
+  ).all() as Array<{
     id: number;
     content: string;
     embedding: Buffer;
