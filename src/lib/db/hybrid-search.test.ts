@@ -132,7 +132,13 @@ const SCHEMA_DDL = `
     last_accessed TEXT,
     valid_from TEXT,
     valid_until TEXT,
-    invalidated_by INTEGER
+    invalidated_by INTEGER,
+    correction_count INTEGER DEFAULT 0,
+    is_invariant INTEGER DEFAULT 0,
+    priority_score REAL DEFAULT NULL,
+    version INTEGER DEFAULT 1,
+    root_memory_id INTEGER DEFAULT NULL,
+    is_latest INTEGER DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
 
