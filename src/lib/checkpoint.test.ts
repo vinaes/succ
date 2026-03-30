@@ -24,6 +24,7 @@ vi.mock('./db.js', () => ({
 
 vi.mock('./config.js', () => ({
   getSuccDir: vi.fn(() => '/mock/.succ'),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('Checkpoint Library', () => {

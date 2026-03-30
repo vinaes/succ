@@ -5,6 +5,7 @@ import os from 'os';
 
 vi.mock('../config.js', () => ({
   getSuccDir: vi.fn(() => ''),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 import {

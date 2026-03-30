@@ -171,6 +171,7 @@ vi.mock('../lib/config.js', () => ({
     query_expansion_enabled: false,
     query_expansion_mode: 'local',
   })),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../lib/quality.js', () => ({

@@ -20,6 +20,7 @@ vi.mock('./config.js', () => {
     getProjectRoot: () => tempDir,
     getDbPath: () => ':memory:',
     getGlobalDbPath: () => ':memory:',
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

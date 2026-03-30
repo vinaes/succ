@@ -10,6 +10,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 vi.mock('../../lib/config.js', () => ({
   isGlobalOnlyMode: vi.fn(() => false),
   getReadinessGateConfig: vi.fn(() => ({ enabled: false })),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/embeddings.js', () => ({
