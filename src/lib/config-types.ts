@@ -157,6 +157,8 @@ export interface IndexingConfig {
   max_file_size_kb?: number;
   /** Concurrency limit for parallel file indexing (default: 3) */
   concurrency?: number;
+  /** LLM-generated semantic context for each chunk before embedding (default: false). Costs 1 LLM call per chunk. */
+  contextual_embeddings?: boolean;
 }
 
 /**
