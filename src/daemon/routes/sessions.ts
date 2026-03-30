@@ -290,8 +290,8 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       const sessionId = searchParams.get('session_id') || '';
       if (!sessionId) return { error: 'session_id required' };
       if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
-      getContextMonitor().markAdvisory(sessionId);
-      return { success: true };
+      const acked = getContextMonitor().markAdvisory(sessionId);
+      return { success: acked };
     },
 
     'GET /api/session/stats': async (_body, searchParams) => {
