@@ -90,6 +90,10 @@ export class StorageDispatcherBase {
     throw new Error('StorageDispatcher mixin method markMemoryNotLatest not initialized');
   }
 
+  async markMemoryLatest(_memoryId: number): Promise<void> {
+    throw new Error('StorageDispatcher mixin method markMemoryLatest not initialized');
+  }
+
   async createMemoryLink(
     _sourceId: number,
     _targetId: number,

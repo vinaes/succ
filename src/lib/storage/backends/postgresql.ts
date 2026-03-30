@@ -2597,7 +2597,26 @@ export class PostgresBackend {
 
   async markMemoryNotLatest(memoryId: number): Promise<void> {
     const pool = await this.getPool();
-    await pool.query(`UPDATE memories SET is_latest = FALSE WHERE id = $1`, [memoryId]);
+    if (this.projectId) {
+      await pool.query(
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        [memoryId, this.projectId]
+      );
+    } else {
+      await pool.query(`UPDATE memories SET is_latest = FALSE WHERE id = $1`, [memoryId]);
+    }
+  }
+
+  async markMemoryLatest(memoryId: number): Promise<void> {
+    const pool = await this.getPool();
+    if (this.projectId) {
+      await pool.query(
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        [memoryId, this.projectId]
+      );
+    } else {
+      await pool.query(`UPDATE memories SET is_latest = TRUE WHERE id = $1`, [memoryId]);
+    }
   }
 
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {

@@ -242,6 +242,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
 
       // Create version link if version detection found a relationship
       if (versionInfo) {
+        let linkCreated = false;
         try {
           await this.createMemoryLink(
             savedId,
@@ -249,24 +250,36 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             versionInfo.relation,
             versionInfo.version / 10 // weight proportional to version depth
           );
+          linkCreated = true;
         } catch (error) {
-          logWarn('storage', 'Failed to create version link', {
+          logWarn('storage', 'Failed to create version link, skipping parent demotion', {
             error: error instanceof Error ? error.message : String(error),
           });
         }
 
-        // If 'updates': mark old memory as not latest AFTER successful save
+        // If 'updates': mark old memory as not latest AFTER successful link creation
+        // Only demote the parent if the version link was persisted — otherwise
+        // we'd hide the previous head without recording the version edge.
         // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
         // this update — concurrent saves could both mark the same candidate as
         // not-latest and fork the version chain. Acceptable for v1 since the
         // feature is config-gated and the LLM call serializes most concurrent saves.
-        if (versionInfo.relation === 'updates') {
+        if (versionInfo.relation === 'updates' && linkCreated) {
           try {
             await this.markMemoryNotLatest(versionInfo.parentMemoryId);
           } catch (err) {
-            logWarn('storage', 'Failed to mark old memory as not latest', {
+            // Rollback: re-mark the parent as latest since demotion failed —
+            // the new child is saved but the parent should remain visible.
+            logWarn('storage', 'Failed to mark old memory as not latest, rolling back', {
               error: err instanceof Error ? err.message : String(err),
             });
+            try {
+              await this.markMemoryLatest(versionInfo.parentMemoryId);
+            } catch (rollbackErr) {
+              logWarn('storage', 'Rollback markMemoryLatest also failed', {
+                error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+              });
+            }
           }
         }
       }

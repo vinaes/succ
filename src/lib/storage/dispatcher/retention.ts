@@ -45,6 +45,15 @@ export class RetentionDispatcherMixin extends StorageDispatcherBase {
     }
   }
 
+  async markMemoryLatest(memoryId: number): Promise<void> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      await this.postgres.markMemoryLatest(memoryId);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      sqlite.markMemoryLatest(memoryId);
+    }
+  }
+
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
     if (this.backend === 'postgresql' && this.postgres) {
       await this.postgres.setMemoryInvariant(memoryId, isInvariant);
