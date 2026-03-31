@@ -138,29 +138,26 @@ export function getLLMConfig(): LLMRuntimeConfig {
 
 /**
  * Get Sleep Agent config if enabled.
- * Reads from llm.sleep.*, with fallback to legacy top-level sleep_agent.
+ * Precedence: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → legacy sleep_agent.enabled
+ * Matches the same chain used in getIdleReflectionConfig() to prevent split-brain.
  */
 export function getSleepAgentConfig(): LLMRuntimeConfig | null {
   const config = getConfig();
 
-  // Primary path: llm.sleep.*
-  if (config.llm?.sleep?.enabled) {
-    const taskCfg = getLLMTaskConfig('sleep');
-    return {
-      backend: 'api', // Sleep agent is always 'api' (claude = ToS issues)
-      model: taskCfg.model,
-      endpoint: taskCfg.api_url + '/chat/completions',
-      apiKey: taskCfg.api_key,
-      maxTokens: taskCfg.max_tokens,
-      temperature: taskCfg.temperature,
-    };
-  }
-
-  // Legacy compat: top-level sleep_agent (pre-v1.4 config format)
+  const idleSleepEnabled = config.idle_reflection?.sleep_agent?.enabled;
+  const llmSleepEnabled = config.llm?.sleep?.enabled;
   const legacy = (config as unknown as Record<string, unknown>).sleep_agent as
     | { enabled?: boolean; model?: string; api_url?: string }
     | undefined;
-  if (legacy?.enabled) {
+  const sleepEnabled = idleSleepEnabled ?? llmSleepEnabled ?? legacy?.enabled ?? false;
+
+  if (!sleepEnabled) {
+    return null;
+  }
+
+  // Legacy compat: top-level sleep_agent (pre-v1.4 config format)
+  // Only use legacy model/endpoint when llm.sleep.* is not configured
+  if (legacy?.enabled && !llmSleepEnabled && idleSleepEnabled === undefined) {
     logWarn('llm', 'Top-level sleep_agent config is deprecated — move to llm.sleep.*');
     return {
       backend: 'api',
@@ -172,7 +169,16 @@ export function getSleepAgentConfig(): LLMRuntimeConfig | null {
     };
   }
 
-  return null;
+  // Primary path: use llm.sleep.* task config (covers both idle_reflection and llm.sleep enablement)
+  const taskCfg = getLLMTaskConfig('sleep');
+  return {
+    backend: 'api', // Sleep agent is always 'api' (claude = ToS issues)
+    model: taskCfg.model,
+    endpoint: taskCfg.api_url + '/chat/completions',
+    apiKey: taskCfg.api_key,
+    maxTokens: taskCfg.max_tokens,
+    temperature: taskCfg.temperature,
+  };
 }
 
 /**
