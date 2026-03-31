@@ -77,6 +77,9 @@ function fromPgVector(str: string): number[] {
   return inner.split(',').map((s) => parseFloat(s.trim()));
 }
 
+/** Cooldown period (ms) between EXPLAIN logging for slow queries. Prevents amplifying DB incidents. */
+const SLOW_QUERY_LOG_COOLDOWN_MS = 30_000;
+
 export interface PostgresBackendConfig {
   connectionString?: string;
   host?: string;
@@ -99,6 +102,8 @@ export class PostgresBackend {
   private projectId: string | null = null;
   /** Threshold in ms for EXPLAIN logging. 0 = disabled. */
   private slowQueryThresholdMs: number;
+  /** Timestamp of the last EXPLAIN log, used for cooldown to avoid amplifying DB saturation. */
+  private lastSlowQueryLogMs = 0;
   /** Cache for prepared statement names (query text -> prepared name) */
   private preparedStatements: Map<string, string> = new Map();
   private preparedCounter = 0;
@@ -265,6 +270,14 @@ export class PostgresBackend {
   ): Promise<void> {
     if (this.slowQueryThresholdMs <= 0) return;
     if (durationMs < this.slowQueryThresholdMs) return;
+
+    // Cooldown: skip EXPLAIN when the DB is likely already saturated.
+    // This prevents doubling round-trips during DB incidents.
+    const now = Date.now();
+    if (now - this.lastSlowQueryLogMs < SLOW_QUERY_LOG_COOLDOWN_MS) {
+      return;
+    }
+    this.lastSlowQueryLogMs = now;
 
     try {
       const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
