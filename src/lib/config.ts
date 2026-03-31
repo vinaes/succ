@@ -591,6 +591,18 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
     legacySleep?.enabled ??
     DEFAULT_SLEEP_AGENT_CONFIG.enabled;
 
+  // Emit deprecation warning if falling back to legacy sleep_agent config
+  if (
+    userSleepAgent.enabled === undefined &&
+    config.llm?.sleep?.enabled === undefined &&
+    legacySleep?.enabled !== undefined
+  ) {
+    logWarn(
+      'config',
+      'Top-level sleep_agent config is deprecated — move to llm.sleep.enabled or idle_reflection.sleep_agent.enabled'
+    );
+  }
+
   // Safety: memory_consolidation requires GLOBAL opt-in.
   // Project config can DISABLE (false) but cannot ENABLE (true) on its own.
   // This prevents .succ/config.json from silently enabling destructive consolidation.
