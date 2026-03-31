@@ -295,9 +295,9 @@ export async function callLLM(
     );
   } catch (err) {
     // Sleep agent failed (e.g. Ollama down) — fall back to main LLM config
-    if (hasSleepFallback && !configOverride) {
+    if (hasSleepFallback) {
       logWarn('llm', `Sleep agent failed, falling back to main LLM: ${getErrorMessage(err)}`);
-      const fallbackConfig = getLLMConfig();
+      const fallbackConfig = { ...getLLMConfig(), ...configOverride };
       const fallbackPrompt =
         fallbackConfig.backend === 'claude' && options.systemPrompt
           ? `System: ${options.systemPrompt}\n\n${prompt}`
@@ -378,9 +378,9 @@ export async function callLLMChat(
   try {
     return await callLLMChatInner(messages, config, timeout, maxTokens, temperature);
   } catch (err) {
-    if (hasSleepFallback && !configOverride) {
+    if (hasSleepFallback) {
       logWarn('llm', `Sleep agent chat failed, falling back to main LLM: ${getErrorMessage(err)}`);
-      const fallbackConfig = getLLMConfig();
+      const fallbackConfig = { ...getLLMConfig(), ...configOverride };
       return callLLMChatInner(messages, fallbackConfig, timeout, maxTokens, temperature);
     }
     throw err;
