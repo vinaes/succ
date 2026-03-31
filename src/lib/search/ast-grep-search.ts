@@ -214,12 +214,21 @@ function isLangAvailable(langName: string): boolean {
 /**
  * Extract metavariable names from a pattern string.
  * Matches $VAR, $$VAR, $$$VAR patterns.
+ * Returns entries with the bare name and whether the metavar is variadic ($$$).
  */
-function extractMetavarNames(pattern: string): string[] {
-  const matches = pattern.match(/\$+[A-Z_][A-Z0-9_]*/g);
-  if (!matches) return [];
-  const names = new Set(matches.map((m) => m.replace(/^\$+/, '')));
-  return [...names];
+function extractMetavarNames(pattern: string): Array<{ name: string; variadic: boolean }> {
+  const raw = pattern.match(/\$+[A-Z_][A-Z0-9_]*/g);
+  if (!raw) return [];
+  const seen = new Map<string, boolean>();
+  for (const m of raw) {
+    const dollarPrefix = m.match(/^\$+/)![0];
+    const name = m.slice(dollarPrefix.length);
+    // $$$VAR = variadic, $$VAR or $VAR = single
+    if (!seen.has(name)) {
+      seen.set(name, dollarPrefix.length >= 3);
+    }
+  }
+  return [...seen.entries()].map(([name, variadic]) => ({ name, variadic }));
 }
 
 /**
@@ -246,10 +255,20 @@ export async function searchPatternInContent(
     return matches.map((node) => {
       const range = node.range();
       const metavars: Record<string, string> = {};
-      for (const name of metavarNames) {
-        const matched = node.getMatch(name);
-        if (matched) {
-          metavars[name] = matched.text();
+      for (const { name, variadic } of metavarNames) {
+        if (variadic) {
+          const multi = node.getMultipleMatches(name);
+          if (multi && multi.length > 0) {
+            // Extract the full source span (preserving whitespace between nodes)
+            const firstRange = multi[0].range();
+            const lastRange = multi[multi.length - 1].range();
+            metavars[name] = content.slice(firstRange.start.index, lastRange.end.index);
+          }
+        } else {
+          const matched = node.getMatch(name);
+          if (matched) {
+            metavars[name] = matched.text();
+          }
         }
       }
 
