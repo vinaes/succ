@@ -32,6 +32,7 @@ vi.mock('../storage/index.js', () => ({
     if (mem) mem.tags = tags;
   },
   getMemoryById: async (id: number) => mockMemories.find((m) => m.id === id) ?? null,
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 import {

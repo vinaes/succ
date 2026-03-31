@@ -83,6 +83,7 @@ vi.mock('../../lib/storage/index.js', () => ({
     today_searches: 0,
     today_cost_usd: 0,
   })),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 // ============================================================================

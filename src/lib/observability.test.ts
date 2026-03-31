@@ -16,6 +16,7 @@ vi.mock('./storage/index.js', () => ({
     total_savings_tokens: 0,
     total_full_source_tokens: 0,
   })),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('./fault-logger.js', () => ({

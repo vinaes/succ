@@ -25,6 +25,7 @@ vi.mock('../storage/index.js', () => ({
     autoLinkedMemories.push({ id: memoryId, threshold: threshold ?? 0.6, maxLinks: maxLinks ?? 3 });
     return 1; // simulate 1 link created per orphan
   },
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 let enrichCalled = false;
