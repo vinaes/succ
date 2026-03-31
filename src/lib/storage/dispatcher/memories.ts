@@ -630,8 +630,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     if (this.backend === 'postgresql' && this.postgres) {
       return this.postgres.collectExpiredMemoryIds();
     }
-    const { collectExpiredMemoryIds: collectExpiredSqlite } = await import('../../db/index.js');
-    return collectExpiredSqlite();
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectExpiredMemoryIds();
   }
 
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
