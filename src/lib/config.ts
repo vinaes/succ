@@ -581,9 +581,15 @@ export function getIdleReflectionConfig(): Required<IdleReflectionConfig> {
   const userConfig = config.idle_reflection || {};
   const userSleepAgent = userConfig.sleep_agent || {};
 
-  // Sleep agent enabled state: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → false
+  // Sleep agent enabled state: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → legacy sleep_agent.enabled → false
+  const legacySleep = (config as unknown as Record<string, unknown>).sleep_agent as
+    | { enabled?: boolean }
+    | undefined;
   const sleepEnabled =
-    userSleepAgent.enabled ?? config.llm?.sleep?.enabled ?? DEFAULT_SLEEP_AGENT_CONFIG.enabled;
+    userSleepAgent.enabled ??
+    config.llm?.sleep?.enabled ??
+    legacySleep?.enabled ??
+    DEFAULT_SLEEP_AGENT_CONFIG.enabled;
 
   // Safety: memory_consolidation requires GLOBAL opt-in.
   // Project config can DISABLE (false) but cannot ENABLE (true) on its own.

@@ -199,13 +199,12 @@ async function runLLM(
  */
 async function extractFactsFromContent(
   content: string,
-  _model: string = 'haiku', // Ignored - uses global LLM config
   log: (msg: string) => void = console.log
 ): Promise<ExtractedFact[]> {
   const prompt = SESSION_PROGRESS_EXTRACTION_PROMPT.replace('{content}', content.slice(0, 15000)); // Limit content size
 
   try {
-    const result = await runLLM(prompt, 45000, FACT_EXTRACTION_SYSTEM);
+    const result = await runLLM(prompt, 90000, FACT_EXTRACTION_SYSTEM);
     return parseFactsResponse(result);
   } catch (err) {
     log(`[session-processor] LLM extraction failed: ${getErrorMessage(err)}`);
@@ -399,7 +398,7 @@ export async function processSessionEnd(
     const model = idleConfig.agent_model || 'haiku';
     log(`[session-processor] Extracting facts (model: ${model})`);
 
-    const facts = await extractFactsFromContent(content, model, log);
+    const facts = await extractFactsFromContent(content, log);
     log(`[session-processor] Extracted ${facts.length} facts`);
 
     if (facts.length === 0) {
