@@ -14,6 +14,7 @@ import {
   getGlobalMemoriesBm25Index,
 } from './bm25-indexes.js';
 import { parseTags, parseMemoryType } from './parse-helpers.js';
+import { getMemoryById } from './memories.js';
 
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
@@ -728,18 +729,48 @@ export async function graphEnhancedSearchMemories(
     if (existing) {
       existing.score += rrfScore;
     } else {
-      // PPR discovered a new memory not in base results — we don't have full data for it
-      // Just boost if it appears in base results, don't add new ones without content
       scoreMap.set(memId, { score: rrfScore, result: null });
     }
   }
 
-  // Sort by combined score, filter to entries with full result data
+  // Hydrate graph-only hits (PPR discovered memories not in base text results)
+  const missingIds = Array.from(scoreMap.entries())
+    .filter(([, entry]) => entry.result === null)
+    .map(([id]) => id);
+
+  for (const memId of missingIds) {
+    try {
+      const memory = getMemoryById(memId);
+      if (!memory) continue;
+      const entry = scoreMap.get(memId);
+      if (!entry) continue;
+      entry.result = {
+        id: memory.id,
+        content: memory.content,
+        tags: memory.tags,
+        source: memory.source,
+        type: memory.type,
+        created_at: memory.created_at,
+        similarity: entry.score,
+        last_accessed: memory.last_accessed,
+        access_count: memory.access_count,
+        valid_from: memory.valid_from,
+        valid_until: memory.valid_until,
+        quality_score: memory.quality_score,
+      };
+    } catch (err) {
+      logWarn('hybrid-search', `Failed to hydrate graph-only memory id=${memId}`, {
+        error: getErrorMessage(err),
+      });
+    }
+  }
+
+  // Sort by combined score, write fused score into similarity, filter out unhydrated entries
   return Array.from(scoreMap.values())
-    .filter((e) => e.result !== null)
+    .filter((e): e is { score: number; result: HybridMemoryResult } => e.result !== null)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((e) => e.result!);
+    .map((e) => ({ ...e.result, similarity: e.score }));
 }
 
 /**
