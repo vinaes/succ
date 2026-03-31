@@ -834,6 +834,11 @@ export class PostgresBackend {
         END IF;
       END $$;
     `);
+    // Partial index on forget_after for collectExpiredMemoryIds() — only rows
+    // with a non-null forget_after are indexed, keeping the index lean.
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_forget_after ON memories(forget_after) WHERE forget_after IS NOT NULL'
+    );
 
     // Backfill forget_after for existing auto-extracted memories.
     // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
@@ -3957,11 +3962,8 @@ export class PostgresBackend {
       validUntil?: string | Date;
       confidence?: number;
       sourceType?: string;
-<<<<<<< HEAD
       sourceContext?: string;
-=======
       forgetAfter?: string | null;
->>>>>>> 7b5387eb (fix(storage): include forget_after in INSERT path, remove post-save raw DB calls)
     }>,
     deduplicateThreshold: number = 0.92,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
