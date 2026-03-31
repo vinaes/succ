@@ -6,6 +6,7 @@ import { MemoryType, sqliteVecAvailable } from './schema.js';
 import { getTokenFrequency, getTotalTokenCount } from './token-frequency.js';
 import { SearchResult } from './types.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import {
   getCodeBm25Index,
   getDocsBm25Index,
@@ -13,6 +14,7 @@ import {
   getGlobalMemoriesBm25Index,
 } from './bm25-indexes.js';
 import { parseTags, parseMemoryType } from './parse-helpers.js';
+import { getMemoriesByIds } from './memories.js';
 
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
@@ -660,6 +662,120 @@ export function hybridSearchMemories(
     });
   }
   return results;
+}
+
+/**
+ * Graph-enhanced memory search: BM25 + vector + PPR as third RRF signal.
+ * Runs standard hybrid search first, then uses top results as PPR seed nodes
+ * to discover graph-connected memories. Merges all three via weighted RRF.
+ *
+ * @param query - Search query
+ * @param queryEmbedding - Query embedding vector
+ * @param limit - Max results
+ * @param threshold - Minimum similarity
+ * @param alpha - BM25/vector balance
+ * @param graphWeight - PPR signal weight in RRF (0-1, default 0.3)
+ */
+export async function graphEnhancedSearchMemories(
+  query: string,
+  queryEmbedding: number[],
+  limit: number = 5,
+  threshold: number = 0.3,
+  alpha: number = 0.5,
+  graphWeight: number = 0.3
+): Promise<HybridMemoryResult[]> {
+  // Step 1: Standard BM25 + vector search
+  const baseResults = hybridSearchMemories(query, queryEmbedding, limit * 2, threshold, alpha);
+
+  if (baseResults.length === 0) return baseResults;
+
+  // Step 2: Run PPR from top results as seed nodes
+  let pprScores: Map<number, number>;
+  try {
+    const { personalizedPageRank } = await import('../graph/graphology-bridge.js');
+    const seedIds = baseResults.slice(0, Math.min(10, baseResults.length)).map((r) => r.id);
+    const pprResults = await personalizedPageRank(seedIds, limit * 3);
+    pprScores = new Map(
+      pprResults.map((r: { memoryId: number; score: number }) => [r.memoryId, r.score])
+    );
+  } catch (err) {
+    logWarn('hybrid-search', 'PPR graph signal failed, returning base results', {
+      error: getErrorMessage(err),
+    });
+    return baseResults.slice(0, limit);
+  }
+
+  if (pprScores.size === 0) return baseResults.slice(0, limit);
+
+  // Step 3: Three-signal RRF merge
+  const RRF_K = 60;
+  // Clamp graphWeight to [0, 1] and guard against NaN/Infinity
+  const safeWeight = Number.isFinite(graphWeight) ? Math.max(0, Math.min(1, graphWeight)) : 0;
+  const textWeight = 1 - safeWeight; // BM25+vector share this weight
+
+  const scoreMap = new Map<number, { score: number; result: HybridMemoryResult | null }>();
+
+  // BM25+vector signal (from base results, already RRF-fused)
+  for (let rank = 0; rank < baseResults.length; rank++) {
+    const r = baseResults[rank];
+    const rrfScore = textWeight / (RRF_K + rank + 1);
+    scoreMap.set(r.id, { score: rrfScore, result: r });
+  }
+
+  // PPR graph signal
+  const pprRanked = Array.from(pprScores.entries()).sort((a, b) => b[1] - a[1]);
+  for (let rank = 0; rank < pprRanked.length; rank++) {
+    const [memId] = pprRanked[rank];
+    const rrfScore = safeWeight / (RRF_K + rank + 1);
+    const existing = scoreMap.get(memId);
+    if (existing) {
+      existing.score += rrfScore;
+    } else {
+      scoreMap.set(memId, { score: rrfScore, result: null });
+    }
+  }
+
+  // Hydrate graph-only hits (PPR discovered memories not in base text results)
+  // Batch-fetch all missing IDs in a single query to avoid N+1 sequential lookups
+  const missingIds = Array.from(scoreMap.entries())
+    .filter(([, entry]) => entry.result === null)
+    .map(([id]) => id);
+
+  if (missingIds.length > 0) {
+    try {
+      const memories = getMemoriesByIds(missingIds);
+      for (const memory of memories) {
+        const entry = scoreMap.get(memory.id);
+        if (!entry) continue;
+        entry.result = {
+          id: memory.id,
+          content: memory.content,
+          tags: memory.tags,
+          source: memory.source,
+          type: memory.type,
+          created_at: memory.created_at,
+          similarity: entry.score,
+          last_accessed: memory.last_accessed,
+          access_count: memory.access_count,
+          valid_from: memory.valid_from,
+          valid_until: memory.valid_until,
+          quality_score: memory.quality_score,
+        };
+      }
+    } catch (err) {
+      logWarn('hybrid-search', `Failed to batch-hydrate graph-only memories`, {
+        error: getErrorMessage(err),
+        ids: missingIds.join(','),
+      });
+    }
+  }
+
+  // Sort by combined score, write fused score into similarity, filter out unhydrated entries
+  return Array.from(scoreMap.values())
+    .filter((e): e is { score: number; result: HybridMemoryResult } => e.result !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((e) => ({ ...e.result, similarity: e.score }));
 }
 
 /**

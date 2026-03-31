@@ -254,6 +254,31 @@ export function registerRecallTool(server: McpServer): void {
               retrievalConfig.bm25_alpha
             );
           }
+        } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
+          // Graph-enhanced search: BM25 + vector + PPR as third signal
+          try {
+            const { graphEnhancedSearchMemories } =
+              await import('../../../lib/db/hybrid-search.js');
+            localResults = await graphEnhancedSearchMemories(
+              query,
+              queryEmbedding,
+              limit * 2,
+              0.3,
+              retrievalConfig.bm25_alpha,
+              retrievalConfig.graph_ppr_weight
+            );
+          } catch (err) {
+            logWarn('recall', 'Graph-enhanced search failed, falling back to standard', {
+              error: getErrorMessage(err),
+            });
+            localResults = await hybridSearchMemories(
+              query,
+              queryEmbedding,
+              limit * 2,
+              0.3,
+              retrievalConfig.bm25_alpha
+            );
+          }
         } else {
           // Standard single-pass search
           localResults = globalOnlyMode

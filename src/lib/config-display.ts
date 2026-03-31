@@ -217,6 +217,8 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         mmr_lambda: rc.mmr_lambda,
         query_expansion_enabled: rc.query_expansion_enabled,
         query_expansion_mode: rc.query_expansion_mode,
+        graph_ppr_enabled: rc.graph_ppr_enabled,
+        graph_ppr_weight: rc.graph_ppr_weight,
       };
     })(),
     web_search: (() => {
@@ -418,6 +420,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   );
   lines.push(
     `  Query expansion: ${display.retrieval.query_expansion_enabled} (mode: ${display.retrieval.query_expansion_mode})`
+  );
+  lines.push(
+    `  Graph PPR: ${display.retrieval.graph_ppr_enabled} (weight: ${display.retrieval.graph_ppr_weight})`
   );
   lines.push('');
 

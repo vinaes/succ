@@ -1009,6 +1009,8 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     mmr_lambda: userConfig.mmr_lambda ?? 0.8,
     query_expansion_enabled: userConfig.query_expansion_enabled ?? false,
     query_expansion_mode: userConfig.query_expansion_mode ?? (getConfig().llm?.type || 'api'),
+    graph_ppr_enabled: userConfig.graph_ppr_enabled ?? false,
+    graph_ppr_weight: userConfig.graph_ppr_weight ?? 0.3,
   };
 }
 
