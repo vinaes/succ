@@ -873,22 +873,46 @@ export class PostgresBackend {
     // ========================================================================
 
     // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
-    );
+    // Use CONCURRENTLY to avoid blocking writes on populated tables during startup.
+    // Each index creation is wrapped in try/catch because CONCURRENTLY can fail
+    // without blocking (e.g. duplicate index from a prior interrupted build).
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
+      );
+    }
 
     // Composite index for active memories per project (most common query pattern)
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_memories_project_active
-      ON memories(LOWER(project_id), created_at DESC)
-      WHERE invalidated_by IS NULL
-    `);
+    try {
+      await pool.query(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
+        ON memories(LOWER(project_id), created_at DESC)
+        WHERE invalidated_by IS NULL
+      `);
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
+      );
+    }
 
     // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
     // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
-    );
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+      );
+    }
 
     // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
     // Self-gating: the WHERE clause `tags::text != lower(tags::text)` ensures zero rows
@@ -915,14 +939,28 @@ export class PostgresBackend {
     }
 
     // Composite index for documents — use LOWER(project_id) to match query predicates
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
-    );
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
+      );
+    }
 
     // Composite index for documents (project + symbol_type for code search)
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
-    );
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
+      );
+    }
   }
 
   /**
