@@ -88,7 +88,7 @@ async function registerAllDynamicLanguages(sg: typeof import('@ast-grep/napi')):
       try {
         const mod = await import(pkg);
         return { name, registration: mod.default ?? mod };
-      } catch (_err) {
+      } catch {
         // Package not installed — expected for optional language support
         logWarn('ast-grep', `Optional lang package ${pkg} not available`);
         return null;
