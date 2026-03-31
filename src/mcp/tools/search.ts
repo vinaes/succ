@@ -24,9 +24,8 @@ import {
   extractAnswerFromResults,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
-import { getErrorMessage } from '../../lib/errors.js';
+import { getErrorMessage, isSuccError } from '../../lib/errors.js';
 import { searchPatternInContent, formatPatternResults } from '../../lib/search/ast-grep-search.js';
-import { isSuccError } from '../../lib/errors.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
