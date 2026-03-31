@@ -112,10 +112,14 @@ try { doMore(); } catch (e) { handle(e); }
     });
 
     it('should search Go via dynamic language registration', async () => {
+      // In Go's AST, `fmt.Println` is a single `selector_expression` node,
+      // so ast-grep cannot match the dotted form literally. Use `$FUNC($$$ARGS)`
+      // which matches any call expression, then assert on the matched text.
       const goCode = 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("hello")\n}\n';
-      const matches = await searchPatternInContent(goCode, 'main.go', 'fmt.Println($$$ARGS)');
+      const matches = await searchPatternInContent(goCode, 'main.go', '$FUNC($$$ARGS)');
       expect(matches).toHaveLength(1);
       expect(matches[0].text).toContain('fmt.Println');
+      expect(matches[0].metavars.FUNC).toBe('fmt.Println');
     });
 
     it('should search Rust via dynamic language registration', async () => {
