@@ -920,7 +920,7 @@ export async function getDaemonStatuses(): Promise<DaemonStatus[]> {
     statuses.push({
       name: 'daemon',
       running: daemonRunning,
-      pid: Number.isNaN(pid) ? undefined : pid,
+      pid: !Number.isNaN(pid) && pid > 0 ? pid : undefined,
       pidFile: daemonPidFile,
       logFile: fs.existsSync(daemonLogFile) ? daemonLogFile : undefined,
     });
