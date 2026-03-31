@@ -395,6 +395,7 @@ export function registerSearchTools(server: McpServer) {
         if (pattern && codeResults.length > 0) {
           const patternMatches = [];
           let patternError: string | null = null;
+          let failedFilesCount = 0;
           for (const result of codeResults) {
             const filePath = result.file_path.replace(/^code:/, '');
             try {
@@ -409,6 +410,7 @@ export function registerSearchTools(server: McpServer) {
                 if (patternMatches.length >= limit) break;
               }
             } catch (err) {
+              failedFilesCount++;
               if (isSuccError(err)) {
                 patternError = err.message;
               } else {
@@ -444,6 +446,8 @@ export function registerSearchTools(server: McpServer) {
           }
 
           const patternFormatted = formatPatternResults(patternMatches, output);
+          const failedNote =
+            failedFilesCount > 0 ? ` (${failedFilesCount} file(s) failed to parse)` : '';
 
           // Support extract parameter for pattern results
           if (extract) {
@@ -456,7 +460,7 @@ export function registerSearchTools(server: McpServer) {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}", extracted):\n\n${answer}`,
+                  text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}", extracted)${failedNote}:\n\n${answer}`,
                 },
               ],
             };
@@ -466,7 +470,7 @@ export function registerSearchTools(server: McpServer) {
             content: [
               {
                 type: 'text' as const,
-                text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}"):
+                text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}")${failedNote}:
 
 ${patternFormatted}`,
               },

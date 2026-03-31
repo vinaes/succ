@@ -22,7 +22,7 @@ import { getErrorMessage, DependencyError } from '../errors.js';
 
 // Lazy-loaded to avoid startup cost when not used
 let astGrepModule: typeof import('@ast-grep/napi') | null = null;
-let dynamicLangsRegistered = false;
+let astGrepInit: Promise<typeof import('@ast-grep/napi')> | null = null;
 
 /**
  * Dynamic language packages to register.
@@ -56,24 +56,31 @@ const registeredDynamicLangs = new Set<string>();
  * Missing language packages are silently skipped.
  */
 async function getAstGrep(): Promise<typeof import('@ast-grep/napi')> {
-  if (!astGrepModule) {
-    try {
-      astGrepModule = await import('@ast-grep/napi');
-    } catch (err) {
-      logWarn('ast-grep', `Failed to load @ast-grep/napi: ${getErrorMessage(err)}`);
-      throw new Error(
-        'ast-grep is not available. Install @ast-grep/napi to use structural pattern search.',
-        { cause: err }
-      );
-    }
+  if (astGrepModule) return astGrepModule;
 
-    // Register dynamic languages exactly once
-    if (!dynamicLangsRegistered) {
-      dynamicLangsRegistered = true;
-      await registerAllDynamicLanguages(astGrepModule);
-    }
+  if (!astGrepInit) {
+    astGrepInit = (async () => {
+      let sg: typeof import('@ast-grep/napi');
+      try {
+        sg = await import('@ast-grep/napi');
+      } catch (err) {
+        logWarn('ast-grep', `Failed to load @ast-grep/napi: ${getErrorMessage(err)}`);
+        throw new Error(
+          'ast-grep is not available. Install @ast-grep/napi to use structural pattern search.',
+          { cause: err }
+        );
+      }
+
+      await registerAllDynamicLanguages(sg);
+      astGrepModule = sg;
+      return sg;
+    })().catch((err) => {
+      astGrepInit = null;
+      throw err;
+    });
   }
-  return astGrepModule;
+
+  return astGrepInit;
 }
 
 /**

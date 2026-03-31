@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.5.96",
+  "version": "1.5.97",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -71,21 +71,6 @@
     "url": "https://github.com/vinaes/succ/issues"
   },
   "dependencies": {
-    "@ast-grep/lang-bash": "0.0.8",
-    "@ast-grep/lang-c": "0.0.6",
-    "@ast-grep/lang-cpp": "0.0.6",
-    "@ast-grep/lang-csharp": "0.0.6",
-    "@ast-grep/lang-go": "0.0.6",
-    "@ast-grep/lang-java": "0.0.7",
-    "@ast-grep/lang-json": "0.0.7",
-    "@ast-grep/lang-kotlin": "0.0.7",
-    "@ast-grep/lang-php": "0.0.7",
-    "@ast-grep/lang-python": "0.0.6",
-    "@ast-grep/lang-ruby": "0.0.7",
-    "@ast-grep/lang-rust": "0.0.7",
-    "@ast-grep/lang-scala": "0.0.7",
-    "@ast-grep/lang-swift": "0.0.8",
-    "@ast-grep/lang-yaml": "0.0.6",
     "@ast-grep/napi": "^0.42.0",
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.27.0",
@@ -116,6 +101,21 @@
     "zod": "^3.25.76"
   },
   "optionalDependencies": {
+    "@ast-grep/lang-bash": "0.0.8",
+    "@ast-grep/lang-c": "0.0.6",
+    "@ast-grep/lang-cpp": "0.0.6",
+    "@ast-grep/lang-csharp": "0.0.6",
+    "@ast-grep/lang-go": "0.0.6",
+    "@ast-grep/lang-java": "0.0.7",
+    "@ast-grep/lang-json": "0.0.7",
+    "@ast-grep/lang-kotlin": "0.0.7",
+    "@ast-grep/lang-php": "0.0.7",
+    "@ast-grep/lang-python": "0.0.6",
+    "@ast-grep/lang-ruby": "0.0.7",
+    "@ast-grep/lang-rust": "0.0.7",
+    "@ast-grep/lang-scala": "0.0.7",
+    "@ast-grep/lang-swift": "0.0.8",
+    "@ast-grep/lang-yaml": "0.0.6",
     "@qdrant/js-client-rest": "^1.12.0",
     "pg": "^8.13.0"
   },
