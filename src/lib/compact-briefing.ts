@@ -155,8 +155,13 @@ async function generateBriefingText(
 ): Promise<string> {
   const timeoutMs = config.timeout_ms || 30000;
 
-  // Use unified llm.* config only
-  return callLLM(prompt, { timeout: timeoutMs, maxTokens: 2000, systemPrompt });
+  // Use unified llm.* config, with sleep agent for background processing
+  return callLLM(prompt, {
+    timeout: timeoutMs,
+    maxTokens: 2000,
+    useSleepAgent: true,
+    systemPrompt,
+  });
 }
 
 // ============================================================================

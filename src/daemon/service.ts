@@ -67,6 +67,8 @@ import { analyzerRoutes } from './routes/analyzer.js';
 import { skillRoutes } from './routes/skills.js';
 import { hookRoutes } from './routes/hooks.js';
 import { addVersionedRoutes, getApiVersionInfo } from './routes/versioning.js';
+import { getClaudeMode } from '../lib/llm.js';
+import { ClaudeWSTransport } from '../lib/claude-ws-transport.js';
 
 export type { DaemonConfig, DaemonState };
 
@@ -565,6 +567,12 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   // Daily recall event retention cleanup
   scheduleRecallCleanup(log);
 
+  // Pre-warm WS transport if configured (eliminates cold-start on first LLM call)
+  if (getClaudeMode() === 'ws') {
+    ClaudeWSTransport.warmup();
+    log('[daemon] WS transport warmup initiated');
+  }
+
   if (config.daemon?.watch?.auto_start) {
     const watchConfig = config.daemon.watch;
     await startWatcher(
@@ -669,6 +677,11 @@ export async function shutdownDaemon(): Promise<void> {
         state!.server = null;
       })
     : Promise.resolve();
+
+  // Graceful WS transport shutdown before force-killing processes
+  await ClaudeWSTransport.shutdown().catch((err) =>
+    log(`[shutdown] WS transport shutdown failed: ${getErrorMessage(err)}`)
+  );
 
   processRegistry.killAll();
 

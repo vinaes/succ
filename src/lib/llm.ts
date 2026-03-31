@@ -23,7 +23,7 @@ import {
   getOpenRouterApiKey,
 } from './config.js';
 import { ClaudeWSTransport } from './claude-ws-transport.js';
-import { NetworkError, ConfigError } from './errors.js';
+import { NetworkError, ConfigError, getErrorMessage } from './errors.js';
 import { processRegistry } from './process-registry.js';
 
 // ============================================================================
@@ -138,16 +138,39 @@ export function getLLMConfig(): LLMRuntimeConfig {
 
 /**
  * Get Sleep Agent config if enabled.
- * Reads from llm.sleep.*.
+ * Precedence: idle_reflection.sleep_agent.enabled → llm.sleep.enabled → legacy sleep_agent.enabled
+ * Matches the same chain used in getIdleReflectionConfig() to prevent split-brain.
  */
 export function getSleepAgentConfig(): LLMRuntimeConfig | null {
   const config = getConfig();
-  const sleepEnabled = config.llm?.sleep?.enabled;
 
-  if (!sleepEnabled) return null;
+  const idleSleepEnabled = config.idle_reflection?.sleep_agent?.enabled;
+  const llmSleepEnabled = config.llm?.sleep?.enabled;
+  const legacy = (config as unknown as Record<string, unknown>).sleep_agent as
+    | { enabled?: boolean; model?: string; api_url?: string }
+    | undefined;
+  const sleepEnabled = idleSleepEnabled ?? llmSleepEnabled ?? legacy?.enabled ?? false;
 
+  if (!sleepEnabled) {
+    return null;
+  }
+
+  // Legacy compat: top-level sleep_agent (pre-v1.4 config format)
+  // Only use legacy model/endpoint when llm.sleep.* is not configured
+  if (legacy?.enabled && !llmSleepEnabled && idleSleepEnabled === undefined) {
+    logWarn('llm', 'Top-level sleep_agent config is deprecated — move to llm.sleep.*');
+    return {
+      backend: 'api',
+      model: legacy.model || 'qwen2.5:7b',
+      endpoint: (legacy.api_url || getApiUrl()) + '/chat/completions',
+      apiKey: getApiKey(),
+      maxTokens: 2000,
+      temperature: 0.3,
+    };
+  }
+
+  // Primary path: use llm.sleep.* task config (covers both idle_reflection and llm.sleep enablement)
   const taskCfg = getLLMTaskConfig('sleep');
-
   return {
     backend: 'api', // Sleep agent is always 'api' (claude = ToS issues)
     model: taskCfg.model,
@@ -162,8 +185,7 @@ export function getSleepAgentConfig(): LLMRuntimeConfig | null {
  * Check if sleep agent is enabled
  */
 export function isSleepAgentEnabled(): boolean {
-  const config = getConfig();
-  return config.llm?.sleep?.enabled === true;
+  return getSleepAgentConfig() !== null;
 }
 
 /**
@@ -188,7 +210,47 @@ export function getChatLLMConfig(): LLMRuntimeConfig {
 // ============================================================================
 
 /**
- * Call LLM with the configured backend
+ * Execute LLM call with a resolved config (no routing logic).
+ */
+async function callLLMInner(
+  effectivePrompt: string,
+  rawPrompt: string,
+  config: LLMRuntimeConfig,
+  timeout: number,
+  maxTokens: number,
+  temperature: number,
+  options: LLMOptions
+): Promise<string> {
+  switch (config.backend) {
+    case 'claude': {
+      if (getClaudeMode() === 'ws') {
+        const transport = await ClaudeWSTransport.getInstance();
+        return transport.send(effectivePrompt, { model: config.model, timeout });
+      }
+      return runClaudeCLI(effectivePrompt, config.model, timeout);
+    }
+
+    case 'api':
+      return callApiLLM(
+        rawPrompt,
+        config.endpoint!,
+        config.model,
+        timeout,
+        maxTokens,
+        temperature,
+        config.apiKey,
+        options.systemPrompt,
+        options.cacheControl
+      );
+
+    default:
+      throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
+  }
+}
+
+/**
+ * Call LLM with the configured backend.
+ * When useSleepAgent is true and sleep agent fails, falls back to main LLM config.
  */
 export async function callLLM(
   prompt: string,
@@ -196,9 +258,16 @@ export async function callLLM(
   configOverride?: Partial<LLMRuntimeConfig>
 ): Promise<string> {
   let baseConfig: LLMRuntimeConfig;
+  let hasSleepFallback = false;
+
   if (options.useSleepAgent) {
     const sleepAgentConfig = getSleepAgentConfig();
-    baseConfig = sleepAgentConfig || getLLMConfig();
+    if (sleepAgentConfig) {
+      baseConfig = sleepAgentConfig;
+      hasSleepFallback = true;
+    } else {
+      baseConfig = getLLMConfig();
+    }
   } else {
     baseConfig = getLLMConfig();
   }
@@ -214,30 +283,36 @@ export async function callLLM(
       ? `System: ${options.systemPrompt}\n\n${prompt}`
       : prompt;
 
-  switch (config.backend) {
-    case 'claude': {
-      if (getClaudeMode() === 'ws') {
-        const transport = await ClaudeWSTransport.getInstance();
-        return transport.send(effectivePrompt, { model: config.model, timeout });
-      }
-      return runClaudeCLI(effectivePrompt, config.model, timeout);
-    }
-
-    case 'api':
-      return callApiLLM(
+  try {
+    return await callLLMInner(
+      effectivePrompt,
+      prompt,
+      config,
+      timeout,
+      maxTokens,
+      temperature,
+      options
+    );
+  } catch (err) {
+    // Sleep agent failed (e.g. Ollama down) — fall back to main LLM config
+    if (hasSleepFallback) {
+      logWarn('llm', `Sleep agent failed, falling back to main LLM: ${getErrorMessage(err)}`);
+      const fallbackConfig = { ...getLLMConfig(), ...configOverride };
+      const fallbackPrompt =
+        fallbackConfig.backend === 'claude' && options.systemPrompt
+          ? `System: ${options.systemPrompt}\n\n${prompt}`
+          : prompt;
+      return callLLMInner(
+        fallbackPrompt,
         prompt,
-        config.endpoint!,
-        config.model,
+        fallbackConfig,
         timeout,
         maxTokens,
         temperature,
-        config.apiKey,
-        options.systemPrompt,
-        options.cacheControl
+        options
       );
-
-    default:
-      throw new ConfigError(`Unknown LLM backend: ${config.backend}`);
+    }
+    throw err;
   }
 }
 
@@ -279,11 +354,18 @@ export async function callLLMChat(
   configOverride?: Partial<LLMRuntimeConfig>
 ): Promise<string> {
   let baseConfig: LLMRuntimeConfig;
+  let hasSleepFallback = false;
+
   if (options.useChatLLM !== false) {
     baseConfig = getChatLLMConfig();
   } else if (options.useSleepAgent) {
     const sleepAgentConfig = getSleepAgentConfig();
-    baseConfig = sleepAgentConfig || getLLMConfig();
+    if (sleepAgentConfig) {
+      baseConfig = sleepAgentConfig;
+      hasSleepFallback = true;
+    } else {
+      baseConfig = getLLMConfig();
+    }
   } else {
     baseConfig = getLLMConfig();
   }
@@ -293,6 +375,26 @@ export async function callLLMChat(
   const maxTokens = options.maxTokens || config.maxTokens || 4000;
   const temperature = options.temperature ?? config.temperature ?? 0.7;
 
+  try {
+    return await callLLMChatInner(messages, config, timeout, maxTokens, temperature);
+  } catch (err) {
+    if (hasSleepFallback) {
+      logWarn('llm', `Sleep agent chat failed, falling back to main LLM: ${getErrorMessage(err)}`);
+      const fallbackConfig = { ...getLLMConfig(), ...configOverride };
+      return callLLMChatInner(messages, fallbackConfig, timeout, maxTokens, temperature);
+    }
+    throw err;
+  }
+}
+
+/** Execute chat LLM call with a resolved config. */
+async function callLLMChatInner(
+  messages: ChatMessage[],
+  config: LLMRuntimeConfig,
+  timeout: number,
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
   switch (config.backend) {
     case 'claude': {
       if (getClaudeMode() === 'ws') {
