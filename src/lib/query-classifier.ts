@@ -17,7 +17,10 @@ export function classifyQuery(query: string): { type: QueryType; alpha: number }
 
   // Identifier-like patterns: strong BM25 signal
   const hasParens = /\(/.test(query);
-  const hasPascalCase = /\b[A-Z][a-z]+[A-Z]\w*\b/.test(query);
+  // Heuristic: matches standard PascalCase (e.g. "MyClass") and
+  // acronym-prefixed identifiers (e.g. "XMLParser", "HTTPServer").
+  // May miss uncommon forms like single-letter prefixed names.
+  const hasPascalCase = /\b[A-Z][a-z]+[A-Z]\w*\b|\b[A-Z]{2,}[a-z]\w*\b/.test(query);
   const hasCamelCase = /\b[a-z]+[A-Z]\w*\b/.test(query);
   const hasSnakeCase = /\b\w+_\w+\b/.test(query);
   const hasDotNotation = /\b\w+\.\w+\b/.test(query);
