@@ -18,7 +18,7 @@
 
 import pLimit from 'p-limit';
 import { logWarn } from '../fault-logger.js';
-import { getErrorMessage } from '../errors.js';
+import { getErrorMessage, DependencyError } from '../errors.js';
 
 // Lazy-loaded to avoid startup cost when not used
 let astGrepModule: typeof import('@ast-grep/napi') | null = null;
@@ -264,8 +264,12 @@ export async function searchPatternInContent(
       };
     });
   } catch (err) {
-    logWarn('ast-grep', `Pattern search failed for ${filePath}: ${getErrorMessage(err)}`);
-    return [];
+    const msg = getErrorMessage(err);
+    logWarn('ast-grep', `Pattern search failed for ${filePath}: ${msg}`);
+    throw new DependencyError(`Pattern search failed for ${filePath}: ${msg}`, {
+      filePath,
+      pattern,
+    });
   }
 }
 
@@ -280,18 +284,31 @@ export async function searchPatternInFiles(
 ): Promise<PatternMatch[]> {
   const concurrency = pLimit(5);
 
-  const allMatches = await Promise.all(
+  const settled = await Promise.allSettled(
     files.map((file) =>
       concurrency(() => searchPatternInContent(file.content, file.filePath, pattern, lang))
     )
   );
 
   const results: PatternMatch[] = [];
-  for (const matches of allMatches) {
-    for (const match of matches) {
+  let lastError: unknown = null;
+  let failCount = 0;
+
+  for (const outcome of settled) {
+    if (outcome.status === 'rejected') {
+      failCount++;
+      lastError = outcome.reason;
+      continue;
+    }
+    for (const match of outcome.value) {
       if (results.length >= limit) return results;
       results.push(match);
     }
+  }
+
+  // If every file failed, the pattern itself is likely invalid — propagate
+  if (failCount === files.length && files.length > 0 && lastError) {
+    throw lastError;
   }
 
   return results;

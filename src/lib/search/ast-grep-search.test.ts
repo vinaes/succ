@@ -46,6 +46,11 @@ function foo() {
       expect(matches[0].node_kind).toBeTruthy();
       expect(matches[0].start_line).toBeGreaterThan(0);
       expect(matches[0].file_path).toBe('test.ts');
+      // Verify variadic metavar extraction for $$$ARGS
+      expect(matches[0].metavars.ARGS).toBeDefined();
+      expect(matches[0].metavars.ARGS).toBe('"hello"');
+      expect(matches[1].metavars.ARGS).toBeDefined();
+      expect(matches[1].metavars.ARGS).toBe('"world", 42');
     });
 
     it('should find await expressions', async () => {
@@ -85,11 +90,12 @@ try { doMore(); } catch (e) { handle(e); }
       expect(matches).toEqual([]);
     });
 
-    it('should return empty results for empty pattern', async () => {
+    it('should throw DependencyError for empty pattern', async () => {
       const code = 'const x = 1;\n';
       // Empty pattern triggers "No AST root is detected" error inside ast-grep
-      const matches = await searchPatternInContent(code, 'test.ts', '');
-      expect(matches).toEqual([]);
+      await expect(searchPatternInContent(code, 'test.ts', '')).rejects.toThrow(
+        /Pattern search failed/
+      );
     });
 
     it('should detect language from .js extension', async () => {

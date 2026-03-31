@@ -26,6 +26,7 @@ import {
 import { logWarn } from '../../lib/fault-logger.js';
 import { getErrorMessage } from '../../lib/errors.js';
 import { searchPatternInContent, formatPatternResults } from '../../lib/search/ast-grep-search.js';
+import { isSuccError } from '../../lib/errors.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -394,14 +395,42 @@ export function registerSearchTools(server: McpServer) {
         // Structural pattern matching via ast-grep
         if (pattern && codeResults.length > 0) {
           const patternMatches = [];
+          let patternError: string | null = null;
           for (const result of codeResults) {
             const filePath = result.file_path.replace(/^code:/, '');
-            const matches = await searchPatternInContent(result.content, filePath, pattern);
-            for (const m of matches) {
-              patternMatches.push(m);
-              if (patternMatches.length >= limit) break;
+            try {
+              const matches = await searchPatternInContent(result.content, filePath, pattern);
+              for (const m of matches) {
+                // Adjust line numbers from chunk-relative to file-absolute
+                patternMatches.push({
+                  ...m,
+                  start_line: m.start_line + result.start_line - 1,
+                  end_line: m.end_line + result.start_line - 1,
+                });
+                if (patternMatches.length >= limit) break;
+              }
+            } catch (err) {
+              if (isSuccError(err)) {
+                patternError = err.message;
+              } else {
+                patternError = getErrorMessage(err);
+              }
+              logWarn('search', `Pattern search failed for ${filePath}: ${patternError}`);
             }
             if (patternMatches.length >= limit) break;
+          }
+
+          // If all files failed with no matches, report the error
+          if (patternMatches.length === 0 && patternError) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Structural pattern search failed: ${patternError}`,
+                },
+              ],
+              isError: true,
+            };
           }
 
           if (patternMatches.length === 0) {
@@ -416,6 +445,24 @@ export function registerSearchTools(server: McpServer) {
           }
 
           const patternFormatted = formatPatternResults(patternMatches, output);
+
+          // Support extract parameter for pattern results
+          if (extract) {
+            const answer = await extractAnswerFromResults(
+              patternFormatted,
+              extract,
+              'succ_search_code'
+            );
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}", extracted):\n\n${answer}`,
+                },
+              ],
+            };
+          }
+
           return {
             content: [
               {
