@@ -82,7 +82,7 @@ export function upsertDocument(
       `
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
@@ -159,7 +159,7 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
   const stmt = database.prepare(`
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
@@ -260,7 +260,7 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   const docStmt = database.prepare(`
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,

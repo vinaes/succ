@@ -435,11 +435,25 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
             log(`[daemon] Another daemon running or initializing (pid=${existingPid}), exiting`);
             process.exit(0);
           } catch (killErr) {
-            // Dead PID — overwrite and proceed
+            // Dead PID — atomic reclaim: unlink + exclusive create
             log(
               `[daemon] PID ${existingPid} not running (${(killErr as NodeJS.ErrnoException).code || 'unknown'}), reclaiming`
             );
-            fs.writeFileSync(pidFile, String(process.pid));
+            try {
+              fs.unlinkSync(pidFile);
+            } catch (unlinkErr) {
+              if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+                throw unlinkErr;
+              }
+            }
+            try {
+              fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' });
+            } catch (reclaimErr) {
+              log(
+                `[daemon] Lost PID reclaim race (${(reclaimErr as NodeJS.ErrnoException).code || 'unknown'}), exiting`
+              );
+              process.exit(0);
+            }
             // Also clean stale port file
             const portFile = getDaemonPortFile();
             try {
@@ -451,14 +465,42 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
             }
           }
         } else {
-          // Same PID or invalid — overwrite
-          fs.writeFileSync(pidFile, String(process.pid));
+          // Same PID or invalid — atomic reclaim
+          try {
+            fs.unlinkSync(pidFile);
+          } catch (unlinkErr) {
+            if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+              throw unlinkErr;
+            }
+          }
+          try {
+            fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' });
+          } catch (reclaimErr) {
+            log(
+              `[daemon] Lost PID reclaim race (${(reclaimErr as NodeJS.ErrnoException).code || 'unknown'}), exiting`
+            );
+            process.exit(0);
+          }
         }
       } catch (readErr) {
-        logWarn('daemon', 'Failed to read daemon PID file, overwriting', {
+        logWarn('daemon', 'Failed to read daemon PID file, reclaiming atomically', {
           error: readErr instanceof Error ? readErr.message : String(readErr),
         });
-        fs.writeFileSync(pidFile, String(process.pid));
+        try {
+          fs.unlinkSync(pidFile);
+        } catch (unlinkErr) {
+          if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw unlinkErr;
+          }
+        }
+        try {
+          fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' });
+        } catch (reclaimErr) {
+          log(
+            `[daemon] Lost PID reclaim race (${(reclaimErr as NodeJS.ErrnoException).code || 'unknown'}), exiting`
+          );
+          process.exit(0);
+        }
       }
     } else {
       throw err;

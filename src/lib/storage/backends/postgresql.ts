@@ -363,8 +363,7 @@ export class PostgresBackend {
         symbol_type TEXT,
         signature TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(project_id, file_path, chunk_index)
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
@@ -422,6 +421,14 @@ export class PostgresBackend {
     );
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)'
+    );
+    // Drop legacy unconditional UNIQUE constraints that block bi-temporal versioning.
+    // The partial unique index idx_documents_chunk_current replaces them (uniqueness only for current rows).
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_file_chunk_key'
+    );
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_id_file_path_chunk_index_key'
     );
     // Partial unique index: only current (non-superseded) rows must be unique per project+path+chunk.
     // This allows superseded rows to coexist with new versions of the same chunk.
