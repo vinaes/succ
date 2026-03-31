@@ -92,6 +92,7 @@ export async function decomposeQuery(query: string): Promise<DecompositionResult
       maxTokens: 200,
       temperature: 0.3,
       systemPrompt: DECOMPOSITION_SYSTEM,
+      timeout: 15000,
     });
 
     if (!response || response.trim().length === 0) {

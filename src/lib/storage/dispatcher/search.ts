@@ -272,7 +272,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       for (const results of subResults) {
         for (let rank = 0; rank < results.length; rank++) {
           const r = results[rank];
-          const id = 'id' in r ? (r as HybridMemoryResult).id : rank;
+          const id = r.id;
           const rrfScore = 1 / (RRF_K + rank + 1);
           const existing = scoreMap.get(id);
           if (existing) {
@@ -286,11 +286,11 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
         }
       }
 
-      // Sort by combined RRF score, propagate as similarity for downstream ordering
+      // Sort by combined RRF score; keep original similarity for downstream merge with global results
       const merged = Array.from(scoreMap.values())
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
-        .map((entry) => ({ ...entry.result, similarity: entry.score }));
+        .map((entry) => entry.result);
 
       logInfo(
         'storage-search',

@@ -425,6 +425,7 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(
     `  Graph PPR: ${display.retrieval.graph_ppr_enabled} (weight: ${display.retrieval.graph_ppr_weight})`
   );
+  lines.push(`  Query decomposition: ${display.retrieval.query_decomposition_enabled}`);
   lines.push('');
 
   // Web Search
