@@ -374,7 +374,25 @@ export function loadBaseline(): RetrievalBenchmarkResult | null {
   try {
     const baselinePath = getBaselinePath();
     if (!fs.existsSync(baselinePath)) return null;
-    return JSON.parse(fs.readFileSync(baselinePath, 'utf8')) as RetrievalBenchmarkResult;
+    const parsed: unknown = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+
+    // Basic structural validation before casting
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !('accuracy' in parsed) ||
+      !('latency' in parsed) ||
+      !('queryBreakdown' in parsed) ||
+      !('metadata' in parsed)
+    ) {
+      logWarn(
+        'benchmark',
+        'Baseline file missing required fields (accuracy, latency, queryBreakdown, metadata)'
+      );
+      return null;
+    }
+
+    return parsed as RetrievalBenchmarkResult;
   } catch (err) {
     logWarn('benchmark', 'Failed to load baseline', {
       error: getErrorMessage(err),
