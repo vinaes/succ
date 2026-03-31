@@ -19,8 +19,7 @@ import { getProjectRoot, getSuccDir } from '../config.js';
 import type { CodebaseContext } from './types.js';
 
 import { logWarn } from '../fault-logger.js';
-// Rough char-to-token ratio (conservative: 1 token ≈ 4 chars)
-const CHARS_PER_TOKEN = 4;
+import { CHARS_PER_TOKEN } from '../token-counter.js';
 
 const BUDGET = {
   file_tree: 2000 * CHARS_PER_TOKEN, // ~8000 chars

@@ -21,6 +21,7 @@ import {
   recordTranscriptTokens,
   resetTranscriptCounter,
 } from '../../lib/token-budget.js';
+import { CHARS_PER_TOKEN } from '../../lib/token-counter.js';
 import { appendObservations, cleanupStaleObservations } from '../../lib/session-observations.js';
 import { REFLECTION_PROMPT, REFLECTION_SYSTEM } from '../../prompts/index.js';
 import type { SessionState } from '../sessions.js';
@@ -237,7 +238,7 @@ export async function performReflection(
         const timeThresholdMs = observerConfig.max_minutes * 60 * 1000;
         const enoughTime = now - lastObsTime >= timeThresholdMs;
 
-        const estimatedTokens = Math.ceil(newBytes / 3.5);
+        const estimatedTokens = Math.ceil(newBytes / CHARS_PER_TOKEN);
         const enoughNewContent = estimatedTokens >= observerConfig.min_tokens;
 
         if (enoughNewContent || enoughTime) {
