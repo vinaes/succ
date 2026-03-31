@@ -16,6 +16,9 @@ describe('ast-grep-search', () => {
 
   describe('getSupportedLanguages', () => {
     it('should return built-in + dynamic languages, sorted', async () => {
+      // getSupportedLanguages() is synchronous and reads from the registeredDynamicLangs
+      // set, which is only populated as a side-effect of getAstGrep() (called internally
+      // by isAstGrepAvailable). We must await initialization before calling it.
       await isAstGrepAvailable();
       const langs = getSupportedLanguages();
       expect(langs.length).toBeGreaterThan(10);
