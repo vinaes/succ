@@ -62,12 +62,13 @@ function makeThinkingEntry(thinking: string): TranscriptEntry {
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe('estimateTokens', () => {
-  it('divides chars by 4 and rounds up', () => {
+  it('divides chars by 3.5 and rounds up', () => {
     expect(estimateTokens(0)).toBe(0);
     expect(estimateTokens(1)).toBe(1);
-    expect(estimateTokens(4)).toBe(1);
-    expect(estimateTokens(5)).toBe(2);
-    expect(estimateTokens(100)).toBe(25);
+    expect(estimateTokens(4)).toBe(2);    // ceil(4/3.5) = 2
+    expect(estimateTokens(5)).toBe(2);    // ceil(5/3.5) = 2
+    expect(estimateTokens(7)).toBe(2);    // ceil(7/3.5) = 2
+    expect(estimateTokens(100)).toBe(29); // ceil(100/3.5) = 29
   });
 });
 
