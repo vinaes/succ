@@ -8,6 +8,7 @@ import { cosineSimilarity } from '../embeddings.js';
 import { invalidateCodeBm25Index, invalidateDocsBm25Index } from './bm25-indexes.js';
 import { getSuccDir } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 
 /**
  * Log document deletion events to .succ/document-audit.log for debugging.
@@ -375,6 +376,100 @@ export function deleteDocumentsByPath(filePath: string): void {
     logDocDeletion('deleteDocumentsByPath', result.changes, `path="${filePath}"`);
   }
   invalidateBm25ForPath(filePath);
+}
+
+/**
+ * Mark all document chunks for a file path as superseded (soft-delete).
+ * Used during re-indexing to preserve old versions before inserting new ones.
+ */
+export function supersedeDocumentsByPath(filePath: string): number {
+  try {
+    const result = cachedPrepare(
+      `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+    ).run(filePath);
+    if (result.changes > 0) {
+      invalidateBm25ForPath(filePath);
+    }
+    return result.changes;
+  } catch (err) {
+    logWarn('documents', `Failed to supersede documents for ${filePath}`, {
+      error: getErrorMessage(err),
+    });
+    return 0;
+  }
+}
+
+/**
+ * Purge superseded document chunks older than N days.
+ * Called during cleanup to prevent unbounded growth.
+ */
+export function purgeSupersededDocuments(olderThanDays: number = 30): number {
+  try {
+    // Get IDs of superseded docs to clean up vec tables too
+    const rows = cachedPrepare(
+      `SELECT id FROM documents WHERE superseded_at IS NOT NULL AND superseded_at < datetime('now', '-' || ? || ' days')`
+    ).all(olderThanDays) as Array<{ id: number }>;
+
+    if (rows.length === 0) return 0;
+
+    const ids = rows.map((r) => r.id);
+    const BATCH = 900;
+
+    // Wrap vec cleanup + document deletion in a transaction so they stay consistent.
+    const database = getDb();
+    const deleted = database.transaction(() => {
+      // Clean vec tables if available
+      if (sqliteVecAvailable) {
+        try {
+          for (let i = 0; i < ids.length; i += BATCH) {
+            const chunk = ids.slice(i, i + BATCH);
+            const placeholders = chunk.map(() => '?').join(',');
+            const mappings = database
+              .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .all(...chunk) as Array<{ vec_rowid: number }>;
+            if (mappings.length > 0) {
+              const vecIds = mappings.map((m) => m.vec_rowid);
+              const vecPh = vecIds.map(() => '?').join(',');
+              database
+                .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPh})`)
+                .run(...vecIds);
+            }
+            database
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .run(...chunk);
+          }
+        } catch (err) {
+          logWarn('documents', 'Vector cleanup failed during superseded purge', {
+            error: getErrorMessage(err),
+          });
+        }
+      }
+
+      // Delete the actual document rows
+      let count = 0;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        const placeholders = chunk.map(() => '?').join(',');
+        const result = database
+          .prepare(`DELETE FROM documents WHERE id IN (${placeholders})`)
+          .run(...chunk);
+        count += result.changes;
+      }
+      return count;
+    })();
+
+    if (deleted > 0) {
+      invalidateCodeBm25Index();
+      invalidateDocsBm25Index();
+    }
+
+    return deleted;
+  } catch (err) {
+    logWarn('documents', 'Failed to purge superseded documents', {
+      error: getErrorMessage(err),
+    });
+    return 0;
+  }
 }
 
 export function searchDocuments(

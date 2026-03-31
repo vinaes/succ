@@ -18,7 +18,9 @@ const { spawn } = require('child_process');
 const { resolveMainRepoRoot } = require('./worktree.cjs');
 
 /** Normalize error to string safely — works for non-Error thrown values. */
-function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+function errMsg(err) {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Read daemon port from .succ/.tmp/daemon.port.
@@ -131,7 +133,53 @@ function startDaemon(projectDir, logFn) {
 }
 
 /**
+ * Atomic spawn lock — prevents concurrent daemon spawns.
+ * Uses {flag:'wx'} for exclusive file creation (atomic on all OSes).
+ *
+ * @param {string} tmpDir - Path to .succ/.tmp
+ * @param {function} [logFn] - Optional log function
+ * @returns {boolean} true if lock acquired, false if another spawn in progress
+ */
+function acquireSpawnLock(tmpDir, logFn) {
+  const lockFile = path.join(tmpDir, 'daemon.starting');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  try {
+    fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
+    return true;
+  } catch (e) {
+    if (e && e.code === 'EEXIST') {
+      try {
+        const lockTime = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
+        if (lockTime && Date.now() - lockTime < 10000) {
+          if (logFn) logFn('[daemon] Another spawn in progress (lock <10s), waiting...');
+          return false;
+        }
+        // Stale lock (>10s) — remove and retry once
+        fs.unlinkSync(lockFile);
+        fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
+        return true;
+      } catch (retryErr) {
+        if (logFn) logFn(`[daemon] Lock race lost or read error: ${errMsg(retryErr)}`);
+        return false;
+      }
+    }
+    if (logFn) logFn(`[daemon] Lock write failed: ${errMsg(e)}`);
+    return false;
+  }
+}
+
+/** Release spawn lock (best-effort). */
+function releaseSpawnLock(tmpDir, logFn) {
+  try {
+    fs.unlinkSync(path.join(tmpDir, 'daemon.starting'));
+  } catch (e) {
+    if (logFn) logFn(`[daemon] Lock cleanup skipped: ${errMsg(e)}`);
+  }
+}
+
+/**
  * Ensure the daemon is running. Start it if not, poll up to 3s.
+ * Uses acquireSpawnLock() to prevent concurrent spawns.
  *
  * @param {string} projectDir - Project root directory
  * @param {function} [logFn] - Optional log function(msg)
@@ -146,16 +194,48 @@ async function ensureDaemon(projectDir, logFn) {
     if (resolved) succDir = resolved;
   }
 
+  const tmpDir = path.join(succDir, '.tmp');
+
   let port = getDaemonPort(succDir, { quiet: true });
   if (port && (await checkDaemon(port, { quiet: true }))) {
-    // Lock cleanup is best-effort — file may not exist if daemon started without lock
-    try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch (e) { if (logFn) logFn(`[daemon] Lock cleanup skipped: ${errMsg(e)}`); }
+    releaseSpawnLock(tmpDir, logFn);
     return { port };
+  }
+
+  // Acquire atomic lock before spawning
+  if (!acquireSpawnLock(tmpDir, logFn)) {
+    // Another spawn in progress — poll for it
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      port = getDaemonPort(succDir, { quiet: true });
+      if (port && (await checkDaemon(port, { quiet: true }))) return { port };
+    }
+    // First spawn may have crashed — retry lock once
+    if (acquireSpawnLock(tmpDir, logFn)) {
+      if (logFn) logFn('[daemon] Retry after failed first spawn...');
+      const retried = startDaemon(projectDir, logFn);
+      if (retried) {
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          port = getDaemonPort(succDir, { quiet: true });
+          if (port && (await checkDaemon(port, { quiet: true }))) {
+            if (logFn) logFn(`[daemon] Started on port ${port} (retry)`);
+            releaseSpawnLock(tmpDir, logFn);
+            return { port };
+          }
+        }
+      }
+      releaseSpawnLock(tmpDir, logFn);
+    }
+    return { port: null };
   }
 
   if (logFn) logFn('[daemon] Not running, attempting start...');
   const started = startDaemon(projectDir, logFn);
-  if (!started) return { port: null };
+  if (!started) {
+    releaseSpawnLock(tmpDir, logFn);
+    return { port: null };
+  }
 
   // Poll for daemon to become ready (max 3 seconds = 30 × 100ms)
   for (let i = 0; i < 30; i++) {
@@ -163,12 +243,13 @@ async function ensureDaemon(projectDir, logFn) {
     port = getDaemonPort(succDir, { quiet: true });
     if (port && (await checkDaemon(port, { quiet: true }))) {
       if (logFn) logFn(`[daemon] Started on port ${port}`);
-      try { fs.unlinkSync(path.join(succDir, '.tmp', 'daemon.starting')); } catch (e) { if (logFn) logFn(`[daemon] Lock cleanup skipped: ${errMsg(e)}`); }
+      releaseSpawnLock(tmpDir, logFn);
       return { port };
     }
   }
 
   if (logFn) logFn('[daemon] Failed to start within 3s — continuing without daemon');
+  releaseSpawnLock(tmpDir, logFn);
   return { port: null };
 }
 
@@ -201,7 +282,8 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
           process.kill(pid, 0); // Signal 0 = check existence
           return null; // Daemon process alive but port not written yet
         } catch (e) {
-          if (logFn) logFn(`[daemon-lazy] PID ${pid} not running (${e.code || errMsg(e)}), will restart`);
+          if (logFn)
+            logFn(`[daemon-lazy] PID ${pid} not running (${e.code || errMsg(e)}), will restart`);
         }
       }
     }
@@ -209,37 +291,14 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
     if (logFn) logFn(`[daemon-lazy] PID file read failed: ${errMsg(e)}`);
   }
 
-  // Atomic lock acquisition — prevent concurrent spawns
-  const lockFile = path.join(tmpDir, 'daemon.starting');
-  try {
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir, { recursive: true });
-    }
-    fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
-  } catch (e) {
-    if (e && e.code === 'EEXIST') {
-      // Lock file exists — check if it's recent
-      try {
-        const lockTime = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
-        if (lockTime && Date.now() - lockTime < 10000) {
-          return null; // Recent spawn attempt (< 10s) — don't duplicate
-        }
-        // Stale lock — remove and retry once
-        fs.unlinkSync(lockFile);
-        fs.writeFileSync(lockFile, String(Date.now()), { encoding: 'utf8', flag: 'wx' });
-      } catch (e) {
-        if (logFn) logFn(`[daemon-lazy] Lock race lost or read error: ${errMsg(e)}`);
-        return null;
-      }
-    } else {
-      // Other write error (e.g. permissions) — log and still attempt spawn (daemon has its own dedup)
-      if (logFn) logFn(`[daemon-lazy] Lock write failed (non-EEXIST): ${errMsg(e)}`);
-    }
+  // Atomic lock — prevent concurrent spawns (shared with ensureDaemon)
+  if (!acquireSpawnLock(tmpDir, logFn)) {
+    return null;
   }
 
   if (logFn) logFn('[daemon-lazy] Daemon not running, spawning in background');
   if (!startDaemon(projectDir, logFn)) {
-    try { fs.unlinkSync(lockFile); } catch (e) { if (logFn) logFn(`[daemon-lazy] Lock cleanup failed: ${errMsg(e)}`); }
+    releaseSpawnLock(tmpDir, logFn);
   }
 
   return null;

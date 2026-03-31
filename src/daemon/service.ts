@@ -417,39 +417,61 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     return { port: state.port, pid: process.pid };
   }
 
-  const existingPidFile = getDaemonPidFile();
-  if (fs.existsSync(existingPidFile)) {
-    try {
-      const existingPid = parseInt(fs.readFileSync(existingPidFile, 'utf8').trim(), 10);
-      if (!isNaN(existingPid) && existingPid && existingPid !== process.pid) {
-        try {
-          process.kill(existingPid, 0);
-          const portFile = getDaemonPortFile();
-          if (fs.existsSync(portFile)) {
-            const port = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10);
-            if (!isNaN(port) && port > 0) {
-              log(`[daemon] Another daemon already running (pid=${existingPid}, port=${port})`);
-              process.exit(0);
+  // Atomic PID file — daemon-side mutex to prevent dual startup
+  const pidFile = getDaemonPidFile();
+  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+  try {
+    fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' }); // exclusive create
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      // PID file exists — check if owner is alive
+      try {
+        const existingPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+        if (!isNaN(existingPid) && existingPid && existingPid !== process.pid) {
+          try {
+            process.kill(existingPid, 0); // alive?
+            log(`[daemon] Another daemon running or initializing (pid=${existingPid}), exiting`);
+            process.exit(0);
+          } catch (killErr) {
+            // Dead PID — overwrite and proceed
+            log(
+              `[daemon] PID ${existingPid} not running (${(killErr as NodeJS.ErrnoException).code || 'unknown'}), reclaiming`
+            );
+            fs.writeFileSync(pidFile, String(process.pid));
+            // Also clean stale port file
+            const portFile = getDaemonPortFile();
+            try {
+              fs.unlinkSync(portFile);
+            } catch (unlinkErr) {
+              log(
+                `[daemon] Port file cleanup skipped: ${(unlinkErr as NodeJS.ErrnoException).code || 'unknown'}`
+              );
             }
           }
-        } catch (error) {
-          logWarn('service', 'Failed to signal existing daemon process for liveness check', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          log(`[daemon] Cleaning up stale PID file (pid=${existingPid} not running)`);
-          fs.unlinkSync(existingPidFile);
-          const portFile = getDaemonPortFile();
-          if (fs.existsSync(portFile)) {
-            fs.unlinkSync(portFile);
-          }
+        } else {
+          // Same PID or invalid — overwrite
+          fs.writeFileSync(pidFile, String(process.pid));
         }
+      } catch (readErr) {
+        logWarn('daemon', 'Failed to read daemon PID file, overwriting', {
+          error: readErr instanceof Error ? readErr.message : String(readErr),
+        });
+        fs.writeFileSync(pidFile, String(process.pid));
       }
-    } catch (err) {
-      logWarn('daemon', 'Failed to read daemon PID file', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+    } else {
+      throw err;
     }
   }
+
+  // Clean up PID file on exit
+  process.once('exit', () => {
+    try {
+      fs.unlinkSync(pidFile);
+    } catch {
+      // exit handler — log() may not work, stderr may be broken (EPIPE).
+      // Stale PID is handled on next startup via liveness check.
+    }
+  });
 
   const cwd = getProjectRoot();
   const watcherConfig = getIdleWatcherConfig();
@@ -519,7 +541,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   };
   cachedRoutes = null;
 
-  fs.writeFileSync(getDaemonPidFile(), String(process.pid));
+  // PID already written at startup (atomic mutex). Write port now that we know it.
   fs.writeFileSync(getDaemonPortFile(), String(port));
 
   idleWatcher = createIdleWatcher({

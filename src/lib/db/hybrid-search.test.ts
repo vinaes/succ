@@ -59,6 +59,7 @@ vi.mock('../config.js', () => {
     getGlobalDbPath: () => path.join(tempDir, 'global.db'),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 
@@ -96,11 +97,14 @@ const SCHEMA_DDL = `
     symbol_name TEXT,
     symbol_type TEXT,
     signature TEXT,
-    UNIQUE(file_path, chunk_index)
+    superseded_at TEXT DEFAULT NULL,
+    git_commit_date TEXT DEFAULT NULL
   );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_chunk_current ON documents(file_path, chunk_index) WHERE superseded_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
   CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type);
   CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name);
+  CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at);
 
   CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,

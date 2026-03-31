@@ -17,6 +17,7 @@ vi.mock('../helpers.js', () => ({
 vi.mock('../../lib/config.js', () => ({
   isGlobalOnlyMode: vi.fn(() => false),
   getSuccDir: vi.fn(() => ''),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

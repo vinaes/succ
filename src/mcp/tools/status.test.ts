@@ -56,6 +56,7 @@ vi.mock('../../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/project'),
   getConfig: vi.fn(() => ({ md_api_url: 'https://md.succ.ai' })),
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/token-counter.js', () => ({

@@ -363,6 +363,30 @@ export function initDb(database: Database.Database): void {
     'idx_documents_updated_at'
   );
 
+  // Migration: add bi-temporal columns to documents
+  safeMigrate(
+    database,
+    `ALTER TABLE documents ADD COLUMN superseded_at TEXT DEFAULT NULL`,
+    'documents.superseded_at'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE documents ADD COLUMN git_commit_date TEXT DEFAULT NULL`,
+    'documents.git_commit_date'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)`,
+    'idx_documents_superseded'
+  );
+  // Partial unique index: only current (non-superseded) rows must be unique per path+chunk.
+  // This allows superseded rows to coexist with new versions of the same chunk.
+  safeMigrate(
+    database,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_chunk_current ON documents(file_path, chunk_index) WHERE superseded_at IS NULL`,
+    'idx_documents_chunk_current'
+  );
+
   // Migration: create learning_deltas table for session progress tracking
   database.exec(`
     CREATE TABLE IF NOT EXISTS learning_deltas (

@@ -143,7 +143,7 @@ export function hybridSearchCode(
             `
           SELECT id, file_path, content, start_line, end_line
           FROM documents
-          WHERE id IN (${placeholders}) AND file_path LIKE 'code:%'
+          WHERE id IN (${placeholders}) AND file_path LIKE 'code:%' AND superseded_at IS NULL
         `
           )
           .all(...docIds) as Array<{
@@ -178,7 +178,7 @@ export function hybridSearchCode(
   // Brute-force fallback for vector search (sqlite-vec unavailable or returned 0)
   if (vectorResults.length === 0) {
     const { count } = cachedPrepare(
-      "SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%'"
+      "SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL"
     ).get() as { count: number };
 
     if (count > BRUTE_FORCE_MAX_ROWS) {
@@ -191,7 +191,7 @@ export function hybridSearchCode(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...docIds) as Array<{
@@ -212,7 +212,7 @@ export function hybridSearchCode(
     }
 
     const rows = cachedPrepare(
-      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' LIMIT ?"
+      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL LIMIT ?"
     ).all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
@@ -250,7 +250,7 @@ export function hybridSearchCode(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...missingIds) as Array<{
@@ -409,7 +409,7 @@ export function hybridSearchDocs(
             `
           SELECT id, file_path, content, start_line, end_line
           FROM documents
-          WHERE id IN (${placeholders}) AND file_path NOT LIKE 'code:%'
+          WHERE id IN (${placeholders}) AND file_path NOT LIKE 'code:%' AND superseded_at IS NULL
         `
           )
           .all(...docIds) as Array<{
@@ -442,7 +442,7 @@ export function hybridSearchDocs(
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
     const rows = cachedPrepare(
-      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' LIMIT ?"
+      "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL LIMIT ?"
     ).all(BRUTE_FORCE_MAX_ROWS) as Array<{
       id: number;
       file_path: string;
@@ -478,7 +478,7 @@ export function hybridSearchDocs(
         .prepare(
           `
         SELECT id, file_path, content, start_line, end_line
-        FROM documents WHERE id IN (${placeholders})
+        FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
       `
         )
         .all(...missingIds) as Array<{

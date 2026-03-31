@@ -16,6 +16,7 @@ vi.mock('./config.js', () => ({
   getApiKey: () => 'test-key',
   getApiUrl: () => 'http://localhost:11434/v1',
   getOpenRouterApiKey: () => null,
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 // Mock fault-logger

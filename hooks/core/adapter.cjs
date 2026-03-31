@@ -18,7 +18,9 @@
 'use strict';
 
 /** Normalize error to string safely — works for non-Error thrown values. */
-function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+function errMsg(err) {
+  return err instanceof Error ? err.message : String(err);
+}
 
 // ─── Agent Detection ─────────────────────────────────────────────────
 
@@ -387,6 +389,44 @@ function adaptContext(agent, context) {
   return adapted.trim();
 }
 
+// ─── Transcript Discovery ───────────────────────────────────────────
+
+/**
+ * Auto-discover transcript path from session_id + cwd.
+ * Claude Code stores transcripts at:
+ *   ~/.claude/projects/{PATH_HASH}/{SESSION_ID}.jsonl
+ * PATH_HASH = cwd.replace(/[:\\/\.]/g, '-')
+ *
+ * @param {string} sessionId - UUID session identifier
+ * @param {string} cwd - Already-normalized project directory (Windows path fix applied)
+ * @returns {string} Resolved transcript path, or '' if not found
+ */
+function resolveTranscriptPath(sessionId, cwd) {
+  if (!sessionId || !cwd) return '';
+  const os = require('os');
+  const pathMod = require('path');
+  const fsMod = require('fs');
+
+  const projectsDir = pathMod.join(os.homedir(), '.claude', 'projects');
+  if (!fsMod.existsSync(projectsDir)) return '';
+
+  // Hash: replace : \ / . with -  (matches Claude Code's algorithm)
+  const hash = cwd.replace(/[:\\/\\.]/g, '-');
+
+  // Case-insensitive dir match (Windows FS is case-insensitive, but listing may vary)
+  let dirs;
+  try {
+    dirs = fsMod.readdirSync(projectsDir);
+  } catch {
+    return '';
+  }
+  const match = dirs.find((d) => d.toLowerCase() === hash.toLowerCase());
+  if (!match) return '';
+
+  const candidate = pathMod.join(projectsDir, match, `${sessionId}.jsonl`);
+  return fsMod.existsSync(candidate) ? candidate : '';
+}
+
 // ─── Hook Runner ─────────────────────────────────────────────────────
 
 /**
@@ -430,6 +470,14 @@ function runHook(hookName, callback) {
         projectDir = projectDir[1].toUpperCase() + ':' + projectDir.slice(2);
       }
 
+      // Auto-discover transcript_path when not provided (VSCode extension)
+      if (!hookInput.transcript_path && hookInput.session_id) {
+        const resolved = resolveTranscriptPath(hookInput.session_id, projectDir);
+        if (resolved) {
+          hookInput.transcript_path = resolved;
+        }
+      }
+
       let succDir = path.join(projectDir, '.succ');
 
       // Worktree-aware resolution: if .succ/ missing, check if we're in a git worktree
@@ -464,5 +512,6 @@ module.exports = {
   formatOutput,
   adaptContext,
   runHook,
+  resolveTranscriptPath,
   TOOL_MAP,
 };

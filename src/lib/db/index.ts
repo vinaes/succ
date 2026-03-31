@@ -69,6 +69,8 @@ export {
   upsertDocumentsBatch,
   upsertDocumentsBatchWithHashes,
   deleteDocumentsByPath,
+  supersedeDocumentsByPath,
+  purgeSupersededDocuments,
   searchDocuments,
   getRecentDocuments,
   getStats,
