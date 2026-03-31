@@ -28,7 +28,9 @@ async function readStdinJson() {
     });
     process.stdin.on('end', () => {
       try {
-        resolve(JSON.parse(data));
+        const parsed = JSON.parse(data);
+        // JSON.parse('null') → null, JSON.parse('"str"') → string — guard against non-objects
+        resolve(parsed && typeof parsed === 'object' ? parsed : {});
       } catch (_e) {
         // Invalid JSON from stdin — treat as empty input
         resolve({});
@@ -71,7 +73,12 @@ function unlinkJunctions(dirPath) {
 (async () => {
   try {
     const hookInput = await readStdinJson();
-    const worktreePath = hookInput.worktree_path || hookInput.path || null;
+    const worktreePath =
+      typeof hookInput.worktree_path === 'string'
+        ? hookInput.worktree_path
+        : typeof hookInput.path === 'string'
+          ? hookInput.path
+          : null;
     unlinkJunctions(worktreePath);
   } catch (e) {
     console.error('[succ:worktree-remove] Unexpected error:', e && (e.message || e));

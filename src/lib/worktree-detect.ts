@@ -114,7 +114,7 @@ function parseGitFileForMainRepo(worktreeDir: string): string | null {
 export function isSymlinkOrJunction(p: string): boolean {
   try {
     return fs.lstatSync(p).isSymbolicLink();
-  } catch (_e) {
+  } catch {
     // Path doesn't exist or can't be stat'd — not a symlink/junction
     return false;
   }
@@ -153,17 +153,20 @@ export function unlinkSuccJunctions(dirPath: string): void {
 export function ensureSuccInWorktree(worktreeDir: string): string | null {
   const localSucc = path.join(worktreeDir, '.succ');
 
-  // Already exists as a real dir (not a link) — use it
-  if (fs.existsSync(localSucc) && !isSymlinkOrJunction(localSucc)) return localSucc;
+  // Check if localSucc is a real directory (not a link or plain file)
+  const localIsRealDir =
+    fs.existsSync(localSucc) &&
+    !isSymlinkOrJunction(localSucc) &&
+    fs.statSync(localSucc).isDirectory();
 
   const mainRepo = resolveMainRepoRoot(worktreeDir);
-  if (!mainRepo) return null;
+  if (!mainRepo) return localIsRealDir ? localSucc : null;
 
   const mainSucc = path.join(mainRepo, '.succ');
-  if (!fs.existsSync(mainSucc)) return null;
+  if (!fs.existsSync(mainSucc)) return localIsRealDir ? localSucc : null;
 
   // Legacy migration: old full-dir junction → remove it
-  if (isSymlinkOrJunction(localSucc)) {
+  if (!localIsRealDir && isSymlinkOrJunction(localSucc)) {
     try {
       fs.unlinkSync(localSucc);
     } catch (error) {
@@ -175,9 +178,13 @@ export function ensureSuccInWorktree(worktreeDir: string): string | null {
     }
   }
 
-  // Create real .succ dir with targeted sub-junctions
+  // Create/reconcile real .succ dir with targeted sub-junctions.
+  // Runs on first creation AND on subsequent calls to backfill junctions
+  // that may not have existed on the first pass (e.g. .tmp/ created later).
   try {
-    fs.mkdirSync(localSucc, { recursive: true });
+    if (!localIsRealDir) {
+      fs.mkdirSync(localSucc, { recursive: true });
+    }
 
     // Junction hooks/ only (for command hooks in settings.json)
     const mainHooks = path.join(mainSucc, 'hooks');
@@ -215,17 +222,20 @@ export function ensureSuccInWorktree(worktreeDir: string): string | null {
  * Resolve the .succ/ directory, with worktree awareness.
  *
  * Resolution order:
- * 1. <projectRoot>/.succ/ exists → return it
- * 2. In a worktree → create junction → return <worktree>/.succ/
+ * 1. <projectRoot>/.succ/ exists as a real dir AND not a worktree → return it
+ * 2. In a worktree → ensure/reconcile junctions → return <worktree>/.succ/
  * 3. In a worktree, junction failed → return <mainRepo>/.succ/ directly
  * 4. Not a worktree → return <projectRoot>/.succ/ (may not exist)
  */
 export function resolveSuccDir(projectRoot: string): string {
   const localSucc = path.join(projectRoot, '.succ');
 
-  if (fs.existsSync(localSucc)) return localSucc;
+  // Non-worktree: return local .succ if it exists as a real directory
+  if (fs.existsSync(localSucc) && !isSymlinkOrJunction(localSucc) && !isGitWorktree(projectRoot)) {
+    return localSucc;
+  }
 
-  // Try worktree resolution with lazy junction
+  // Try worktree resolution with lazy junction (also reconciles existing dirs)
   const resolved = ensureSuccInWorktree(projectRoot);
   return resolved ?? localSucc;
 }

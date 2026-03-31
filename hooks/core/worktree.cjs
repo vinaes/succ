@@ -127,17 +127,21 @@ function isSymlinkOrJunction(p) {
 function resolveSuccDir(projectDir) {
   const localSucc = path.join(projectDir, '.succ');
 
-  // If localSucc exists as a real dir (not a link), use it
-  if (fs.existsSync(localSucc) && !isSymlinkOrJunction(localSucc)) return localSucc;
+  // Check if localSucc is a real directory (not a link or plain file)
+  const localIsRealDir =
+    fs.existsSync(localSucc) &&
+    !isSymlinkOrJunction(localSucc) &&
+    fs.statSync(localSucc).isDirectory();
 
+  // Not in a worktree — return local dir if it exists, otherwise null
   const mainRepo = resolveMainRepoRoot(projectDir);
-  if (!mainRepo) return null;
+  if (!mainRepo) return localIsRealDir ? localSucc : null;
 
   const mainSucc = path.join(mainRepo, '.succ');
-  if (!fs.existsSync(mainSucc)) return null;
+  if (!fs.existsSync(mainSucc)) return localIsRealDir ? localSucc : null;
 
   // Legacy migration: old full-dir junction → remove it
-  if (isSymlinkOrJunction(localSucc)) {
+  if (!localIsRealDir && isSymlinkOrJunction(localSucc)) {
     try {
       fs.unlinkSync(localSucc);
     } catch (e) {
@@ -146,9 +150,13 @@ function resolveSuccDir(projectDir) {
     }
   }
 
-  // Create real .succ dir with targeted sub-junctions
+  // Create/reconcile real .succ dir with targeted sub-junctions.
+  // Runs on first creation AND on subsequent calls to backfill junctions
+  // that may not have existed on the first pass (e.g. .tmp/ created later).
   try {
-    fs.mkdirSync(localSucc, { recursive: true });
+    if (!localIsRealDir) {
+      fs.mkdirSync(localSucc, { recursive: true });
+    }
 
     // Junction hooks/ only (for command hooks in settings.json)
     const mainHooks = path.join(mainSucc, 'hooks');
