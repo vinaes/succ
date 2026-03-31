@@ -2,6 +2,7 @@ import pLimit from 'p-limit';
 import { StorageDispatcherBase } from './base.js';
 import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
+import { getConfig } from '../../config.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
   AutoMemoryRow,
@@ -81,7 +82,6 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
 
     if (deduplicate) {
       try {
-        const { getConfig } = await import('../../config.js');
         const config = getConfig();
         if (config.auto_memory?.version_detection) {
           // Find the most similar memory in the 0.82-0.92 range for version detection
