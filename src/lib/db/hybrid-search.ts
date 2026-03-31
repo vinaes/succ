@@ -14,7 +14,7 @@ import {
   getGlobalMemoriesBm25Index,
 } from './bm25-indexes.js';
 import { parseTags, parseMemoryType } from './parse-helpers.js';
-import { getMemoryById } from './memories.js';
+import { getMemoriesByIds } from './memories.js';
 
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
@@ -709,7 +709,9 @@ export async function graphEnhancedSearchMemories(
 
   // Step 3: Three-signal RRF merge
   const RRF_K = 60;
-  const textWeight = 1 - graphWeight; // BM25+vector share this weight
+  // Clamp graphWeight to [0, 1] and guard against NaN/Infinity
+  const safeWeight = Number.isFinite(graphWeight) ? Math.max(0, Math.min(1, graphWeight)) : 0;
+  const textWeight = 1 - safeWeight; // BM25+vector share this weight
 
   const scoreMap = new Map<number, { score: number; result: HybridMemoryResult | null }>();
 
@@ -724,7 +726,7 @@ export async function graphEnhancedSearchMemories(
   const pprRanked = Array.from(pprScores.entries()).sort((a, b) => b[1] - a[1]);
   for (let rank = 0; rank < pprRanked.length; rank++) {
     const [memId] = pprRanked[rank];
-    const rrfScore = graphWeight / (RRF_K + rank + 1);
+    const rrfScore = safeWeight / (RRF_K + rank + 1);
     const existing = scoreMap.get(memId);
     if (existing) {
       existing.score += rrfScore;
@@ -734,33 +736,36 @@ export async function graphEnhancedSearchMemories(
   }
 
   // Hydrate graph-only hits (PPR discovered memories not in base text results)
+  // Batch-fetch all missing IDs in a single query to avoid N+1 sequential lookups
   const missingIds = Array.from(scoreMap.entries())
     .filter(([, entry]) => entry.result === null)
     .map(([id]) => id);
 
-  for (const memId of missingIds) {
+  if (missingIds.length > 0) {
     try {
-      const memory = getMemoryById(memId);
-      if (!memory) continue;
-      const entry = scoreMap.get(memId);
-      if (!entry) continue;
-      entry.result = {
-        id: memory.id,
-        content: memory.content,
-        tags: memory.tags,
-        source: memory.source,
-        type: memory.type,
-        created_at: memory.created_at,
-        similarity: entry.score,
-        last_accessed: memory.last_accessed,
-        access_count: memory.access_count,
-        valid_from: memory.valid_from,
-        valid_until: memory.valid_until,
-        quality_score: memory.quality_score,
-      };
+      const memories = getMemoriesByIds(missingIds);
+      for (const memory of memories) {
+        const entry = scoreMap.get(memory.id);
+        if (!entry) continue;
+        entry.result = {
+          id: memory.id,
+          content: memory.content,
+          tags: memory.tags,
+          source: memory.source,
+          type: memory.type,
+          created_at: memory.created_at,
+          similarity: entry.score,
+          last_accessed: memory.last_accessed,
+          access_count: memory.access_count,
+          valid_from: memory.valid_from,
+          valid_until: memory.valid_until,
+          quality_score: memory.quality_score,
+        };
+      }
     } catch (err) {
-      logWarn('hybrid-search', `Failed to hydrate graph-only memory id=${memId}`, {
+      logWarn('hybrid-search', `Failed to batch-hydrate graph-only memories`, {
         error: getErrorMessage(err),
+        ids: missingIds.join(','),
       });
     }
   }
