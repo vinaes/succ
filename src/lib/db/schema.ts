@@ -421,6 +421,9 @@ export function initDb(database: Database.Database): void {
         DROP TABLE documents;
         ALTER TABLE documents_new RENAME TO documents;
         CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
+        CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type);
+        CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name);
+        CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at);
         CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at);
       `);
     }

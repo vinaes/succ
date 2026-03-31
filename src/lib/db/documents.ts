@@ -170,8 +170,19 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
       updated_at = CURRENT_TIMESTAMP
   `);
 
+  // Supersede all current rows for affected files before inserting new versions.
+  // This ensures stale chunks (e.g. file shrunk from 5 to 3 chunks) get marked superseded.
+  const supersedeStmt = database.prepare(
+    `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+  );
+
   const transaction = database.transaction((docs: DocumentBatch[]) => {
+    const supersededFiles = new Set<string>();
     for (const doc of docs) {
+      if (!supersededFiles.has(doc.filePath)) {
+        supersedeStmt.run(doc.filePath);
+        supersededFiles.add(doc.filePath);
+      }
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
       stmt.run(
         doc.filePath,
@@ -279,10 +290,21 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
       indexed_at = CURRENT_TIMESTAMP
   `);
 
+  // Supersede all current rows for affected files before inserting new versions.
+  // This ensures stale chunks (e.g. file shrunk from 5 to 3 chunks) get marked superseded.
+  const supersedeStmt = database.prepare(
+    `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+  );
+
   const transaction = database.transaction((docs: DocumentBatchWithHash[]) => {
     const processedFiles = new Set<string>();
 
     for (const doc of docs) {
+      // Supersede existing chunks for this file (once per file)
+      if (!processedFiles.has(doc.filePath)) {
+        supersedeStmt.run(doc.filePath);
+      }
+
       // Insert document
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
       docStmt.run(

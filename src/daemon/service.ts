@@ -435,10 +435,14 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
             log(`[daemon] Another daemon running or initializing (pid=${existingPid}), exiting`);
             process.exit(0);
           } catch (killErr) {
+            // Only reclaim on ESRCH (no such process).
+            // EPERM means the process exists but we lack permission — do NOT reclaim.
+            const killCode = (killErr as NodeJS.ErrnoException).code;
+            if (killCode !== 'ESRCH') {
+              throw killErr;
+            }
             // Dead PID — atomic reclaim: unlink + exclusive create
-            log(
-              `[daemon] PID ${existingPid} not running (${(killErr as NodeJS.ErrnoException).code || 'unknown'}), reclaiming`
-            );
+            log(`[daemon] PID ${existingPid} not running (${killCode}), reclaiming`);
             try {
               fs.unlinkSync(pidFile);
             } catch (unlinkErr) {
@@ -483,6 +487,11 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
           }
         }
       } catch (readErr) {
+        // Re-throw kill-related errors (e.g. EPERM) — only handle genuine PID file read failures
+        const readErrCode = (readErr as NodeJS.ErrnoException).code;
+        if (readErrCode === 'EPERM' || readErrCode === 'EACCES') {
+          throw readErr;
+        }
         logWarn('daemon', 'Failed to read daemon PID file, reclaiming atomically', {
           error: readErr instanceof Error ? readErr.message : String(readErr),
         });

@@ -1069,12 +1069,20 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -1134,14 +1142,22 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       const processedFiles = new Set<string>();
 
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
