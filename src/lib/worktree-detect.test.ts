@@ -15,6 +15,7 @@ import {
   resolveMainRepoRoot,
   ensureSuccInWorktree,
   resolveSuccDir,
+  unlinkSuccJunctions,
 } from './worktree-detect.js';
 
 /**
@@ -156,6 +157,26 @@ describe('worktree-detect (e2e with real git)', () => {
     expect(fs.lstatSync(first!).isSymbolicLink()).toBe(false);
   });
 
+  it('reconciles a pre-existing real .tmp/ back into a junction', () => {
+    // First call creates real dir + sub-junctions
+    const first = ensureSuccInWorktree(worktreePath);
+    const localTmp = path.join(first!, '.tmp');
+
+    // Simulate upgrade: replace .tmp junction with a real directory
+    fs.unlinkSync(localTmp);
+    fs.mkdirSync(localTmp, { recursive: true });
+    expect(fs.lstatSync(localTmp).isSymbolicLink()).toBe(false);
+
+    // Second call should reconcile .tmp back into a junction
+    const second = ensureSuccInWorktree(worktreePath);
+    expect(first).toBe(second);
+    expect(fs.lstatSync(first!).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(localTmp).isSymbolicLink()).toBe(true);
+    expect(normPath(fs.realpathSync(localTmp))).toBe(
+      normPath(path.join(mainRepo, '.succ', '.tmp'))
+    );
+  });
+
   it('returns null for non-git directory', () => {
     expect(ensureSuccInWorktree(tmpDir)).toBeNull();
   });
@@ -207,6 +228,8 @@ describe('worktree-detect (e2e with real git)', () => {
       if (fs.lstatSync(localSuccPath).isSymbolicLink()) {
         fs.unlinkSync(localSuccPath);
       } else {
+        // Unlink nested junctions first to avoid rmSync walking into main repo
+        unlinkSuccJunctions(worktreePath);
         fs.rmSync(localSuccPath, { recursive: true, force: true });
       }
     }

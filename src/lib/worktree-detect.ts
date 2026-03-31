@@ -196,8 +196,14 @@ export function ensureSuccInWorktree(worktreeDir: string): string | null {
     // Junction .tmp/ (daemon port/pid files)
     const mainTmp = path.join(mainSucc, '.tmp');
     const localTmp = path.join(localSucc, '.tmp');
-    if (fs.existsSync(mainTmp) && !fs.existsSync(localTmp)) {
-      fs.symlinkSync(mainTmp, localTmp, 'junction');
+    if (fs.existsSync(mainTmp)) {
+      // Reconcile: replace a pre-existing real .tmp dir with the shared junction
+      if (fs.existsSync(localTmp) && !isSymlinkOrJunction(localTmp)) {
+        fs.rmSync(localTmp, { recursive: true, force: true });
+      }
+      if (!fs.existsSync(localTmp)) {
+        fs.symlinkSync(mainTmp, localTmp, 'junction');
+      }
     }
 
     // Copy config.json (one-time, for hook config reading)
