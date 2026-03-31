@@ -43,7 +43,10 @@ describe('Memory Audit Trail', () => {
   beforeEach(async () => {
     resetStorageDispatcher();
     dispatcher = await getStorageDispatcher();
-    // Patch private _sqliteFns directly — no public accessor exists for injecting a mock SQLite backend
+    // Patch private _sqliteFns directly — StorageDispatcher lazily initializes its SQLite
+    // backend and exposes no public setter or DI mechanism for tests. A full refactor to
+    // constructor injection would touch 124 dispatcher methods, so we cast to `any` here
+    // as the pragmatic alternative for unit-level isolation.
     (dispatcher as any)._sqliteFns = sqliteMock;
     vi.clearAllMocks();
   });
