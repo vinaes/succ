@@ -122,7 +122,14 @@ export class ContextMonitor {
 
   /** Register a new session. Called on session register. */
   registerSession(sessionId: string, transcriptPath: string): void {
-    if (this.sessions.has(sessionId)) return;
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      // Update transcriptPath if the existing entry has an empty path and a non-empty one is now provided
+      if (transcriptPath && !existing.transcriptPath) {
+        existing.transcriptPath = transcriptPath;
+      }
+      return;
+    }
     this.sessions.set(sessionId, {
       transcriptPath,
       contextLimit: null,
@@ -150,7 +157,11 @@ export class ContextMonitor {
     session.compactOffset = transcriptBytes;
     session.lastAdvisoryAt = 0; // reset cooldown after compact
     session.advisoryCount = 0;
-    session.extractionDoneThisCycle = false; // allow extraction again after compact
+    // Only reset extraction flag if no extraction is currently in-flight,
+    // to prevent a second extraction from firing before the first completes
+    if (!session.extractionInFlight) {
+      session.extractionDoneThisCycle = false;
+    }
   }
 
   /**

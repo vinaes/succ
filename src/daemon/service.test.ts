@@ -67,7 +67,7 @@ vi.mock('../lib/config.js', () => ({
     enabled: true,
     threshold_percent: 15,
     cooldown_seconds: 90,
-    context_limit: undefined as unknown as number,
+    context_limit: 0,
     preemptive_extract: true,
   })),
   getObserverConfig: vi.fn(() => ({
@@ -86,6 +86,8 @@ vi.mock('../lib/config.js', () => ({
     mmr_lambda: 0.8,
     query_expansion_enabled: false,
     query_expansion_mode: 'api',
+    graph_ppr_enabled: false,
+    graph_ppr_weight: 0.3,
   })),
 }));
 
