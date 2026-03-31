@@ -196,12 +196,41 @@ export function mergeWorktreeChanges(
 // ============================================================================
 
 /**
+ * Cross-platform: unlink symlinks/junctions before recursive directory removal.
+ * fs.lstatSync().isSymbolicLink() returns true for both POSIX symlinks and
+ * NTFS junctions (verified on Node.js 21.7.2 / Windows 11).
+ * fs.unlinkSync() removes the link without touching the target.
+ */
+function unlinkJunctionsBeforeRemoval(dirPath: string): void {
+  const candidates = [
+    path.join(dirPath, '.succ', 'hooks'), // hooks link (new layout)
+    path.join(dirPath, '.succ', '.tmp'), // .tmp link (daemon port/pid)
+    path.join(dirPath, '.succ'), // legacy full link (old worktrees)
+    path.join(dirPath, 'node_modules'), // node_modules link
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.lstatSync(candidate).isSymbolicLink()) {
+        fs.unlinkSync(candidate);
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logWarn('worktree', `Failed to unlink junction before removal: ${(err as Error).message}`);
+      }
+    }
+  }
+}
+
+/**
  * Remove a single worktree.
  * Always does git worktree remove + fallback rmSync + prune.
  * Retries rmSync on Windows (EBUSY / EPERM from delayed file deletion).
  */
 export function removeWorktree(taskId: string, projectRoot: string): void {
   const worktreePath = path.join(getWorktreesDir(), taskId);
+
+  // Unlink junctions/symlinks first to prevent fs.rmSync from following them
+  unlinkJunctionsBeforeRemoval(worktreePath);
 
   // 1. Try git worktree remove
   try {
