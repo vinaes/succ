@@ -959,6 +959,41 @@ export function getMemoryById(id: number): Memory | null {
 }
 
 /**
+ * Batch-fetch memories by IDs in a single query.
+ * Uses `WHERE id IN (...)` to avoid N+1 sequential lookups.
+ */
+export function getMemoriesByIds(ids: number[]): Memory[] {
+  if (ids.length === 0) return [];
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, created_at FROM memories WHERE id IN (${placeholders})`
+    )
+    .all(...ids) as Record<string, any>[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    tags: parseTags(row.tags),
+    source: row.source,
+    type: parseMemoryType(row.type),
+    quality_score: row.quality_score,
+    quality_factors: parseQualityFactors(row.quality_factors),
+    access_count: row.access_count ?? 0,
+    last_accessed: row.last_accessed,
+    valid_from: row.valid_from,
+    valid_until: row.valid_until,
+    correction_count: row.correction_count ?? 0,
+    is_invariant: !!row.is_invariant,
+    priority_score: row.priority_score ?? null,
+    confidence: row.confidence ?? null,
+    source_type: (row.source_type ?? null) as SourceType | null,
+    created_at: row.created_at,
+  }));
+}
+
+/**
  * Get memories by tag — fast SQL query without embeddings.
  * Uses json_each() to query tags array. ~5ms on SQLite.
  * Used by file-linked memories to surface related memories on file edit.
