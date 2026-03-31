@@ -108,6 +108,13 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
   const totalBatches = Math.ceil(uniqueFiles.length / batchSize);
 
+  // Check contextual embeddings config once (stable during an indexing run)
+  let contextualEnabled = false;
+  if (pathPrefix === 'code:') {
+    const { getConfig } = await import('./config.js');
+    contextualEnabled = getConfig().indexing?.contextual_embeddings === true;
+  }
+
   // Process files in batches with parallel file reading and single batch embedding
   for (let i = 0; i < uniqueFiles.length; i += batchSize) {
     const batchNum = Math.floor(i / batchSize) + 1;
@@ -207,13 +214,11 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       // For code files, prepend symbol metadata to improve semantic embedding quality
       let embeddingTexts: string[];
       if (pathPrefix === 'code:') {
-        // Check if contextual embeddings are enabled (LLM-generated descriptions)
-        const { getConfig } = await import('./config.js');
-        const contextualEnabled = getConfig().indexing?.contextual_embeddings === true;
-
         if (contextualEnabled && allChunksWithMeta.length > 0) {
           try {
-            const { enrichWithContext } = await import('./search/contextual-embeddings.js');
+            const { enrichWithContext, resetLlmCircuitBreaker } =
+              await import('./search/contextual-embeddings.js');
+            resetLlmCircuitBreaker(); // Allow LLM calls for this indexing run
             // Enrich per-file so each file gets its own context
             const perFileTexts: string[] = [];
             for (const file of validFiles) {

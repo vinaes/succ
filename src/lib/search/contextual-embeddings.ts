@@ -83,7 +83,7 @@ export async function enrichWithContext(
     }
 
     // Try LLM context generation; trip circuit breaker on first hard failure
-    let description: string | null = null;
+    let description: string | null;
     try {
       description = await generateChunkContext(chunk, fileContext);
     } catch (error) {
