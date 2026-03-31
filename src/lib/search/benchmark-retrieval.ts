@@ -10,6 +10,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { z } from 'zod';
 import { getEmbedding } from '../embeddings.js';
 import { getSuccDir } from '../config.js';
 import {
@@ -77,6 +78,55 @@ export interface BaselineComparison {
     deltaPct: number;
   }>;
 }
+
+// ============================================================================
+// Baseline validation schema (zod)
+// ============================================================================
+
+const LatencyStatsSchema = z.object({
+  min: z.number(),
+  max: z.number(),
+  avg: z.number(),
+  p50: z.number(),
+  p95: z.number(),
+  p99: z.number(),
+  samples: z.number(),
+});
+
+const RetrievalBenchmarkResultSchema = z.object({
+  accuracy: z.object({
+    recallAtK: z.number(),
+    precisionAtK: z.number(),
+    f1AtK: z.number(),
+    k: z.number(),
+    mrr: z.number(),
+    ndcg: z.number(),
+    queryCount: z.number(),
+    queriesWithHits: z.number(),
+  }),
+  latency: z.object({
+    embedding: LatencyStatsSchema,
+    search: LatencyStatsSchema,
+    pipeline: LatencyStatsSchema,
+  }),
+  queryBreakdown: z.array(
+    z.object({
+      query: z.string(),
+      category: z.string(),
+      mrr: z.number(),
+      recall: z.number(),
+      latencyMs: z.number(),
+      hitsInTopK: z.number(),
+      totalRelevant: z.number(),
+    })
+  ),
+  metadata: z.object({
+    timestamp: z.string(),
+    totalQueries: z.number(),
+    totalMemories: z.number(),
+    config: z.object({}).passthrough(),
+  }),
+});
 
 // ============================================================================
 // Query Generation
@@ -376,23 +426,16 @@ export function loadBaseline(): RetrievalBenchmarkResult | null {
     if (!fs.existsSync(baselinePath)) return null;
     const parsed: unknown = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 
-    // Basic structural validation before casting
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !('accuracy' in parsed) ||
-      !('latency' in parsed) ||
-      !('queryBreakdown' in parsed) ||
-      !('metadata' in parsed)
-    ) {
-      logWarn(
-        'benchmark',
-        'Baseline file missing required fields (accuracy, latency, queryBreakdown, metadata)'
-      );
+    // Validate baseline structure with zod to catch corrupted/incompatible files
+    const result = RetrievalBenchmarkResultSchema.safeParse(parsed);
+    if (!result.success) {
+      logWarn('benchmark', 'Invalid baseline format', {
+        error: result.error.message,
+      });
       return null;
     }
 
-    return parsed as RetrievalBenchmarkResult;
+    return result.data as RetrievalBenchmarkResult;
   } catch (err) {
     logWarn('benchmark', 'Failed to load baseline', {
       error: getErrorMessage(err),
