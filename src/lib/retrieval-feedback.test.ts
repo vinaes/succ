@@ -22,6 +22,7 @@ vi.mock('./fault-logger.js', () => ({
 const mockDeleteOldRecallEvents = vi.fn().mockResolvedValue(0);
 vi.mock('./storage/index.js', () => ({
   deleteOldRecallEvents: (...args: unknown[]) => mockDeleteOldRecallEvents(...args),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 import {

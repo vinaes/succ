@@ -44,6 +44,7 @@ vi.mock('../lib/tree-sitter/types.js', () => ({
 
 vi.mock('../lib/storage/index.js', () => ({
   getAllFileHashes: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../lib/config.js', () => ({

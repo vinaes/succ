@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../storage/index.js', () => ({
   getAllMemoryLinksForExport: vi.fn(),
   getAllMemoriesForExport: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../fault-logger.js', () => ({

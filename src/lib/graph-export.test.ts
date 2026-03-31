@@ -85,6 +85,7 @@ vi.mock('./storage/index.js', () => ({
       return acc;
     }, {}),
   }),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 describe('Graph Export Module', () => {

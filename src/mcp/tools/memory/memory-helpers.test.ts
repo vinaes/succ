@@ -6,6 +6,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
   saveGlobalMemory: vi.fn(async () => ({ id: 9, isDuplicate: false })),
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../../../lib/config.js', () => ({

@@ -18,6 +18,7 @@ vi.mock('../storage/index.js', () => ({
     tags: ['test'],
     confidence: 0.5,
   })),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../embeddings.js', () => ({
