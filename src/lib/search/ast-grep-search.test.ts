@@ -85,7 +85,7 @@ try { doMore(); } catch (e) { handle(e); }
       expect(matches).toEqual([]);
     });
 
-    it('should return empty results for invalid pattern syntax', async () => {
+    it('should return empty results for empty pattern', async () => {
       const code = 'const x = 1;\n';
       // Empty pattern triggers "No AST root is detected" error inside ast-grep
       const matches = await searchPatternInContent(code, 'test.ts', '');
