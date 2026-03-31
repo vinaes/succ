@@ -15,6 +15,7 @@ import path from 'path';
 import { countTokens } from './token-counter.js';
 import { logWarn } from './fault-logger.js';
 import { getSuccDir } from './config.js';
+import { getContextLimit } from './context-limits.js';
 
 export interface TokenBudgetEntry {
   /** Tokens in transcript since last observation */
@@ -33,6 +34,8 @@ export interface TokenBudgetEntry {
   factsSaved: number;
   /** Timestamp of last update */
   lastUpdate: number;
+  /** Model context limit in tokens (null = not yet detected / ambiguous) */
+  contextLimit?: number | null;
 }
 
 // In-memory state: sessionId → budget
@@ -185,6 +188,30 @@ export function loadBudgets(): void {
  */
 export function removeBudget(sessionId: string): void {
   budgets.delete(sessionId);
+}
+
+/**
+ * Set the detected model context limit for a session.
+ * Called by the daemon when model detection succeeds (config, env, or transcript).
+ * Accepts a model ID string (passed to getContextLimit) or a pre-resolved number.
+ */
+export function setContextLimit(sessionId: string, modelIdOrLimit: string | number): void {
+  const budget = getBudget(sessionId);
+  if (typeof modelIdOrLimit === 'number') {
+    budget.contextLimit = modelIdOrLimit > 0 ? modelIdOrLimit : null;
+  } else {
+    budget.contextLimit = getContextLimit(modelIdOrLimit);
+  }
+  budget.lastUpdate = Date.now();
+}
+
+/**
+ * Get the detected context limit for a session, or null if unknown.
+ * Used by status reporting and cost-aware extraction decisions.
+ */
+export function getSessionContextLimit(sessionId: string): number | null {
+  const budget = budgets.get(sessionId);
+  return budget?.contextLimit ?? null;
 }
 
 /**
