@@ -20,7 +20,21 @@ export interface ModelPricing {
  * Pricing rates per million tokens for Claude models
  */
 export const PRICING: Record<string, ModelPricing> = {
-  // --- Claude 4.5 (Current) ---
+  // --- Claude 4.6 (Current) ---
+  'claude-opus-4-6': {
+    input: 5.0,
+    output: 25.0,
+    cache_write: 6.25,
+    cache_read: 0.5,
+  },
+  'claude-sonnet-4-6': {
+    input: 3.0,
+    output: 15.0,
+    cache_write: 3.75,
+    cache_read: 0.3,
+  },
+
+  // --- Claude 4.5 ---
   'claude-opus-4-5-20251101': {
     input: 15.0,
     output: 75.0,
@@ -91,12 +105,14 @@ export const PRICING: Record<string, ModelPricing> = {
 
 // Aliases for common model names
 const MODEL_ALIASES: Record<string, string> = {
-  // Short names
-  opus: 'claude-opus-4-5-20251101',
-  sonnet: 'claude-sonnet-4-5-20251101',
+  // Short names — point to current generation
+  opus: 'claude-opus-4-6',
+  sonnet: 'claude-sonnet-4-6',
   haiku: 'claude-3-5-haiku-20241022',
 
   // Version shortcuts
+  'opus-4.6': 'claude-opus-4-6',
+  'sonnet-4.6': 'claude-sonnet-4-6',
   'opus-4.5': 'claude-opus-4-5-20251101',
   'sonnet-4.5': 'claude-sonnet-4-5-20251101',
   'opus-4': 'claude-opus-4-20250514',
@@ -107,7 +123,7 @@ const MODEL_ALIASES: Record<string, string> = {
 };
 
 // Default model for unknown inputs
-const DEFAULT_MODEL = 'claude-sonnet-4-5-20251101';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 /**
  * Get pricing for a model, with fuzzy matching
@@ -128,8 +144,11 @@ export function getModelPricing(modelId?: string): ModelPricing {
     return PRICING[MODEL_ALIASES[lowerModel]];
   }
 
-  // Fuzzy match by model family
+  // Fuzzy match by model family — check newer versions first
   if (lowerModel.includes('opus')) {
+    if (lowerModel.includes('4.6') || lowerModel.includes('4-6')) {
+      return PRICING['claude-opus-4-6'];
+    }
     if (lowerModel.includes('4.5') || lowerModel.includes('4-5')) {
       return PRICING['claude-opus-4-5-20251101'];
     }
@@ -140,6 +159,9 @@ export function getModelPricing(modelId?: string): ModelPricing {
   }
 
   if (lowerModel.includes('sonnet')) {
+    if (lowerModel.includes('4.6') || lowerModel.includes('4-6')) {
+      return PRICING['claude-sonnet-4-6'];
+    }
     if (lowerModel.includes('4.5') || lowerModel.includes('4-5')) {
       return PRICING['claude-sonnet-4-5-20251101'];
     }

@@ -932,15 +932,15 @@ MEDIUM and below — commit is OK, mention findings in summary.
             fetch(
               `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
               { method: 'POST', signal: AbortSignal.timeout(300) }
-            ).catch(() => {
-              // fire-and-forget
+            ).catch((e) => {
+              console.error('[succ:pre-tool] context-usage ack failed:', e.message || e);
             });
           }
         }
       }
     }
-  } catch (_e) {
-    // fail-open: never block tool execution for context monitoring
+  } catch (e) {
+    console.error('[succ:pre-tool] context pressure check failed:', e.message || e);
   }
 
   // 6. Emit combined context

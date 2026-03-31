@@ -762,9 +762,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             }
             if (malformedLines > 0)
               log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
-            postTokens = Math.ceil(postChars / 4);
+            const CHARS_PER_TOKEN = 3.5;
+            postTokens = Math.ceil(postChars / CHARS_PER_TOKEN);
             for (const k of Object.keys(postByType)) {
-              postByType[k] = Math.ceil(postByType[k] / 4);
+              postByType[k] = Math.ceil(postByType[k] / CHARS_PER_TOKEN);
             }
           } catch (e) {
             log(

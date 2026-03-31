@@ -53,8 +53,11 @@ export function readTranscriptTail(transcriptPath: string, maxBytes: number): st
     }
     const fd = fs.openSync(transcriptPath, 'r');
     const buf = Buffer.alloc(maxBytes);
-    fs.readSync(fd, buf, 0, maxBytes, stats.size - maxBytes);
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buf, 0, maxBytes, stats.size - maxBytes);
+    } finally {
+      fs.closeSync(fd);
+    }
     const content = buf.toString('utf8');
     const firstNewline = content.indexOf('\n');
     return firstNewline >= 0 ? content.slice(firstNewline + 1) : content;

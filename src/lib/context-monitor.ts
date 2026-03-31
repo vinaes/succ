@@ -36,7 +36,7 @@ export interface ResolvedAutoCompactConfig {
   enabled: boolean;
   threshold_percent: number;
   cooldown_seconds: number;
-  context_limit?: number;
+  context_limit: number; // 0 = not set (sentinel), otherwise >= 100_000
   preemptive_extract: boolean;
 }
 
@@ -50,6 +50,7 @@ interface SessionContext {
   advisoryCount: number;
   lastDetectAttempt: number; // ms epoch of last contextLimit detection attempt
   extractionInFlight: boolean; // per-session lock for preemptive extraction
+  extractionDoneThisCycle: boolean; // true once extraction fires; reset on recordCompact
 }
 
 // Re-detect limit after this many ms when model is ambiguous (e.g. Sonnet)
@@ -72,15 +73,18 @@ function getLatestInputTokens(transcriptPath: string, compactOffset: number): nu
     const readBytes = Math.min(50_000, stats.size - compactOffset);
     const fd = fs.openSync(transcriptPath, 'r');
     const buf = Buffer.alloc(readBytes);
-    fs.readSync(fd, buf, 0, readBytes, stats.size - readBytes);
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buf, 0, readBytes, stats.size - readBytes);
+    } finally {
+      fs.closeSync(fd);
+    }
 
     const tail = buf.toString('utf8');
     const matches = [...tail.matchAll(/"input_tokens"\s*:\s*(\d+)/g)];
     if (matches.length === 0) return 0;
 
-    // Return the highest value (most recent API response in this segment)
-    return Math.max(...matches.map((m) => parseInt(m[1], 10)));
+    // Return the LAST match — the most recent API response in this segment
+    return parseInt(matches[matches.length - 1][1], 10);
   } catch (err) {
     logWarn(
       'context-monitor',
@@ -127,6 +131,7 @@ export class ContextMonitor {
       advisoryCount: 0,
       lastDetectAttempt: 0,
       extractionInFlight: false,
+      extractionDoneThisCycle: false,
     });
   }
 
@@ -145,6 +150,7 @@ export class ContextMonitor {
     session.compactOffset = transcriptBytes;
     session.lastAdvisoryAt = 0; // reset cooldown after compact
     session.advisoryCount = 0;
+    session.extractionDoneThisCycle = false; // allow extraction again after compact
   }
 
   /**
@@ -181,7 +187,7 @@ export class ContextMonitor {
         try {
           session.contextLimit = detectContextLimit(
             session.transcriptPath,
-            this.config.context_limit
+            this.config.context_limit > 0 ? this.config.context_limit : undefined
           );
         } catch (err) {
           logWarn('context-monitor', `detectContextLimit failed: ${getErrorMessage(err)}`);
@@ -221,16 +227,19 @@ export class ContextMonitor {
     const cooldownMs = this.config.cooldown_seconds * 1000;
     const cooldownActive = session.lastAdvisoryAt > 0 && now - session.lastAdvisoryAt < cooldownMs;
 
-    // Preemptive extraction at high+ urgency (async, non-blocking, per-session lock)
+    // Preemptive extraction at high+ urgency (async, non-blocking)
+    // Guards: per-session in-flight lock + one-per-cycle flag (reset on compact)
     if (
       shouldCompact &&
       !cooldownActive &&
       (urgency === 'high' || urgency === 'critical') &&
       this.config.preemptive_extract &&
       !session.extractionInFlight &&
+      !session.extractionDoneThisCycle &&
       this.onPreemptiveExtract
     ) {
       session.extractionInFlight = true;
+      session.extractionDoneThisCycle = true;
       this.onPreemptiveExtract(sessionId, session.transcriptPath)
         .catch((err) => {
           logWarn(

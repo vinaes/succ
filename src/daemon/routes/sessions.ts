@@ -8,7 +8,7 @@ import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { processSessionEnd } from '../session-processor.js';
 import { ContextMonitor } from '../../lib/context-monitor.js';
-import { detectContextLimit } from '../../lib/context-limits.js';
+import { detectContextLimit, readTranscriptTail } from '../../lib/context-limits.js';
 import { extractSessionSummary } from '../../lib/session-summary.js';
 import type { SessionState } from '../sessions.js';
 import {
@@ -30,8 +30,9 @@ export function getContextMonitor(): ContextMonitor {
     const cfg = getAutoCompactConfig();
     _contextMonitor = new ContextMonitor(cfg, async (sessionId, transcriptPath) => {
       // Preemptive extraction: extract memories before compaction at high pressure
+      // Use readTranscriptTail (last 200KB) — enough for extraction, avoids loading huge files
       try {
-        const content = fs.readFileSync(transcriptPath, 'utf8');
+        const content = readTranscriptTail(transcriptPath, 200_000);
         if (content.length > 200) {
           await extractSessionSummary(content, { verbose: false });
         }
@@ -86,10 +87,12 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       if (!is_service && transcript_path) {
         try {
           const autoCompactCfg = getAutoCompactConfig();
-          const limit = detectContextLimit(transcript_path, autoCompactCfg.context_limit);
+          const cfgLimit =
+            autoCompactCfg.context_limit > 0 ? autoCompactCfg.context_limit : undefined;
+          const limit = detectContextLimit(transcript_path, cfgLimit);
           if (limit !== null) detectedContextLimit = limit >= 1_000_000 ? '1m' : '200k';
-        } catch {
-          // non-critical — model detection is best-effort
+        } catch (err) {
+          logWarn('sessions', `model detection failed: ${getErrorMessage(err)}`);
         }
       }
       return { success: true, session, detected_context_limit: detectedContextLimit };

@@ -1045,10 +1045,9 @@ export function getAutoCompactConfig(): Required<AutoCompactConfig> {
   // Clamp threshold to 5-80 to prevent nonsensical values
   const rawThreshold = userConfig.threshold_percent ?? 15;
   const threshold_percent = Math.max(5, Math.min(80, rawThreshold));
-  // context_limit must be at least 100K if provided
+  // context_limit: 0 = not set (sentinel), otherwise clamped to >= 100K
   const rawLimit = userConfig.context_limit;
-  const context_limit =
-    rawLimit !== undefined ? Math.max(100_000, rawLimit) : (undefined as unknown as number);
+  const context_limit = rawLimit !== undefined && rawLimit > 0 ? Math.max(100_000, rawLimit) : 0;
   return {
     enabled: userConfig.enabled ?? true,
     threshold_percent,
