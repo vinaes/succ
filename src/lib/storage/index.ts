@@ -16,6 +16,7 @@ import { logWarn } from '../fault-logger.js';
 import { getStorageDispatcher } from './dispatcher.js';
 import { ConfigError } from '../errors.js';
 import type {
+  AuditChangedBy,
   MemoryType,
   LinkRelation,
   WebSearchHistoryInput,
@@ -493,9 +494,13 @@ export async function forceDeleteMemory(id: number): Promise<boolean> {
   return d.forceDeleteMemory(id);
 }
 
-export async function invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+export async function invalidateMemory(
+  memoryId: number,
+  supersededById: number,
+  changedBy?: AuditChangedBy
+): Promise<boolean> {
   const d = await getStorageDispatcher();
-  return d.invalidateMemory(memoryId, supersededById);
+  return d.invalidateMemory(memoryId, supersededById, changedBy);
 }
 
 export async function restoreInvalidatedMemory(memoryId: number): Promise<boolean> {

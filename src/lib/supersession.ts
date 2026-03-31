@@ -94,7 +94,7 @@ export async function checkSupersession(
           classification.relation === 'supersedes' &&
           classification.confidence >= CONFIDENCE_THRESHOLD
         ) {
-          await invalidateMemory(candidate.id, newMemoryId);
+          await invalidateMemory(candidate.id, newMemoryId, 'hook');
           result.superseded++;
           log(
             `[supersession] Memory #${candidate.id} superseded by #${newMemoryId}: ${classification.reason}`

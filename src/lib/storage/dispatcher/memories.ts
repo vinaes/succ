@@ -410,7 +410,11 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return result;
   }
 
-  async invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+  async invalidateMemory(
+    memoryId: number,
+    supersededById: number,
+    changedBy: AuditChangedBy = 'consolidation'
+  ): Promise<boolean> {
     // Tier 1 immutability guard: pinned memories cannot be invalidated
     await this._guardPinned(memoryId);
 
@@ -435,7 +439,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
 
     if (result) {
       try {
-        await this.recordAuditEvent(memoryId, 'delete', oldContent, null, 'consolidation');
+        await this.recordAuditEvent(memoryId, 'delete', oldContent, null, changedBy);
       } catch (auditError) {
         logWarn('storage', 'Audit trail recording failed for invalidateMemory', {
           memoryId,

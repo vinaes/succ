@@ -65,6 +65,10 @@ describe('Memory Audit Trail', () => {
         dispatcher.recordAuditEvent(42, 'create', null, 'test', 'user')
       ).resolves.toBeUndefined();
     });
+    it('should use global db when global=true', async () => {
+      await dispatcher.recordAuditEvent(42, 'create', null, 'test', 'user', true);
+      expect(sqliteMock.getGlobalDb).toHaveBeenCalled();
+    });
   });
 
   describe('getAuditHistory', () => {
@@ -80,6 +84,10 @@ describe('Memory Audit Trail', () => {
       });
       expect(await dispatcher.getAuditHistory(42)).toEqual([]);
     });
+    it('should use global db when global=true', async () => {
+      await dispatcher.getAuditHistory(42, true);
+      expect(sqliteMock.getGlobalDb).toHaveBeenCalled();
+    });
   });
 
   describe('pruneAuditTrail', () => {
@@ -93,6 +101,10 @@ describe('Memory Audit Trail', () => {
         throw new Error('DB delete failed');
       });
       expect(await dispatcher.pruneAuditTrail(30)).toBe(0);
+    });
+    it('should use global db when global=true', async () => {
+      await dispatcher.pruneAuditTrail(90, true);
+      expect(sqliteMock.getGlobalDb).toHaveBeenCalled();
     });
   });
 });

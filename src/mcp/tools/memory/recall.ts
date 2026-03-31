@@ -177,12 +177,19 @@ export function registerRecallTool(server: McpServer): void {
               const localIds = allRecent
                 .filter((r) => !r.isGlobal && r.id)
                 .map((r) => r.id as number);
-              const auditEntries = await Promise.all(
-                localIds.map(async (id) => ({
+              const globalIds = allRecent
+                .filter((r) => r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const auditEntries = await Promise.all([
+                ...localIds.map(async (id) => ({
                   id,
-                  events: await dispatcher.getAuditHistory(id),
-                }))
-              );
+                  events: await dispatcher.getAuditHistory(id, false),
+                })),
+                ...globalIds.map(async (id) => ({
+                  id,
+                  events: await dispatcher.getAuditHistory(id, true),
+                })),
+              ]);
               for (const entry of auditEntries) {
                 if (entry.events.length > 0) {
                   wildcardAuditMap.set(
@@ -592,7 +599,7 @@ export function registerRecallTool(server: McpServer): void {
           }
 
           // Fetch audit history for fallback memories if requested
-          let fallbackAuditMap = new Map<
+          const fallbackAuditMap = new Map<
             number,
             Array<{ event_type: string; changed_by: string; created_at: string }>
           >();

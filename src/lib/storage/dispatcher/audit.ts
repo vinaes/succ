@@ -17,8 +17,10 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
         // Cast needed: PostgresBackend.getPool() is public but the base StorageDispatcherBase
         // types `postgres` as the imported type which doesn't surface getPool in its interface.
         const pool = await (this.postgres as any).getPool();
+        // Derive project_id from the memories table to scope audit records by tenant
         await pool.query(
-          `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by) VALUES ($1, $2, $3, $4, $5)`,
+          `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by, project_id)
+           VALUES ($1, $2, $3, $4, $5, (SELECT project_id FROM memories WHERE id = $1))`,
           [memoryId, eventType, oldContent, newContent, changedBy]
         );
       } else {
@@ -72,6 +74,8 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
       if (this.backend === 'postgresql' && this.postgres) {
         // See recordAuditEvent for cast rationale
         const pool = await (this.postgres as any).getPool();
+        // Age-based prune is intentionally cross-project — old audit records are
+        // cleaned up uniformly. Per-project filtering uses the project_id column + index.
         const result = await pool.query(
           `DELETE FROM memory_audit WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
           [olderThanDays]
