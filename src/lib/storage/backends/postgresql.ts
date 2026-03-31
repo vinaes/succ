@@ -2395,7 +2395,8 @@ export class PostgresBackend {
       'getMemoryById',
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context,
+              version, parent_memory_id, root_memory_id, is_latest, created_at
        FROM memories WHERE id = $1`,
       [id]
     );
@@ -2425,6 +2426,10 @@ export class PostgresBackend {
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
       source_context: (row.source_context ?? null) as string | null,
+      version: row.version ?? undefined,
+      parent_memory_id: row.parent_memory_id ?? null,
+      root_memory_id: row.root_memory_id ?? null,
+      is_latest: row.is_latest == null ? undefined : !!row.is_latest,
       created_at: row.created_at,
     };
   }

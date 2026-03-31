@@ -950,7 +950,7 @@ export function deleteMemoriesByTag(tag: string): number {
  */
 export function getMemoryById(id: number): Memory | null {
   const row = cachedPrepare(
-    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at FROM memories WHERE id = ?'
+    'SELECT id, content, tags, source, type, quality_score, quality_factors, access_count, last_accessed, valid_from, valid_until, correction_count, is_invariant, priority_score, confidence, source_type, source_context, version, parent_memory_id, root_memory_id, is_latest, created_at FROM memories WHERE id = ?'
   ).get(id) as Record<string, any> | undefined;
 
   if (!row) return null;
@@ -973,6 +973,10 @@ export function getMemoryById(id: number): Memory | null {
     confidence: row.confidence ?? null,
     source_type: (row.source_type ?? null) as SourceType | null,
     source_context: (row.source_context ?? null) as string | null,
+    version: row.version ?? undefined,
+    parent_memory_id: row.parent_memory_id ?? null,
+    root_memory_id: row.root_memory_id ?? null,
+    is_latest: row.is_latest == null ? undefined : !!row.is_latest,
     created_at: row.created_at,
   };
 }
