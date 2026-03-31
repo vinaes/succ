@@ -894,14 +894,17 @@ export class PostgresBackend {
     // Self-gating: the WHERE clause `tags::text != lower(tags::text)` ensures zero rows
     // are updated once all tags are already lowercase, making this a fast no-op on
     // subsequent initSchema() calls (planner short-circuits when no rows match).
-    // We also do a cheap COUNT check first to skip the UPDATE entirely in the common case.
-    const mixedCaseCheck = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM memories
-       WHERE tags IS NOT NULL AND tags != '[]'::jsonb
-       AND tags::text != lower(tags::text)
-       LIMIT 1`
+    // We also do a cheap EXISTS check first to skip the UPDATE entirely in the common case.
+    // EXISTS stops at the first matching row, unlike COUNT(*) which scans all matches.
+    const mixedCaseCheck = await pool.query<{ has_mixed: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM memories
+         WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+         AND tags::text != lower(tags::text)
+         LIMIT 1
+       ) AS has_mixed`
     );
-    if (Number(mixedCaseCheck.rows[0]?.cnt) > 0) {
+    if (mixedCaseCheck.rows[0]?.has_mixed) {
       await pool.query(`
         UPDATE memories SET tags = (
           SELECT jsonb_agg(lower(elem))
@@ -2057,7 +2060,6 @@ export class PostgresBackend {
     since?: Date,
     options?: { includeExpired?: boolean; asOfDate?: Date; includeGlobal?: boolean }
   ): Promise<Array<Memory & { similarity: number }>> {
-    const pool = await this.getPool();
     const now = options?.asOfDate ?? new Date();
     const includeExpired = options?.includeExpired ?? false;
     const includeGlobal = options?.includeGlobal ?? true;
@@ -2106,12 +2108,7 @@ export class PostgresBackend {
     query += ` ORDER BY embedding <=> $1 LIMIT $${paramIndex}`;
     params.push(limit);
 
-    const start = Date.now();
-    const result = await pool.query(query, params);
-    const elapsed = Date.now() - start;
-    if (elapsed >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
-      void this.logSlowQuery(pool, query, params, elapsed);
-    }
+    const result = await this.queryWithTiming(query, params);
 
     let memories = result.rows.map((row) => ({
       id: row.id,
