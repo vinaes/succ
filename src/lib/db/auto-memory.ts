@@ -156,7 +156,6 @@ export function collectPruneableAutoMemoryIds(_maxUnusedDays: number): number[] 
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
-       AND access_count = 0
        AND forget_after IS NOT NULL
        AND datetime(forget_after) < datetime('now')
        AND invalidated_by IS NULL`

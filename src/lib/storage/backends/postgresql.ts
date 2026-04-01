@@ -4272,7 +4272,15 @@ export class PostgresBackend {
     const pool = await this.getPool();
     // Use ANY($1::int[]) — passes the entire array as a single parameter,
     // avoiding PG's ~65535 individual parameter limit on large batches.
-    const result = await pool.query(`DELETE FROM memories WHERE id = ANY($1::int[])`, [ids]);
+    // Scope to project to prevent cross-tenant deletion in shared tables.
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(`DELETE FROM memories WHERE id = ANY($1::int[]) ${scopeCond}`, [
+      ids,
+      ...scopeParams,
+    ]);
     return result.rowCount ?? 0;
   }
 
