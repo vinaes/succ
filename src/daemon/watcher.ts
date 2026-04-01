@@ -170,6 +170,9 @@ async function indexCode(
   }
 
   await withLock('watch-code', async () => {
+    // Delete existing chunks before re-indexing so stale chunks from
+    // files that shrank don't persist (mirrors indexDocFile pattern).
+    await deleteDocumentsByPath(`code:${relativePath}`);
     const result = await indexCodeFile(filePath, { force: true });
     if (result.success && result.chunks && result.chunks > 0) {
       await setFileHash(`code:${relativePath}`, hash);

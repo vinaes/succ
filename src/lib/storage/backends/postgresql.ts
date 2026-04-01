@@ -280,7 +280,13 @@ export class PostgresBackend {
     this.lastSlowQueryLogMs = now;
 
     try {
-      const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
+      // When params are present, skip EXPLAIN to avoid inlining sensitive
+      // values (embeddings, project IDs) into log output.
+      if (params.length > 0) {
+        logWarn('postgresql', `Slow query (${durationMs}ms)`, { query: queryText });
+        return;
+      }
+      const explainResult = await pool.query(`EXPLAIN ${queryText}`);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {

@@ -122,6 +122,9 @@ let QdrantClient: QdrantClientConstructor | null = null;
 
 import { logWarn } from '../../fault-logger.js';
 
+/** Shared HNSW index parameters for all Qdrant collections. */
+const HNSW_CONFIG = { m: 32, ef_construct: 200 } as const;
+
 function asQdrantError(error: unknown): QdrantErrorLike {
   if (typeof error !== 'object' || error === null) {
     return {};
@@ -428,7 +431,7 @@ export class QdrantVectorStore implements VectorStore {
 
     try {
       await client.updateCollection(name, {
-        hnsw_config: { m: 32, ef_construct: 200 },
+        hnsw_config: HNSW_CONFIG,
       });
     } catch (error) {
       logWarn(
@@ -468,10 +471,7 @@ export class QdrantVectorStore implements VectorStore {
           modifier: 'idf',
         },
       },
-      hnsw_config: {
-        m: 32,
-        ef_construct: 200,
-      },
+      hnsw_config: HNSW_CONFIG,
     };
 
     if (this.useQuantization) {
