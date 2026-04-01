@@ -98,6 +98,15 @@ try { doMore(); } catch (e) { handle(e); }
       );
     });
 
+    it('should return empty results for nonsensical pattern', async () => {
+      const code = 'function foo() { return 1; }\n';
+      // ast-grep uses error-tolerant tree-sitter parsing, so malformed
+      // patterns (unclosed braces, random tokens) parse without throwing
+      // but simply produce zero matches.
+      const matches = await searchPatternInContent(code, 'test.ts', '{{{{');
+      expect(matches).toEqual([]);
+    });
+
     it('should detect language from .js extension', async () => {
       const jsCode = 'function hello() { console.log("hi"); }\n';
       const matches = await searchPatternInContent(jsCode, 'test.js', 'console.log($$$ARGS)');
