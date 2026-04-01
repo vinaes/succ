@@ -1264,7 +1264,7 @@ export class PostgresBackend {
     const queryText = `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
+       WHERE LOWER(project_id) = $2 AND superseded_at IS NULL AND 1 - (embedding <=> $1) >= $3${whereExtra}
        ORDER BY embedding <=> $1
        LIMIT $4`;
 
@@ -3687,7 +3687,7 @@ export class PostgresBackend {
     }>(
       `SELECT file_path, content, start_line, end_line
        FROM documents
-       WHERE LOWER(project_id) = $1 AND file_path NOT LIKE 'code:%'
+       WHERE LOWER(project_id) = $1 AND superseded_at IS NULL AND file_path NOT LIKE 'code:%'
        ORDER BY id DESC
        LIMIT $2`,
       [this.projectId, limit]
@@ -4367,7 +4367,9 @@ export class PostgresBackend {
     }>
   > {
     const pool = await this.getPool();
-    const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
+    const scopeCond = this.projectId
+      ? 'WHERE superseded_at IS NULL AND LOWER(project_id) = $1'
+      : 'WHERE superseded_at IS NULL';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query<{

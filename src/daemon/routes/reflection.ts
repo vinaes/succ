@@ -234,7 +234,7 @@ export async function performReflection(
         const lastObsTime = session.lastObservation ?? session.registeredAt;
         const now = Date.now();
 
-        const newBytes = currentSize - lastObsSize;
+        const newBytes = Math.max(0, currentSize - lastObsSize);
         const timeThresholdMs = observerConfig.max_minutes * 60 * 1000;
         const enoughTime = now - lastObsTime >= timeThresholdMs;
 

@@ -797,7 +797,9 @@ export function initVecTables(database: Database.Database): void {
       // Migrate existing embeddings (only if same dimensions — skip on dim change)
       if (!documentsDimChange) {
         const docs = database
-          .prepare('SELECT id, embedding FROM documents WHERE embedding IS NOT NULL ORDER BY id')
+          .prepare(
+            'SELECT id, embedding FROM documents WHERE embedding IS NOT NULL AND superseded_at IS NULL ORDER BY id'
+          )
           .all() as Array<{ id: number; embedding: Buffer }>;
 
         if (docs.length > 0) {
