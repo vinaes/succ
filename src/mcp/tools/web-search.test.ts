@@ -53,7 +53,6 @@ vi.mock('../../lib/config.js', () => ({
   })),
   getSuccDir: vi.fn(() => '/tmp/test-succ'),
   getProjectRoot: vi.fn(() => '/test/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../helpers.js', () => ({

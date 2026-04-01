@@ -46,7 +46,6 @@ vi.mock('../lib/config.js', () => ({
   getConfig: vi.fn(() => ({
     sensitive_filter_enabled: false,
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../lib/quality.js', () => ({

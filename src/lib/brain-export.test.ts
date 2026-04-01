@@ -13,7 +13,6 @@ vi.mock('./config.js', () => ({
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: vi.fn(() => '/mock/.succ'),
   getProjectRoot: vi.fn(() => '/mock/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 const mockFs = vi.mocked(fs);

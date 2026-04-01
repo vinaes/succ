@@ -50,7 +50,6 @@ vi.mock('../config.js', () => ({
   getConfig: vi.fn(() => ({
     auto_memory: { extraction_consolidation: true },
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 import {
