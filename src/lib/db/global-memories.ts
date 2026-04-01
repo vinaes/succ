@@ -105,9 +105,9 @@ export function saveGlobalMemory(
   tags: string[] = [],
   source?: string,
   project?: string,
-  options: { deduplicate?: boolean; type?: MemoryType } = {}
+  options: { deduplicate?: boolean; type?: MemoryType; sourceContext?: string } = {}
 ): SaveMemoryResult {
-  const { deduplicate = true, type = 'observation' } = options;
+  const { deduplicate = true, type = 'observation', sourceContext } = options;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -124,11 +124,19 @@ export function saveGlobalMemory(
   const result = database
     .prepare(
       `
-      INSERT INTO memories (content, tags, source, project, type, embedding)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, project, type, source_context, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `
     )
-    .run(content, tagsJson, source ?? null, project ?? null, type, embeddingBlob);
+    .run(
+      content,
+      tagsJson,
+      source ?? null,
+      project ?? null,
+      type,
+      sourceContext ?? null,
+      embeddingBlob
+    );
 
   const memoryId = result.lastInsertRowid as number;
 

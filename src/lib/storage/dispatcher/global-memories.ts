@@ -61,6 +61,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
             source,
             type,
             createdAt: new Date().toISOString(),
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error);
@@ -74,6 +75,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
     const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, {
       type,
       deduplicate,
+      sourceContext,
     });
 
     if (this.hasQdrant() && !result.isDuplicate) {
@@ -84,6 +86,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
           source,
           type,
           createdAt: new Date().toISOString(),
+          sourceContext,
         });
       } catch (error) {
         this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error);
