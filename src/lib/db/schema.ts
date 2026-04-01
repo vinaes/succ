@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { getConfig, getLLMTaskConfig } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import { getModelDimension } from '../embeddings.js';
 
 // Flag to track if sqlite-vec is available
@@ -495,8 +496,8 @@ export function initDb(database: Database.Database): void {
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
     `);
-  } catch (_backfillErr) {
-    logWarn('schema', 'forget_after backfill skipped (source_type column may not exist yet)');
+  } catch (backfillErr) {
+    logWarn('schema', `forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
   }
 
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
@@ -1003,11 +1004,8 @@ export function initGlobalDb(database: Database.Database): void {
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
     `);
-  } catch (_backfillErr) {
-    logWarn(
-      'schema',
-      'global forget_after backfill skipped (source_type column may not exist yet)'
-    );
+  } catch (backfillErr) {
+    logWarn('schema', `global forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
   }
 
   // Migration: add correction_count and is_invariant columns for working memory pins

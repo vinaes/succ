@@ -4288,10 +4288,15 @@ export class PostgresBackend {
   async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
     const delta = Math.max(0, amount);
     const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
       `UPDATE memories SET confidence = GREATEST(0.05, COALESCE(confidence, 0.5) - $1)
-       WHERE id = $2 AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05`,
-      [delta, memoryId]
+       WHERE id = $2 AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05
+       ${scopeCond}`,
+      [delta, memoryId, ...scopeParams]
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -4299,30 +4304,139 @@ export class PostgresBackend {
   async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
     const delta = Math.max(0, amount);
     const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
       `UPDATE memories SET confidence = LEAST(0.95, COALESCE(confidence, 0.5) + $1)
-       WHERE id = $2 AND source_type = 'auto_extracted'`,
-      [delta, memoryId]
+       WHERE id = $2 AND source_type = 'auto_extracted'
+       ${scopeCond}`,
+      [delta, memoryId, ...scopeParams]
     );
     return (result.rowCount ?? 0) > 0;
   }
 
   async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
     const pool = await this.getPool();
-    const result = await pool.query(`UPDATE memories SET forget_after = $1 WHERE id = $2`, [
-      forgetAfter,
-      memoryId,
-    ]);
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET forget_after = $1 WHERE id = $2
+       ${scopeCond}`,
+      [forgetAfter, memoryId, ...scopeParams]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
   async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
     const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
-      `UPDATE memories SET forget_after = NOW() + ($1 || ' days')::INTERVAL WHERE id = $2`,
-      [days, memoryId]
+      `UPDATE memories SET forget_after = NOW() + ($1 || ' days')::INTERVAL
+       WHERE id = $2
+       ${scopeCond}`,
+      [days, memoryId, ...scopeParams]
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAutoExtractedMemories(): Promise<
+    Array<{
+      id: number;
+      content: string;
+      embedding: number[];
+      access_count: number;
+      confidence: number | null;
+      created_at: string;
+    }>
+  > {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{
+      id: number;
+      content: string;
+      embedding: string;
+      access_count: number;
+      confidence: number | null;
+      created_at: string;
+    }>(
+      `SELECT id, content, embedding::text, access_count, confidence, created_at::text as created_at
+       FROM memories
+       WHERE source_type = 'auto_extracted'
+       ${scopeCond}
+       ORDER BY created_at DESC`,
+      scopeParams
+    );
+    return result.rows.map((r) => ({
+      ...r,
+      embedding: r.embedding ? fromPgVector(r.embedding) : [],
+    }));
+  }
+
+  async collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{ id: number }>(
+      `SELECT id FROM memories
+       WHERE source_type = 'auto_extracted'
+       AND access_count = 0
+       AND created_at < NOW() - ($1 || ' days')::INTERVAL
+       ${scopeCond}`,
+      [maxUnusedDays, ...scopeParams]
+    );
+    return result.rows.map((r) => r.id);
+  }
+
+  async getAutoMemoryStatsRow(): Promise<{
+    total: number;
+    low_confidence: number;
+    high_confidence: number;
+    never_accessed: number;
+    avg_access: number;
+  }> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{
+      total: string;
+      low_confidence: string;
+      high_confidence: string;
+      never_accessed: string;
+      avg_access: string;
+    }>(
+      `SELECT
+         COUNT(*) as total,
+         SUM(CASE WHEN confidence IS NULL OR confidence < 0.5 THEN 1 ELSE 0 END) as low_confidence,
+         SUM(CASE WHEN confidence >= 0.7 THEN 1 ELSE 0 END) as high_confidence,
+         SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
+         AVG(access_count) as avg_access
+       FROM memories
+       WHERE source_type = 'auto_extracted'
+       ${scopeCond}`,
+      scopeParams
+    );
+    const row = result.rows[0];
+    return {
+      total: parseInt(row?.total ?? '0', 10),
+      low_confidence: parseInt(row?.low_confidence ?? '0', 10),
+      high_confidence: parseInt(row?.high_confidence ?? '0', 10),
+      never_accessed: parseInt(row?.never_accessed ?? '0', 10),
+      avg_access: parseFloat(row?.avg_access ?? '0'),
+    };
   }
 
   async searchMemoriesAsOf(

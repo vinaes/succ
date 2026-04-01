@@ -93,6 +93,11 @@ export function recordRecallEvent(
     similarityScore ?? null
   );
 
+  // insertRecallEvent returns 0 on failure — skip confidence adjustment
+  if (id === 0) {
+    return 0;
+  }
+
   // Adjust confidence based on usage feedback (async — fire-and-forget with error logging)
   (wasUsed ? boostMemoryConfidence(memoryId, 0.02) : degradeMemoryConfidence(memoryId, 0.05)).catch(
     (err: unknown) => {

@@ -4,6 +4,8 @@ import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
+  AutoMemoryRow,
+  AutoMemoryStatsRow,
   ConsolidationRecord,
   HybridMemoryResult,
   MemoryType,
@@ -700,6 +702,39 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     }
     const sqlite = await this.getSqliteFns();
     return sqlite.setForgetAfterDays(memoryId, days);
+  }
+
+  async getAutoExtractedMemories(): Promise<AutoMemoryRow[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoExtractedMemories();
+    }
+    const sqlite = await this.getSqliteFns();
+    const rows = sqlite.getAutoExtractedMemories();
+    // Convert SQLite Buffer embeddings to number[] for uniform interface
+    return rows.map((r) => ({
+      id: r.id,
+      content: r.content,
+      embedding: sqlite.bufferToFloatArray(r.embedding),
+      access_count: r.access_count,
+      confidence: r.confidence,
+      created_at: r.created_at,
+    }));
+  }
+
+  async collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectPruneableAutoMemoryIds(maxUnusedDays);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectPruneableAutoMemoryIds(maxUnusedDays);
+  }
+
+  async getAutoMemoryStatsRow(): Promise<AutoMemoryStatsRow> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoMemoryStatsRow();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getAutoMemoryStatsRow();
   }
 
   async searchMemoriesAsOf(

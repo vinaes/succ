@@ -604,6 +604,21 @@ export async function setForgetAfterDays(memoryId: number, days: number): Promis
   return d.setForgetAfterDays(memoryId, days);
 }
 
+export async function getAutoExtractedMemories(): Promise<import('./types.js').AutoMemoryRow[]> {
+  const d = await getStorageDispatcher();
+  return d.getAutoExtractedMemories();
+}
+
+export async function collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectPruneableAutoMemoryIds(maxUnusedDays);
+}
+
+export async function getAutoMemoryStatsRow(): Promise<import('./types.js').AutoMemoryStatsRow> {
+  const d = await getStorageDispatcher();
+  return d.getAutoMemoryStatsRow();
+}
+
 export async function searchMemoriesAsOf(
   queryEmbedding: number[],
   asOfDate: Date,
