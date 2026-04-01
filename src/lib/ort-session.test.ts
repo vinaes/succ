@@ -8,14 +8,14 @@ const MODEL = 'Xenova/all-MiniLM-L6-v2';
 // Use a 10s timeout to prevent hanging on slow model downloads.
 let modelAvailable = false;
 try {
-  await Promise.race([
-    resolveModelPath(MODEL).then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000)),
-  ]).then((available) => {
-    modelAvailable = available;
-  });
+  const modelPromise = resolveModelPath(MODEL)
+    .then(() => true)
+    .catch(() => false);
+  const timeoutPromise = new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000));
+  modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
 } catch {
-  // Model not downloaded or timed out — will skip tests
+  // Model resolution threw unexpectedly — log and skip tests
+  console.warn('ort-session.test: model resolution failed, skipping tests');
 }
 
 let sharedSession: NativeOrtSession | null = null;
