@@ -662,6 +662,46 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return deleted;
   }
 
+  async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.promoteMemoryConfidence(memoryId);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.promoteMemoryConfidence(memoryId);
+  }
+
+  async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.degradeMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.degradeMemoryConfidence(memoryId, amount);
+  }
+
+  async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.boostMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.boostMemoryConfidence(memoryId, amount);
+  }
+
+  async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfter(memoryId, forgetAfter);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfter(memoryId, forgetAfter);
+  }
+
+  async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfterDays(memoryId, days);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfterDays(memoryId, days);
+  }
+
   async searchMemoriesAsOf(
     queryEmbedding: number[],
     asOfDate: Date,

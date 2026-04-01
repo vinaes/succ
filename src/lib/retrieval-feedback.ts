@@ -19,10 +19,12 @@ import {
   getBoostDataForMemory,
   getBoostDataForMemories,
   getNeverUsedMemoryRows,
+} from './db/index.js';
+import {
+  deleteOldRecallEvents,
   degradeMemoryConfidence,
   boostMemoryConfidence,
-} from './db/index.js';
-import { deleteOldRecallEvents } from './storage/index.js';
+} from './storage/index.js';
 import { sanitizeQuery } from './query-sanitizer.js';
 import { logWarn } from './fault-logger.js';
 
@@ -91,18 +93,14 @@ export function recordRecallEvent(
     similarityScore ?? null
   );
 
-  // Adjust confidence based on usage feedback
-  try {
-    if (wasUsed) {
-      boostMemoryConfidence(memoryId, 0.02); // +0.02, cap 0.95
-    } else {
-      degradeMemoryConfidence(memoryId, 0.05); // -0.05, floor 0.05
+  // Adjust confidence based on usage feedback (async — fire-and-forget with error logging)
+  (wasUsed ? boostMemoryConfidence(memoryId, 0.02) : degradeMemoryConfidence(memoryId, 0.05)).catch(
+    (err: unknown) => {
+      logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${memoryId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-  } catch (err) {
-    logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${memoryId}`, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  );
 
   return id;
 }
@@ -132,20 +130,18 @@ export function recordRecallBatch(
 
   insertRecallEventsBatch(events);
 
-  // Adjust confidence for all recalled memories
-  try {
-    for (const event of events) {
-      if (event.wasUsed) {
-        boostMemoryConfidence(event.memoryId, 0.02);
-      } else {
-        degradeMemoryConfidence(event.memoryId, 0.05);
-      }
-    }
-  } catch (err) {
+  // Adjust confidence for all recalled memories (async — fire-and-forget with error logging)
+  Promise.allSettled(
+    events.map((event) =>
+      event.wasUsed
+        ? boostMemoryConfidence(event.memoryId, 0.02)
+        : degradeMemoryConfidence(event.memoryId, 0.05)
+    )
+  ).catch((err: unknown) => {
     logWarn('retrieval-feedback', 'Batch confidence adjustment failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
+  });
 }
 
 // ============================================================================

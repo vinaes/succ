@@ -4275,6 +4275,56 @@ export class PostgresBackend {
     return result.rowCount ?? 0;
   }
 
+  async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories SET confidence = 0.7
+       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.7)`,
+      [memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
+    const delta = Math.max(0, amount);
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories SET confidence = GREATEST(0.05, COALESCE(confidence, 0.5) - $1)
+       WHERE id = $2 AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05`,
+      [delta, memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
+    const delta = Math.max(0, amount);
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories SET confidence = LEAST(0.95, COALESCE(confidence, 0.5) + $1)
+       WHERE id = $2 AND source_type = 'auto_extracted'`,
+      [delta, memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(`UPDATE memories SET forget_after = $1 WHERE id = $2`, [
+      forgetAfter,
+      memoryId,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const result = await pool.query(
+      `UPDATE memories SET forget_after = NOW() + ($1 || ' days')::INTERVAL WHERE id = $2`,
+      [days, memoryId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async searchMemoriesAsOf(
     queryEmbedding: number[],
     asOfDate: Date,

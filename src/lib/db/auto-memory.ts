@@ -51,11 +51,12 @@ export function promoteMemoryConfidence(memoryId: number): boolean {
  * Used when a memory is recalled but not used.
  */
 export function degradeMemoryConfidence(memoryId: number, amount: number = 0.05): boolean {
+  const delta = Math.max(0, amount);
   try {
     const result = cachedPrepare(
       `UPDATE memories SET confidence = MAX(0.05, COALESCE(confidence, 0.5) - ?)
        WHERE id = ? AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05`
-    ).run(amount, memoryId);
+    ).run(delta, memoryId);
     return result.changes > 0;
   } catch (error) {
     logWarn('auto-memory-db', `Failed to degrade confidence for memory #${memoryId}`, {
@@ -70,11 +71,12 @@ export function degradeMemoryConfidence(memoryId: number, amount: number = 0.05)
  * Used when a memory is recalled and actively used.
  */
 export function boostMemoryConfidence(memoryId: number, amount: number = 0.02): boolean {
+  const delta = Math.max(0, amount);
   try {
     const result = cachedPrepare(
       `UPDATE memories SET confidence = MIN(0.95, COALESCE(confidence, 0.5) + ?)
        WHERE id = ? AND source_type = 'auto_extracted'`
-    ).run(amount, memoryId);
+    ).run(delta, memoryId);
     return result.changes > 0;
   } catch (error) {
     logWarn('auto-memory-db', `Failed to boost confidence for memory #${memoryId}`, {

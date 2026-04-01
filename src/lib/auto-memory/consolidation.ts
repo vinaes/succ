@@ -8,12 +8,15 @@
  * - Update existing memories rather than creating duplicates
  */
 
-import { deleteMemoriesByIds, collectExpiredMemoryIds } from '../storage/index.js';
+import {
+  deleteMemoriesByIds,
+  collectExpiredMemoryIds,
+  promoteMemoryConfidence,
+  setForgetAfter,
+} from '../storage/index.js';
 import {
   getAutoExtractedMemories,
-  promoteMemoryConfidence,
   collectPruneableAutoMemoryIds,
-  setForgetAfter,
   getAutoMemoryStatsRow,
   bufferToFloatArray,
 } from '../db/index.js';
@@ -64,6 +67,15 @@ export async function consolidateAutoMemories(options?: {
   };
 
   try {
+    // Step 4 (early): Delete memories past their forget_after date.
+    // Runs unconditionally before the early-return guard below so that
+    // expired memories are cleaned up even when the local SQLite has zero
+    // auto-extracted rows (e.g. PostgreSQL-backed deployments).
+    const expiredIds = await collectExpiredMemoryIds();
+    if (expiredIds.length > 0) {
+      result.forgotten = await deleteMemoriesByIds(expiredIds);
+    }
+
     // Get all auto-extracted memories
     const autoMemories = getAutoExtractedMemories();
 
@@ -157,9 +169,9 @@ export async function consolidateAutoMemories(options?: {
     );
 
     for (const mem of toPromote) {
-      if (promoteMemoryConfidence(mem.id)) {
+      if (await promoteMemoryConfidence(mem.id)) {
         // Promoted memories become permanent — clear forget_after
-        if (setForgetAfter(mem.id, null)) {
+        if (await setForgetAfter(mem.id, null)) {
           result.promoted++;
         } else {
           logWarn('consolidation', `Failed to clear forget_after for promoted memory #${mem.id}`);
@@ -175,12 +187,6 @@ export async function consolidateAutoMemories(options?: {
       if (pruneIds.length > 0) {
         result.pruned = await deleteMemoriesByIds(pruneIds);
       }
-    }
-
-    // Step 4: Delete memories past their forget_after date.
-    const expiredIds = await collectExpiredMemoryIds();
-    if (expiredIds.length > 0) {
-      result.forgotten = await deleteMemoriesByIds(expiredIds);
     }
 
     logInfo(
