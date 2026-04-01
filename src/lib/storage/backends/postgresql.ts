@@ -4408,7 +4408,6 @@ export class PostgresBackend {
     const result = await pool.query<{ id: number }>(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
-       AND access_count = 0
        AND forget_after IS NOT NULL
        AND forget_after < NOW()
        AND invalidated_by IS NULL
