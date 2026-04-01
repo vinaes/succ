@@ -113,6 +113,12 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
   if (pathPrefix === 'code:') {
     const { getConfig } = await import('./config.js');
     contextualEnabled = getConfig().indexing?.contextual_embeddings === true;
+
+    // Reset circuit breaker once per indexing run so LLM enrichment gets a fresh chance
+    if (contextualEnabled) {
+      const { resetLlmCircuitBreaker } = await import('./search/contextual-embeddings.js');
+      resetLlmCircuitBreaker();
+    }
   }
 
   // Process files in batches with parallel file reading and single batch embedding
@@ -216,9 +222,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       if (pathPrefix === 'code:') {
         if (contextualEnabled && allChunksWithMeta.length > 0) {
           try {
-            const { enrichWithContext, resetLlmCircuitBreaker } =
-              await import('./search/contextual-embeddings.js');
-            resetLlmCircuitBreaker(); // Allow LLM calls for this indexing run
+            const { enrichWithContext } = await import('./search/contextual-embeddings.js');
             // Enrich per-file so each file gets its own context
             const perFileTexts: string[] = [];
             for (const file of validFiles) {
