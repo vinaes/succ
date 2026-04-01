@@ -221,6 +221,7 @@ export interface GlobalMemory {
   type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  source_context: string | null;
   created_at: string;
   isGlobal: true;
 }
