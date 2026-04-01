@@ -62,11 +62,19 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
       } else {
         const sqlite = await this.getSqliteFns();
         const db = global ? sqlite.getGlobalDb() : sqlite.getDb();
-        return db
+        const rows = db
           .prepare(
             `SELECT id, memory_id, event_type, old_content, new_content, changed_by, created_at FROM memory_audit WHERE memory_id = ? ORDER BY created_at DESC`
           )
           .all(memoryId) as MemoryAuditRecord[];
+        // Normalize SQLite CURRENT_TIMESTAMP (YYYY-MM-DD HH:MM:SS, implicitly UTC)
+        // to ISO 8601 strings so both backends share the same created_at contract.
+        return rows.map((row) => ({
+          ...row,
+          created_at: row.created_at?.includes('T')
+            ? row.created_at
+            : new Date(row.created_at + 'Z').toISOString(),
+        }));
       }
     } catch (error) {
       logWarn('audit', 'Failed to get audit history', { memoryId, error: getErrorMessage(error) });
@@ -75,6 +83,12 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   }
 
   async pruneAuditTrail(olderThanDays: number = 90, global: boolean = false): Promise<number> {
+    if (!Number.isFinite(olderThanDays) || olderThanDays < 0) {
+      logWarn('audit', 'pruneAuditTrail called with invalid olderThanDays, clamping to 0', {
+        olderThanDays,
+      });
+      olderThanDays = 0;
+    }
     try {
       if (this.backend === 'postgresql' && this.postgres) {
         // See recordAuditEvent for cast rationale

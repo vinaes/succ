@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
@@ -178,6 +179,7 @@ export function registerRecallTool(server: McpServer): void {
           if (history) {
             try {
               const dispatcher = await getStorageDispatcher();
+              const auditReadLimit = pLimit(5);
               const localIds = allRecent
                 .filter((r) => !r.isGlobal && r.id)
                 .map((r) => r.id as number);
@@ -185,14 +187,18 @@ export function registerRecallTool(server: McpServer): void {
                 .filter((r) => r.isGlobal && r.id)
                 .map((r) => r.id as number);
               const auditEntries = await Promise.all([
-                ...localIds.map(async (id) => ({
-                  key: auditKey(id, false),
-                  events: await dispatcher.getAuditHistory(id, false),
-                })),
-                ...globalIds.map(async (id) => ({
-                  key: auditKey(id, true),
-                  events: await dispatcher.getAuditHistory(id, true),
-                })),
+                ...localIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, false),
+                    events: await dispatcher.getAuditHistory(id, false),
+                  }))
+                ),
+                ...globalIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, true),
+                    events: await dispatcher.getAuditHistory(id, true),
+                  }))
+                ),
               ]);
               for (const entry of auditEntries) {
                 if (entry.events.length > 0) {
@@ -611,6 +617,7 @@ export function registerRecallTool(server: McpServer): void {
           if (history) {
             try {
               const dispatcher = await getStorageDispatcher();
+              const auditReadLimit = pLimit(5);
               const localFallbackIds = recent
                 .filter((r) => !r.isGlobal && r.id)
                 .map((r) => r.id as number);
@@ -618,14 +625,18 @@ export function registerRecallTool(server: McpServer): void {
                 .filter((r) => r.isGlobal && r.id)
                 .map((r) => r.id as number);
               const auditEntries = await Promise.all([
-                ...localFallbackIds.map(async (id) => ({
-                  key: auditKey(id, false),
-                  events: await dispatcher.getAuditHistory(id, false),
-                })),
-                ...globalFallbackIds.map(async (id) => ({
-                  key: auditKey(id, true),
-                  events: await dispatcher.getAuditHistory(id, true),
-                })),
+                ...localFallbackIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, false),
+                    events: await dispatcher.getAuditHistory(id, false),
+                  }))
+                ),
+                ...globalFallbackIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, true),
+                    events: await dispatcher.getAuditHistory(id, true),
+                  }))
+                ),
               ]);
               for (const entry of auditEntries) {
                 if (entry.events.length > 0) {
@@ -700,6 +711,7 @@ export function registerRecallTool(server: McpServer): void {
         if (history) {
           try {
             const dispatcher = await getStorageDispatcher();
+            const auditReadLimit = pLimit(5);
             const localIds = allResults
               .filter((r) => !r.isGlobal && r.id)
               .map((r) => r.id as number);
@@ -707,14 +719,18 @@ export function registerRecallTool(server: McpServer): void {
               .filter((r) => r.isGlobal && r.id)
               .map((r) => r.id as number);
             const auditEntries = await Promise.all([
-              ...localIds.map(async (id) => ({
-                key: auditKey(id, false),
-                events: await dispatcher.getAuditHistory(id, false),
-              })),
-              ...globalIds.map(async (id) => ({
-                key: auditKey(id, true),
-                events: await dispatcher.getAuditHistory(id, true),
-              })),
+              ...localIds.map((id) =>
+                auditReadLimit(async () => ({
+                  key: auditKey(id, false),
+                  events: await dispatcher.getAuditHistory(id, false),
+                }))
+              ),
+              ...globalIds.map((id) =>
+                auditReadLimit(async () => ({
+                  key: auditKey(id, true),
+                  events: await dispatcher.getAuditHistory(id, true),
+                }))
+              ),
             ]);
             for (const entry of auditEntries) {
               if (entry.events.length > 0) {

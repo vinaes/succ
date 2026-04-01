@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { StorageDispatcherBase } from './base.js';
 import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
@@ -407,28 +408,34 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
-    // Record audit trail for batch creates (same as single saveMemory path)
+    // Record audit trail for batch creates with bounded parallelism (CONCURRENCY=5)
+    // to avoid SQLITE_BUSY while not serializing every insert.
     if (result?.results?.length > 0) {
       const saved = result.results.filter(
         (r): r is (typeof result.results)[number] & { id: number } => !r.isDuplicate && r.id != null
       );
-      for (const r of saved) {
-        try {
-          const mem = memories[r.index];
-          const changedBy: AuditChangedBy =
-            mem.sourceType === 'auto_extracted'
-              ? 'extraction'
-              : mem.source === 'hook'
-                ? 'hook'
-                : 'user';
-          await this.recordAuditEvent(r.id, 'create', null, mem.content, changedBy);
-        } catch (auditError) {
-          logWarn('storage', 'Audit trail recording failed for saveMemoriesBatch', {
-            memoryId: r.id,
-            error: getErrorMessage(auditError),
-          });
-        }
-      }
+      const auditWriteLimit = pLimit(5);
+      await Promise.all(
+        saved.map((r) =>
+          auditWriteLimit(async () => {
+            try {
+              const mem = memories[r.index];
+              const changedBy: AuditChangedBy =
+                mem.sourceType === 'auto_extracted'
+                  ? 'extraction'
+                  : mem.source === 'hook'
+                    ? 'hook'
+                    : 'user';
+              await this.recordAuditEvent(r.id, 'create', null, mem.content, changedBy);
+            } catch (auditError) {
+              logWarn('storage', 'Audit trail recording failed for saveMemoriesBatch', {
+                memoryId: r.id,
+                error: getErrorMessage(auditError),
+              });
+            }
+          })
+        )
+      );
     }
 
     return result;
