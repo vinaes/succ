@@ -64,6 +64,22 @@ function hasSecrets(text) {
   return false;
 }
 
+// ─── Source-context secret patterns (broader than INLINE_SECRET_PATTERNS) ──
+// Catches key=value pairs, Bearer tokens, PEM blocks, and provider-specific tokens
+// that could leak via memory recall if persisted.
+const SOURCE_CONTEXT_SECRET_PATTERNS = [
+  /(?:api[_-]?key|token|secret|password|credential|auth)[=:]\s*['"]?[a-zA-Z0-9_\-]{20,}/i,
+  /Bearer\s+[a-zA-Z0-9_\-\.]{20,}/i,
+  /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----/i,
+  /ghp_[a-zA-Z0-9]{36}/,
+  /sk-[a-zA-Z0-9]{20,}/,
+];
+
+function hasSecretPatterns(text) {
+  if (typeof text !== 'string') return false;
+  return SOURCE_CONTEXT_SECRET_PATTERNS.some((p) => p.test(text));
+}
+
 /**
  * Parse MEMORY.md bullets, classify by section header.
  * Returns [{ text, tags }] for each bullet worth saving.
@@ -129,7 +145,13 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         tags: tags,
         source: 'auto-capture',
       };
-      if (sourceContext) payload.source_context = sourceContext;
+      if (sourceContext) {
+        if (hasSecretPatterns(sourceContext)) {
+          console.error('[succ:post-tool] source_context blocked: secret patterns detected');
+        } else {
+          payload.source_context = sourceContext;
+        }
+      }
       const response = await fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,7 +210,11 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
       const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
       if (msgMatch) {
         const commitCtx = (toolOutput || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
-        await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone', commitCtx || undefined);
+        await succRemember(
+          'Committed: ' + msgMatch[1],
+          'git,commit,milestone',
+          commitCtx || undefined
+        );
       }
     }
 
@@ -260,7 +286,11 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
           const desc = (toolInput.description || '').slice(0, 100);
           const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
           const agentCtx = (toolInput.prompt || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
-          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`, agentCtx || undefined);
+          await succRemember(
+            content,
+            `subagent,${agentType.toLowerCase()},auto-capture`,
+            agentCtx || undefined
+          );
         }
       }
     }

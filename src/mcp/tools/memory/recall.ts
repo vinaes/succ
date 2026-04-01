@@ -32,6 +32,16 @@ import { logWarn } from '../../../lib/fault-logger.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
 
+/**
+ * Escape XML-sensitive characters in source_context and wrap in tags.
+ * Returns empty string when value is absent or empty.
+ */
+function renderSourceContext(value: unknown, leadingNewlines = '\n'): string {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `${leadingNewlines}<source-context>\n${escaped}\n</source-context>\n`;
+}
+
 interface ExtendedMemoryResult extends HybridMemoryResult {
   isGlobal?: boolean;
   project?: string;
@@ -250,10 +260,7 @@ export function registerRecallTool(server: McpServer): void {
                     .join('\n');
               }
 
-              const srcCtx =
-                'source_context' in m && m.source_context
-                  ? `\n<source-context>\n${String(m.source_context).replace(/<\/?source-context>/gi, (tag) => tag.replace(/</g, '&lt;').replace(/>/g, '&gt;'))}\n</source-context>\n`
-                  : '';
+              const srcCtx = 'source_context' in m ? renderSourceContext(m.source_context) : '';
               return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}${srcCtx}\n`;
             })
             .join('\n---\n\n');
@@ -808,9 +815,7 @@ export function registerRecallTool(server: McpServer): void {
             }
 
             // Source context: the original conversation/code excerpt that produced this memory
-            const sourceCtx = result.source_context
-              ? `\n\n<source-context>\n${String(result.source_context).replace(/<\/?source-context>/gi, (tag) => tag.replace(/</g, '&lt;').replace(/>/g, '&gt;'))}\n</source-context>`
-              : '';
+            const sourceCtx = renderSourceContext(result.source_context, '\n\n');
 
             return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}${sourceCtx}`;
           })
