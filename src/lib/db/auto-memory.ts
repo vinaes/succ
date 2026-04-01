@@ -144,17 +144,23 @@ export function collectExpiredMemoryIds(): number[] {
 /**
  * Collect IDs of old unused auto-extracted memories eligible for pruning.
  *
+ * Unified on forget_after — the single canonical retention field.
+ * The maxUnusedDays parameter is kept for interface compat but the actual
+ * expiration is driven by the forget_after timestamp set at insertion time.
+ *
  * Returns IDs only — callers are responsible for deletion so that the storage
  * dispatcher (including Qdrant vector deletion) is invoked correctly.
  */
-export function collectPruneableAutoMemoryIds(maxUnusedDays: number): number[] {
+export function collectPruneableAutoMemoryIds(_maxUnusedDays: number): number[] {
   try {
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
        AND access_count = 0
-       AND created_at < datetime('now', '-' || ? || ' days')`
-    ).all(maxUnusedDays) as Array<{ id: number }>;
+       AND forget_after IS NOT NULL
+       AND datetime(forget_after) < datetime('now')
+       AND invalidated_by IS NULL`
+    ).all() as Array<{ id: number }>;
 
     return rows.map((r) => r.id);
   } catch (error) {

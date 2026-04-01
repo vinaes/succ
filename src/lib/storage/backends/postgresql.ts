@@ -4270,8 +4270,9 @@ export class PostgresBackend {
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
     if (ids.length === 0) return 0;
     const pool = await this.getPool();
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-    const result = await pool.query(`DELETE FROM memories WHERE id IN (${placeholders})`, ids);
+    // Use ANY($1::int[]) — passes the entire array as a single parameter,
+    // avoiding PG's ~65535 individual parameter limit on large batches.
+    const result = await pool.query(`DELETE FROM memories WHERE id = ANY($1::int[])`, [ids]);
     return result.rowCount ?? 0;
   }
 
@@ -4387,19 +4388,24 @@ export class PostgresBackend {
     }));
   }
 
-  async collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+  async collectPruneableAutoMemoryIds(_maxUnusedDays: number): Promise<number[]> {
+    // Unified on forget_after — the single canonical retention field.
+    // The maxUnusedDays parameter is kept for interface compat but the actual
+    // expiration is driven by the forget_after timestamp set at insertion time.
     const pool = await this.getPool();
     const scopeCond = this.projectId
-      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
       : 'AND project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query<{ id: number }>(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
        AND access_count = 0
-       AND created_at < NOW() - ($1 || ' days')::INTERVAL
+       AND forget_after IS NOT NULL
+       AND forget_after < NOW()
+       AND invalidated_by IS NULL
        ${scopeCond}`,
-      [maxUnusedDays, ...scopeParams]
+      scopeParams
     );
     return result.rows.map((r) => r.id);
   }
