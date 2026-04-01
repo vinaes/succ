@@ -45,6 +45,7 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
       const processRemember = async (): Promise<RememberInFlightResult> => {
         const config = getConfig();
         let finalContent = content;
+        let finalSourceContext = source_context;
         if (config.sensitive_filter_enabled !== false) {
           const scanResult = scanSensitive(content);
           if (scanResult.hasSensitive) {
@@ -52,6 +53,17 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
               finalContent = scanResult.redactedText;
             } else {
               throw new ValidationError('Content contains sensitive information');
+            }
+          }
+          // Scan source_context for sensitive info with same policy
+          if (finalSourceContext) {
+            const ctxScan = scanSensitive(finalSourceContext);
+            if (ctxScan.hasSensitive) {
+              if (config.sensitive_auto_redact) {
+                finalSourceContext = ctxScan.redactedText;
+              } else {
+                throw new ValidationError('source_context contains sensitive information');
+              }
             }
           }
         }
@@ -64,13 +76,15 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
 
         let result;
         if (global) {
-          result = await saveGlobalMemory(finalContent, embedding, tags, type);
+          result = await saveGlobalMemory(finalContent, embedding, tags, type, {
+            sourceContext: finalSourceContext,
+          });
         } else {
           result = await saveMemory(finalContent, embedding, tags, source ?? type, {
             qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
             validFrom: valid_from,
             validUntil: valid_until,
-            sourceContext: source_context,
+            sourceContext: finalSourceContext,
           });
         }
 

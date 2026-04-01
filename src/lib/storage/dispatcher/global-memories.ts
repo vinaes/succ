@@ -21,6 +21,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
       deduplicate?: boolean;
       qualityScore?: number;
       qualityFactors?: Record<string, number>;
+      sourceContext?: string;
     }
   ): Promise<{
     id: number;
@@ -31,6 +32,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
     const deduplicate = options?.deduplicate ?? true;
     const qualityScore = options?.qualityScore;
     const qualityFactors = options?.qualityFactors;
+    const sourceContext = options?.sourceContext;
 
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
@@ -47,7 +49,8 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
         source,
         type,
         qualityScore,
-        qualityFactors
+        qualityFactors,
+        sourceContext
       );
 
       if (this.hasQdrant()) {

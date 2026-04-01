@@ -404,6 +404,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
                   : null,
                 confidence: mem.confidence ?? null,
                 sourceType: mem.sourceType ?? null,
+                sourceContext: mem.sourceContext ?? null,
               },
             };
           });

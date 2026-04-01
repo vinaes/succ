@@ -316,6 +316,7 @@ export interface HybridGlobalMemoryResult {
   similarity: number;
   bm25Score?: number;
   vectorScore?: number;
+  source_context?: string | null;
 }
 
 // ============================================================================

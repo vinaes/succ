@@ -1842,7 +1842,7 @@ export class PostgresBackend {
     // Fetch full rows
     const rows = await pool.query(
       `SELECT id, content, tags, source, type, created_at,
-              access_count, last_accessed, valid_from, valid_until
+              access_count, last_accessed, valid_from, valid_until, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -1862,6 +1862,7 @@ export class PostgresBackend {
             last_accessed: string | null;
             valid_from: string | null;
             valid_until: string | null;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -1879,6 +1880,7 @@ export class PostgresBackend {
         last_accessed: row.last_accessed,
         valid_from: row.valid_from,
         valid_until: row.valid_until,
+        source_context: row.source_context ?? null,
       });
     }
     return results;
@@ -1963,7 +1965,7 @@ export class PostgresBackend {
 
     // Fetch full rows
     const rows = await pool.query(
-      `SELECT id, project_id, content, tags, source, type, created_at
+      `SELECT id, project_id, content, tags, source, type, created_at, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -1980,6 +1982,7 @@ export class PostgresBackend {
             source: string | null;
             type: string | null;
             created_at: string;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -1994,6 +1997,7 @@ export class PostgresBackend {
         similarity: fusedScoreMap.get(docId) ?? 0,
         bm25Score: textScoreMap.get(docId) ?? 0,
         vectorScore: vecScoreMap.get(docId) ?? 0,
+        source_context: row.source_context ?? null,
       });
     }
 
@@ -2795,7 +2799,8 @@ export class PostgresBackend {
     source?: string,
     type: MemoryType = 'observation',
     qualityScore?: number,
-    qualityFactors?: Record<string, number>
+    qualityFactors?: Record<string, number>,
+    sourceContext?: string
   ): Promise<number> {
     return this.saveMemory(
       content,
@@ -2807,7 +2812,10 @@ export class PostgresBackend {
       qualityFactors,
       undefined, // validFrom
       undefined, // validUntil
-      true // isGlobal
+      true, // isGlobal
+      undefined, // confidence — use default
+      undefined, // sourceType — use default
+      sourceContext
     );
   }
 
@@ -4337,6 +4345,7 @@ export class PostgresBackend {
       accessCount: number;
       lastAccessed: string | null;
       qualityScore: number | null;
+      sourceContext: string | null;
       embedding: number[];
     }>
   > {
@@ -4360,12 +4369,13 @@ export class PostgresBackend {
       access_count: number | null;
       last_accessed: string | null;
       quality_score: number | null;
+      source_context: string | null;
       embedding: string;
     }>(
       `SELECT id, content, tags, source, type, project_id,
               created_at::text as created_at, valid_from::text as valid_from,
               valid_until::text as valid_until, invalidated_by, access_count,
-              last_accessed::text as last_accessed, quality_score,
+              last_accessed::text as last_accessed, quality_score, source_context,
               embedding::text as embedding
        FROM memories ${scopeCond}
        ORDER BY id ASC`,
@@ -4390,6 +4400,7 @@ export class PostgresBackend {
       accessCount: row.access_count ?? 0,
       lastAccessed: row.last_accessed,
       qualityScore: row.quality_score,
+      sourceContext: row.source_context ?? null,
       embedding: fromPgVector(row.embedding),
     }));
   }

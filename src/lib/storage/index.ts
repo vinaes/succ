@@ -609,13 +609,13 @@ export async function saveGlobalMemory(
   embedding: number[],
   tags?: string[],
   source?: string,
-  projectOrOptions?: string | { type?: MemoryType; deduplicate?: boolean },
-  options?: { type?: MemoryType; deduplicate?: boolean }
+  projectOrOptions?: string | { type?: MemoryType; deduplicate?: boolean; sourceContext?: string },
+  options?: { type?: MemoryType; deduplicate?: boolean; sourceContext?: string }
 ): Promise<{ id: number; isDuplicate: boolean; existingId?: number; similarity?: number }> {
   const d = await getStorageDispatcher();
 
   // Handle overloaded signature: (content, embedding, tags, source, project?, options?)
-  let opts: { type?: MemoryType; deduplicate?: boolean } | undefined;
+  let opts: { type?: MemoryType; deduplicate?: boolean; sourceContext?: string } | undefined;
   if (typeof projectOrOptions === 'string') {
     // Called as: saveGlobalMemory(content, embedding, tags, source, projectName, options?)
     opts = options;
