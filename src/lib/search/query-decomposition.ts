@@ -52,6 +52,10 @@ export function shouldDecompose(query: string): boolean {
   if (CONJUNCTION_PATTERN.test(query)) signals++;
   if (MULTI_QUESTION_PATTERN.test(query)) signals++;
 
+  // Multiple quoted phrases (e.g., compare "retry budget" versus "rate limit")
+  const quotedTerms = query.match(/"[^"\n]{2,}"|'[^'\n]{2,}'/g);
+  if (quotedTerms && quotedTerms.length >= 2) signals++;
+
   // Multiple identifiers (PascalCase, snake_case, dotNotation)
   const identifiers = query.match(/\b[A-Z][a-zA-Z]+\b|\b\w+_\w+\b|\b\w+\.\w+\b/g);
   if (identifiers && identifiers.length >= 2) signals++;
