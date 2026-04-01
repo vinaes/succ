@@ -293,6 +293,8 @@ export async function runRetrievalBenchmark(
     try {
       embedding = await getEmbedding(q.query);
     } catch (err) {
+      embeddingTimes.push(Date.now() - embedStart);
+      pipelineTimes.push(Date.now() - pipelineStart);
       logWarn('benchmark', `Failed to embed query: ${q.query}`, {
         error: getErrorMessage(err),
       });
@@ -317,6 +319,8 @@ export async function runRetrievalBenchmark(
     try {
       results = await searchFn(q.query, embedding, limit, threshold);
     } catch (err) {
+      searchTimes.push(Date.now() - searchStart);
+      pipelineTimes.push(Date.now() - pipelineStart);
       logWarn('benchmark', `Search failed for query: ${q.query}`, {
         error: getErrorMessage(err),
       });
