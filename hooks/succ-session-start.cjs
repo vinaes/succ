@@ -100,8 +100,13 @@ BAD commit messages:
       if (fs.existsSync(settingsLocalPath)) {
         try {
           const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
-          if (s.includeCoAuthoredBy !== false || s.includeGitInstructions !== false ||
-              !s.attribution || s.attribution.commit !== '' || s.attribution.pr !== '') {
+          if (
+            s.includeCoAuthoredBy !== false ||
+            s.includeGitInstructions !== false ||
+            !s.attribution ||
+            s.attribution.commit !== '' ||
+            s.attribution.pr !== ''
+          ) {
             needsSync = true;
           }
         } catch (e) {
@@ -115,9 +120,32 @@ BAD commit messages:
         // Lightweight inline sync — write undercover values
         const claudeDir = path.join(projectDir, '.claude');
         if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+        // Ensure .claude/.gitignore guards settings.local.json from being tracked
+        try {
+          const claudeGitignore = path.join(claudeDir, '.gitignore');
+          let gitignoreContent = '';
+          if (fs.existsSync(claudeGitignore)) {
+            gitignoreContent = fs.readFileSync(claudeGitignore, 'utf8');
+          }
+          if (!gitignoreContent.split('\n').some((l) => l.trim() === 'settings.local.json')) {
+            const entry =
+              gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n')
+                ? '\nsettings.local.json\n'
+                : 'settings.local.json\n';
+            fs.appendFileSync(claudeGitignore, entry);
+          }
+        } catch (gitignoreErr) {
+          log(
+            `[undercover] Failed to ensure .claude/.gitignore guard: ${gitignoreErr.message || gitignoreErr}`
+          );
+        }
         let settings = {};
         if (fs.existsSync(settingsLocalPath)) {
-          try { settings = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8')); } catch (_e) { log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`); }
+          try {
+            settings = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+          } catch (_e) {
+            log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
+          }
         }
         // Snapshot before first write
         const statePath = path.join(succDir, 'claude-undercover-state.json');
@@ -565,8 +593,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                       postChars += len;
                       postByType.text += len;
                     } else if (block && block.type === 'tool_use') {
-                      const len = (block.input ? JSON.stringify(block.input).length : 0) +
-                        (block.name || '').length + (block.id || '').length;
+                      const len =
+                        (block.input ? JSON.stringify(block.input).length : 0) +
+                        (block.name || '').length +
+                        (block.id || '').length;
                       postChars += len;
                       postByType.tool_use += len;
                     } else if (block && block.type === 'tool_result') {
@@ -592,13 +622,16 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                 if (malformedLines <= 3) log(`Malformed transcript line: ${e.message || e}`);
               }
             }
-            if (malformedLines > 0) log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
+            if (malformedLines > 0)
+              log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
             postTokens = Math.ceil(postChars / 4);
             for (const k of Object.keys(postByType)) {
               postByType[k] = Math.ceil(postByType[k] / 4);
             }
           } catch (e) {
-            log(`Skipping compact stats delta: failed to analyze post-compact transcript: ${e.message || e}`);
+            log(
+              `Skipping compact stats delta: failed to analyze post-compact transcript: ${e.message || e}`
+            );
           }
         }
 
@@ -613,14 +646,18 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const statsLines = [];
           statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
           statsLines.push('');
-          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+          statsLines.push(
+            `  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`
+          );
           statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
             const val = bt[key] || 0;
             const aVal = postByType[key] || 0;
             const f = val - aVal;
             if (val === 0 && f === 0) continue;
-            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
+            statsLines.push(
+              `  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`
+            );
           }
           statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           statsLines.push(
@@ -772,45 +809,50 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     process.env.NO_UPDATE_NOTIFIER === '1' ||
     config.update_check?.enabled === false;
 
-  if (!updateCheckSuppressed) try {
-    const vcPath = path.join(succDir, '.tmp', 'version-check.json');
-    if (fs.existsSync(vcPath)) {
-      const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
-      if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
-        const age = Date.now() - new Date(vc.checked_at).getTime();
-        if (age < 48 * 3600000) {
-          // Guard against stale cache: if the installed version is already >= latest, skip.
-          // This prevents false "update available" notifications after the user upgrades
-          // before the 48h cache expires.
-          const installedVersion = require('../package.json').version;
-          const compareSemver = (a, b) => {
-            const pa = a.split('.').map(Number);
-            const pb = b.split('.').map(Number);
-            for (let i = 0; i < 3; i++) {
-              const diff = (pa[i] || 0) - (pb[i] || 0);
-              if (diff !== 0) return diff > 0 ? 1 : -1;
+  if (!updateCheckSuppressed)
+    try {
+      const vcPath = path.join(succDir, '.tmp', 'version-check.json');
+      if (fs.existsSync(vcPath)) {
+        const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
+        if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
+          const age = Date.now() - new Date(vc.checked_at).getTime();
+          if (age < 48 * 3600000) {
+            // Guard against stale cache: if the installed version is already >= latest, skip.
+            // This prevents false "update available" notifications after the user upgrades
+            // before the 48h cache expires.
+            const installedVersion = require('../package.json').version;
+            const compareSemver = (a, b) => {
+              const pa = a.split('.').map(Number);
+              const pb = b.split('.').map(Number);
+              for (let i = 0; i < 3; i++) {
+                const diff = (pa[i] || 0) - (pb[i] || 0);
+                if (diff !== 0) return diff > 0 ? 1 : -1;
+              }
+              return 0;
+            };
+            if (compareSemver(installedVersion, vc.latest) >= 0) {
+              // Already up-to-date — delete the stale cache so the next check rewrites it
+              try {
+                fs.unlinkSync(vcPath);
+              } catch (unlinkErr) {
+                log(
+                  `Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`
+                );
+              }
+            } else {
+              contextParts.push(
+                `<update-available>` +
+                  `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
+                  `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
+                  `</update-available>`
+              );
             }
-            return 0;
-          };
-          if (compareSemver(installedVersion, vc.latest) >= 0) {
-            // Already up-to-date — delete the stale cache so the next check rewrites it
-            try { fs.unlinkSync(vcPath); } catch (unlinkErr) {
-              log(`Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`);
-            }
-          } else {
-            contextParts.push(
-              `<update-available>` +
-                `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
-                `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
-                `</update-available>`
-            );
           }
         }
       }
+    } catch (err) {
+      log(`Failed to read version-check cache: ${err.message || err}`);
     }
-  } catch (err) {
-    log(`Failed to read version-check cache: ${err.message || err}`);
-  }
 
   // Output context
   if (contextParts.length > 0) {
@@ -847,7 +889,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         signal: AbortSignal.timeout(3000),
       });
       if (!res.ok) {
-        log(`Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`);
+        log(
+          `Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`
+        );
       }
     } catch (err) {
       log(`Session register error for ${canonicalSessionId}: ${err.message || err}`);
