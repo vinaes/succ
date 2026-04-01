@@ -10,7 +10,10 @@ let modelAvailable = false;
 try {
   const modelPromise = resolveModelPath(MODEL)
     .then(() => true)
-    .catch(() => false);
+    .catch((e) => {
+      console.warn('ort-session.test: model resolution rejected', e);
+      return false;
+    });
   const timeoutPromise = new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000));
   modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
 } catch {
