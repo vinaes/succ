@@ -925,7 +925,6 @@ export class PostgresBackend {
          SELECT 1 FROM memories
          WHERE tags IS NOT NULL AND tags != '[]'::jsonb
          AND tags::text != lower(tags::text)
-         LIMIT 1
        ) AS has_mixed`
     );
     if (mixedCaseCheck.rows[0]?.has_mixed) {
