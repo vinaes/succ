@@ -4277,10 +4277,15 @@ export class PostgresBackend {
 
   async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
     const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
       `UPDATE memories SET confidence = 0.7
-       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.7)`,
-      [memoryId]
+       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.7)
+       ${scopeCond}`,
+      [memoryId, ...scopeParams]
     );
     return (result.rowCount ?? 0) > 0;
   }
