@@ -21,7 +21,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 /** Normalize error to string safely — works for non-Error thrown values. */
-function errMsg(err) { return err instanceof Error ? err.message : String(err); }
+function errMsg(err) {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Check if a directory is a git worktree (not the main repo).
@@ -94,10 +96,28 @@ function resolveMainRepoRoot(worktreeDir) {
 }
 
 /**
+ * Check if a path is a symlink or NTFS junction.
+ * fs.lstatSync().isSymbolicLink() returns true for both POSIX symlinks and
+ * NTFS junctions created via fs.symlinkSync(target, path, 'junction').
+ * @param {string} p
+ * @returns {boolean}
+ */
+function isSymlinkOrJunction(p) {
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
+  } catch (_e) {
+    // Path doesn't exist or can't be stat'd — not a symlink/junction
+    return false;
+  }
+}
+
+/**
  * Resolve .succ/ directory with worktree awareness.
  *
- * If .succ/ exists locally, returns it.
- * If in a worktree, creates a junction to main repo's .succ/ and returns it.
+ * If .succ/ exists locally as a real dir (not a link), returns it.
+ * If in a worktree, creates a real .succ/ dir with targeted sub-junctions
+ * (hooks/ and .tmp/ only) and copies config.json.
+ * Legacy full-dir junction is migrated to the new layout.
  * If junction fails, returns main repo's .succ/ directly.
  * If not in a worktree and .succ/ doesn't exist, returns null.
  *
@@ -107,24 +127,69 @@ function resolveMainRepoRoot(worktreeDir) {
 function resolveSuccDir(projectDir) {
   const localSucc = path.join(projectDir, '.succ');
 
-  if (fs.existsSync(localSucc)) return localSucc;
+  // Check if localSucc is a real directory (not a link or plain file)
+  const localIsRealDir =
+    fs.existsSync(localSucc) &&
+    !isSymlinkOrJunction(localSucc) &&
+    fs.statSync(localSucc).isDirectory();
 
+  // Not in a worktree — return local dir if it exists, otherwise null
   const mainRepo = resolveMainRepoRoot(projectDir);
-  if (!mainRepo) return null;
+  if (!mainRepo) return localIsRealDir ? localSucc : null;
 
   const mainSucc = path.join(mainRepo, '.succ');
-  if (!fs.existsSync(mainSucc)) return null;
+  if (!fs.existsSync(mainSucc)) return localIsRealDir ? localSucc : null;
 
-  // Create junction: <worktree>/.succ → <main>/.succ
+  // Legacy migration: old full-dir junction → remove it
+  if (!localIsRealDir && isSymlinkOrJunction(localSucc)) {
+    try {
+      fs.unlinkSync(localSucc);
+    } catch (e) {
+      console.error('[succ:worktree] Failed to remove legacy junction:', e.message || e);
+      return mainSucc;
+    }
+  }
+
+  // Create/reconcile real .succ dir with targeted sub-junctions.
+  // Runs on first creation AND on subsequent calls to backfill junctions
+  // that may not have existed on the first pass (e.g. .tmp/ created later).
   try {
-    fs.symlinkSync(mainSucc, localSucc, 'junction');
-    return localSucc;
+    if (!localIsRealDir) {
+      fs.mkdirSync(localSucc, { recursive: true });
+    }
+
+    // Junction hooks/ only (for command hooks in settings.json)
+    const mainHooks = path.join(mainSucc, 'hooks');
+    const localHooks = path.join(localSucc, 'hooks');
+    if (fs.existsSync(mainHooks) && !fs.existsSync(localHooks)) {
+      fs.symlinkSync(mainHooks, localHooks, 'junction');
+    }
+
+    // Junction .tmp/ (daemon port/pid files)
+    const mainTmp = path.join(mainSucc, '.tmp');
+    const localTmp = path.join(localSucc, '.tmp');
+    if (fs.existsSync(mainTmp)) {
+      // Reconcile: replace a pre-existing real .tmp dir with the shared junction
+      if (fs.existsSync(localTmp) && !isSymlinkOrJunction(localTmp)) {
+        fs.rmSync(localTmp, { recursive: true, force: true });
+      }
+      if (!fs.existsSync(localTmp)) {
+        fs.symlinkSync(mainTmp, localTmp, 'junction');
+      }
+    }
+
+    // Copy config.json (one-time, for hook config reading)
+    const mainConfig = path.join(mainSucc, 'config.json');
+    const localConfig = path.join(localSucc, 'config.json');
+    if (fs.existsSync(mainConfig) && !fs.existsSync(localConfig)) {
+      fs.copyFileSync(mainConfig, localConfig);
+    }
   } catch (e) {
-    console.error(
-      `[succ:worktree] Junction creation failed, using main repo path: ${errMsg(e)}`
-    );
+    console.error('[succ:worktree] Failed to create worktree .succ:', e.message || e);
     return mainSucc;
   }
+
+  return localSucc;
 }
 
-module.exports = { isGitWorktree, resolveMainRepoRoot, resolveSuccDir };
+module.exports = { isGitWorktree, resolveMainRepoRoot, resolveSuccDir, isSymlinkOrJunction };

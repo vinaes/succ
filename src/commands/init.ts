@@ -294,6 +294,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
       'succ-post-tool.cjs',
       'succ-pre-tool.cjs',
       'succ-pre-compact.cjs',
+      'succ-permission.cjs',
+      'succ-subagent-stop.cjs',
+      'succ-task-completed.cjs',
+      'succ-worktree-remove.cjs',
     ];
 
     for (const hookFile of hooksToCreate) {
@@ -550,6 +554,11 @@ export async function init(options: InitOptions = {}): Promise<void> {
               : cmdHook('succ-task-completed.cjs', 5, 'succ: consolidating...'),
           ],
         },
+      ],
+
+      // WorktreeRemove — unlink junctions before Claude Code cleans up worktrees
+      WorktreeRemove: [
+        { hooks: [cmdHook('succ-worktree-remove.cjs', 5, 'succ: cleaning up junctions...')] },
       ],
     };
 

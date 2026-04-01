@@ -19,6 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { getSuccDir } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { unlinkSuccJunctions } from '../worktree-detect.js';
 
 // ============================================================================
 // Git helper
@@ -202,6 +203,9 @@ export function mergeWorktreeChanges(
  */
 export function removeWorktree(taskId: string, projectRoot: string): void {
   const worktreePath = path.join(getWorktreesDir(), taskId);
+
+  // Unlink junctions/symlinks first to prevent fs.rmSync from following them
+  unlinkSuccJunctions(worktreePath);
 
   // 1. Try git worktree remove
   try {

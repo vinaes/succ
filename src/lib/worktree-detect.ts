@@ -107,55 +107,141 @@ function parseGitFileForMainRepo(worktreeDir: string): string | null {
 }
 
 /**
+ * Check if a path is a symlink or NTFS junction.
+ * fs.lstatSync().isSymbolicLink() returns true for both POSIX symlinks and
+ * NTFS junctions created via fs.symlinkSync(target, path, 'junction').
+ */
+export function isSymlinkOrJunction(p: string): boolean {
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
+  } catch {
+    // Path doesn't exist or can't be stat'd — not a symlink/junction
+    return false;
+  }
+}
+
+/**
+ * Unlink symlinks/junctions in a worktree directory before recursive removal.
+ * Safe to call even if directory doesn't exist or contains no junctions.
+ */
+export function unlinkSuccJunctions(dirPath: string): void {
+  const candidates = [
+    path.join(dirPath, '.succ', 'hooks'),
+    path.join(dirPath, '.succ', '.tmp'),
+    path.join(dirPath, '.succ'),
+    path.join(dirPath, 'node_modules'),
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.lstatSync(c).isSymbolicLink()) fs.unlinkSync(c);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logWarn('worktree', `Failed to unlink junction ${c}: ${(err as Error).message}`);
+      }
+    }
+  }
+}
+
+/**
  * Ensure .succ/ is accessible in a worktree directory.
  *
- * If the current directory is a worktree and .succ/ doesn't exist,
- * creates a junction (Windows) or symlink (Unix) pointing to the main repo's .succ/.
+ * Creates a real .succ/ dir with targeted sub-junctions (hooks/ and .tmp/ only)
+ * and copies config.json. Legacy full-dir junctions are migrated to the new layout.
  *
- * Returns the resolved .succ/ path (either local or via junction), or null if unavailable.
+ * Returns the resolved .succ/ path (either local or main repo fallback), or null if unavailable.
  */
 export function ensureSuccInWorktree(worktreeDir: string): string | null {
   const localSucc = path.join(worktreeDir, '.succ');
 
-  // Already exists (main repo or previously created junction)
-  if (fs.existsSync(localSucc)) return localSucc;
+  // Check if localSucc is a real directory (not a link or plain file)
+  const localIsRealDir =
+    fs.existsSync(localSucc) &&
+    !isSymlinkOrJunction(localSucc) &&
+    fs.statSync(localSucc).isDirectory();
 
   const mainRepo = resolveMainRepoRoot(worktreeDir);
-  if (!mainRepo) return null;
+  if (!mainRepo) return localIsRealDir ? localSucc : null;
 
   const mainSucc = path.join(mainRepo, '.succ');
-  if (!fs.existsSync(mainSucc)) return null;
+  if (!fs.existsSync(mainSucc)) return localIsRealDir ? localSucc : null;
 
-  // Create junction/symlink: <worktree>/.succ → <main-repo>/.succ
+  // Legacy migration: old full-dir junction → remove it
+  if (!localIsRealDir && isSymlinkOrJunction(localSucc)) {
+    try {
+      fs.unlinkSync(localSucc);
+    } catch (error) {
+      logWarn('worktree', 'Failed to remove legacy .succ junction in worktree', {
+        worktree: worktreeDir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return mainSucc;
+    }
+  }
+
+  // Create/reconcile real .succ dir with targeted sub-junctions.
+  // Runs on first creation AND on subsequent calls to backfill junctions
+  // that may not have existed on the first pass (e.g. .tmp/ created later).
   try {
-    fs.symlinkSync(mainSucc, localSucc, 'junction');
-    return localSucc;
+    if (!localIsRealDir) {
+      fs.mkdirSync(localSucc, { recursive: true });
+    }
+
+    // Junction hooks/ only (for command hooks in settings.json)
+    const mainHooks = path.join(mainSucc, 'hooks');
+    const localHooks = path.join(localSucc, 'hooks');
+    if (fs.existsSync(mainHooks) && !fs.existsSync(localHooks)) {
+      fs.symlinkSync(mainHooks, localHooks, 'junction');
+    }
+
+    // Junction .tmp/ (daemon port/pid files)
+    const mainTmp = path.join(mainSucc, '.tmp');
+    const localTmp = path.join(localSucc, '.tmp');
+    if (fs.existsSync(mainTmp)) {
+      // Reconcile: replace a pre-existing real .tmp dir with the shared junction
+      if (fs.existsSync(localTmp) && !isSymlinkOrJunction(localTmp)) {
+        fs.rmSync(localTmp, { recursive: true, force: true });
+      }
+      if (!fs.existsSync(localTmp)) {
+        fs.symlinkSync(mainTmp, localTmp, 'junction');
+      }
+    }
+
+    // Copy config.json (one-time, for hook config reading)
+    const mainConfig = path.join(mainSucc, 'config.json');
+    const localConfig = path.join(localSucc, 'config.json');
+    if (fs.existsSync(mainConfig) && !fs.existsSync(localConfig)) {
+      fs.copyFileSync(mainConfig, localConfig);
+    }
   } catch (error) {
-    logWarn('worktree', 'Failed to create .succ junction in worktree', {
+    logWarn('worktree', 'Failed to create worktree .succ structure', {
       worktree: worktreeDir,
       mainRepo,
       error: error instanceof Error ? error.message : String(error),
     });
-    // Return main repo's .succ as direct path (no junction, but still usable by runtime)
     return mainSucc;
   }
+
+  return localSucc;
 }
 
 /**
  * Resolve the .succ/ directory, with worktree awareness.
  *
  * Resolution order:
- * 1. <projectRoot>/.succ/ exists → return it
- * 2. In a worktree → create junction → return <worktree>/.succ/
+ * 1. <projectRoot>/.succ/ exists as a real dir AND not a worktree → return it
+ * 2. In a worktree → ensure/reconcile junctions → return <worktree>/.succ/
  * 3. In a worktree, junction failed → return <mainRepo>/.succ/ directly
  * 4. Not a worktree → return <projectRoot>/.succ/ (may not exist)
  */
 export function resolveSuccDir(projectRoot: string): string {
   const localSucc = path.join(projectRoot, '.succ');
 
-  if (fs.existsSync(localSucc)) return localSucc;
+  // Non-worktree: return local .succ if it exists as a real directory
+  if (fs.existsSync(localSucc) && !isSymlinkOrJunction(localSucc) && !isGitWorktree(projectRoot)) {
+    return localSucc;
+  }
 
-  // Try worktree resolution with lazy junction
+  // Try worktree resolution with lazy junction (also reconciles existing dirs)
   const resolved = ensureSuccInWorktree(projectRoot);
   return resolved ?? localSucc;
 }

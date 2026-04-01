@@ -15,6 +15,7 @@ import {
   resolveMainRepoRoot,
   ensureSuccInWorktree,
   resolveSuccDir,
+  unlinkSuccJunctions,
 } from './worktree-detect.js';
 
 /**
@@ -55,9 +56,11 @@ describe('worktree-detect (e2e with real git)', () => {
     git(['add', '.'], mainRepo);
     git(['commit', '-m', 'init'], mainRepo);
 
-    // Create .succ/ in main repo
+    // Create .succ/ in main repo with hooks/ and .tmp/ subdirs
     const succDir = path.join(mainRepo, '.succ');
     fs.mkdirSync(succDir, { recursive: true });
+    fs.mkdirSync(path.join(succDir, 'hooks'), { recursive: true });
+    fs.mkdirSync(path.join(succDir, '.tmp'), { recursive: true });
     fs.writeFileSync(path.join(succDir, 'config.json'), '{}');
     fs.writeFileSync(path.join(succDir, 'succ.db'), 'fake-db');
 
@@ -115,28 +118,63 @@ describe('worktree-detect (e2e with real git)', () => {
     expect(fs.lstatSync(result!).isSymbolicLink()).toBe(false);
   });
 
-  it('creates junction in worktree pointing to main .succ/', () => {
+  it('creates real .succ/ dir with hooks/ and .tmp/ junctions in worktree', () => {
     const result = ensureSuccInWorktree(worktreePath);
     expect(result).not.toBeNull();
 
-    // Junction should exist at <worktree>/.succ
-    const junctionPath = path.join(worktreePath, '.succ');
-    expect(fs.existsSync(junctionPath)).toBe(true);
+    // .succ itself should be a real directory (not a symlink/junction)
+    const localSucc = path.join(worktreePath, '.succ');
+    expect(fs.existsSync(localSucc)).toBe(true);
+    expect(fs.lstatSync(localSucc).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(localSucc).isDirectory()).toBe(true);
 
-    // Should be a symlink/junction
-    expect(fs.lstatSync(junctionPath).isSymbolicLink()).toBe(true);
+    // hooks/ should be a symlink/junction pointing into main repo's hooks/
+    const localHooks = path.join(localSucc, 'hooks');
+    expect(fs.existsSync(localHooks)).toBe(true);
+    expect(fs.lstatSync(localHooks).isSymbolicLink()).toBe(true);
 
-    // Contents should match main repo's .succ/
-    expect(fs.existsSync(path.join(junctionPath, 'config.json'))).toBe(true);
-    expect(fs.existsSync(path.join(junctionPath, 'succ.db'))).toBe(true);
+    // .tmp/ should be a symlink/junction pointing into main repo's .tmp/
+    const localTmp = path.join(localSucc, '.tmp');
+    expect(fs.existsSync(localTmp)).toBe(true);
+    expect(fs.lstatSync(localTmp).isSymbolicLink()).toBe(true);
+
+    // config.json should be copied (not junctioned) — accessible as a regular file
+    const localConfig = path.join(localSucc, 'config.json');
+    expect(fs.existsSync(localConfig)).toBe(true);
+    expect(fs.lstatSync(localConfig).isSymbolicLink()).toBe(false);
+
+    // succ.db should NOT be accessible (only hooks/ and .tmp/ are linked)
+    expect(fs.existsSync(path.join(localSucc, 'succ.db'))).toBe(false);
   });
 
-  it('returns existing junction on second call (idempotent)', () => {
-    // First call creates junction
+  it('returns existing .succ/ dir on second call (idempotent)', () => {
+    // First call creates real dir + sub-junctions
     const first = ensureSuccInWorktree(worktreePath);
-    // Second call finds it already exists
+    // Second call finds real dir already exists and returns it directly
     const second = ensureSuccInWorktree(worktreePath);
     expect(first).toBe(second);
+    // Still a real dir, not a symlink
+    expect(fs.lstatSync(first!).isSymbolicLink()).toBe(false);
+  });
+
+  it('reconciles a pre-existing real .tmp/ back into a junction', () => {
+    // First call creates real dir + sub-junctions
+    const first = ensureSuccInWorktree(worktreePath);
+    const localTmp = path.join(first!, '.tmp');
+
+    // Simulate upgrade: replace .tmp junction with a real directory
+    fs.unlinkSync(localTmp);
+    fs.mkdirSync(localTmp, { recursive: true });
+    expect(fs.lstatSync(localTmp).isSymbolicLink()).toBe(false);
+
+    // Second call should reconcile .tmp back into a junction
+    const second = ensureSuccInWorktree(worktreePath);
+    expect(first).toBe(second);
+    expect(fs.lstatSync(first!).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(localTmp).isSymbolicLink()).toBe(true);
+    expect(normPath(fs.realpathSync(localTmp))).toBe(
+      normPath(path.join(mainRepo, '.succ', '.tmp'))
+    );
   });
 
   it('returns null for non-git directory', () => {
@@ -183,10 +221,17 @@ describe('worktree-detect (e2e with real git)', () => {
     expect(cjs.isGitWorktree(mainRepo)).toBe(false);
     expect(cjs.resolveMainRepoRoot(mainRepo)).toBeNull();
 
-    // Worktree — junction may already exist from previous test, clean it
-    const junctionPath = path.join(worktreePath, '.succ');
-    if (fs.existsSync(junctionPath)) {
-      fs.unlinkSync(junctionPath);
+    // Worktree — .succ may already exist from a previous test, clean it
+    const localSuccPath = path.join(worktreePath, '.succ');
+    if (fs.existsSync(localSuccPath)) {
+      // May be a real dir (new layout) or a legacy symlink — handle both
+      if (fs.lstatSync(localSuccPath).isSymbolicLink()) {
+        fs.unlinkSync(localSuccPath);
+      } else {
+        // Unlink nested junctions first to avoid rmSync walking into main repo
+        unlinkSuccJunctions(worktreePath);
+        fs.rmSync(localSuccPath, { recursive: true, force: true });
+      }
     }
 
     expect(cjs.isGitWorktree(worktreePath)).toBe(true);
