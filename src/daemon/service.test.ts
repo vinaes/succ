@@ -71,7 +71,7 @@ vi.mock('../lib/config.js', () => ({
     query_expansion_enabled: false,
     query_expansion_mode: 'api',
     rrf_k: 60,
-    adaptive_alpha: true,
+    adaptive_alpha: false,
   })),
   getDaemonStatuses: vi.fn(async () => ({})),
   isProjectInitialized: vi.fn(() => true),

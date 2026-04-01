@@ -481,7 +481,7 @@ export interface RetrievalConfig {
   graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
   query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: false)
   rrf_k?: number; // RRF constant: lower (20-40) favors top results, 60 is standard (default: 60)
-  adaptive_alpha?: boolean; // Auto-detect query type and adjust BM25/vector balance (default: true)
+  adaptive_alpha?: boolean; // Auto-detect query type and adjust BM25/vector balance (default: false)
 }
 
 export interface ObserverConfig {
