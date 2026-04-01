@@ -855,8 +855,28 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
       process.exit(exitCode);
     }
 
-    // 5. Git commit — inject guidelines + diff review reminder
-    if (/\bgit\s+commit\b/.test(command)) {
+    // 5. Git commit / PR — inject guidelines or undercover reminder
+    if (config.undercover === true) {
+      if (/\bgit\s+commit\b/.test(command) || /\bgh\s+pr\s+(create|edit)\b/.test(command)) {
+        contextParts.push(`<undercover-reminder>
+UNDERCOVER: No AI attribution, no "Generated with", no "Co-Authored-By", no tool names, no AI labels.
+No AI-revealing branch names (claude/, copilot/, ai/).
+Write as a human developer. Match existing project style.
+</undercover-reminder>`);
+        // Still inject pre-commit-review if enabled (independent of undercover)
+        if (/\bgit\s+commit\b/.test(command) && config.preCommitReview) {
+          contextParts.push(`<pre-commit-review>
+STOP. Before committing, you MUST run the succ-diff-reviewer agent first.
+Use: Task tool with subagent_type="succ-diff-reviewer"
+Prompt: "Review the staged git diff for bugs, security issues, and regressions before commit"
+
+If diff-reviewer finds CRITICAL issues — do NOT commit until fixed.
+If diff-reviewer finds HIGH issues — warn the user before committing.
+MEDIUM and below — commit is OK, mention findings in summary.
+</pre-commit-review>`);
+        }
+      }
+    } else if (/\bgit\s+commit\b/.test(command)) {
       const commitContext = buildCommitContext(config);
       if (commitContext) {
         contextParts.push(commitContext);

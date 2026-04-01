@@ -29,7 +29,8 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
 
   // Load merged config (global defaults, project overrides)
   const config = loadMergedConfig(projectDir);
-  let includeCoAuthoredBy = config.includeCoAuthoredBy !== false;
+  const undercover = config.undercover === true;
+  let includeCoAuthoredBy = !undercover && config.includeCoAuthoredBy !== false;
   let communicationAutoAdapt = config.communicationAutoAdapt !== false;
   let communicationTrackHistory = config.communicationTrackHistory === true;
   let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
@@ -42,6 +43,112 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
 
   const contextParts = [];
   const projectName = path.basename(projectDir);
+
+  // Undercover mode — prepend as first context part (highest priority)
+  if (undercover) {
+    contextParts.push(`<undercover priority="critical" source="succ" mode="public-repo">
+UNDERCOVER MODE — CRITICAL
+
+You are operating UNDERCOVER in a PUBLIC/OPEN-SOURCE repository.
+Your commit messages, PR titles, PR bodies, code, comments, and user-visible output
+MUST NOT reveal that you are an AI or expose any internal tooling. Do not blow your cover.
+
+## Git & PR Attribution
+NEVER include:
+- "Claude Code", "succ", "Anthropic", or any statement that you are an AI
+- Model codenames, model names, model versions, or hints about what model/version you are
+- Internal repo/project names, internal tooling, Slack channels, or short links
+- "Generated with ...", "powered by ...", "Co-Authored-By", or any attribution footer/trailer
+
+Write commit messages and PR text as a human developer would.
+Describe only what the code change does and why.
+
+## Branch Naming
+NEVER create branches with AI-related prefixes: claude/, copilot/, ai/, ai-generated/, bot/.
+Use conventional branch names: feature/, fix/, chore/, refactor/, docs/.
+
+## PR Labels
+Do NOT add labels like "ai-generated", "copilot", "claude", or similar AI-revealing labels.
+
+## Code Writing Style
+Write code the way a human developer would. Specifically:
+- Match the existing comment style in the codebase. Do NOT over-comment.
+- Do NOT add JSDoc/docstrings to every function — only where the project convention requires it.
+- Do NOT add "explanatory" comments that state the obvious.
+- Do NOT add comments like "Added by ...", "AI-generated", "Helper function to ..." on trivial code.
+- Keep inline comments terse and only where logic is non-obvious — as a human would.
+- Do NOT leave unnaturally clean code with zero TODOs — real developers leave reasonable TODOs.
+- Match the codebase's existing naming conventions, formatting, and idiom density.
+- If the project has sparse comments, write sparse comments. If verbose, match that.
+- Avoid unnaturally consistent style — real code has natural variation in expression.
+
+## Issue Comments
+Write issue and PR review comments as a developer, not an assistant.
+No "I'd be happy to help" or "Here's what I found" phrasing.
+
+GOOD commit messages:
+- "Fix race condition in file watcher initialization"
+- "Add support for custom key bindings"
+
+BAD commit messages:
+- "Generated with Claude Code"
+- "Co-Authored-By: Claude ..."
+</undercover>`);
+
+    // Self-healing: sync Claude settings.local.json if needed
+    try {
+      const settingsLocalPath = path.join(projectDir, '.claude', 'settings.local.json');
+      let needsSync = false;
+      if (fs.existsSync(settingsLocalPath)) {
+        try {
+          const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+          if (s.includeCoAuthoredBy !== false || s.includeGitInstructions !== false ||
+              !s.attribution || s.attribution.commit !== '' || s.attribution.pr !== '') {
+            needsSync = true;
+          }
+        } catch (e) {
+          needsSync = true;
+          log(`[undercover] Failed to parse settings.local.json: ${e.message || e}`);
+        }
+      } else {
+        needsSync = true;
+      }
+      if (needsSync) {
+        // Lightweight inline sync — write undercover values
+        const claudeDir = path.join(projectDir, '.claude');
+        if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+        let settings = {};
+        if (fs.existsSync(settingsLocalPath)) {
+          try { settings = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8')); } catch (_e) { log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`); }
+        }
+        // Snapshot before first write
+        const statePath = path.join(succDir, 'claude-undercover-state.json');
+        if (!fs.existsSync(statePath)) {
+          const snapshot = {
+            createdAt: new Date().toISOString(),
+            managed: {
+              includeGitInstructions: settings.includeGitInstructions,
+              includeCoAuthoredBy: settings.includeCoAuthoredBy,
+              attribution: settings.attribution,
+            },
+            keysExisted: {
+              includeGitInstructions: 'includeGitInstructions' in settings,
+              includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
+              attribution: 'attribution' in settings,
+            },
+          };
+          fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+        }
+        settings.includeGitInstructions = false;
+        settings.includeCoAuthoredBy = false;
+        settings.attribution = { commit: '', pr: '' };
+        fs.writeFileSync(settingsLocalPath, JSON.stringify(settings, null, 2));
+        log('[undercover] Self-healed Claude settings.local.json');
+      }
+    } catch (e) {
+      log(`[undercover] Self-healing failed (fail-open): ${e.message || e}`);
+    }
+  }
 
   // Git Context removed - Claude Code provides native git integration
 

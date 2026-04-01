@@ -49,6 +49,13 @@ import { getConfig } from '../../lib/config.js';
 import { spawnClaudeCLI } from '../../lib/llm.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { scanSensitive, formatMatches } from '../../lib/sensitive-filter.js';
+import {
+  isUndercover,
+  UNDERCOVER_SESSION_BLOCK,
+  UNDERCOVER_COMMIT_REMINDER,
+  syncClaudeSettings,
+  ensureGitignore,
+} from '../../lib/undercover.js';
 import type { Memory } from '../../lib/storage/types.js';
 import { parseRequestBody, type RouteContext, type RouteMap } from './types.js';
 
@@ -168,9 +175,10 @@ function stripClaudeOnlySections(context: string): string {
 
 function buildCommitContext(): string {
   const config = getConfig();
+  const undercover = config.undercover === true;
   const parts: string[] = [];
 
-  if (config.includeCoAuthoredBy !== false) {
+  if (!undercover && config.includeCoAuthoredBy !== false) {
     parts.push(`<commit-format>
 RULE: Every commit footer MUST end with the succ lines. Other tools may appear before succ but succ is always LAST.
 
@@ -186,6 +194,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 </commit-format>`);
   }
 
+  // preCommitReview remains active and independent — even under undercover
   if (config.preCommitReview) {
     parts.push(`<pre-commit-review>
 STOP. Before committing, you MUST run the succ-diff-reviewer agent first.
@@ -506,8 +515,24 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             }
           }
 
-          // 4. Git commit guidelines
-          if (/\bgit\s+commit\b/.test(command)) {
+          // 4. Git commit / PR guidelines (undercover vs. normal)
+          if (isUndercover()) {
+            if (/\bgit\s+commit\b/.test(command) || /\bgh\s+pr\s+(create|edit)\b/.test(command)) {
+              contextParts.push(UNDERCOVER_COMMIT_REMINDER);
+              // Still inject pre-commit-review if enabled (independent of undercover)
+              if (/\bgit\s+commit\b/.test(command) && config.preCommitReview) {
+                contextParts.push(`<pre-commit-review>
+STOP. Before committing, you MUST run the succ-diff-reviewer agent first.
+Use: Task tool with subagent_type="succ-diff-reviewer"
+Prompt: "Review the staged git diff for bugs, security issues, and regressions before commit"
+
+If diff-reviewer finds CRITICAL issues — do NOT commit until fixed.
+If diff-reviewer finds HIGH issues — warn the user before committing.
+MEDIUM and below — commit is OK, mention findings in summary.
+</pre-commit-review>`);
+              }
+            }
+          } else if (/\bgit\s+commit\b/.test(command)) {
             const commitContext = buildCommitContext();
             if (commitContext) contextParts.push(commitContext);
           }
@@ -1244,7 +1269,15 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
         const projectName = path.basename(cwd);
         const contextParts: string[] = [];
 
-        // Commit format (if enabled)
+        // Undercover mode — prepend as first context part (highest priority)
+        if (isUndercover()) {
+          contextParts.push(UNDERCOVER_SESSION_BLOCK);
+          // Self-healing: ensure Claude settings match undercover state
+          syncClaudeSettings(cwd, true);
+          ensureGitignore(cwd);
+        }
+
+        // Commit format (if enabled — suppressed by undercover via buildCommitContext)
         const commitContext = buildCommitContext();
         if (commitContext) {
           contextParts.push(commitContext);

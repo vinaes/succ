@@ -9,7 +9,7 @@ import fs from 'fs';
 import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
-import { getSuccDir, invalidateConfigCache } from '../../lib/config.js';
+import { getSuccDir, getProjectRoot, invalidateConfigCache } from '../../lib/config.js';
 import { maskSensitive } from '../../lib/config-display.js';
 import {
   projectPathParam,
@@ -19,6 +19,7 @@ import {
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { getErrorMessage } from '../../lib/errors.js';
+import { syncClaudeSettings } from '../../lib/undercover.js';
 
 /**
  * Helper to normalize error, log warning, and return error response
@@ -183,6 +184,16 @@ export function registerConfigTools(server: McpServer) {
             // Save config and invalidate cached values
             await writeFile(configPath, JSON.stringify(config, null, 2));
             invalidateConfigCache();
+
+            // Sync Claude settings when undercover key is toggled
+            if (key === 'undercover') {
+              try {
+                const projectRoot = getProjectRoot();
+                syncClaudeSettings(projectRoot, parsedValue === true);
+              } catch (syncErr: unknown) {
+                logWarn('config', `Undercover settings sync failed: ${getErrorMessage(syncErr)}`);
+              }
+            }
 
             return createToolResponse(
               `Config updated (${scope}): ${key} = ${SENSITIVE_PATTERNS.some((s) => key.toLowerCase().includes(s)) ? maskSensitive(String(parsedValue)) : JSON.stringify(parsedValue)}\nSaved to: ${configPath}`
