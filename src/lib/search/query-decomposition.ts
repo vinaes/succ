@@ -112,12 +112,17 @@ export async function decomposeQuery(query: string): Promise<DecompositionResult
       .split('\n')
       .map((line) =>
         line
-          .replace(/^\d+[.)]\s*/, '')
+          .replace(/^\s*(?:(?:\d+\s*[.)-])|[-*])\s+/, '')
           .replace(/^[-*]\s+/, '')
           .trim()
       )
       .filter((line) => line.length >= 5 && line.length <= 300)
-      .filter((line) => !/^(sub-quer|here|the query|split)/i.test(line))
+      .filter(
+        (line) =>
+          !/^(?:sub-quer(?:y|ies)?(?:\s*\d+)?\s*:|here\s+(?:is|are)\b|the query\s*:|split\s+into\b)/i.test(
+            line
+          )
+      )
       .filter((line) => {
         const key = line.toLowerCase();
         if (seen.has(key)) return false;
