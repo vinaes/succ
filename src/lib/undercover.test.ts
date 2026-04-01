@@ -1,7 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+
+const logWarn = vi.fn();
+vi.mock('./fault-logger.js', () => ({ logWarn }));
+
+const mockGetConfig = vi.fn(() => ({}));
+vi.mock('./config.js', () => ({ getConfig: () => mockGetConfig() }));
+
 import {
   syncClaudeSettings,
   isUndercover,
@@ -18,6 +25,8 @@ let settingsPath: string;
 let statePath: string;
 
 beforeEach(() => {
+  logWarn.mockReset();
+  mockGetConfig.mockReset().mockReturnValue({});
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'undercover-test-'));
   claudeDir = path.join(tmpDir, '.claude');
   succDir = path.join(tmpDir, '.succ');
@@ -153,9 +162,13 @@ describe('syncClaudeSettings', () => {
     // Delete settings.local.json while undercover is enabled
     fs.unlinkSync(settingsPath);
 
-    // Disable should gracefully handle missing file
+    // Disable should gracefully handle missing file — snapshot preserved for retry
     syncClaudeSettings(tmpDir, false);
-    expect(fs.existsSync(statePath)).toBe(false);
+    expect(fs.existsSync(statePath)).toBe(true);
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('keeping snapshot for retry')
+    );
   });
 
   it('does not overwrite existing snapshot on re-enable', () => {
@@ -196,35 +209,63 @@ describe('syncClaudeSettings', () => {
   });
 
   it('handles no snapshot on disable gracefully', () => {
-    // No snapshot exists — disable should log warning but not throw
     syncClaudeSettings(tmpDir, false);
-    // Should not throw, no crash
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('No undercover snapshot found')
+    );
   });
 });
 
 describe('isUndercover', () => {
   it('returns false by default (no undercover config set)', () => {
-    // isUndercover reads from getConfig() — in test env without config it should return false
+    mockGetConfig.mockReturnValue({});
     expect(isUndercover()).toBe(false);
+  });
+
+  it('returns true when config has undercover enabled', () => {
+    mockGetConfig.mockReturnValue({ undercover: true });
+    expect(isUndercover()).toBe(true);
+  });
+
+  it('returns false when getConfig throws', () => {
+    mockGetConfig.mockImplementation(() => {
+      throw new Error('config error');
+    });
+    expect(isUndercover()).toBe(false);
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('Failed to read config')
+    );
   });
 });
 
 describe('ensureGitignore', () => {
   it('warns when .gitignore is missing', () => {
-    // No .gitignore in tmpDir — should not throw
     ensureGitignore(tmpDir);
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('.gitignore not found')
+    );
   });
 
   it('does not warn when .succ/ and .claude/ are in .gitignore', () => {
     fs.writeFileSync(path.join(tmpDir, '.gitignore'), '.succ/\n.claude/\nnode_modules/\n');
-    // Should not throw or warn (we can't easily assert logWarn was called, but no crash)
     ensureGitignore(tmpDir);
+    expect(logWarn).not.toHaveBeenCalled();
   });
 
-  it('handles .gitignore without succ/claude entries', () => {
+  it('warns about missing succ/claude entries in .gitignore', () => {
     fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n*.log\n');
-    // Should log warnings about missing entries but not throw
     ensureGitignore(tmpDir);
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('.succ/ is not in .gitignore')
+    );
+    expect(logWarn).toHaveBeenCalledWith(
+      'undercover',
+      expect.stringContaining('.claude/ is not in .gitignore')
+    );
   });
 });
 

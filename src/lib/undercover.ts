@@ -55,10 +55,8 @@ Write code the way a human developer would. Specifically:
 - Do NOT add "explanatory" comments that state the obvious (e.g. \`// increment counter\` above \`counter++\`).
 - Do NOT add comments like "Added by ...", "AI-generated", "Helper function to ..." on trivial code.
 - Keep inline comments terse and only where logic is non-obvious — as a human would.
-- Do NOT leave unnaturally clean code with zero TODOs — real developers leave reasonable TODOs.
 - Match the codebase's existing naming conventions, formatting, and idiom density.
 - If the project has sparse comments, write sparse comments. If verbose, match that.
-- Avoid unnaturally consistent style — real code has natural variation in expression.
 
 ## Issue Comments
 Write issue and PR review comments as a developer, not an assistant.
@@ -198,6 +196,13 @@ export function ensureGitignore(projectRoot: string): void {
 
 // ─── Internal Helpers ───────────────────────────────────────────────
 
+/** Validate parsed JSON is a plain object (not null, array, or primitive). */
+function asPlainObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function enableUndercover(
   claudeDir: string,
   settingsPath: string,
@@ -216,7 +221,12 @@ function enableUndercover(
   let settings: Record<string, unknown> = {};
   if (fs.existsSync(settingsPath)) {
     try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const parsed = asPlainObject(JSON.parse(fs.readFileSync(settingsPath, 'utf8')));
+      if (parsed) {
+        settings = parsed;
+      } else {
+        logWarn('undercover', `${settingsPath} must contain a JSON object`);
+      }
     } catch (err: unknown) {
       logWarn('undercover', `Failed to parse ${settingsPath}: ${getErrorMessage(err)}`);
       settings = {};
@@ -258,7 +268,13 @@ function disableUndercover(settingsPath: string, statePath: string): void {
 
   let snapshot: UndercoverSnapshot;
   try {
-    snapshot = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const parsed = asPlainObject(JSON.parse(fs.readFileSync(statePath, 'utf8')));
+    if (!parsed) {
+      logWarn('undercover', `Undercover snapshot must be a JSON object — deleting`);
+      safeUnlink(statePath);
+      return;
+    }
+    snapshot = parsed as unknown as UndercoverSnapshot;
   } catch (err: unknown) {
     logWarn('undercover', `Failed to parse undercover snapshot: ${getErrorMessage(err)}`);
     // Delete corrupted snapshot
@@ -266,22 +282,28 @@ function disableUndercover(settingsPath: string, statePath: string): void {
     return;
   }
 
-  // If settings file doesn't exist, just clean up snapshot
+  // If settings file doesn't exist, keep snapshot for future restore attempts
   if (!fs.existsSync(settingsPath)) {
     logWarn(
       'undercover',
-      'settings.local.json was deleted while undercover was enabled — cleaning up snapshot'
+      'settings.local.json was deleted while undercover was enabled — keeping snapshot for retry'
     );
-    safeUnlink(statePath);
     return;
   }
 
   let settings: Record<string, unknown>;
   try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const parsed = asPlainObject(JSON.parse(fs.readFileSync(settingsPath, 'utf8')));
+    if (!parsed) {
+      logWarn(
+        'undercover',
+        `${settingsPath} must contain a JSON object — keeping snapshot for retry`
+      );
+      return;
+    }
+    settings = parsed;
   } catch (err: unknown) {
     logWarn('undercover', `Failed to parse ${settingsPath} for restore: ${getErrorMessage(err)}`);
-    safeUnlink(statePath);
     return;
   }
 

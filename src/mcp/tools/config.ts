@@ -9,7 +9,7 @@ import fs from 'fs';
 import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import { gateAction } from '../profile.js';
 import { closeDb, closeStorageDispatcher } from '../../lib/storage/index.js';
-import { getSuccDir, getProjectRoot, invalidateConfigCache } from '../../lib/config.js';
+import { getConfig, getSuccDir, getProjectRoot, invalidateConfigCache } from '../../lib/config.js';
 import { maskSensitive } from '../../lib/config-display.js';
 import {
   projectPathParam,
@@ -189,7 +189,14 @@ export function registerConfigTools(server: McpServer) {
             if (key === 'undercover') {
               try {
                 const projectRoot = getProjectRoot();
-                syncClaudeSettings(projectRoot, parsedValue === true);
+                const hasProjectMarkers = ['.git', '.claude', '.succ'].some((name) =>
+                  fs.existsSync(path.join(projectRoot, name))
+                );
+                if (hasProjectMarkers) {
+                  syncClaudeSettings(projectRoot, getConfig().undercover === true);
+                } else {
+                  logWarn('config', 'Skipping undercover sync: no project root detected');
+                }
               } catch (syncErr: unknown) {
                 logWarn('config', `Undercover settings sync failed: ${getErrorMessage(syncErr)}`);
               }

@@ -530,6 +530,7 @@ function loadConfig(projectDir) {
       allowlist: Array.isArray(csg.allowlist) ? csg.allowlist : [],
       customPatterns: Array.isArray(csg.customPatterns) ? csg.customPatterns : [],
     },
+    undercover: merged.undercover === true,
     includeCoAuthoredBy: merged.includeCoAuthoredBy !== false,
     preCommitReview: merged.preCommitReview === true,
   };

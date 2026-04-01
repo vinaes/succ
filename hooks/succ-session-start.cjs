@@ -77,10 +77,8 @@ Write code the way a human developer would. Specifically:
 - Do NOT add "explanatory" comments that state the obvious.
 - Do NOT add comments like "Added by ...", "AI-generated", "Helper function to ..." on trivial code.
 - Keep inline comments terse and only where logic is non-obvious — as a human would.
-- Do NOT leave unnaturally clean code with zero TODOs — real developers leave reasonable TODOs.
 - Match the codebase's existing naming conventions, formatting, and idiom density.
 - If the project has sparse comments, write sparse comments. If verbose, match that.
-- Avoid unnaturally consistent style — real code has natural variation in expression.
 
 ## Issue Comments
 Write issue and PR review comments as a developer, not an assistant.
