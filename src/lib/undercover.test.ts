@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const logWarn = vi.fn();
-vi.mock('./fault-logger.js', () => ({ logWarn }));
+const { logWarn, mockGetConfig } = vi.hoisted(() => ({
+  logWarn: vi.fn(),
+  mockGetConfig: vi.fn(() => ({})),
+}));
 
-const mockGetConfig = vi.fn(() => ({}));
+vi.mock('./fault-logger.js', () => ({ logWarn }));
 vi.mock('./config.js', () => ({ getConfig: () => mockGetConfig() }));
 
 import {
