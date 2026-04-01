@@ -58,6 +58,7 @@ vi.mock('./storage/index.js', () => {
       }
       return testDb.prepare(sql).all(...params);
     }),
+    getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
   };
 });
 

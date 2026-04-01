@@ -48,6 +48,7 @@ vi.mock('../storage/index.js', () => ({
     });
     return { id, created: true };
   },
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 import { normalizeSource, calculateProximity } from './contextual-proximity.js';

@@ -30,6 +30,7 @@ vi.mock('../lib/storage/index.js', () => ({
   deleteDocumentsByPath: (...args: any[]) => mockDeleteDocumentsByPath(...args),
   deleteFileHash: (...args: any[]) => mockDeleteFileHash(...args),
   closeDb: (...args: any[]) => mockCloseDb(...args),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('./index.js', () => ({

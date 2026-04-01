@@ -13,6 +13,7 @@ const { mockHybridSearch, mockGetEmbedding, mockLoadProgress } = vi.hoisted(() =
 
 vi.mock('../storage/index.js', () => ({
   hybridSearchMemories: mockHybridSearch,
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../embeddings.js', () => ({

@@ -40,6 +40,7 @@ vi.mock('../storage/index.js', () => ({
     const incoming = mockLinks.filter((l) => l.target_id === memoryId);
     return { outgoing, incoming };
   },
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 // Mock LLM
