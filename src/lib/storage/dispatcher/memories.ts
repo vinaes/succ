@@ -407,6 +407,30 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
+    // Record audit trail for batch creates (same as single saveMemory path)
+    if (result?.results?.length > 0) {
+      const saved = result.results.filter(
+        (r): r is (typeof result.results)[number] & { id: number } => !r.isDuplicate && r.id != null
+      );
+      for (const r of saved) {
+        try {
+          const mem = memories[r.index];
+          const changedBy: AuditChangedBy =
+            mem.sourceType === 'auto_extracted'
+              ? 'extraction'
+              : mem.source === 'hook'
+                ? 'hook'
+                : 'user';
+          await this.recordAuditEvent(r.id, 'create', null, mem.content, changedBy);
+        } catch (auditError) {
+          logWarn('storage', 'Audit trail recording failed for saveMemoriesBatch', {
+            memoryId: r.id,
+            error: getErrorMessage(auditError),
+          });
+        }
+      }
+    }
+
     return result;
   }
 

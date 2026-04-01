@@ -37,6 +37,10 @@ interface ExtendedMemoryResult extends HybridMemoryResult {
   _isDeadEnd?: boolean;
 }
 
+/** Composite key for audit maps — prevents local/global ID collisions on SQLite. */
+const auditKey = (id: number, isGlobal: boolean): string =>
+  `${isGlobal ? 'global' : 'local'}:${id}`;
+
 export function registerRecallTool(server: McpServer): void {
   server.registerTool(
     'succ_recall',
@@ -168,7 +172,7 @@ export function registerRecallTool(server: McpServer): void {
 
           // Fetch audit history for wildcard results if requested
           const wildcardAuditMap = new Map<
-            number,
+            string,
             Array<{ event_type: string; changed_by: string; created_at: string }>
           >();
           if (history) {
@@ -182,18 +186,18 @@ export function registerRecallTool(server: McpServer): void {
                 .map((r) => r.id as number);
               const auditEntries = await Promise.all([
                 ...localIds.map(async (id) => ({
-                  id,
+                  key: auditKey(id, false),
                   events: await dispatcher.getAuditHistory(id, false),
                 })),
                 ...globalIds.map(async (id) => ({
-                  id,
+                  key: auditKey(id, true),
                   events: await dispatcher.getAuditHistory(id, true),
                 })),
               ]);
               for (const entry of auditEntries) {
                 if (entry.events.length > 0) {
                   wildcardAuditMap.set(
-                    entry.id,
+                    entry.key,
                     entry.events.map((e) => ({
                       event_type: e.event_type,
                       changed_by: e.changed_by,
@@ -223,8 +227,9 @@ export function registerRecallTool(server: McpServer): void {
 
               // Append audit history if available
               let historyStr = '';
-              if (history && m.id && wildcardAuditMap.has(m.id as number)) {
-                const events = wildcardAuditMap.get(m.id as number)!;
+              const wKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+              if (history && wKey && wildcardAuditMap.has(wKey)) {
+                const events = wildcardAuditMap.get(wKey)!;
                 historyStr =
                   '\n\n**Edit History:**\n' +
                   events
@@ -600,7 +605,7 @@ export function registerRecallTool(server: McpServer): void {
 
           // Fetch audit history for fallback memories if requested
           const fallbackAuditMap = new Map<
-            number,
+            string,
             Array<{ event_type: string; changed_by: string; created_at: string }>
           >();
           if (history) {
@@ -614,18 +619,18 @@ export function registerRecallTool(server: McpServer): void {
                 .map((r) => r.id as number);
               const auditEntries = await Promise.all([
                 ...localFallbackIds.map(async (id) => ({
-                  id,
+                  key: auditKey(id, false),
                   events: await dispatcher.getAuditHistory(id, false),
                 })),
                 ...globalFallbackIds.map(async (id) => ({
-                  id,
+                  key: auditKey(id, true),
                   events: await dispatcher.getAuditHistory(id, true),
                 })),
               ]);
               for (const entry of auditEntries) {
                 if (entry.events.length > 0) {
                   fallbackAuditMap.set(
-                    entry.id,
+                    entry.key,
                     entry.events.map((e) => ({
                       event_type: e.event_type,
                       changed_by: e.changed_by,
@@ -648,8 +653,9 @@ export function registerRecallTool(server: McpServer): void {
               const date = new Date(m.created_at).toLocaleDateString();
               const scope = m.isGlobal ? '[GLOBAL] ' : '';
               let historyStr = '';
-              if (history && m.id && fallbackAuditMap.has(m.id as number)) {
-                const events = fallbackAuditMap.get(m.id as number)!;
+              const fbKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+              if (history && fbKey && fallbackAuditMap.has(fbKey)) {
+                const events = fallbackAuditMap.get(fbKey)!;
                 historyStr =
                   '\n  Edit History: ' +
                   events
@@ -688,7 +694,7 @@ export function registerRecallTool(server: McpServer): void {
 
         // Fetch audit history if requested
         const auditMap = new Map<
-          number,
+          string,
           Array<{ event_type: string; changed_by: string; created_at: string }>
         >();
         if (history) {
@@ -702,18 +708,18 @@ export function registerRecallTool(server: McpServer): void {
               .map((r) => r.id as number);
             const auditEntries = await Promise.all([
               ...localIds.map(async (id) => ({
-                id,
+                key: auditKey(id, false),
                 events: await dispatcher.getAuditHistory(id, false),
               })),
               ...globalIds.map(async (id) => ({
-                id,
+                key: auditKey(id, true),
                 events: await dispatcher.getAuditHistory(id, true),
               })),
             ]);
             for (const entry of auditEntries) {
               if (entry.events.length > 0) {
                 auditMap.set(
-                  entry.id,
+                  entry.key,
                   entry.events.map((e) => ({
                     event_type: e.event_type,
                     changed_by: e.changed_by,
@@ -756,8 +762,9 @@ export function registerRecallTool(server: McpServer): void {
 
             // Append audit history if available
             let historyStr = '';
-            if (history && m.id && auditMap.has(m.id as number)) {
-              const events = auditMap.get(m.id as number)!;
+            const mKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+            if (history && mKey && auditMap.has(mKey)) {
+              const events = auditMap.get(mKey)!;
               historyStr =
                 '\n\n**Edit History:**\n' +
                 events

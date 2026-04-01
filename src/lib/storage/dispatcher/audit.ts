@@ -45,8 +45,13 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
       if (this.backend === 'postgresql' && this.postgres) {
         // See recordAuditEvent for cast rationale
         const pool = await (this.postgres as any).getPool();
+        // Scope by project_id to prevent cross-tenant audit trail leakage
         const result = await pool.query(
-          `SELECT id, memory_id, event_type, old_content, new_content, changed_by, created_at FROM memory_audit WHERE memory_id = $1 ORDER BY created_at DESC`,
+          `SELECT ma.id, ma.memory_id, ma.event_type, ma.old_content, ma.new_content, ma.changed_by, ma.created_at
+           FROM memory_audit ma
+           JOIN memories m ON m.id = ma.memory_id
+           WHERE ma.memory_id = $1 AND ma.project_id = m.project_id
+           ORDER BY ma.created_at DESC`,
           [memoryId]
         );
         return result.rows.map((row: any) => ({
