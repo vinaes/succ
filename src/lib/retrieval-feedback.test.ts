@@ -20,8 +20,12 @@ vi.mock('./fault-logger.js', () => ({
 }));
 
 const mockDeleteOldRecallEvents = vi.fn().mockResolvedValue(0);
+const mockBoostMemoryConfidence = vi.fn().mockResolvedValue(true);
+const mockDegradeMemoryConfidence = vi.fn().mockResolvedValue(true);
 vi.mock('./storage/index.js', () => ({
   deleteOldRecallEvents: (...args: unknown[]) => mockDeleteOldRecallEvents(...args),
+  boostMemoryConfidence: (...args: unknown[]) => mockBoostMemoryConfidence(...args),
+  degradeMemoryConfidence: (...args: unknown[]) => mockDegradeMemoryConfidence(...args),
   getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
