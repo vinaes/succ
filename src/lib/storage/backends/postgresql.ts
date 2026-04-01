@@ -889,6 +889,7 @@ export class PostgresBackend {
     // Use CONCURRENTLY to avoid blocking writes on populated tables during startup.
     // Each index creation is wrapped in try/catch because CONCURRENTLY can fail
     // without blocking (e.g. duplicate index from a prior interrupted build).
+    await this.dropInvalidIndex(pool, 'idx_memories_project_source_type');
     try {
       await pool.query(
         'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
@@ -901,6 +902,7 @@ export class PostgresBackend {
     }
 
     // Composite index for active memories per project (most common query pattern)
+    await this.dropInvalidIndex(pool, 'idx_memories_project_active');
     try {
       await pool.query(`
         CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
@@ -916,6 +918,7 @@ export class PostgresBackend {
 
     // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
     // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+    await this.dropInvalidIndex(pool, 'idx_memories_tags_gin');
     try {
       await pool.query(
         'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
@@ -951,6 +954,7 @@ export class PostgresBackend {
     }
 
     // Composite index for documents — use LOWER(project_id) to match query predicates
+    await this.dropInvalidIndex(pool, 'idx_documents_project_filepath');
     try {
       await pool.query(
         'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
@@ -963,6 +967,7 @@ export class PostgresBackend {
     }
 
     // Composite index for documents (project + symbol_type for code search)
+    await this.dropInvalidIndex(pool, 'idx_documents_project_symbol');
     try {
       await pool.query(
         'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
@@ -972,6 +977,33 @@ export class PostgresBackend {
         'postgresql',
         `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
       );
+    }
+  }
+
+  /**
+   * Drop an index if it exists and is marked invalid in pg_index.
+   *
+   * When `CREATE INDEX CONCURRENTLY` fails (e.g. due to a crash or deadlock),
+   * PostgreSQL leaves behind an INVALID index stub.  A subsequent
+   * `CREATE INDEX CONCURRENTLY IF NOT EXISTS` will see the name already taken
+   * and silently no-op — the invalid index is never rebuilt.  By proactively
+   * dropping invalid indexes we allow the next CONCURRENTLY attempt to succeed.
+   */
+  private async dropInvalidIndex(pool: import('pg').Pool, indexName: string): Promise<void> {
+    try {
+      await pool.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = '${indexName}' AND NOT i.indisvalid
+          ) THEN
+            EXECUTE 'DROP INDEX ${indexName}';
+          END IF;
+        END $$;
+      `);
+    } catch (error) {
+      logWarn('postgresql', `Failed to drop invalid index ${indexName}: ${getErrorMessage(error)}`);
     }
   }
 

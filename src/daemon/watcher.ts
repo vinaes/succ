@@ -170,9 +170,10 @@ async function indexCode(
   }
 
   await withLock('watch-code', async () => {
-    // Delete existing chunks before re-indexing so stale chunks from
-    // files that shrank don't persist (mirrors indexDocFile pattern).
-    await deleteDocumentsByPath(`code:${relativePath}`);
+    // indexCodeFile() already handles stale-chunk supersession via its
+    // upsert path (marks old rows superseded_at before inserting new ones).
+    // A pre-delete here would create a data-loss window if indexCodeFile()
+    // fails after the delete — the file would be left completely unindexed.
     const result = await indexCodeFile(filePath, { force: true });
     if (result.success && result.chunks && result.chunks > 0) {
       await setFileHash(`code:${relativePath}`, hash);
