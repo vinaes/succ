@@ -18,6 +18,8 @@ const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 
+const SOURCE_CONTEXT_MAX_CHARS = 2000;
+
 // ─── Tier 1 Injection Detection (inline — structural patterns) ──────
 
 const POST_TIER1_PATTERNS = [
@@ -185,7 +187,7 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
     if (/git\s+commit/i.test(cmd) && wasSuccess) {
       const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
       if (msgMatch) {
-        const commitCtx = (toolOutput || '').slice(0, 500);
+        const commitCtx = (toolOutput || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
         await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone', commitCtx || undefined);
       }
     }
@@ -257,7 +259,7 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         if (!agentAlreadySaved) {
           const desc = (toolInput.description || '').slice(0, 100);
           const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
-          const agentCtx = (toolInput.prompt || '').slice(0, 500);
+          const agentCtx = (toolInput.prompt || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
           await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`, agentCtx || undefined);
         }
       }
