@@ -53,11 +53,15 @@ export function shouldDecompose(query: string): boolean {
   if (MULTI_QUESTION_PATTERN.test(query)) signals++;
 
   // Multiple quoted phrases (e.g., compare "retry budget" versus "rate limit")
-  const quotedTerms = query.match(/"[^"\n]{2,}"|'[^'\n]{2,}'/g);
-  if (quotedTerms && quotedTerms.length >= 2) signals++;
+  // Only count multi-word phrases (must contain a space) to avoid single-word matches
+  const quotedPhrases = query.match(/"[^"\n]*\s[^"\n]*"|'[^'\n]*\s[^'\n]*'/g);
+  if (quotedPhrases && quotedPhrases.length >= 2) signals++;
 
-  // Multiple identifiers (PascalCase, snake_case, dotNotation)
-  const identifiers = query.match(/\b[A-Z][a-zA-Z]+\b|\b\w+_\w+\b|\b\w+\.\w+\b/g);
+  // Multiple identifiers (PascalCase e.g. FooBar, camelCase e.g. fooBar, snake_case, dotNotation)
+  // Requires mid-word case transition to avoid matching plain English words like "Consider"
+  const identifiers = query.match(
+    /\b[A-Z][a-z]+[A-Z]\w*\b|\b[a-z]+[A-Z]\w*\b|\b\w+_\w+\b|\b\w+\.\w+\b/g
+  );
   if (identifiers && identifiers.length >= 2) signals++;
 
   return signals >= 2;
