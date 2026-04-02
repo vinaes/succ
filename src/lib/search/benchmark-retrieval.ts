@@ -307,8 +307,10 @@ export async function runRetrievalBenchmark(
 
   // Warm up the embedding cache/model so all benchmark iterations measure
   // warm-cache latency consistently, avoiding cold-start skew on the first query.
+  let cacheWarmed = false;
   try {
     await getEmbedding('benchmark warm-up query');
+    cacheWarmed = true;
     logInfo('benchmark', 'Embedding cache warmed up before benchmark loop');
   } catch (err) {
     logWarn('benchmark', `Embedding warm-up failed: ${getErrorMessage(err)}`);
@@ -429,6 +431,7 @@ export async function runRetrievalBenchmark(
     // Add phantom IDs for relevant items found in the wider search but
     // outside the retrieved window — this inflates the denominator so
     // recallAtK divides by the correct total.
+    // Phantom IDs: negative range starting at -1_000_000 — safe because real memory IDs are always positive auto-increment integers
     const phantomBase = -1_000_000;
     for (let i = 0; i < groundTruthRelevantCount - relevantIds.size; i++) {
       groundTruthIds.add(phantomBase - i);
@@ -467,7 +470,7 @@ export async function runRetrievalBenchmark(
       totalMemories: stats.total_memories,
       config: { k, retrievalLimit: limit, threshold },
       queryHash: computeQueryHash(queries),
-      cacheMode: 'warm',
+      cacheMode: cacheWarmed ? 'warm' : 'cold',
     },
   };
 }
