@@ -60,6 +60,8 @@ export interface RetrievalBenchmarkResult {
     config: RetrievalBenchmarkConfig;
     /** SHA-256 hash of the benchmark query definitions for change detection */
     queryHash?: string;
+    /** Whether the embedding cache was warmed before the benchmark loop */
+    cacheMode?: 'warm' | 'cold';
   };
 }
 
@@ -129,6 +131,7 @@ const RetrievalBenchmarkResultSchema = z.object({
     totalMemories: z.number(),
     config: z.object({}).passthrough(),
     queryHash: z.string().optional(),
+    cacheMode: z.enum(['warm', 'cold']).optional(),
   }),
 });
 
@@ -302,6 +305,15 @@ export async function runRetrievalBenchmark(
   const searchTimes: number[] = [];
   const pipelineTimes: number[] = [];
 
+  // Warm up the embedding cache/model so all benchmark iterations measure
+  // warm-cache latency consistently, avoiding cold-start skew on the first query.
+  try {
+    await getEmbedding('benchmark warm-up query');
+    logInfo('benchmark', 'Embedding cache warmed up before benchmark loop');
+  } catch (err) {
+    logWarn('benchmark', `Embedding warm-up failed: ${getErrorMessage(err)}`);
+  }
+
   for (const q of queries) {
     const pipelineStart = Date.now();
 
@@ -409,6 +421,7 @@ export async function runRetrievalBenchmark(
       totalMemories: stats.total_memories,
       config: { k, retrievalLimit: limit, threshold },
       queryHash: computeQueryHash(queries),
+      cacheMode: 'warm',
     },
   };
 }
