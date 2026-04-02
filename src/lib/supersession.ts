@@ -15,6 +15,8 @@ import { callLLM } from './llm.js';
 import { invalidateMemory, getAllMemoriesWithEmbeddings } from './storage/index.js';
 import { cosineSimilarity } from './embeddings.js';
 import { SUPERSESSION_SYSTEM, SUPERSESSION_PROMPT } from '../prompts/index.js';
+import { logWarn } from './fault-logger.js';
+import { getErrorMessage } from './errors.js';
 
 const SIMILARITY_THRESHOLD = 0.8;
 const CONFIDENCE_THRESHOLD = 0.9;
@@ -104,11 +106,15 @@ export async function checkSupersession(
           // Link already created by autoLink — no extra action needed
         }
       } catch (err) {
-        result.errors.push(`Memory #${candidate.id}: ${err}`);
+        const msg = `Memory #${candidate.id}: ${getErrorMessage(err)}`;
+        result.errors.push(msg);
+        logWarn('supersession', msg);
       }
     }
   } catch (err) {
-    result.errors.push(`Fatal: ${err}`);
+    const msg = `Fatal supersession error: ${getErrorMessage(err)}`;
+    result.errors.push(msg);
+    logWarn('supersession', msg);
   }
 
   return result;

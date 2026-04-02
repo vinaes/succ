@@ -14,9 +14,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   ): Promise<void> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
-        // Cast needed: PostgresBackend.getPool() is public but the base StorageDispatcherBase
-        // types `postgres` as the imported type which doesn't surface getPool in its interface.
-        const pool = await (this.postgres as any).getPool();
+        const pool = await this.postgres.getPool();
         // Derive project_id from the memories table to scope audit records by tenant
         await pool.query(
           `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by, project_id)
@@ -43,8 +41,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   async getAuditHistory(memoryId: number, global: boolean = false): Promise<MemoryAuditRecord[]> {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
-        // See recordAuditEvent for cast rationale
-        const pool = await (this.postgres as any).getPool();
+        const pool = await this.postgres.getPool();
         // Scope by project_id to prevent cross-tenant audit trail leakage
         const result = await pool.query(
           `SELECT ma.id, ma.memory_id, ma.event_type, ma.old_content, ma.new_content, ma.changed_by, ma.created_at
@@ -89,8 +86,7 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
     }
     try {
       if (this.backend === 'postgresql' && this.postgres) {
-        // See recordAuditEvent for cast rationale
-        const pool = await (this.postgres as any).getPool();
+        const pool = await this.postgres.getPool();
         // Age-based prune is intentionally cross-project — old audit records are
         // cleaned up uniformly. Per-project filtering uses the project_id column + index.
         const result = await pool.query(

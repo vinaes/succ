@@ -186,7 +186,7 @@ export function registerRecallTool(server: McpServer): void {
               const globalIds = allRecent
                 .filter((r) => r.isGlobal && r.id)
                 .map((r) => r.id as number);
-              const auditEntries = await Promise.all([
+              const auditSettled = await Promise.allSettled([
                 ...localIds.map((id) =>
                   auditReadLimit(async () => ({
                     key: auditKey(id, false),
@@ -200,16 +200,20 @@ export function registerRecallTool(server: McpServer): void {
                   }))
                 ),
               ]);
-              for (const entry of auditEntries) {
-                if (entry.events.length > 0) {
+              for (const result of auditSettled) {
+                if (result.status === 'fulfilled' && result.value.events.length > 0) {
                   wildcardAuditMap.set(
-                    entry.key,
-                    entry.events.map((e) => ({
+                    result.value.key,
+                    result.value.events.map((e) => ({
                       event_type: e.event_type,
                       changed_by: e.changed_by,
                       created_at: e.created_at,
                     }))
                   );
+                } else if (result.status === 'rejected') {
+                  logWarn('mcp-memory', 'Failed to fetch audit history for wildcard entry', {
+                    error: getErrorMessage(result.reason),
+                  });
                 }
               }
             } catch (histError) {
@@ -624,7 +628,7 @@ export function registerRecallTool(server: McpServer): void {
               const globalFallbackIds = recent
                 .filter((r) => r.isGlobal && r.id)
                 .map((r) => r.id as number);
-              const auditEntries = await Promise.all([
+              const fallbackSettled = await Promise.allSettled([
                 ...localFallbackIds.map((id) =>
                   auditReadLimit(async () => ({
                     key: auditKey(id, false),
@@ -638,16 +642,20 @@ export function registerRecallTool(server: McpServer): void {
                   }))
                 ),
               ]);
-              for (const entry of auditEntries) {
-                if (entry.events.length > 0) {
+              for (const result of fallbackSettled) {
+                if (result.status === 'fulfilled' && result.value.events.length > 0) {
                   fallbackAuditMap.set(
-                    entry.key,
-                    entry.events.map((e) => ({
+                    result.value.key,
+                    result.value.events.map((e) => ({
                       event_type: e.event_type,
                       changed_by: e.changed_by,
                       created_at: e.created_at,
                     }))
                   );
+                } else if (result.status === 'rejected') {
+                  logWarn('mcp-memory', 'Failed to fetch audit history for fallback entry', {
+                    error: getErrorMessage(result.reason),
+                  });
                 }
               }
             } catch (histError) {
@@ -718,7 +726,7 @@ export function registerRecallTool(server: McpServer): void {
             const globalIds = allResults
               .filter((r) => r.isGlobal && r.id)
               .map((r) => r.id as number);
-            const auditEntries = await Promise.all([
+            const auditSettled = await Promise.allSettled([
               ...localIds.map((id) =>
                 auditReadLimit(async () => ({
                   key: auditKey(id, false),
@@ -732,16 +740,20 @@ export function registerRecallTool(server: McpServer): void {
                 }))
               ),
             ]);
-            for (const entry of auditEntries) {
-              if (entry.events.length > 0) {
+            for (const result of auditSettled) {
+              if (result.status === 'fulfilled' && result.value.events.length > 0) {
                 auditMap.set(
-                  entry.key,
-                  entry.events.map((e) => ({
+                  result.value.key,
+                  result.value.events.map((e) => ({
                     event_type: e.event_type,
                     changed_by: e.changed_by,
                     created_at: e.created_at,
                   }))
                 );
+              } else if (result.status === 'rejected') {
+                logWarn('mcp-memory', 'Failed to fetch audit history for entry', {
+                  error: getErrorMessage(result.reason),
+                });
               }
             }
           } catch (histError) {
