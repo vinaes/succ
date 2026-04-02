@@ -283,7 +283,7 @@ export async function runRetrievalBenchmark(
     embedding: number[],
     limit: number,
     threshold: number
-  ) => Promise<Array<{ id: number; similarity: number; tags?: string[] }>>,
+  ) => Promise<Array<{ id: number; similarity: number; tags: string[] }>>,
   getStatsFn: () => Promise<{ total_memories: number }>,
   config: RetrievalBenchmarkConfig = {}
 ): Promise<RetrievalBenchmarkResult> {
@@ -345,7 +345,7 @@ export async function runRetrievalBenchmark(
 
     // Search
     const searchStart = Date.now();
-    let results: Array<{ id: number; similarity: number; tags?: string[] }>;
+    let results: Array<{ id: number; similarity: number; tags: string[] }>;
     try {
       results = await searchFn(q.query, embedding, limit, threshold);
     } catch (err) {
@@ -369,6 +369,16 @@ export async function runRetrievalBenchmark(
     }
     searchTimes.push(Date.now() - searchStart);
     pipelineTimes.push(Date.now() - pipelineStart);
+
+    // Validate that results include tags — without them, all relevance
+    // scores will be 0 and the benchmark is meaningless.
+    const missingTagCount = results.filter((r) => !r.tags || r.tags.length === 0).length;
+    if (missingTagCount > 0) {
+      logWarn(
+        'benchmark',
+        `${missingTagCount}/${results.length} results for "${q.query}" have no tags — relevance scores will be degraded`
+      );
+    }
 
     // Build the real ranked result list for metric calculation — preserves
     // the original ranking order and non-relevant entries.
