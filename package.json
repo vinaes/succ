@@ -4,6 +4,7 @@
   "version": "1.6.13",
   "version": "1.6.13",
   "version": "1.6.13",
+  "version": "1.6.13",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {

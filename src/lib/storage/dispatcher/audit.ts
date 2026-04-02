@@ -15,11 +15,14 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
     try {
       if (this.backend === 'postgresql' && this.postgres) {
         const pool = await this.postgres.getPool();
-        // Derive project_id from the memories table to scope audit records by tenant
+        // Use dispatcher's known projectId directly instead of a subquery on the
+        // memories table — avoids a race condition where the memory row could be
+        // deleted between the caller's dispatch and this INSERT.
+        const projectId = this.postgres.getProjectId();
         await pool.query(
           `INSERT INTO memory_audit (memory_id, event_type, old_content, new_content, changed_by, project_id)
-           VALUES ($1, $2, $3, $4, $5, (SELECT project_id FROM memories WHERE id = $1))`,
-          [memoryId, eventType, oldContent, newContent, changedBy]
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [memoryId, eventType, oldContent, newContent, changedBy, projectId]
         );
       } else {
         const sqlite = await this.getSqliteFns();
