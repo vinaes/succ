@@ -5,12 +5,24 @@ const MODEL = 'Xenova/all-MiniLM-L6-v2';
 
 // Check if the ONNX model is available (downloaded locally).
 // CI runners don't have the model — skip gracefully.
+// Use a 10s timeout to prevent hanging on slow model downloads.
 let modelAvailable = false;
 try {
-  await resolveModelPath(MODEL);
-  modelAvailable = true;
+  const modelPromise = resolveModelPath(MODEL)
+    .then(() => true)
+    .catch((e) => {
+      console.warn('ort-session.test: model resolution rejected', e);
+      return false;
+    });
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<false>((resolve) => {
+    timeoutId = setTimeout(() => resolve(false), 10_000);
+  });
+  modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
+  if (timeoutId) clearTimeout(timeoutId);
 } catch {
-  // Model not downloaded — will skip tests
+  // Model resolution threw unexpectedly — log and skip tests
+  console.warn('ort-session.test: model resolution failed, skipping tests');
 }
 
 let sharedSession: NativeOrtSession | null = null;
@@ -49,7 +61,7 @@ describe.skipIf(!modelAvailable)('NativeOrtSession', () => {
     const session = await getSession();
     expect(session.isInitialized).toBe(true);
     expect(session.provider).toBe('cpu');
-  }, 30000);
+  }, 60000);
 
   it('should produce 384-dimensional embeddings', async () => {
     const session = await getSession();

@@ -4,7 +4,7 @@
  * Tests all 3 tiers of prompt injection detection.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   detectTier1,
   detectTier2,
@@ -13,6 +13,12 @@ import {
   isMemorySafe,
   isMemorySafeAsync,
 } from './injection-detector.js';
+
+// Mock injection-semantic to avoid loading ONNX embeddings in unit tests.
+// Tier 2.C semantic detection is tested separately in injection-semantic.test.ts.
+vi.mock('./injection-semantic.js', () => ({
+  detectTier2Semantic: vi.fn().mockResolvedValue(null),
+}));
 
 describe('Tier 1: Structural patterns', () => {
   describe('delimiter injection', () => {
