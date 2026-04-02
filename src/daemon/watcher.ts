@@ -178,6 +178,13 @@ async function indexCode(
     if (result.success && result.chunks && result.chunks > 0) {
       await setFileHash(`code:${relativePath}`, hash);
       log(`  Indexed code: ${relativePath} (${result.chunks} chunks)`);
+    } else if (result.success && (!result.chunks || result.chunks === 0)) {
+      // File parsed successfully but produced zero chunks (e.g. empty file,
+      // unsupported syntax).  Clean up any stale chunks left from a previous
+      // indexing pass so they don't pollute search results.
+      await deleteDocumentsByPath(`code:${relativePath}`);
+      await deleteFileHash(`code:${relativePath}`);
+      log(`  Cleaned stale chunks: ${relativePath} (0 chunks on reindex)`);
     }
   });
 }
