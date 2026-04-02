@@ -71,9 +71,11 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
         // to ISO 8601 strings so both backends share the same created_at contract.
         return rows.map((row) => ({
           ...row,
-          created_at: row.created_at?.includes('T')
-            ? row.created_at
-            : new Date(row.created_at + 'Z').toISOString(),
+          created_at: !row.created_at
+            ? new Date().toISOString()
+            : row.created_at.includes('T')
+              ? row.created_at
+              : new Date(row.created_at + 'Z').toISOString(),
         }));
       }
     } catch (error) {
