@@ -390,14 +390,50 @@ export async function runRetrievalBenchmark(
     // Ground truth: a result is relevant if it shares at least one tag with
     // the query's expected tags.  This uses independent labels defined in
     // BENCHMARK_QUERIES instead of self-referential similarity thresholds.
-    const queryTags = new Set(q.tags);
+    // Tags are normalized to lowercase because the storage layer is
+    // case-insensitive (e.g. "Security" stored vs "security" queried).
+    const queryTags = new Set(q.tags.map((t) => t.toLowerCase()));
     const relevantIds = new Set<number>(
-      results.filter((r) => r.tags?.some((t) => queryTags.has(t))).map((r) => r.id)
+      results.filter((r) => r.tags?.some((t) => queryTags.has(t.toLowerCase()))).map((r) => r.id)
     );
+
+    // Build the full relevant set from a broader search so Recall@K measures
+    // how many of the *total* relevant items appear in the top-K, not just
+    // how many of the *retrieved* items are relevant (which conflates recall
+    // with precision).  We use a 5x multiplier over the retrieval limit to
+    // approximate the full relevant population without scanning the entire
+    // corpus.
+    const groundTruthLimit = limit * 5;
+    let groundTruthRelevantCount = relevantIds.size;
+    if (groundTruthLimit > limit) {
+      try {
+        const widerResults = await searchFn(q.query, embedding, groundTruthLimit, threshold);
+        groundTruthRelevantCount = widerResults.filter((r) =>
+          r.tags?.some((t) => queryTags.has(t.toLowerCase()))
+        ).length;
+      } catch (err) {
+        // Fall back to the narrower relevant set on failure — recall will be
+        // an upper-bound estimate but the benchmark still completes.
+        logWarn(
+          'benchmark',
+          `Wider ground-truth search failed for "${q.query}": ${getErrorMessage(err)}`
+        );
+      }
+    }
 
     // Feed the real ranked list (including non-relevant hits) so
     // calculateAccuracyMetrics computes MRR/NDCG/Recall correctly.
-    accuracyInput.push({ results: searchResults, relevantIds });
+    // For recall, pass the wider ground-truth set so the denominator
+    // reflects the true relevant population, not just retrieved items.
+    const groundTruthIds = new Set<number>(relevantIds);
+    // Add phantom IDs for relevant items found in the wider search but
+    // outside the retrieved window — this inflates the denominator so
+    // recallAtK divides by the correct total.
+    const phantomBase = -1_000_000;
+    for (let i = 0; i < groundTruthRelevantCount - relevantIds.size; i++) {
+      groundTruthIds.add(phantomBase - i);
+    }
+    accuracyInput.push({ results: searchResults, relevantIds: groundTruthIds });
 
     // Per-query metrics
     const hitsInTopK = searchResults.slice(0, k).filter((r) => relevantIds.has(r.id)).length;
@@ -408,10 +444,10 @@ export async function runRetrievalBenchmark(
       query: q.query,
       category: q.category,
       mrr,
-      recall: relevantIds.size > 0 ? hitsInTopK / relevantIds.size : 0,
+      recall: groundTruthRelevantCount > 0 ? hitsInTopK / groundTruthRelevantCount : 0,
       latencyMs: Date.now() - pipelineStart,
       hitsInTopK,
-      totalRelevant: relevantIds.size,
+      totalRelevant: groundTruthRelevantCount,
     });
   }
 
