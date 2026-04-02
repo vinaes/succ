@@ -16,7 +16,7 @@ import {
 import { parseTags, parseMemoryType } from './parse-helpers.js';
 import { getMemoriesByIds } from './memories.js';
 
-// Re-export classifyQuery for backward compatibility
+// Re-export classifyQuery for convenience (hybrid-search consumers)
 export { classifyQuery } from '../query-classifier.js';
 export type { QueryType } from '../query-classifier.js';
 

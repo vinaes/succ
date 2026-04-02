@@ -557,6 +557,60 @@ describe('Daemon Service', () => {
       expect(classifyQuery).not.toHaveBeenCalled();
       expect(result.results).toBeDefined();
     });
+
+    it('should call classifyQuery on /api/recall when adaptive_alpha is enabled', async () => {
+      vi.mocked(getRetrievalConfig).mockReturnValueOnce({
+        bm25_alpha: 0.4,
+        default_top_k: 10,
+        temporal_auto_skip: true,
+        preference_quality_boost: true,
+        quality_boost_enabled: false,
+        quality_boost_weight: 0.15,
+        mmr_enabled: false,
+        mmr_lambda: 0.8,
+        query_expansion_enabled: false,
+        query_expansion_mode: 'api' as const,
+        graph_ppr_enabled: false,
+        graph_ppr_weight: 0.3,
+        rrf_k: 60,
+        adaptive_alpha: true,
+      });
+
+      const result = await routeRequest('POST', '/api/recall', new URLSearchParams(), {
+        query: 'authentication patterns',
+        limit: 5,
+      });
+
+      expect(classifyQuery).toHaveBeenCalledWith('authentication patterns');
+      expect(result.results).toBeDefined();
+    });
+
+    it('should NOT call classifyQuery on /api/recall when adaptive_alpha is disabled', async () => {
+      vi.mocked(getRetrievalConfig).mockReturnValueOnce({
+        bm25_alpha: 0.4,
+        default_top_k: 10,
+        temporal_auto_skip: true,
+        preference_quality_boost: true,
+        quality_boost_enabled: false,
+        quality_boost_weight: 0.15,
+        mmr_enabled: false,
+        mmr_lambda: 0.8,
+        query_expansion_enabled: false,
+        query_expansion_mode: 'api' as const,
+        graph_ppr_enabled: false,
+        graph_ppr_weight: 0.3,
+        rrf_k: 60,
+        adaptive_alpha: false,
+      });
+
+      const result = await routeRequest('POST', '/api/recall', new URLSearchParams(), {
+        query: 'test recall query',
+        limit: 5,
+      });
+
+      expect(classifyQuery).not.toHaveBeenCalled();
+      expect(result.results).toBeDefined();
+    });
   });
 
   // ========================================================================
