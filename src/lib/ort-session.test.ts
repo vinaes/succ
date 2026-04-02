@@ -14,8 +14,12 @@ try {
       console.warn('ort-session.test: model resolution rejected', e);
       return false;
     });
-  const timeoutPromise = new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000));
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<false>((resolve) => {
+    timeoutId = setTimeout(() => resolve(false), 10_000);
+  });
   modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
+  if (timeoutId) clearTimeout(timeoutId);
 } catch {
   // Model resolution threw unexpectedly — log and skip tests
   console.warn('ort-session.test: model resolution failed, skipping tests');
