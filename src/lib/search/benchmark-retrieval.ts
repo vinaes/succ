@@ -495,9 +495,14 @@ export function compareToBaseline(
   ];
 
   for (const m of metrics) {
-    if (m.base === 0) continue;
     const delta = m.cur - m.base;
-    const deltaPct = delta / m.base;
+    let deltaPct: number;
+    if (m.base === 0) {
+      // Handle zero-baseline: classify based on whether current is also zero
+      deltaPct = m.cur === 0 ? 0 : m.cur > 0 ? Infinity : -Infinity;
+    } else {
+      deltaPct = delta / m.base;
+    }
 
     // For latency, higher is worse (regression if current > baseline)
     const isLatency = m.name.startsWith('Latency');
