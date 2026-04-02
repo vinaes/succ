@@ -423,27 +423,32 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const thresh = threshold ?? 0.92;
     if (this.vectorBackend === 'qdrant' && this.qdrant) {
       try {
-        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 3, thresh);
-        if (results.length > 0 && results[0].similarity >= thresh) {
-          return {
-            id: results[0].id,
-            content: results[0].content,
-            similarity: results[0].similarity,
-          };
+        // Over-fetch to account for superseded (non-latest) rows that Qdrant
+        // doesn't know about — demotion only flips the SQL column today.
+        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 10, thresh);
+        for (const hit of results) {
+          if (hit.similarity < thresh) break;
+          // Re-check is_latest against SQL — Qdrant may still return
+          // superseded parents whose is_latest was flipped only in SQL.
+          const mem = await this.getMemoryById(hit.id);
+          if (mem && mem.is_latest !== false) {
+            return { id: hit.id, content: hit.content, similarity: hit.similarity };
+          }
         }
         // v1 schema fallback: IDs only -> PG
         if (results.length === 0 && this.backend === 'postgresql' && this.postgres) {
-          const qr = await this.qdrant.searchMemories(embedding, 3, thresh);
+          const qr = await this.qdrant.searchMemories(embedding, 10, thresh);
           if (qr.length > 0) {
             const pgRows = await this.postgres.getMemoriesByIds(
               qr.map((r) => r.id),
               { excludeInvalidated: false }
             );
-            if (pgRows.length > 0) {
-              const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
-              const score = scoreMap.get(pgRows[0].id) ?? 0;
-              if (score >= thresh)
-                return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
+            const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
+            for (const row of pgRows) {
+              const score = scoreMap.get(row.id) ?? 0;
+              if (score >= thresh && row.is_latest !== false) {
+                return { id: row.id, content: row.content, similarity: score };
+              }
             }
           }
         }

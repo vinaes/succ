@@ -103,7 +103,7 @@ export function findSimilarMemory(
         FROM vec_memories v
         JOIN vec_memories_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
-          AND k = 5
+          AND k = 15
         ORDER BY v.distance
       `
         )
