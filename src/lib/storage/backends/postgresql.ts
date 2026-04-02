@@ -4346,6 +4346,10 @@ export class PostgresBackend {
   }
 
   async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    if (!Number.isFinite(days) || !Number.isInteger(days) || days < 0) {
+      logWarn('postgresql', `Invalid forget_after days for memory #${memoryId}`, { days });
+      return false;
+    }
     const pool = await this.getPool();
     const scopeCond = this.projectId
       ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'

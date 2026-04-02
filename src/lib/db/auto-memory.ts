@@ -111,6 +111,16 @@ export function setForgetAfterDays(memoryId: number, days: number): boolean {
  * Set forget_after date on a memory.
  */
 export function setForgetAfter(memoryId: number, forgetAfter: string | null): boolean {
+  if (forgetAfter !== null) {
+    const parsed = new Date(forgetAfter);
+    if (isNaN(parsed.getTime())) {
+      logWarn('auto-memory-db', `Invalid forget_after value for memory #${memoryId}`, {
+        forgetAfter,
+      });
+      return false;
+    }
+    forgetAfter = parsed.toISOString();
+  }
   try {
     const result = cachedPrepare(`UPDATE memories SET forget_after = ? WHERE id = ?`).run(
       forgetAfter,
