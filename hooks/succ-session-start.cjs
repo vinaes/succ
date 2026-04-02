@@ -102,7 +102,9 @@ BAD commit messages:
       if (fs.existsSync(settingsLocalPath)) {
         try {
           const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
-          if (
+          if (typeof s !== 'object' || s === null || Array.isArray(s)) {
+            needsSync = true;
+          } else if (
             s.includeCoAuthoredBy !== false ||
             s.includeGitInstructions !== false ||
             !s.attribution ||
