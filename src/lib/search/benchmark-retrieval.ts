@@ -10,6 +10,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { getEmbedding } from '../embeddings.js';
 import { getSuccDir } from '../config.js';
@@ -57,6 +58,8 @@ export interface RetrievalBenchmarkResult {
     totalQueries: number;
     totalMemories: number;
     config: RetrievalBenchmarkConfig;
+    /** SHA-256 hash of the benchmark query definitions for change detection */
+    queryHash?: string;
   };
 }
 
@@ -125,6 +128,7 @@ const RetrievalBenchmarkResultSchema = z.object({
     totalQueries: z.number(),
     totalMemories: z.number(),
     config: z.object({}).passthrough(),
+    queryHash: z.string().optional(),
   }),
 });
 
@@ -244,6 +248,20 @@ export const BENCHMARK_QUERIES: Array<{ query: string; category: string; tags: s
     tags: ['embedding', 'decision'],
   },
 ];
+
+/**
+ * Compute a stable SHA-256 hash of the benchmark query definitions.
+ * Used to detect when BENCHMARK_QUERIES change between baseline save and load,
+ * so stale baselines are not silently compared against a different query set.
+ */
+export function computeQueryHash(
+  queries: ReadonlyArray<{ query: string; category: string; tags: string[] }> = BENCHMARK_QUERIES
+): string {
+  const canonical = JSON.stringify(
+    queries.map((q) => ({ query: q.query, category: q.category, tags: [...q.tags].sort() }))
+  );
+  return createHash('sha256').update(canonical).digest('hex');
+}
 
 // ============================================================================
 // Benchmark Runner
@@ -390,6 +408,7 @@ export async function runRetrievalBenchmark(
       totalQueries: queries.length,
       totalMemories: stats.total_memories,
       config: { k, retrievalLimit: limit, threshold },
+      queryHash: computeQueryHash(queries),
     },
   };
 }
@@ -473,6 +492,18 @@ export function compareToBaseline(
     logWarn(
       'benchmark',
       `Baseline config mismatch (k=${baseCfg.k}→${curCfg.k}, limit=${baseCfg.retrievalLimit}→${curCfg.retrievalLimit}, threshold=${baseCfg.threshold}→${curCfg.threshold}) — comparison skipped`
+    );
+    return { current, baseline, regressions, improvements };
+  }
+
+  // Reject comparisons when the benchmark query definitions have changed —
+  // metrics from a different query set are not comparable.
+  const curHash = current.metadata.queryHash;
+  const baseHash = baseline.metadata.queryHash;
+  if (curHash && baseHash && curHash !== baseHash) {
+    logWarn(
+      'benchmark',
+      `Benchmark query definitions changed (hash ${baseHash.slice(0, 8)}→${curHash.slice(0, 8)}) — comparison skipped, re-save baseline`
     );
     return { current, baseline, regressions, improvements };
   }
