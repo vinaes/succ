@@ -83,11 +83,9 @@ export class AuditDispatcherMixin extends StorageDispatcherBase {
   }
 
   async pruneAuditTrail(olderThanDays: number = 90, global: boolean = false): Promise<number> {
-    if (!Number.isFinite(olderThanDays) || olderThanDays < 0) {
-      logWarn('audit', 'pruneAuditTrail called with invalid olderThanDays, clamping to 0', {
-        olderThanDays,
-      });
-      olderThanDays = 0;
+    if (!Number.isFinite(olderThanDays) || !Number.isInteger(olderThanDays) || olderThanDays < 0) {
+      logWarn('audit', `Invalid prune window: ${olderThanDays}`);
+      return 0;
     }
     try {
       if (this.backend === 'postgresql' && this.postgres) {
