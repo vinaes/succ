@@ -187,7 +187,9 @@ async function indexCode(
       await deleteFileHash(`code:${relativePath}`);
       log(`  Cleaned stale chunks: ${relativePath} (0 chunks on reindex)`);
     } else if (!result.success) {
-      logWarn('watcher', `indexCodeFile failed for ${relativePath}`, { error: result.error });
+      logWarn('watcher', `indexCodeFile failed for ${relativePath}`, {
+        error: getErrorMessage(result.error ?? 'unknown indexCodeFile error'),
+      });
     }
   });
 }
