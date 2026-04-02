@@ -488,13 +488,14 @@ export function initDb(database: Database.Database): void {
   // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
   // have already been backfilled (or had forget_after set at INSERT time) are
   // skipped on subsequent startups. No migration marker needed.
-  // Promoted memories will have their forget_after cleared by consolidation.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
   try {
     database.exec(`
       UPDATE memories
       SET forget_after = datetime(created_at, '+90 days')
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
     `);
   } catch (backfillErr) {
     logWarn('schema', `forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
@@ -997,12 +998,14 @@ export function initGlobalDb(database: Database.Database): void {
 
   // Backfill forget_after for existing auto-extracted global memories.
   // Idempotent: `forget_after IS NULL` skips already-backfilled rows.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
   try {
     database.exec(`
       UPDATE memories
       SET forget_after = datetime(created_at, '+90 days')
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
     `);
   } catch (backfillErr) {
     logWarn('schema', `global forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);

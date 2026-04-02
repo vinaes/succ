@@ -844,12 +844,13 @@ export class PostgresBackend {
     // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
     // have already been backfilled (or had forget_after set at INSERT time) are
     // skipped on subsequent startups. No migration marker needed.
-    // Promoted memories will have their forget_after cleared by consolidation.
+    // High-confidence (promoted) memories keep NULL forget_after (= permanent).
     await pool.query(`
       UPDATE memories
       SET forget_after = created_at + INTERVAL '90 days'
       WHERE source_type = 'auto_extracted'
         AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
     `);
 
     // Learning deltas table for session progress tracking
@@ -4291,8 +4292,8 @@ export class PostgresBackend {
       : 'AND project_id IS NULL';
     const scopeParams = this.projectId ? [this.projectId] : [];
     const result = await pool.query(
-      `UPDATE memories SET confidence = 0.7
-       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.7)
+      `UPDATE memories SET confidence = 0.75
+       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.75)
        ${scopeCond}`,
       [memoryId, ...scopeParams]
     );

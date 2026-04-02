@@ -27,15 +27,15 @@ export function getAutoExtractedMemories(): AutoMemoryRow[] {
 }
 
 /**
- * Promote a memory's confidence to 0.7.
+ * Promote a memory's confidence to 0.75 (above the >= 0.7 permanence threshold).
  * Only updates the confidence value — source_type is intentionally left unchanged
  * so that non-auto memories are not relabelled.
  */
 export function promoteMemoryConfidence(memoryId: number): boolean {
   try {
     const result = cachedPrepare(
-      `UPDATE memories SET confidence = 0.7
-       WHERE id = ? AND (confidence IS NULL OR confidence < 0.7)`
+      `UPDATE memories SET confidence = 0.75
+       WHERE id = ? AND (confidence IS NULL OR confidence < 0.75)`
     ).run(memoryId);
     return result.changes > 0;
   } catch (error) {
