@@ -282,6 +282,21 @@ function disableUndercover(settingsPath: string, statePath: string): void {
       safeUnlink(statePath);
       return;
     }
+    if (
+      typeof parsed.managed !== 'object' ||
+      parsed.managed === null ||
+      Array.isArray(parsed.managed) ||
+      typeof parsed.keysExisted !== 'object' ||
+      parsed.keysExisted === null ||
+      Array.isArray(parsed.keysExisted)
+    ) {
+      logWarn(
+        'undercover',
+        'Undercover snapshot missing required managed/keysExisted objects — deleting'
+      );
+      safeUnlink(statePath);
+      return;
+    }
     snapshot = parsed as unknown as UndercoverSnapshot;
   } catch (err: unknown) {
     logWarn('undercover', `Failed to parse undercover snapshot: ${getErrorMessage(err)}`);

@@ -144,7 +144,14 @@ BAD commit messages:
         let settings = {};
         if (fs.existsSync(settingsLocalPath)) {
           try {
-            settings = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+            const parsed = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+              log(
+                '[undercover] settings.local.json did not contain a plain object — using empty object'
+              );
+            } else {
+              settings = parsed;
+            }
           } catch (_e) {
             log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
           }
@@ -841,7 +848,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                   `Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`
                 );
               }
-            } else {
+            } else if (!undercover) {
               contextParts.push(
                 `<update-available>` +
                   `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
