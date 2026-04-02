@@ -168,10 +168,15 @@ export function ensureGitignore(projectRoot: string): void {
     }
 
     const content = fs.readFileSync(gitignorePath, 'utf8');
-    const lines = content.split('\n').map((l) => l.trim());
+    const lines = content.split('\n');
 
-    // Check for patterns that would ignore .succ/ directory
-    const succIgnored = lines.some((l) => l === '.succ' || l === '.succ/' || l === '.succ/**');
+    // Match common .succ ignore patterns: .succ, .succ/, .succ/*, .succ/**, **/.succ, etc.
+    const succIgnorePattern = /^(?:\*\*\/)?\.succ(?:\/\*{0,2})?$/;
+    const succIgnored = lines.some((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return false;
+      return succIgnorePattern.test(trimmed);
+    });
     if (!succIgnored) {
       logWarn(
         'undercover',
@@ -179,10 +184,13 @@ export function ensureGitignore(projectRoot: string): void {
       );
     }
 
-    // Check for patterns that would ignore .claude/ directory
-    const claudeIgnored = lines.some(
-      (l) => l === '.claude' || l === '.claude/' || l === '.claude/**'
-    );
+    // Match common .claude ignore patterns: .claude, .claude/, .claude/*, .claude/**, **/.claude, etc.
+    const claudeIgnorePattern = /^(?:\*\*\/)?\.claude(?:\/\*{0,2})?$/;
+    const claudeIgnored = lines.some((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return false;
+      return claudeIgnorePattern.test(trimmed);
+    });
     if (!claudeIgnored) {
       logWarn(
         'undercover',

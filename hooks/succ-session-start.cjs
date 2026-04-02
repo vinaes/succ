@@ -45,6 +45,8 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
   const projectName = path.basename(projectDir);
 
   // Undercover mode — prepend as first context part (highest priority)
+  // IMPORTANT: This block must stay in sync with UNDERCOVER_SESSION_BLOCK in src/lib/undercover.ts
+  // CJS fallback — the canonical source is the TypeScript module
   if (undercover) {
     contextParts.push(`<undercover priority="critical" source="succ" mode="public-repo">
 UNDERCOVER MODE — CRITICAL
