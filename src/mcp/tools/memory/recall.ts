@@ -359,7 +359,14 @@ export function registerRecallTool(server: McpServer): void {
             // Run all subquery searches in parallel
             const subSearchResults = await Promise.all(
               subQueries.map((sq, i) =>
-                hybridSearchMemories(sq, subEmbeddings[i], limit, 0.2, retrievalConfig.bm25_alpha)
+                hybridSearchMemories(
+                  sq,
+                  subEmbeddings[i],
+                  limit,
+                  0.2,
+                  retrievalConfig.bm25_alpha,
+                  retrievalConfig.rrf_k
+                )
               )
             );
 
@@ -402,7 +409,8 @@ export function registerRecallTool(server: McpServer): void {
               limit * 2,
               0.3,
               retrievalConfig.bm25_alpha,
-              retrievalConfig.graph_ppr_weight
+              retrievalConfig.graph_ppr_weight,
+              retrievalConfig.rrf_k
             );
           } catch (err) {
             logWarn('recall', 'Graph-enhanced search failed, falling back to standard', {
@@ -431,7 +439,14 @@ export function registerRecallTool(server: McpServer): void {
               const eqEmbeddings = await Promise.all(expandedQueries.map((eq) => getEmbedding(eq)));
               const eqSearchResults = await Promise.all(
                 expandedQueries.map((eq, i) =>
-                  hybridSearchMemories(eq, eqEmbeddings[i], limit, 0.3, retrievalConfig.bm25_alpha)
+                  hybridSearchMemories(
+                    eq,
+                    eqEmbeddings[i],
+                    limit,
+                    0.3,
+                    retrievalConfig.bm25_alpha,
+                    retrievalConfig.rrf_k
+                  )
                 )
               );
 
@@ -525,7 +540,8 @@ export function registerRecallTool(server: McpServer): void {
           0.3,
           retrievalConfig.bm25_alpha,
           tags,
-          sinceDate
+          sinceDate,
+          retrievalConfig.rrf_k
         );
 
         // Merge and sort by similarity

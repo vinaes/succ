@@ -47,7 +47,14 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
       const queryEmbedding = await getEmbedding(query);
       const rc = getRetrievalConfig();
       const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
-      const results = await hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
+      const results = await hybridSearchDocs(
+        query,
+        queryEmbedding,
+        limit,
+        threshold,
+        alpha,
+        rc.rrf_k
+      );
 
       const accesses = results.flatMap((result) => {
         if (!result || typeof result !== 'object' || !('memory_id' in result)) {
@@ -72,7 +79,15 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
       const queryEmbedding = await getEmbedding(query);
       const rc = getRetrievalConfig();
       const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
-      const results = await hybridSearchCode(query, queryEmbedding, limit, threshold, alpha);
+      const results = await hybridSearchCode(
+        query,
+        queryEmbedding,
+        limit,
+        threshold,
+        alpha,
+        undefined,
+        rc.rrf_k
+      );
       return { results };
     },
 
@@ -87,7 +102,14 @@ export function searchRoutes(_ctx: RouteContext): RouteMap {
       const queryEmbedding = await getEmbedding(query);
       const rc = getRetrievalConfig();
       const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
-      const results = await hybridSearchMemories(query, queryEmbedding, limit, 0.3, alpha);
+      const results = await hybridSearchMemories(
+        query,
+        queryEmbedding,
+        limit,
+        0.3,
+        alpha,
+        rc.rrf_k
+      );
 
       const accesses = results.flatMap((result) => {
         if (!result || typeof result !== 'object' || !('id' in result)) {

@@ -14,7 +14,7 @@ import {
   getRecentDocuments,
   closeDb,
 } from '../../lib/storage/index.js';
-import { isGlobalOnlyMode, getReadinessGateConfig } from '../../lib/config.js';
+import { isGlobalOnlyMode, getReadinessGateConfig, getRetrievalConfig } from '../../lib/config.js';
 import { getEmbedding } from '../../lib/embeddings.js';
 import { assessReadiness, formatReadinessHeader } from '../../lib/readiness.js';
 import {
@@ -189,7 +189,15 @@ export function registerSearchTools(server: McpServer) {
           (include_paths && include_paths.length > 0) ||
           (exclude_paths && exclude_paths.length > 0);
         const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
-        let results = await hybridSearchDocs(query, queryEmbedding, fetchLimit, threshold);
+        const rc = getRetrievalConfig();
+        let results = await hybridSearchDocs(
+          query,
+          queryEmbedding,
+          fetchLimit,
+          threshold,
+          undefined,
+          rc.rrf_k
+        );
 
         // Apply path filters
         if (hasPathFilters) {
@@ -377,13 +385,15 @@ export function registerSearchTools(server: McpServer) {
           (exclude_paths && exclude_paths.length > 0);
         const fetchLimit = hasPathFilters || pattern ? Math.min(limit * 5, 100) : limit;
         // Hybrid search: BM25 + vector with RRF fusion
+        const codeRc = getRetrievalConfig();
         let codeResults = await hybridSearchCode(
           query,
           queryEmbedding,
           fetchLimit,
           threshold,
           undefined,
-          filters
+          filters,
+          codeRc.rrf_k
         );
 
         // Apply path filters

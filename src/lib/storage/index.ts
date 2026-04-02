@@ -784,10 +784,11 @@ export async function hybridSearchCode(
   limit?: number,
   threshold?: number,
   alpha?: number,
-  filters?: { regex?: string; symbolType?: string }
+  filters?: { regex?: string; symbolType?: string },
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
+  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters, rrfK);
 }
 
 export async function hybridSearchDocs(
@@ -795,10 +796,11 @@ export async function hybridSearchDocs(
   queryEmbedding: number[],
   limit?: number,
   threshold?: number,
-  alpha?: number
+  alpha?: number,
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
+  return d.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha, rrfK);
 }
 
 export async function hybridSearchMemories(
@@ -806,10 +808,11 @@ export async function hybridSearchMemories(
   queryEmbedding: number[],
   limit?: number,
   threshold?: number,
-  alpha?: number
+  alpha?: number,
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
+  return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha, rrfK);
 }
 
 export async function decomposedSearchMemories(
@@ -838,10 +841,20 @@ export async function hybridSearchGlobalMemories(
   threshold?: number,
   alpha?: number,
   tags?: string[],
-  since?: Date
+  since?: Date,
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchGlobalMemories(query, queryEmbedding, limit, threshold, alpha, tags, since);
+  return d.hybridSearchGlobalMemories(
+    query,
+    queryEmbedding,
+    limit,
+    threshold,
+    alpha,
+    tags,
+    since,
+    rrfK
+  );
 }
 
 // ===========================================================================

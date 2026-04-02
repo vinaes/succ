@@ -93,7 +93,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     limit?: number,
     threshold?: number,
     alpha?: number,
-    filters?: { regex?: string; symbolType?: string }
+    filters?: { regex?: string; symbolType?: string },
+    rrfK?: number
   ): Promise<HybridSearchResult[]> {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
@@ -146,7 +147,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       fetchLimit,
       thresh,
       alpha,
-      filters
+      filters,
+      rrfK
     );
     return rerank(query, results, lim);
   }
@@ -156,7 +158,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     queryEmbedding: number[],
     limit?: number,
     threshold?: number,
-    alpha?: number
+    alpha?: number,
+    rrfK?: number
   ): Promise<HybridSearchResult[]> {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
@@ -193,7 +196,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       return rerank(query, results, lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha);
+    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha, rrfK);
     return rerank(query, results, lim);
   }
 
@@ -202,7 +205,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     queryEmbedding: number[],
     limit?: number,
     threshold?: number,
-    alpha?: number
+    alpha?: number,
+    rrfK?: number
   ): Promise<Array<MemorySearchResult | HybridMemoryResult>> {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
@@ -231,7 +235,14 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh, alpha);
+    results = await sqlite.hybridSearchMemories(
+      query,
+      queryEmbedding,
+      fetchLimit,
+      thresh,
+      alpha,
+      rrfK
+    );
     return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
   }
 
@@ -336,7 +347,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     threshold?: number,
     alpha?: number,
     tags?: string[],
-    since?: Date
+    since?: Date,
+    rrfK?: number
   ): Promise<Array<GlobalMemorySearchResult | MemorySearchResult | HybridGlobalMemoryResult>> {
     const lim = limit ?? 10;
     const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
@@ -381,7 +393,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       thresh,
       alpha,
       tags,
-      since
+      since,
+      rrfK
     );
     return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
   }
