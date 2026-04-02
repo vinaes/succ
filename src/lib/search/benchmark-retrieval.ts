@@ -370,7 +370,8 @@ export async function runRetrievalBenchmark(
       continue;
     }
     searchTimes.push(Date.now() - searchStart);
-    pipelineTimes.push(Date.now() - pipelineStart);
+    const pipelineTime = Date.now() - pipelineStart;
+    pipelineTimes.push(pipelineTime);
 
     // Validate that results include tags — without them, all relevance
     // scores will be 0 and the benchmark is meaningless.
@@ -448,7 +449,7 @@ export async function runRetrievalBenchmark(
       category: q.category,
       mrr,
       recall: groundTruthRelevantCount > 0 ? hitsInTopK / groundTruthRelevantCount : 0,
-      latencyMs: Date.now() - pipelineStart,
+      latencyMs: pipelineTime,
       hitsInTopK,
       totalRelevant: groundTruthRelevantCount,
     });
