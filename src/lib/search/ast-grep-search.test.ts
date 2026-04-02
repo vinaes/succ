@@ -107,6 +107,15 @@ try { doMore(); } catch (e) { handle(e); }
       expect(matches).toEqual([]);
     });
 
+    it('should handle syntactically malformed pattern distinctly from empty pattern', async () => {
+      const code = 'function foo() { return 1; }\n';
+      // A malformed pattern (unclosed brace) should NOT throw a DependencyError
+      // like an empty pattern does — tree-sitter parses it tolerantly and returns
+      // zero matches instead.
+      const matches = await searchPatternInContent(code, 'test.ts', '{ unclosed');
+      expect(matches).toEqual([]);
+    });
+
     it('should detect language from .js extension', async () => {
       const jsCode = 'function hello() { console.log("hi"); }\n';
       const matches = await searchPatternInContent(jsCode, 'test.js', 'console.log($$$ARGS)');
