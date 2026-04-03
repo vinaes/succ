@@ -97,7 +97,97 @@ BAD commit messages:
 
     // Self-healing: sync Claude settings.local.json if needed
     try {
+      /** Check if path is a symlink or NTFS junction */
+      function isSymlinkOrJunction(p) {
+        try { return fs.lstatSync(p).isSymbolicLink(); }
+        catch (e) { log(`[undercover] lstatSync failed for ${p}: ${e.message || e}`); return false; }
+      }
+
+      /** Verify resolved path is a child of base directory */
+      function isChildOf(child, base) {
+        const resolvedChild = path.resolve(child);
+        const resolvedBase = path.resolve(base);
+        return resolvedChild.startsWith(resolvedBase + path.sep) || resolvedChild === resolvedBase;
+      }
+
+      /**
+       * Validate a write target is safe (not symlink, within projectDir).
+       * Returns true if safe to write, false if should skip.
+       */
+      function isSafeWriteTarget(targetPath, label) {
+        if (fs.existsSync(targetPath)) {
+          if (isSymlinkOrJunction(targetPath)) {
+            log(`[undercover] ${label} is a symlink/junction — skipping write`);
+            return false;
+          }
+          try {
+            const resolved = fs.realpathSync.native(targetPath);
+            if (!isChildOf(resolved, projectDir)) {
+              log(`[undercover] ${label} resolves outside project dir — skipping write`);
+              return false;
+            }
+          } catch (e) {
+            log(`[undercover] Failed to resolve real path for ${label}: ${e.message || e}`);
+            return false;
+          }
+        } else {
+          // For non-existent paths, check the parent
+          const parentDir = path.dirname(targetPath);
+          if (fs.existsSync(parentDir) && isSymlinkOrJunction(parentDir)) {
+            log(`[undercover] Parent of ${label} is a symlink/junction — skipping write`);
+            return false;
+          }
+        }
+        return true;
+      }
+
       const settingsLocalPath = path.join(projectDir, '.claude', 'settings.local.json');
+      const claudeDir = path.join(projectDir, '.claude');
+      const claudeGitignore = path.join(claudeDir, '.gitignore');
+
+      // Ensure .claude/.gitignore guards settings.local.json from being tracked (unconditional)
+      try {
+        // Check if settings.local.json is already tracked by git
+        let isTracked = false;
+        try {
+          require('child_process').execFileSync('git', ['ls-files', '--error-unmatch', '.claude/settings.local.json'], {
+            cwd: projectDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            windowsHide: true,
+          });
+          isTracked = true;
+        } catch (e) {
+          // Not tracked — this is the expected case
+          log(`[undercover] settings.local.json not tracked by git (expected): ${e.message || e}`);
+        }
+
+        if (isTracked) {
+          log('[undercover] settings.local.json is already tracked by git — skipping .gitignore mutation');
+        } else {
+          if (!fs.existsSync(claudeDir)) {
+            if (!isSafeWriteTarget(claudeDir, 'claudeDir')) throw new Error('claudeDir failed safety check');
+            fs.mkdirSync(claudeDir, { recursive: true });
+          }
+          if (isSafeWriteTarget(claudeGitignore, 'claudeGitignore')) {
+            let gitignoreContent = '';
+            if (fs.existsSync(claudeGitignore)) {
+              gitignoreContent = fs.readFileSync(claudeGitignore, 'utf8');
+            }
+            if (!gitignoreContent.split('\n').some((l) => l.trim() === 'settings.local.json')) {
+              const entry =
+                gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n')
+                  ? '\nsettings.local.json\n'
+                  : 'settings.local.json\n';
+              fs.appendFileSync(claudeGitignore, entry);
+            }
+          }
+        }
+      } catch (gitignoreErr) {
+        log(
+          `[undercover] Failed to ensure .claude/.gitignore guard: ${gitignoreErr.message || gitignoreErr}`
+        );
+      }
+
       let needsSync = false;
       if (fs.existsSync(settingsLocalPath)) {
         try {
@@ -122,26 +212,9 @@ BAD commit messages:
       }
       if (needsSync) {
         // Lightweight inline sync — write undercover values
-        const claudeDir = path.join(projectDir, '.claude');
-        if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
-        // Ensure .claude/.gitignore guards settings.local.json from being tracked
-        try {
-          const claudeGitignore = path.join(claudeDir, '.gitignore');
-          let gitignoreContent = '';
-          if (fs.existsSync(claudeGitignore)) {
-            gitignoreContent = fs.readFileSync(claudeGitignore, 'utf8');
-          }
-          if (!gitignoreContent.split('\n').some((l) => l.trim() === 'settings.local.json')) {
-            const entry =
-              gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n')
-                ? '\nsettings.local.json\n'
-                : 'settings.local.json\n';
-            fs.appendFileSync(claudeGitignore, entry);
-          }
-        } catch (gitignoreErr) {
-          log(
-            `[undercover] Failed to ensure .claude/.gitignore guard: ${gitignoreErr.message || gitignoreErr}`
-          );
+        if (!fs.existsSync(claudeDir)) {
+          if (!isSafeWriteTarget(claudeDir, 'claudeDir')) throw new Error('claudeDir failed safety check');
+          fs.mkdirSync(claudeDir, { recursive: true });
         }
         let settings = {};
         if (fs.existsSync(settingsLocalPath)) {
@@ -161,26 +234,30 @@ BAD commit messages:
         // Snapshot before first write
         const statePath = path.join(succDir, 'claude-undercover-state.json');
         if (!fs.existsSync(statePath)) {
-          const snapshot = {
-            createdAt: new Date().toISOString(),
-            managed: {
-              includeGitInstructions: settings.includeGitInstructions,
-              includeCoAuthoredBy: settings.includeCoAuthoredBy,
-              attribution: settings.attribution,
-            },
-            keysExisted: {
-              includeGitInstructions: 'includeGitInstructions' in settings,
-              includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
-              attribution: 'attribution' in settings,
-            },
-          };
-          fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+          if (isSafeWriteTarget(statePath, 'statePath')) {
+            const snapshot = {
+              createdAt: new Date().toISOString(),
+              managed: {
+                includeGitInstructions: settings.includeGitInstructions,
+                includeCoAuthoredBy: settings.includeCoAuthoredBy,
+                attribution: settings.attribution,
+              },
+              keysExisted: {
+                includeGitInstructions: 'includeGitInstructions' in settings,
+                includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
+                attribution: 'attribution' in settings,
+              },
+            };
+            fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+          }
         }
-        settings.includeGitInstructions = false;
-        settings.includeCoAuthoredBy = false;
-        settings.attribution = { commit: '', pr: '' };
-        fs.writeFileSync(settingsLocalPath, JSON.stringify(settings, null, 2));
-        log('[undercover] Self-healed Claude settings.local.json');
+        if (isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
+          settings.includeGitInstructions = false;
+          settings.includeCoAuthoredBy = false;
+          settings.attribution = { commit: '', pr: '' };
+          fs.writeFileSync(settingsLocalPath, JSON.stringify(settings, null, 2));
+          log('[undercover] Self-healed Claude settings.local.json');
+        }
       }
     } catch (e) {
       log(`[undercover] Self-healing failed (fail-open): ${e.message || e}`);
