@@ -12,6 +12,22 @@ vi.mock('../../lib/config.js', () => ({
   isGlobalOnlyMode: vi.fn(() => false),
   getReadinessGateConfig: vi.fn(() => ({ enabled: false })),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getRetrievalConfig: vi.fn(() => ({
+    bm25_alpha: 0.4,
+    default_top_k: 10,
+    temporal_auto_skip: true,
+    preference_quality_boost: true,
+    quality_boost_enabled: false,
+    quality_boost_weight: 0.15,
+    mmr_enabled: false,
+    mmr_lambda: 0.8,
+    query_expansion_enabled: false,
+    query_expansion_mode: 'local',
+    graph_ppr_enabled: false,
+    graph_ppr_weight: 0.3,
+    rrf_k: 60,
+    adaptive_alpha: false,
+  })),
 }));
 
 vi.mock('../../lib/embeddings.js', () => ({
