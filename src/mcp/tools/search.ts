@@ -26,6 +26,7 @@ import {
 import { logWarn } from '../../lib/fault-logger.js';
 import { getErrorMessage, isSuccError } from '../../lib/errors.js';
 import { searchPatternInContent, formatPatternResults } from '../../lib/search/ast-grep-search.js';
+import { classifyQuery } from '../../lib/query-classifier.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -190,12 +191,13 @@ export function registerSearchTools(server: McpServer) {
           (exclude_paths && exclude_paths.length > 0);
         const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
         const rc = getRetrievalConfig();
+        const alpha = rc.adaptive_alpha ? classifyQuery(query).alpha : rc.bm25_alpha;
         let results = await hybridSearchDocs(
           query,
           queryEmbedding,
           fetchLimit,
           threshold,
-          undefined,
+          alpha,
           rc.rrf_k
         );
 
@@ -386,12 +388,13 @@ export function registerSearchTools(server: McpServer) {
         const fetchLimit = hasPathFilters || pattern ? Math.min(limit * 5, 100) : limit;
         // Hybrid search: BM25 + vector with RRF fusion
         const codeRc = getRetrievalConfig();
+        const codeAlpha = codeRc.adaptive_alpha ? classifyQuery(query).alpha : codeRc.bm25_alpha;
         let codeResults = await hybridSearchCode(
           query,
           queryEmbedding,
           fetchLimit,
           threshold,
-          undefined,
+          codeAlpha,
           filters,
           codeRc.rrf_k
         );

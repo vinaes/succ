@@ -33,6 +33,7 @@ import { gateAction } from '../../profile.js';
 import { logWarn } from '../../../lib/fault-logger.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
+import { classifyQuery } from '../../../lib/query-classifier.js';
 
 /**
  * Escape XML-sensitive characters in source_context and wrap in tags.
@@ -103,6 +104,8 @@ export function registerRecallTool(server: McpServer): void {
         await applyProjectPath(project_path);
         const globalOnlyMode = isGlobalOnlyMode();
         const retrievalConfig = getRetrievalConfig();
+        const getAlpha = (q: string) =>
+          retrievalConfig.adaptive_alpha ? classifyQuery(q).alpha : retrievalConfig.bm25_alpha;
         const limit = rawLimit ?? retrievalConfig.default_top_k;
         // Special case: "*" means "show recent memories" (no semantic search)
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
@@ -364,7 +367,7 @@ export function registerRecallTool(server: McpServer): void {
                   subEmbeddings[i],
                   limit,
                   0.2,
-                  retrievalConfig.bm25_alpha,
+                  getAlpha(sq),
                   retrievalConfig.rrf_k
                 )
               )
@@ -408,7 +411,7 @@ export function registerRecallTool(server: McpServer): void {
               queryEmbedding,
               limit * 2,
               0.3,
-              retrievalConfig.bm25_alpha,
+              getAlpha(query),
               retrievalConfig.graph_ppr_weight,
               retrievalConfig.rrf_k
             );
@@ -444,7 +447,7 @@ export function registerRecallTool(server: McpServer): void {
                     eqEmbeddings[i],
                     limit,
                     0.3,
-                    retrievalConfig.bm25_alpha,
+                    getAlpha(eq),
                     retrievalConfig.rrf_k
                   )
                 )
@@ -538,7 +541,7 @@ export function registerRecallTool(server: McpServer): void {
           queryEmbedding,
           limit,
           0.3,
-          retrievalConfig.bm25_alpha,
+          getAlpha(query),
           tags,
           sinceDate,
           retrievalConfig.rrf_k
