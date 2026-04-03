@@ -215,6 +215,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     let results: Array<MemorySearchResult | HybridMemoryResult>;
     if (this.hasQdrant()) {
       try {
+        // Note: Qdrant uses its own internal fusion strategy; alpha/rrfK not applicable
         results = await this.qdrant!.hybridSearchMemories(
           query,
           queryEmbedding,
@@ -231,6 +232,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
+      // Note: PG uses ts_rank for text scoring; alpha/rrfK not applicable
       results = await this.postgres.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh);
       return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
     }
@@ -355,6 +357,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
+        // Note: Qdrant uses its own internal fusion strategy; alpha/rrfK not applicable
         const results = await this.qdrant!.hybridSearchGlobalMemories(
           query,
           queryEmbedding,
@@ -375,6 +378,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
+      // Note: PG uses ts_rank for text scoring; alpha/rrfK not applicable
       const results = await this.postgres.hybridSearchGlobalMemories(
         query,
         queryEmbedding,
