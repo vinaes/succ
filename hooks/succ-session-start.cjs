@@ -153,22 +153,22 @@ BAD commit messages:
       const claudeDir = path.join(projectDir, '.claude');
       const claudeGitignore = path.join(claudeDir, '.gitignore');
 
+      // Check if settings.local.json is already tracked by git (hoisted for use in both gitignore and settings blocks)
+      let isTracked = false;
+      try {
+        require('child_process').execFileSync('git', ['ls-files', '--error-unmatch', '.claude/settings.local.json'], {
+          cwd: projectDir,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        isTracked = true;
+      } catch (e) {
+        // Not tracked — this is the expected case
+        log(`[undercover] settings.local.json not tracked by git (expected): ${e.message || e}`);
+      }
+
       // Ensure .claude/.gitignore guards settings.local.json from being tracked (unconditional)
       try {
-        // Check if settings.local.json is already tracked by git
-        let isTracked = false;
-        try {
-          require('child_process').execFileSync('git', ['ls-files', '--error-unmatch', '.claude/settings.local.json'], {
-            cwd: projectDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-          });
-          isTracked = true;
-        } catch (e) {
-          // Not tracked — this is the expected case
-          log(`[undercover] settings.local.json not tracked by git (expected): ${e.message || e}`);
-        }
-
         if (isTracked) {
           log('[undercover] settings.local.json is already tracked by git — skipping .gitignore mutation');
         } else {
@@ -196,8 +196,10 @@ BAD commit messages:
         );
       }
 
-      // Guard reads — treat as non-existent if path is unsafe
-      if (!isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
+      // Guard writes — skip if tracked by git (prevents dirty worktree) or path is unsafe
+      if (isTracked) {
+        log('[undercover] settings.local.json is tracked by git — skipping self-heal');
+      } else if (!isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
         log('[undercover] settingsLocalPath failed safety check — skipping sync');
       } else {
         let needsSync = false;
@@ -243,25 +245,29 @@ BAD commit messages:
               log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
             }
           }
-          // Snapshot before first write
-          const statePath = path.join(succDir, 'claude-undercover-state.json');
-          if (!fs.existsSync(statePath)) {
-            if (isSafeWriteTarget(statePath, 'statePath')) {
-              const snapshot = {
-                createdAt: new Date().toISOString(),
-                managed: {
-                  includeGitInstructions: settings.includeGitInstructions,
-                  includeCoAuthoredBy: settings.includeCoAuthoredBy,
-                  attribution: settings.attribution,
-                },
-                keysExisted: {
-                  includeGitInstructions: 'includeGitInstructions' in settings,
-                  includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
-                  attribution: 'attribution' in settings,
-                },
-              };
-              fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+          // Snapshot before first write (best-effort — don't block settings sync)
+          try {
+            const statePath = path.join(succDir, 'claude-undercover-state.json');
+            if (!fs.existsSync(statePath)) {
+              if (isSafeWriteTarget(statePath, 'statePath')) {
+                const snapshot = {
+                  createdAt: new Date().toISOString(),
+                  managed: {
+                    includeGitInstructions: settings.includeGitInstructions,
+                    includeCoAuthoredBy: settings.includeCoAuthoredBy,
+                    attribution: settings.attribution,
+                  },
+                  keysExisted: {
+                    includeGitInstructions: 'includeGitInstructions' in settings,
+                    includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
+                    attribution: 'attribution' in settings,
+                  },
+                };
+                fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+              }
             }
+          } catch (snapshotErr) {
+            log(`[undercover] Failed to snapshot Claude settings (best-effort): ${snapshotErr.message || snapshotErr}`);
           }
           settings.includeGitInstructions = false;
           settings.includeCoAuthoredBy = false;
