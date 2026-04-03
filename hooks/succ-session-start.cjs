@@ -97,6 +97,14 @@ BAD commit messages:
 
     // Self-healing: sync Claude settings.local.json if needed
     try {
+      // Pre-normalize projectDir to resolve Windows 8.3 short names
+      let normalizedProjectDir = projectDir;
+      try {
+        normalizedProjectDir = fs.realpathSync.native(projectDir);
+      } catch (e) {
+        log(`[undercover] realpathSync.native failed for projectDir, falling back to path.resolve: ${e.message || e}`);
+        normalizedProjectDir = path.resolve(projectDir);
+      }
       /** Check if path is a symlink or NTFS junction */
       function isSymlinkOrJunction(p) {
         try { return fs.lstatSync(p).isSymbolicLink(); }
@@ -122,7 +130,7 @@ BAD commit messages:
           }
           try {
             const resolved = fs.realpathSync.native(targetPath);
-            if (!isChildOf(resolved, projectDir)) {
+            if (!isChildOf(resolved, normalizedProjectDir)) {
               log(`[undercover] ${label} resolves outside project dir — skipping write`);
               return false;
             }
@@ -188,70 +196,73 @@ BAD commit messages:
         );
       }
 
-      let needsSync = false;
-      if (fs.existsSync(settingsLocalPath)) {
-        try {
-          const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
-          if (typeof s !== 'object' || s === null || Array.isArray(s)) {
-            needsSync = true;
-          } else if (
-            s.includeCoAuthoredBy !== false ||
-            s.includeGitInstructions !== false ||
-            !s.attribution ||
-            s.attribution.commit !== '' ||
-            s.attribution.pr !== ''
-          ) {
-            needsSync = true;
-          }
-        } catch (e) {
-          needsSync = true;
-          log(`[undercover] Failed to parse settings.local.json: ${e.message || e}`);
-        }
+      // Guard reads — treat as non-existent if path is unsafe
+      if (!isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
+        log('[undercover] settingsLocalPath failed safety check — skipping sync');
       } else {
-        needsSync = true;
-      }
-      if (needsSync) {
-        // Lightweight inline sync — write undercover values
-        if (!fs.existsSync(claudeDir)) {
-          if (!isSafeWriteTarget(claudeDir, 'claudeDir')) throw new Error('claudeDir failed safety check');
-          fs.mkdirSync(claudeDir, { recursive: true });
-        }
-        let settings = {};
+        let needsSync = false;
         if (fs.existsSync(settingsLocalPath)) {
           try {
-            const parsed = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
-            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-              log(
-                '[undercover] settings.local.json did not contain a plain object — using empty object'
-              );
-            } else {
-              settings = parsed;
+            const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+            if (typeof s !== 'object' || s === null || Array.isArray(s)) {
+              needsSync = true;
+            } else if (
+              s.includeCoAuthoredBy !== false ||
+              s.includeGitInstructions !== false ||
+              !s.attribution ||
+              s.attribution.commit !== '' ||
+              s.attribution.pr !== ''
+            ) {
+              needsSync = true;
             }
-          } catch (_e) {
-            log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
+          } catch (e) {
+            needsSync = true;
+            log(`[undercover] Failed to parse settings.local.json: ${e.message || e}`);
           }
+        } else {
+          needsSync = true;
         }
-        // Snapshot before first write
-        const statePath = path.join(succDir, 'claude-undercover-state.json');
-        if (!fs.existsSync(statePath)) {
-          if (isSafeWriteTarget(statePath, 'statePath')) {
-            const snapshot = {
-              createdAt: new Date().toISOString(),
-              managed: {
-                includeGitInstructions: settings.includeGitInstructions,
-                includeCoAuthoredBy: settings.includeCoAuthoredBy,
-                attribution: settings.attribution,
-              },
-              keysExisted: {
-                includeGitInstructions: 'includeGitInstructions' in settings,
-                includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
-                attribution: 'attribution' in settings,
-              },
-            };
-            fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+        if (needsSync) {
+          // Lightweight inline sync — write undercover values
+          if (!fs.existsSync(claudeDir)) {
+            if (!isSafeWriteTarget(claudeDir, 'claudeDir')) throw new Error('claudeDir failed safety check');
+            fs.mkdirSync(claudeDir, { recursive: true });
           }
-        }
-        if (isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
+          let settings = {};
+          if (fs.existsSync(settingsLocalPath)) {
+            try {
+              const parsed = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+              if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                log(
+                  '[undercover] settings.local.json did not contain a plain object — using empty object'
+                );
+              } else {
+                settings = parsed;
+              }
+            } catch (_e) {
+              log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
+            }
+          }
+          // Snapshot before first write
+          const statePath = path.join(succDir, 'claude-undercover-state.json');
+          if (!fs.existsSync(statePath)) {
+            if (isSafeWriteTarget(statePath, 'statePath')) {
+              const snapshot = {
+                createdAt: new Date().toISOString(),
+                managed: {
+                  includeGitInstructions: settings.includeGitInstructions,
+                  includeCoAuthoredBy: settings.includeCoAuthoredBy,
+                  attribution: settings.attribution,
+                },
+                keysExisted: {
+                  includeGitInstructions: 'includeGitInstructions' in settings,
+                  includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
+                  attribution: 'attribution' in settings,
+                },
+              };
+              fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+            }
+          }
           settings.includeGitInstructions = false;
           settings.includeCoAuthoredBy = false;
           settings.attribution = { commit: '', pr: '' };
