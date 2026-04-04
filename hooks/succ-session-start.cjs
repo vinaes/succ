@@ -145,8 +145,20 @@ BAD commit messages:
             log(`[undercover] Parent of ${label} is a symlink/junction — skipping write`);
             return false;
           }
-          // Also verify the target path would be within projectDir
-          if (!isChildOf(targetPath, normalizedProjectDir)) {
+          // Canonicalize parent for consistent 8.3 path comparison
+          let candidatePath = targetPath;
+          if (fs.existsSync(parentDir)) {
+            try {
+              candidatePath = path.join(
+                fs.realpathSync.native(parentDir),
+                path.basename(targetPath)
+              );
+            } catch (e) {
+              log(`[undercover] Failed to resolve parent of ${label}: ${e.message || e}`);
+              return false;
+            }
+          }
+          if (!isChildOf(candidatePath, normalizedProjectDir)) {
             log(`[undercover] ${label} would be outside project dir — skipping write`);
             return false;
           }
