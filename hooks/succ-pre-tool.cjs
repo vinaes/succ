@@ -779,6 +779,7 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
   const command = toolInput.command || '';
   const contextParts = [];
   let askReason = null;
+  let contextUsageAckPromise = null;
 
   // 0. Injection scan on tool input
   const inputToScan = filePath || command || toolInput.url || '';
@@ -929,7 +930,8 @@ MEDIUM and below — commit is OK, mention findings in summary.
           if (advisory) {
             contextParts.push(advisory);
             // ACK: mark cooldown AFTER successful advisory push (prevents consumed cooldown on hook failure)
-            fetch(
+            // Store promise so we can await it before process.exit (unawaited fetch gets killed on exit)
+            contextUsageAckPromise = fetch(
               `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
               { method: 'POST', signal: AbortSignal.timeout(300) }
             ).catch((e) => {
@@ -951,8 +953,12 @@ MEDIUM and below — commit is OK, mention findings in summary.
     if (json && Object.keys(json).length > 0) {
       console.log(JSON.stringify(json));
     }
-    if (exitCode) process.exit(exitCode);
+    if (exitCode) {
+      if (contextUsageAckPromise) await contextUsageAckPromise;
+      process.exit(exitCode);
+    }
   }
 
+  if (contextUsageAckPromise) await contextUsageAckPromise;
   process.exit(0);
 });

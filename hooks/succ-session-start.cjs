@@ -959,23 +959,57 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
             // Guard against stale cache: if the installed version is already >= latest, skip.
             // This prevents false "update available" notifications after the user upgrades
             // before the 48h cache expires.
-            const installedVersion = require('../package.json').version;
-            const compareSemver = (a, b) => {
-              const pa = a.split('.').map(Number);
-              const pb = b.split('.').map(Number);
-              for (let i = 0; i < 3; i++) {
-                const diff = (pa[i] || 0) - (pb[i] || 0);
-                if (diff !== 0) return diff > 0 ? 1 : -1;
-              }
-              return 0;
-            };
-            if (compareSemver(installedVersion, vc.latest) >= 0) {
-              // Already up-to-date — delete the stale cache so the next check rewrites it
+            let installedVersion;
+            try {
+              // Try resolving from the actual package root (handles symlinked/junctioned hooks)
+              const pkgPath = require.resolve('@vinaes/succ/package.json', { paths: [__dirname] });
+              installedVersion = require(pkgPath).version;
+            } catch (_resolveErr) {
+              log(`require.resolve @vinaes/succ/package.json failed: ${_resolveErr.message || _resolveErr}`);
               try {
-                fs.unlinkSync(vcPath);
-              } catch (unlinkErr) {
-                log(
-                  `Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`
+                // .package-root breadcrumb (matches daemon-boot.cjs pattern)
+                const pkgRootFile = path.join(succDir, '.package-root');
+                if (fs.existsSync(pkgRootFile)) {
+                  const pkgRoot = fs.readFileSync(pkgRootFile, 'utf8').trim();
+                  const candidate = path.join(pkgRoot, 'package.json');
+                  if (fs.existsSync(candidate)) {
+                    installedVersion = require(candidate).version;
+                  }
+                }
+                // Fallback: relative path (works when hooks are in their original location)
+                if (!installedVersion) {
+                  installedVersion = require('../package.json').version;
+                }
+              } catch (pkgErr) {
+                log(`Failed to resolve package.json: ${pkgErr.message || pkgErr}`);
+                installedVersion = null;
+              }
+            }
+            if (installedVersion) {
+              const compareSemver = (a, b) => {
+                const pa = a.split('.').map(Number);
+                const pb = b.split('.').map(Number);
+                for (let i = 0; i < 3; i++) {
+                  const diff = (pa[i] || 0) - (pb[i] || 0);
+                  if (diff !== 0) return diff > 0 ? 1 : -1;
+                }
+                return 0;
+              };
+              if (compareSemver(installedVersion, vc.latest) >= 0) {
+                // Already up-to-date — delete the stale cache so the next check rewrites it
+                try {
+                  fs.unlinkSync(vcPath);
+                } catch (unlinkErr) {
+                  log(
+                    `Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`
+                  );
+                }
+              } else {
+                contextParts.push(
+                  `<update-available>` +
+                    `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
+                    `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
+                    `</update-available>`
                 );
               }
             } else if (!undercover) {
