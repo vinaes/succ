@@ -20,9 +20,9 @@ try {
   });
   modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
   if (timeoutId) clearTimeout(timeoutId);
-} catch {
+} catch (err) {
   // Model resolution threw unexpectedly — log and skip tests
-  console.warn('ort-session.test: model resolution failed, skipping tests');
+  console.warn('ort-session.test: model resolution failed, skipping tests', err);
 }
 
 let sharedSession: NativeOrtSession | null = null;

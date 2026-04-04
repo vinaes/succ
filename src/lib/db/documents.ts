@@ -58,6 +58,13 @@ export interface DocumentBatchWithHash extends DocumentBatch {
   hash: string;
 }
 
+/**
+ * Insert or update a single document chunk.
+ *
+ * NOTE: This function does NOT supersede existing chunks for the same file_path.
+ * For full-file reindexing (where stale chunks must be cleared), use
+ * upsertDocumentsBatch() or upsertDocumentsBatchWithHashes() instead.
+ */
 export function upsertDocument(
   filePath: string,
   chunkIndex: number,
@@ -227,7 +234,7 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
       for (const filePath of uniquePaths) {
         // Get all docs for this file
         const docs = database
-          .prepare('SELECT id, embedding FROM documents WHERE file_path = ?')
+          .prepare('SELECT id, embedding FROM documents WHERE file_path = ? AND superseded_at IS NULL')
           .all(filePath) as Array<{ id: number; embedding: Buffer }>;
 
         for (const doc of docs) {

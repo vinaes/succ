@@ -106,10 +106,11 @@ export function detectContextLimit(transcriptPath: string, configOverride?: numb
     if (ctxStr === '200k') return 200_000;
   }
 
-  // 5. Model family from message.model field
-  const modelMatch = tail.match(/"model"\s*:\s*"([^"]+)"/);
-  if (modelMatch) {
-    const limit = getContextLimit(modelMatch[1]);
+  // 5. Model family from message.model field (use last match — most recent model)
+  const modelMatches = [...tail.matchAll(/"model"\s*:\s*"([^"]+)"/g)];
+  if (modelMatches.length > 0) {
+    const lastModel = modelMatches[modelMatches.length - 1][1];
+    const limit = getContextLimit(lastModel);
     if (limit !== null) return limit;
   }
 
