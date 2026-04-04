@@ -76,7 +76,7 @@ Do NOT add labels like "ai-generated", "copilot", "claude", or similar AI-reveal
 Write code the way a human developer would. Specifically:
 - Match the existing comment style in the codebase. Do NOT over-comment.
 - Do NOT add JSDoc/docstrings to every function — only where the project convention requires it.
-- Do NOT add "explanatory" comments that state the obvious.
+- Do NOT add "explanatory" comments that state the obvious (e.g. \`// increment counter\` above \`counter++\`).
 - Do NOT add comments like "Added by ...", "AI-generated", "Helper function to ..." on trivial code.
 - Keep inline comments terse and only where logic is non-obvious — as a human would.
 - Match the codebase's existing naming conventions, formatting, and idiom density.
