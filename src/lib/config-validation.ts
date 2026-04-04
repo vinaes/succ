@@ -132,6 +132,7 @@ const SuccConfigSchema = z
     error_reporting: ErrorReportingSchema,
     retrieval: RetrievalSchema,
     tool_profile: z.enum(['auto', 'core', 'standard', 'full']).optional(),
+    undercover: z.boolean().optional(),
   })
   .passthrough();
 

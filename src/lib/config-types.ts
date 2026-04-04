@@ -89,6 +89,8 @@ export interface SuccConfig {
   // Commit format settings
   includeCoAuthoredBy?: boolean; // Include commit guidelines in session-start hook (default: true)
   preCommitReview?: boolean; // Run succ-diff-reviewer agent before git commit (default: false)
+  // Undercover mode — hide all AI/succ attribution in commits, PRs, and code (default: false)
+  undercover?: boolean;
   communicationAutoAdapt?: boolean; // Allow Claude to auto-update communication preferences in soul.md (default: true)
   communicationTrackHistory?: boolean; // Log communication style changes to brain vault for Obsidian graph (default: false)
   // Command safety guard (PreToolUse hook) — blocks dangerous git/filesystem operations

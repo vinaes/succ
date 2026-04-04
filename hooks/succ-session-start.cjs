@@ -29,7 +29,8 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
 
   // Load merged config (global defaults, project overrides)
   const config = loadMergedConfig(projectDir);
-  let includeCoAuthoredBy = config.includeCoAuthoredBy !== false;
+  const undercover = config.undercover === true;
+  let includeCoAuthoredBy = !undercover && config.includeCoAuthoredBy !== false;
   let communicationAutoAdapt = config.communicationAutoAdapt !== false;
   let communicationTrackHistory = config.communicationTrackHistory === true;
   let hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
@@ -42,6 +43,276 @@ adapter.runHook('session-start', async ({ agent, hookInput, projectDir, succDir 
 
   const contextParts = [];
   const projectName = path.basename(projectDir);
+
+  // Undercover mode — prepend as first context part (highest priority)
+  // IMPORTANT: This block must stay in sync with UNDERCOVER_SESSION_BLOCK in src/lib/undercover.ts
+  // CJS fallback — the canonical source is the TypeScript module
+  if (undercover) {
+    contextParts.push(`<undercover priority="critical" source="succ" mode="public-repo">
+UNDERCOVER MODE — CRITICAL
+
+You are operating UNDERCOVER in a PUBLIC/OPEN-SOURCE repository.
+Your commit messages, PR titles, PR bodies, code, comments, and user-visible output
+MUST NOT reveal that you are an AI or expose any internal tooling. Do not blow your cover.
+
+## Git & PR Attribution
+NEVER include:
+- "Claude Code", "succ", "Anthropic", or any statement that you are an AI
+- Model codenames, model names, model versions, or hints about what model/version you are
+- Internal repo/project names, internal tooling, Slack channels, or short links
+- "Generated with ...", "powered by ...", "Co-Authored-By", or any attribution footer/trailer
+
+Write commit messages and PR text as a human developer would.
+Describe only what the code change does and why.
+
+## Branch Naming
+NEVER create branches with AI-related prefixes: claude/, copilot/, ai/, ai-generated/, bot/.
+Use conventional branch names: feature/, fix/, chore/, refactor/, docs/.
+
+## PR Labels
+Do NOT add labels like "ai-generated", "copilot", "claude", or similar AI-revealing labels.
+
+## Code Writing Style
+Write code the way a human developer would. Specifically:
+- Match the existing comment style in the codebase. Do NOT over-comment.
+- Do NOT add JSDoc/docstrings to every function — only where the project convention requires it.
+- Do NOT add "explanatory" comments that state the obvious (e.g. \`// increment counter\` above \`counter++\`).
+- Do NOT add comments like "Added by ...", "AI-generated", "Helper function to ..." on trivial code.
+- Keep inline comments terse and only where logic is non-obvious — as a human would.
+- Match the codebase's existing naming conventions, formatting, and idiom density.
+- If the project has sparse comments, write sparse comments. If verbose, match that.
+
+## Issue Comments
+Write issue and PR review comments as a developer, not an assistant.
+No "I'd be happy to help" or "Here's what I found" phrasing.
+
+GOOD commit messages:
+- "Fix race condition in file watcher initialization"
+- "Add support for custom key bindings"
+
+BAD commit messages:
+- "Generated with Claude Code"
+- "Co-Authored-By: Claude ..."
+</undercover>`);
+
+    // Self-healing: sync Claude settings.local.json if needed
+    try {
+      // Pre-normalize projectDir to resolve Windows 8.3 short names
+      let normalizedProjectDir = projectDir;
+      try {
+        normalizedProjectDir = fs.realpathSync.native(projectDir);
+      } catch (e) {
+        log(`[undercover] realpathSync.native failed for projectDir, falling back to path.resolve: ${e.message || e}`);
+        normalizedProjectDir = path.resolve(projectDir);
+      }
+      /** Check if path is a symlink or NTFS junction */
+      function isSymlinkOrJunction(p) {
+        try { return fs.lstatSync(p).isSymbolicLink(); }
+        catch (e) { log(`[undercover] lstatSync failed for ${p}: ${e.message || e}`); return false; }
+      }
+
+      /** Verify resolved path is a child of base directory */
+      function isChildOf(child, base) {
+        const resolvedChild = path.resolve(child);
+        const resolvedBase = path.resolve(base);
+        return resolvedChild.startsWith(resolvedBase + path.sep) || resolvedChild === resolvedBase;
+      }
+
+      /**
+       * Validate a write target is safe (not symlink, within projectDir).
+       * Returns true if safe to write, false if should skip.
+       */
+      function isSafeWriteTarget(targetPath, label) {
+        // Detect dangling symlinks (fs.existsSync returns false for broken symlinks)
+        try {
+          const st = fs.lstatSync(targetPath);
+          if (st.isSymbolicLink()) {
+            log(`[undercover] ${label} is a symlink/junction (possibly dangling) — skipping write`);
+            return false;
+          }
+        } catch (e) {
+          if (!e || e.code !== 'ENOENT') {
+            log(`[undercover] lstatSync failed for ${label}: ${e.message || e}`);
+            return false;
+          }
+          // ENOENT = truly doesn't exist, proceed to existing checks
+        }
+
+        if (fs.existsSync(targetPath)) {
+          if (isSymlinkOrJunction(targetPath)) {
+            log(`[undercover] ${label} is a symlink/junction — skipping write`);
+            return false;
+          }
+          try {
+            const resolved = fs.realpathSync.native(targetPath);
+            if (!isChildOf(resolved, normalizedProjectDir)) {
+              log(`[undercover] ${label} resolves outside project dir — skipping write`);
+              return false;
+            }
+          } catch (e) {
+            log(`[undercover] Failed to resolve real path for ${label}: ${e.message || e}`);
+            return false;
+          }
+        } else {
+          // For non-existent paths, check the parent
+          const parentDir = path.dirname(targetPath);
+          if (fs.existsSync(parentDir) && isSymlinkOrJunction(parentDir)) {
+            log(`[undercover] Parent of ${label} is a symlink/junction — skipping write`);
+            return false;
+          }
+          // Canonicalize parent for consistent 8.3 path comparison
+          let candidatePath = targetPath;
+          if (fs.existsSync(parentDir)) {
+            try {
+              candidatePath = path.join(
+                fs.realpathSync.native(parentDir),
+                path.basename(targetPath)
+              );
+            } catch (e) {
+              log(`[undercover] Failed to resolve parent of ${label}: ${e.message || e}`);
+              return false;
+            }
+          }
+          if (!isChildOf(candidatePath, normalizedProjectDir)) {
+            log(`[undercover] ${label} would be outside project dir — skipping write`);
+            return false;
+          }
+        }
+        return true;
+      }
+
+      const settingsLocalPath = path.join(projectDir, '.claude', 'settings.local.json');
+      const claudeDir = path.join(projectDir, '.claude');
+      const claudeGitignore = path.join(claudeDir, '.gitignore');
+
+      // Check if settings.local.json is already tracked by git (hoisted for use in both gitignore and settings blocks)
+      let isTracked = false;
+      try {
+        require('child_process').execFileSync('git', ['ls-files', '--error-unmatch', '.claude/settings.local.json'], {
+          cwd: projectDir,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        isTracked = true;
+      } catch (e) {
+        // Not tracked — this is the expected case
+        log(`[undercover] settings.local.json not tracked by git (expected): ${e.message || e}`);
+      }
+
+      // Ensure .claude/.gitignore guards settings.local.json from being tracked (unconditional)
+      try {
+        if (isTracked) {
+          log('[undercover] settings.local.json is already tracked by git — skipping .gitignore mutation');
+        } else {
+          if (!fs.existsSync(claudeDir)) {
+            log('[undercover] .claude/ does not exist — skipping .gitignore ensure to avoid creating repo-visible artifacts');
+          } else {
+            if (isSafeWriteTarget(claudeGitignore, 'claudeGitignore')) {
+              let gitignoreContent = '';
+              if (fs.existsSync(claudeGitignore)) {
+                gitignoreContent = fs.readFileSync(claudeGitignore, 'utf8');
+              }
+              if (!gitignoreContent.split('\n').some((l) => l.trim() === 'settings.local.json')) {
+                const entry =
+                  gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n')
+                    ? '\nsettings.local.json\n'
+                    : 'settings.local.json\n';
+                fs.appendFileSync(claudeGitignore, entry);
+              }
+            }
+          }
+        }
+      } catch (gitignoreErr) {
+        log(
+          `[undercover] Failed to ensure .claude/.gitignore guard: ${gitignoreErr.message || gitignoreErr}`
+        );
+      }
+
+      // Guard writes — skip if tracked by git (prevents dirty worktree) or path is unsafe
+      if (isTracked) {
+        log('[undercover] settings.local.json is tracked by git — skipping self-heal');
+      } else if (!isSafeWriteTarget(settingsLocalPath, 'settingsLocalPath')) {
+        log('[undercover] settingsLocalPath failed safety check — skipping sync');
+      } else {
+        let needsSync = false;
+        if (fs.existsSync(settingsLocalPath)) {
+          try {
+            const s = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+            if (typeof s !== 'object' || s === null || Array.isArray(s)) {
+              needsSync = true;
+            } else if (
+              s.includeCoAuthoredBy !== false ||
+              s.includeGitInstructions !== false ||
+              !s.attribution ||
+              s.attribution.commit !== '' ||
+              s.attribution.pr !== ''
+            ) {
+              needsSync = true;
+            }
+          } catch (e) {
+            needsSync = true;
+            log(`[undercover] Failed to parse settings.local.json: ${e.message || e}`);
+          }
+        } else {
+          needsSync = true;
+        }
+        if (needsSync) {
+          // Lightweight inline sync — write undercover values
+          if (!fs.existsSync(claudeDir)) {
+            log('[undercover] .claude/ does not exist — skipping self-heal to avoid creating repo-visible artifacts');
+            // Don't proceed with write — would create visible artifacts
+          } else {
+            let settings = {};
+            if (fs.existsSync(settingsLocalPath)) {
+              try {
+                const parsed = JSON.parse(fs.readFileSync(settingsLocalPath, 'utf8'));
+                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                  log(
+                    '[undercover] settings.local.json did not contain a plain object — using empty object'
+                  );
+                } else {
+                  settings = parsed;
+                }
+              } catch (_e) {
+                log(`[undercover] Failed to re-parse settings.local.json: ${_e.message || _e}`);
+              }
+            }
+            // Snapshot before first write (best-effort — don't block settings sync)
+            try {
+              const statePath = path.join(succDir, 'claude-undercover-state.json');
+              if (!fs.existsSync(statePath)) {
+                if (isSafeWriteTarget(statePath, 'statePath')) {
+                  const snapshot = {
+                    createdAt: new Date().toISOString(),
+                    managed: {
+                      includeGitInstructions: settings.includeGitInstructions,
+                      includeCoAuthoredBy: settings.includeCoAuthoredBy,
+                      attribution: settings.attribution,
+                    },
+                    keysExisted: {
+                      includeGitInstructions: 'includeGitInstructions' in settings,
+                      includeCoAuthoredBy: 'includeCoAuthoredBy' in settings,
+                      attribution: 'attribution' in settings,
+                    },
+                  };
+                  fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+                }
+              }
+            } catch (snapshotErr) {
+              log(`[undercover] Failed to snapshot Claude settings (best-effort): ${snapshotErr.message || snapshotErr}`);
+            }
+            settings.includeGitInstructions = false;
+            settings.includeCoAuthoredBy = false;
+            settings.attribution = { commit: '', pr: '' };
+            fs.writeFileSync(settingsLocalPath, JSON.stringify(settings, null, 2));
+            log('[undercover] Self-healed Claude settings.local.json');
+          }
+        }
+      }
+    } catch (e) {
+      log(`[undercover] Self-healing failed (fail-open): ${e.message || e}`);
+    }
+  }
 
   // Git Context removed - Claude Code provides native git integration
 
@@ -460,8 +731,10 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                       postChars += len;
                       postByType.text += len;
                     } else if (block && block.type === 'tool_use') {
-                      const len = (block.input ? JSON.stringify(block.input).length : 0) +
-                        (block.name || '').length + (block.id || '').length;
+                      const len =
+                        (block.input ? JSON.stringify(block.input).length : 0) +
+                        (block.name || '').length +
+                        (block.id || '').length;
                       postChars += len;
                       postByType.tool_use += len;
                     } else if (block && block.type === 'tool_result') {
@@ -487,13 +760,16 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
                 if (malformedLines <= 3) log(`Malformed transcript line: ${e.message || e}`);
               }
             }
-            if (malformedLines > 0) log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
+            if (malformedLines > 0)
+              log(`Skipped ${malformedLines} malformed transcript lines in post-compact analysis`);
             postTokens = Math.ceil(postChars / 4);
             for (const k of Object.keys(postByType)) {
               postByType[k] = Math.ceil(postByType[k] / 4);
             }
           } catch (e) {
-            log(`Skipping compact stats delta: failed to analyze post-compact transcript: ${e.message || e}`);
+            log(
+              `Skipping compact stats delta: failed to analyze post-compact transcript: ${e.message || e}`
+            );
           }
         }
 
@@ -508,14 +784,18 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
           const statsLines = [];
           statsLines.push(`Compact: ${fk(beforeTotal)} → ${fk(postTokens)} tokens (${pct}% freed)`);
           statsLines.push('');
-          statsLines.push(`  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`);
+          statsLines.push(
+            `  ${'Type'.padEnd(16)} ${'Before'.padStart(8)} ${'After'.padStart(8)} ${'Freed'.padStart(8)}`
+          );
           statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           for (const key of ['text', 'tool_use', 'tool_result', 'thinking', 'image']) {
             const val = bt[key] || 0;
             const aVal = postByType[key] || 0;
             const f = val - aVal;
             if (val === 0 && f === 0) continue;
-            statsLines.push(`  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`);
+            statsLines.push(
+              `  ${key.padEnd(16)} ${fk(val).padStart(8)} ${fk(aVal).padStart(8)} ${fk(f).padStart(8)}`
+            );
           }
           statsLines.push(`  ${'─'.repeat(16)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
           statsLines.push(
@@ -667,45 +947,50 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     process.env.NO_UPDATE_NOTIFIER === '1' ||
     config.update_check?.enabled === false;
 
-  if (!updateCheckSuppressed) try {
-    const vcPath = path.join(succDir, '.tmp', 'version-check.json');
-    if (fs.existsSync(vcPath)) {
-      const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
-      if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
-        const age = Date.now() - new Date(vc.checked_at).getTime();
-        if (age < 48 * 3600000) {
-          // Guard against stale cache: if the installed version is already >= latest, skip.
-          // This prevents false "update available" notifications after the user upgrades
-          // before the 48h cache expires.
-          const installedVersion = require('../package.json').version;
-          const compareSemver = (a, b) => {
-            const pa = a.split('.').map(Number);
-            const pb = b.split('.').map(Number);
-            for (let i = 0; i < 3; i++) {
-              const diff = (pa[i] || 0) - (pb[i] || 0);
-              if (diff !== 0) return diff > 0 ? 1 : -1;
+  if (!updateCheckSuppressed)
+    try {
+      const vcPath = path.join(succDir, '.tmp', 'version-check.json');
+      if (fs.existsSync(vcPath)) {
+        const vc = JSON.parse(fs.readFileSync(vcPath, 'utf8'));
+        if (vc.update_available && vc.latest && vc.current && typeof vc.checked_at === 'string') {
+          const age = Date.now() - new Date(vc.checked_at).getTime();
+          if (age < 48 * 3600000) {
+            // Guard against stale cache: if the installed version is already >= latest, skip.
+            // This prevents false "update available" notifications after the user upgrades
+            // before the 48h cache expires.
+            const installedVersion = require('../package.json').version;
+            const compareSemver = (a, b) => {
+              const pa = a.split('.').map(Number);
+              const pb = b.split('.').map(Number);
+              for (let i = 0; i < 3; i++) {
+                const diff = (pa[i] || 0) - (pb[i] || 0);
+                if (diff !== 0) return diff > 0 ? 1 : -1;
+              }
+              return 0;
+            };
+            if (compareSemver(installedVersion, vc.latest) >= 0) {
+              // Already up-to-date — delete the stale cache so the next check rewrites it
+              try {
+                fs.unlinkSync(vcPath);
+              } catch (unlinkErr) {
+                log(
+                  `Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`
+                );
+              }
+            } else if (!undercover) {
+              contextParts.push(
+                `<update-available>` +
+                  `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
+                  `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
+                  `</update-available>`
+              );
             }
-            return 0;
-          };
-          if (compareSemver(installedVersion, vc.latest) >= 0) {
-            // Already up-to-date — delete the stale cache so the next check rewrites it
-            try { fs.unlinkSync(vcPath); } catch (unlinkErr) {
-              log(`Failed to delete stale version-check cache: ${unlinkErr.message || unlinkErr}`);
-            }
-          } else {
-            contextParts.push(
-              `<update-available>` +
-                `succ ${vc.current} \u2192 ${vc.latest} is available. ` +
-                `Tell the user about this update as soon as possible and suggest running: npm update -g @vinaes/succ` +
-                `</update-available>`
-            );
           }
         }
       }
+    } catch (err) {
+      log(`Failed to read version-check cache: ${err.message || err}`);
     }
-  } catch (err) {
-    log(`Failed to read version-check cache: ${err.message || err}`);
-  }
 
   // Output context
   if (contextParts.length > 0) {
@@ -742,7 +1027,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
         signal: AbortSignal.timeout(3000),
       });
       if (!res.ok) {
-        log(`Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`);
+        log(
+          `Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`
+        );
       }
     } catch (err) {
       log(`Session register error for ${canonicalSessionId}: ${err.message || err}`);
