@@ -143,7 +143,7 @@ export function syncClaudeSettings(projectRoot: string, enable: boolean): void {
     if (enable) {
       enableUndercover(claudeDir, settingsPath, succDir, statePath);
     } else {
-      disableUndercover(settingsPath, statePath);
+      disableUndercover(projectRoot, settingsPath, statePath);
     }
   } catch (err: unknown) {
     logWarn('undercover', `syncClaudeSettings(enable=${enable}) failed: ${getErrorMessage(err)}`);
@@ -253,12 +253,22 @@ function enableUndercover(
   succDir: string,
   statePath: string
 ): void {
+  // Validate all paths upfront before any filesystem operations
   const projectRoot = path.dirname(claudeDir);
-
-  // Symlink/containment safety — prevent writes outside the project tree
-  if (isSymlinkOrJunction(claudeDir) || !isWithinDir(claudeDir, projectRoot)) {
-    logWarn('undercover', `Refusing to write: .claude dir fails safety check (${claudeDir})`);
-    return;
+  for (const [p, label] of [
+    [claudeDir, 'claudeDir'],
+    [succDir, 'succDir'],
+    [settingsPath, 'settingsPath'],
+    [statePath, 'statePath'],
+  ] as const) {
+    if (isSymlinkOrJunction(p)) {
+      logWarn('undercover', `${label} is a symlink/junction — aborting enable`);
+      return;
+    }
+    if (!isWithinDir(p, projectRoot)) {
+      logWarn('undercover', `${label} resolves outside project dir — aborting enable`);
+      return;
+    }
   }
 
   // Ensure directories exist
@@ -285,12 +295,6 @@ function enableUndercover(
     }
   }
 
-  // Safety check for statePath before writing
-  if (isSymlinkOrJunction(statePath) || !isWithinDir(statePath, projectRoot)) {
-    logWarn('undercover', `Refusing to write: state path fails safety check (${statePath})`);
-    return;
-  }
-
   // Create snapshot only if one doesn't already exist (avoid overwriting original values)
   if (!fs.existsSync(statePath)) {
     const snapshot: UndercoverSnapshot = {
@@ -309,12 +313,6 @@ function enableUndercover(
     fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
   }
 
-  // Safety check for settingsPath before writing
-  if (isSymlinkOrJunction(settingsPath) || !isWithinDir(settingsPath, projectRoot)) {
-    logWarn('undercover', `Refusing to write: settings path fails safety check (${settingsPath})`);
-    return;
-  }
-
   // Write undercover values — preserving all other keys
   settings.includeGitInstructions = UNDERCOVER_SETTINGS.includeGitInstructions;
   settings.includeCoAuthoredBy = UNDERCOVER_SETTINGS.includeCoAuthoredBy;
@@ -323,7 +321,22 @@ function enableUndercover(
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 }
 
-function disableUndercover(settingsPath: string, statePath: string): void {
+function disableUndercover(projectRoot: string, settingsPath: string, statePath: string): void {
+  // Validate paths before any filesystem operations
+  for (const [p, label] of [
+    [settingsPath, 'settingsPath'],
+    [statePath, 'statePath'],
+  ] as const) {
+    if (isSymlinkOrJunction(p)) {
+      logWarn('undercover', `${label} is a symlink/junction — aborting disable`);
+      return;
+    }
+    if (!isWithinDir(p, projectRoot)) {
+      logWarn('undercover', `${label} resolves outside project dir — aborting disable`);
+      return;
+    }
+  }
+
   // No snapshot means nothing to restore
   if (!fs.existsSync(statePath)) {
     logWarn('undercover', 'No undercover snapshot found — nothing to restore');
