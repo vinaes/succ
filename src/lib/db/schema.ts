@@ -479,6 +479,38 @@ export function initDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_recall_events_created ON recall_events(created_at);
   `);
 
+  // ========================================================================
+  // Area 9: Composite indexes for frequent query patterns
+  // ========================================================================
+
+  // Composite index for memory type + source_type filtering (common in recall queries)
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_type_source_type ON memories(type, source_type)`,
+    'idx_memories_type_source_type'
+  );
+
+  // Composite index for active memories ordered by creation (most common list query)
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_active_created ON memories(invalidated_by, created_at DESC)`,
+    'idx_memories_active_created'
+  );
+
+  // Composite index for temporal validity filtering
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_temporal ON memories(valid_from, valid_until)`,
+    'idx_memories_temporal'
+  );
+
+  // Composite index for document file_path + updated_at (deletion and staleness queries)
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_documents_filepath_updated ON documents(file_path, updated_at)`,
+    'idx_documents_filepath_updated'
+  );
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 
@@ -873,6 +905,28 @@ export function initGlobalDb(database: Database.Database): void {
     database,
     `CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)`,
     'idx_global_memories_priority'
+  );
+
+  // ========================================================================
+  // Area 9: Composite indexes for frequent query patterns (global DB)
+  // ========================================================================
+
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_type_source_type ON memories(type, source_type)`,
+    'idx_global_memories_type_source_type'
+  );
+
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_active_created ON memories(invalidated_by, created_at DESC)`,
+    'idx_global_memories_active_created'
+  );
+
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_global_memories_temporal ON memories(valid_from, valid_until)`,
+    'idx_global_memories_temporal'
   );
 
   // Migration: create sqlite-vec virtual table for global memories

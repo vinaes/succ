@@ -83,6 +83,10 @@ interface QdrantClientLike {
   getCollection(name: string): Promise<QdrantCollectionInfo>;
   deleteCollection(name: string): Promise<unknown>;
   createCollection(name: string, config: QdrantCollectionConfig): Promise<unknown>;
+  updateCollection(
+    name: string,
+    args?: { hnsw_config?: Record<string, unknown>; quantization_config?: Record<string, unknown> }
+  ): Promise<unknown>;
   createPayloadIndex(
     name: string,
     params: { field_name: string; field_schema: string | Record<string, unknown> }
@@ -112,6 +116,7 @@ interface QdrantErrorLike {
     };
   };
 }
+import { getErrorMessage } from '../../errors.js';
 
 let QdrantClient: QdrantClientConstructor | null = null;
 
@@ -379,6 +384,9 @@ export class QdrantVectorStore implements VectorStore {
         await this.createMultiVectorCollection(name, type);
       }
 
+      // Apply HNSW tuning and ensure payload indexes for existing collections
+      await this.applyCollectionTuning(name, type);
+
       this.initialized[key] = true;
     } catch (error: unknown) {
       const qdrantError = asQdrantError(error);
@@ -406,6 +414,42 @@ export class QdrantVectorStore implements VectorStore {
     }
   }
 
+  /**
+   * Apply HNSW tuning and ensure payload indexes exist for an already-created collection.
+   * Called on startup so that config changes reach existing collections, not just new ones.
+   */
+  private async applyCollectionTuning(
+    name: string,
+    type: 'documents' | 'memories' | 'global_memories'
+  ): Promise<void> {
+    // updateCollection and createPayloadIndexes are independent and idempotent —
+    // wrap each separately so failure of one doesn't block the other.
+    const client = await this.getClient();
+
+    try {
+      await client.updateCollection(name, {
+        hnsw_config: { m: 32, ef_construct: 200 },
+      });
+    } catch (error) {
+      logWarn(
+        'qdrant',
+        `Failed to update HNSW config for collection "${name}", will use current settings`,
+        { error: getErrorMessage(error) }
+      );
+    }
+
+    try {
+      // Ensure payload indexes exist (idempotent — Qdrant ignores duplicates)
+      await this.createPayloadIndexes(name, type);
+    } catch (error) {
+      logWarn(
+        'qdrant',
+        `Failed to create payload indexes for collection "${name}", will use existing indexes`,
+        { error: getErrorMessage(error) }
+      );
+    }
+  }
+
   private async createMultiVectorCollection(
     name: string,
     type: 'documents' | 'memories' | 'global_memories'
@@ -425,8 +469,8 @@ export class QdrantVectorStore implements VectorStore {
         },
       },
       hnsw_config: {
-        m: 16,
-        ef_construct: 100,
+        m: 32,
+        ef_construct: 200,
       },
     };
 
@@ -455,6 +499,8 @@ export class QdrantVectorStore implements VectorStore {
       await client.createPayloadIndex(name, { field_name: 'doc_type', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'symbol_type', field_schema: 'keyword' });
+      // Area 9: file_path index for deletion and path-based filtering
+      await client.createPayloadIndex(name, { field_name: 'file_path', field_schema: 'keyword' });
     } else {
       // memories + global_memories
       await client.createPayloadIndex(name, { field_name: 'project_id', field_schema: 'keyword' });
@@ -465,6 +511,9 @@ export class QdrantVectorStore implements VectorStore {
       await client.createPayloadIndex(name, { field_name: 'created_at', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'tags', field_schema: 'keyword' });
       await client.createPayloadIndex(name, { field_name: 'type', field_schema: 'keyword' });
+      // Area 9: Additional indexes for frequent filter patterns
+      await client.createPayloadIndex(name, { field_name: 'source_type', field_schema: 'keyword' });
+      await client.createPayloadIndex(name, { field_name: 'confidence', field_schema: 'float' });
     }
   }
 

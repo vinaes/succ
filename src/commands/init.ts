@@ -15,6 +15,7 @@ import {
 } from '../lib/config.js';
 import { runStaticWizard, runAiOnboarding } from '../lib/onboarding/index.js';
 import { logWarn } from '../lib/fault-logger.js';
+import { syncClaudeSettings } from '../lib/undercover.js';
 import {
   getSoulTemplate,
   getLearningsTemplate,
@@ -626,6 +627,19 @@ export async function init(options: InitOptions = {}): Promise<void> {
     }
 
     fs.writeFileSync(settingsPath, JSON.stringify(finalSettings, null, 2));
+  }
+
+  // Sync Claude settings for undercover mode (after settings.json write)
+  // Enable: writes suppression values to settings.local.json
+  // Disable: restores original values from snapshot
+  try {
+    const mergedConfig = getConfig();
+    syncClaudeSettings(projectRoot, mergedConfig.undercover === true);
+  } catch (err) {
+    logWarn(
+      'init',
+      `Undercover settings sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
   // Check if already initialized (after hooks/settings so re-runs always refresh them)
