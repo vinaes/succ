@@ -461,9 +461,12 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
               .run(...chunk);
           }
         } catch (err) {
-          logWarn('documents', 'Vector cleanup failed during superseded purge', {
-            error: getErrorMessage(err),
-          });
+          logWarn(
+            'documents',
+            'Vector cleanup failed during superseded purge — skipping doc deletes to avoid orphaned vec entries',
+            { error: getErrorMessage(err) }
+          );
+          return 0;
         }
       }
 

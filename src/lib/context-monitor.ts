@@ -36,7 +36,7 @@ export interface ResolvedAutoCompactConfig {
   enabled: boolean;
   threshold_percent: number;
   cooldown_seconds: number;
-  context_limit: number; // 0 = not set (sentinel), otherwise >= 100_000
+  context_limit: number; // 0 = not set (sentinel), otherwise user-specified token count
   preemptive_extract: boolean;
 }
 

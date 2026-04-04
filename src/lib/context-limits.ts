@@ -79,7 +79,7 @@ export function readTranscriptTail(transcriptPath: string, maxBytes: number): st
  */
 export function detectContextLimit(transcriptPath: string, configOverride?: number): number | null {
   // 1. Explicit config override — always wins
-  if (configOverride && configOverride >= 100_000) return configOverride;
+  if (configOverride && configOverride > 0) return configOverride;
 
   // 2. ANTHROPIC_MODEL env var
   const envModel = process.env.ANTHROPIC_MODEL || '';
