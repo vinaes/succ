@@ -10,7 +10,7 @@
  * - ON CONFLICT instead of INSERT OR REPLACE
  */
 
-import type { Pool, PoolConfig } from 'pg';
+import type { Pool, PoolConfig, QueryResultRow } from 'pg';
 import type {
   DocumentBatch,
   DocumentBatchWithHash,
@@ -77,6 +77,9 @@ function fromPgVector(str: string): number[] {
   return inner.split(',').map((s) => parseFloat(s.trim()));
 }
 
+/** Cooldown period (ms) between EXPLAIN logging for slow queries. Prevents amplifying DB incidents. */
+const SLOW_QUERY_LOG_COOLDOWN_MS = 30_000;
+
 export interface PostgresBackendConfig {
   connectionString?: string;
   host?: string;
@@ -86,6 +89,10 @@ export interface PostgresBackendConfig {
   password?: string;
   ssl?: boolean | { rejectUnauthorized?: boolean; ca?: string };
   poolSize?: number;
+  /** Idle connection timeout in ms (default: 30000) */
+  idleTimeoutMillis?: number;
+  /** Log EXPLAIN for queries exceeding this threshold in ms (default: 100). Set 0 to disable. */
+  slowQueryThresholdMs?: number;
 }
 
 export class PostgresBackend {
@@ -93,10 +100,18 @@ export class PostgresBackend {
   private config: PostgresBackendConfig;
   private initialized = false;
   private projectId: string | null = null;
+  /** Threshold in ms for EXPLAIN logging. 0 = disabled. */
+  private slowQueryThresholdMs: number;
+  /** Timestamp of the last EXPLAIN log, used for cooldown to avoid amplifying DB saturation. */
+  private lastSlowQueryLogMs = 0;
+  /** Cache for prepared statement names (query text -> prepared name) */
+  private preparedStatements: Map<string, string> = new Map();
+  private preparedCounter = 0;
 
   constructor(config: PostgresBackendConfig, projectId?: string) {
     this.config = config;
     this.projectId = projectId?.toLowerCase() ?? null;
+    this.slowQueryThresholdMs = config.slowQueryThresholdMs ?? 100;
   }
 
   /**
@@ -122,6 +137,7 @@ export class PostgresBackend {
 
     const poolConfig: PoolConfig = {
       max: this.config.poolSize ?? 10,
+      idleTimeoutMillis: this.config.idleTimeoutMillis ?? 30_000,
       connectionTimeoutMillis: 10_000,
     };
 
@@ -179,6 +195,121 @@ export class PostgresBackend {
       });
       return 384;
     }
+  }
+
+  // ==========================================================================
+  // Prepared Statement Cache
+  // ==========================================================================
+
+  /**
+   * Get or register a prepared statement name for a query.
+   * pg.Pool automatically prepares statements per-connection when given a `name`.
+   */
+  private getPreparedName(queryKey: string): string {
+    let name = this.preparedStatements.get(queryKey);
+    if (!name) {
+      name = `succ_ps_${++this.preparedCounter}`;
+      this.preparedStatements.set(queryKey, name);
+    }
+    return name;
+  }
+
+  /**
+   * Execute a query using a named prepared statement for frequent queries.
+   * Falls back to regular query on error and logs the failure.
+   *
+   * pg.Pool caches prepared statements per-connection when a `name` is provided.
+   * This avoids repeated query parsing for frequently executed statements.
+   */
+  async queryPrepared<T extends QueryResultRow = QueryResultRow>(
+    queryKey: string,
+    text: string,
+    values?: unknown[]
+  ): Promise<import('pg').QueryResult<T>> {
+    const pool = await this.getPool();
+    try {
+      return await pool.query<T>({
+        name: this.getPreparedName(queryKey),
+        text,
+        values,
+      });
+    } catch (error) {
+      // Only retry SELECT queries — retrying writes (INSERT/UPDATE/DELETE) risks duplicates
+      const isSelect = /^\s*SELECT\b/i.test(text);
+      if (!isSelect) {
+        logWarn(
+          'postgresql',
+          `Prepared statement "${queryKey}" failed for write query, not retrying`,
+          {
+            error: getErrorMessage(error),
+          }
+        );
+        throw error;
+      }
+      // If prepared SELECT fails (e.g., schema change), fall back to unprepared
+      logWarn('postgresql', `Prepared statement "${queryKey}" failed, falling back to unprepared`, {
+        error: getErrorMessage(error),
+      });
+      return await pool.query<T>(text, values);
+    }
+  }
+
+  // ==========================================================================
+  // Slow Query Analysis
+  // ==========================================================================
+
+  /**
+   * Log EXPLAIN for a query that exceeded the slow query threshold.
+   * Only runs when slowQueryThresholdMs > 0. Non-blocking — errors are logged and swallowed.
+   */
+  private async logSlowQuery(
+    pool: Pool,
+    queryText: string,
+    params: unknown[],
+    durationMs: number
+  ): Promise<void> {
+    if (this.slowQueryThresholdMs <= 0) return;
+    if (durationMs < this.slowQueryThresholdMs) return;
+
+    // Cooldown: skip EXPLAIN when the DB is likely already saturated.
+    // This prevents doubling round-trips during DB incidents.
+    const now = Date.now();
+    if (now - this.lastSlowQueryLogMs < SLOW_QUERY_LOG_COOLDOWN_MS) {
+      return;
+    }
+    this.lastSlowQueryLogMs = now;
+
+    try {
+      const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
+      const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
+      logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
+    } catch (error) {
+      logWarn('postgresql', `Failed to run EXPLAIN for slow query (${durationMs}ms)`, {
+        error: getErrorMessage(error),
+      });
+    }
+  }
+
+  /**
+   * Execute a query with timing. If it exceeds the slow query threshold,
+   * run EXPLAIN and log the plan.
+   */
+  async queryWithTiming<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: unknown[]
+  ): Promise<import('pg').QueryResult<T>> {
+    const pool = await this.getPool();
+    const start = Date.now();
+    const result = await pool.query<T>(text, values);
+    const durationMs = Date.now() - start;
+
+    // Fire-and-forget EXPLAIN for slow queries — pass pool directly to avoid
+    // reacquiring it after close() has been called (pool would be null).
+    if (durationMs >= this.slowQueryThresholdMs && this.slowQueryThresholdMs > 0) {
+      void this.logSlowQuery(pool, text, values ?? [], durationMs);
+    }
+
+    return result;
   }
 
   /**
@@ -736,6 +867,99 @@ export class PostgresBackend {
         });
       }
     }
+
+    // ========================================================================
+    // Area 9: Composite indexes for frequent query patterns
+    // ========================================================================
+
+    // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
+    // Use CONCURRENTLY to avoid blocking writes on populated tables during startup.
+    // Each index creation is wrapped in try/catch because CONCURRENTLY can fail
+    // without blocking (e.g. duplicate index from a prior interrupted build).
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
+      );
+    }
+
+    // Composite index for active memories per project (most common query pattern)
+    try {
+      await pool.query(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
+        ON memories(LOWER(project_id), created_at DESC)
+        WHERE invalidated_by IS NULL
+      `);
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
+      );
+    }
+
+    // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
+    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+      );
+    }
+
+    // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
+    // Self-gating: the WHERE clause `tags::text != lower(tags::text)` ensures zero rows
+    // are updated once all tags are already lowercase, making this a fast no-op on
+    // subsequent initSchema() calls (planner short-circuits when no rows match).
+    // We also do a cheap EXISTS check first to skip the UPDATE entirely in the common case.
+    // EXISTS stops at the first matching row, unlike COUNT(*) which scans all matches.
+    const mixedCaseCheck = await pool.query<{ has_mixed: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM memories
+         WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+         AND tags::text != lower(tags::text)
+       ) AS has_mixed`
+    );
+    if (mixedCaseCheck.rows[0]?.has_mixed) {
+      await pool.query(`
+        UPDATE memories SET tags = (
+          SELECT jsonb_agg(lower(elem))
+          FROM jsonb_array_elements_text(tags) AS elem
+        ) WHERE tags IS NOT NULL AND tags != '[]'::jsonb
+        AND tags::text != lower(tags::text)
+      `);
+    }
+
+    // Composite index for documents — use LOWER(project_id) to match query predicates
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
+      );
+    }
+
+    // Composite index for documents (project + symbol_type for code search)
+    try {
+      await pool.query(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
+      );
+    } catch (error) {
+      logWarn(
+        'postgresql',
+        `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
+      );
+    }
   }
 
   /**
@@ -746,6 +970,8 @@ export class PostgresBackend {
       await this.pool.end();
       this.pool = null;
       this.initialized = false;
+      this.preparedStatements.clear();
+      this.preparedCounter = 0;
     }
   }
 
@@ -999,7 +1225,6 @@ export class PostgresBackend {
     if (!this.projectId) {
       throw new StorageError('Project ID must be set before searching documents');
     }
-    const pool = await this.getPool();
 
     // pgvector cosine distance: <=> returns distance (0 = identical, 2 = opposite)
     // similarity = 1 - distance/2 for normalized vectors
@@ -1013,7 +1238,14 @@ export class PostgresBackend {
       whereExtra += ` AND symbol_type = $${params.length}`;
     }
 
-    const result = await pool.query<{
+    const queryText = `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
+              1 - (embedding <=> $1) as similarity
+       FROM documents
+       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
+       ORDER BY embedding <=> $1
+       LIMIT $4`;
+
+    const result = await this.queryWithTiming<{
       file_path: string;
       content: string;
       start_line: number;
@@ -1022,15 +1254,7 @@ export class PostgresBackend {
       symbol_name: string | null;
       symbol_type: string | null;
       signature: string | null;
-    }>(
-      `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
-              1 - (embedding <=> $1) as similarity
-       FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
-       ORDER BY embedding <=> $1
-       LIMIT $4`,
-      params
-    );
+    }>(queryText, params);
 
     return result.rows;
   }
@@ -1831,14 +2055,15 @@ export class PostgresBackend {
     const pool = await this.getPool();
     const projectId = isGlobal ? null : this.projectId;
 
-    const result = await pool.query<{ id: number }>(
+    const result = await this.queryPrepared<{ id: number }>(
+      'saveMemory',
       `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         projectId,
         content,
-        tags.length > 0 ? JSON.stringify(tags) : null,
+        tags.length > 0 ? JSON.stringify(tags.map((t) => t.toLowerCase())) : null,
         source ?? null,
         type,
         qualityScore ?? null,
@@ -1872,7 +2097,6 @@ export class PostgresBackend {
     since?: Date,
     options?: { includeExpired?: boolean; asOfDate?: Date; includeGlobal?: boolean }
   ): Promise<Array<Memory & { similarity: number }>> {
-    const pool = await this.getPool();
     const now = options?.asOfDate ?? new Date();
     const includeExpired = options?.includeExpired ?? false;
     const includeGlobal = options?.includeGlobal ?? true;
@@ -1921,7 +2145,7 @@ export class PostgresBackend {
     query += ` ORDER BY embedding <=> $1 LIMIT $${paramIndex}`;
     params.push(limit);
 
-    const result = await pool.query(query, params);
+    const result = await this.queryWithTiming(query, params);
 
     let memories = result.rows.map((row) => ({
       id: row.id,
@@ -1959,8 +2183,8 @@ export class PostgresBackend {
   }
 
   async getMemoryById(id: number): Promise<Memory | null> {
-    const pool = await this.getPool();
-    const result = await pool.query(
+    const result = await this.queryPrepared(
+      'getMemoryById',
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
               correction_count, is_invariant, priority_score, confidence, source_type, created_at
@@ -2022,16 +2246,13 @@ export class PostgresBackend {
               correction_count, is_invariant, priority_score, confidence, source_type, created_at
        FROM memories
        WHERE tags IS NOT NULL
-         AND EXISTS (
-           SELECT 1 FROM jsonb_array_elements_text(tags) elem
-           WHERE LOWER(elem) = LOWER($1)
-         )
+         AND tags @> $1::jsonb
          AND invalidated_by IS NULL
          AND (LOWER(project_id) = $3 OR project_id IS NULL)
        ORDER BY priority_score DESC NULLS LAST, created_at DESC, id DESC
        LIMIT $2
        OFFSET $4`,
-      [tag, limit, this.projectId, offset]
+      [JSON.stringify([tag.toLowerCase()]), limit, this.projectId, offset]
     );
 
     return result.rows.map((row) => ({
@@ -3005,7 +3226,7 @@ export class PostgresBackend {
   async updateMemoryTags(memoryId: number, tags: string[]): Promise<void> {
     const pool = await this.getPool();
     await pool.query('UPDATE memories SET tags = $1 WHERE id = $2 AND LOWER(project_id) = $3', [
-      JSON.stringify(tags),
+      JSON.stringify(tags.map((t) => t.toLowerCase())),
       memoryId,
       this.projectId,
     ]);
@@ -3660,7 +3881,7 @@ export class PostgresBackend {
           [
             this.projectId,
             memory.content,
-            memory.tags.length > 0 ? JSON.stringify(memory.tags) : null,
+            memory.tags.length > 0 ? JSON.stringify(memory.tags.map((t) => t.toLowerCase())) : null,
             memory.source ?? null,
             memory.type,
             memory.qualityScore?.score ?? null,
@@ -3829,16 +4050,14 @@ export class PostgresBackend {
 
   async deleteMemoriesByTag(tag: string): Promise<number> {
     const pool = await this.getPool();
-    // JSONB array containment: tags is a JSONB array, check if any element matches (case-insensitive)
+    // JSONB containment with @> operator — uses GIN(tags jsonb_path_ops) index.
+    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
     const result = await pool.query(
       `DELETE FROM memories
        WHERE tags IS NOT NULL
-         AND EXISTS (
-           SELECT 1 FROM jsonb_array_elements_text(tags) elem
-           WHERE LOWER(elem) = LOWER($1)
-         )
+         AND tags @> $1::jsonb
          AND (LOWER(project_id) = LOWER($2) OR project_id IS NULL)`,
-      [tag, this.projectId]
+      [JSON.stringify([tag.toLowerCase()]), this.projectId]
     );
     return result.rowCount ?? 0;
   }
@@ -4532,5 +4751,7 @@ export function createPostgresBackend(config: StorageConfig): PostgresBackend {
     password: pgConfig.password,
     ssl: pgConfig.ssl,
     poolSize: pgConfig.pool_size,
+    idleTimeoutMillis: pgConfig.idle_timeout,
+    slowQueryThresholdMs: pgConfig.slow_query_threshold_ms,
   });
 }

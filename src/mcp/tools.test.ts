@@ -132,6 +132,7 @@ vi.mock('../lib/storage/index.js', () => ({
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
   incrementMemoryAccessBatch: vi.fn(async () => {}),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../lib/embeddings.js', () => ({

@@ -5,6 +5,7 @@ vi.mock('../../lib/storage/index.js', () => ({
   hybridSearchDocs: vi.fn(async () => []),
   getRecentDocuments: vi.fn(async () => []),
   closeDb: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../../lib/config.js', () => ({

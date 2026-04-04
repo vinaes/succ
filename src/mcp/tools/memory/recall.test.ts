@@ -24,6 +24,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
   ]),
   closeDb: vi.fn(),
   closeGlobalDb: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../../../lib/config.js', () => ({

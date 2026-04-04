@@ -10,6 +10,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
   deleteMemoriesOlderThan: vi.fn(async () => 3),
   deleteMemoriesByTag: vi.fn(async () => 2),
   closeDb: vi.fn(),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../../helpers.js', () => ({

@@ -25,6 +25,7 @@ vi.mock('../storage/index.js', () => ({
     }
     return map;
   },
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 import {

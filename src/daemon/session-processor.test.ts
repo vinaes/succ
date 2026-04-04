@@ -29,6 +29,7 @@ vi.mock('../lib/storage/index.js', () => ({
     })),
   })),
   searchMemories: vi.fn(async () => []),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../lib/embeddings.js', () => ({

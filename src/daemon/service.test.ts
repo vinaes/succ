@@ -32,6 +32,7 @@ vi.mock('../lib/storage/index.js', () => ({
   getRecentMemories: vi.fn(async () => [
     { id: 1, content: 'recent memory', tags: ['test'], created_at: new Date().toISOString() },
   ]),
+  getStorageDispatcher: vi.fn(async () => ({ flushSessionCounters: vi.fn() })),
 }));
 
 vi.mock('../lib/embeddings.js', () => ({
