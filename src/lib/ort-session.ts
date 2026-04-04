@@ -275,11 +275,16 @@ export async function resolveModelPath(modelName: string, signal?: AbortSignal):
   // 3. Not cached — trigger download via AutoModel (downloads config.json + onnx/model.onnx)
   // Note: AutoTokenizer only downloads tokenizer files, NOT the ONNX model.
   // AutoModel.from_pretrained() downloads the full model including onnx/model.onnx.
+
+  // Fast-path: abort before expensive module load
+  if (signal?.aborted) {
+    const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+    (err as any).aborted = true;
+    throw err;
+  }
+
   const transformers = await import('@huggingface/transformers');
   const AutoModel = (transformers as any).AutoModel;
-  if (signal?.aborted) {
-    throw new DependencyError(`Model resolution aborted for '${modelName}'`);
-  }
 
   let tempModel;
   try {
@@ -290,12 +295,17 @@ export async function resolveModelPath(modelName: string, signal?: AbortSignal):
 
     if (signal) {
       const abortPromise = new Promise<never>((_, reject) => {
+        const makeAbortError = () => {
+          const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+          (err as any).aborted = true;
+          return err;
+        };
         if (signal.aborted) {
-          reject(new DependencyError(`Model resolution aborted for '${modelName}'`));
+          reject(makeAbortError());
         } else {
           signal.addEventListener(
             'abort',
-            () => reject(new DependencyError(`Model resolution aborted for '${modelName}'`)),
+            () => reject(makeAbortError()),
             { once: true }
           );
         }
