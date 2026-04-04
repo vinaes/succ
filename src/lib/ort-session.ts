@@ -263,7 +263,7 @@ export class NativeOrtSession {
 /**
  * Resolve ONNX model file path from various cache locations.
  */
-export async function resolveModelPath(modelName: string): Promise<string> {
+export async function resolveModelPath(modelName: string, signal?: AbortSignal): Promise<string> {
   // 1. Check transformers.js cache (node_modules/@huggingface/transformers/.cache/)
   const tfCachePath = findTransformersJsCache(modelName);
   if (tfCachePath) return tfCachePath;
@@ -277,12 +277,33 @@ export async function resolveModelPath(modelName: string): Promise<string> {
   // AutoModel.from_pretrained() downloads the full model including onnx/model.onnx.
   const transformers = await import('@huggingface/transformers');
   const AutoModel = (transformers as any).AutoModel;
+  if (signal?.aborted) {
+    throw new DependencyError(`Model resolution aborted for '${modelName}'`);
+  }
+
   let tempModel;
   try {
-    tempModel = await AutoModel.from_pretrained(modelName, {
+    const downloadPromise = AutoModel.from_pretrained(modelName, {
       device: 'cpu',
       dtype: 'fp32',
     });
+
+    if (signal) {
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (signal.aborted) {
+          reject(new DependencyError(`Model resolution aborted for '${modelName}'`));
+        } else {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DependencyError(`Model resolution aborted for '${modelName}'`)),
+            { once: true }
+          );
+        }
+      });
+      tempModel = await Promise.race([downloadPromise, abortPromise]);
+    } else {
+      tempModel = await downloadPromise;
+    }
   } finally {
     try {
       if (tempModel?.dispose) {
