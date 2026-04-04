@@ -145,6 +145,11 @@ BAD commit messages:
             log(`[undercover] Parent of ${label} is a symlink/junction — skipping write`);
             return false;
           }
+          // Also verify the target path would be within projectDir
+          if (!isChildOf(targetPath, normalizedProjectDir)) {
+            log(`[undercover] ${label} would be outside project dir — skipping write`);
+            return false;
+          }
         }
         return true;
       }
