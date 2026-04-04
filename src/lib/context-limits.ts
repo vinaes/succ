@@ -53,12 +53,13 @@ export function readTranscriptTail(transcriptPath: string, maxBytes: number): st
     }
     const fd = fs.openSync(transcriptPath, 'r');
     const buf = Buffer.alloc(maxBytes);
+    let bytesRead: number;
     try {
-      fs.readSync(fd, buf, 0, maxBytes, stats.size - maxBytes);
+      bytesRead = fs.readSync(fd, buf, 0, maxBytes, stats.size - maxBytes);
     } finally {
       fs.closeSync(fd);
     }
-    const content = buf.toString('utf8');
+    const content = buf.slice(0, bytesRead).toString('utf8');
     const firstNewline = content.indexOf('\n');
     return firstNewline >= 0 ? content.slice(firstNewline + 1) : content;
   } catch (err) {
@@ -99,7 +100,8 @@ export function detectContextLimit(transcriptPath: string, configOverride?: numb
   }
 
   // 4. Claude self-report: "succ-model-info: {family}, context: {size}"
-  const selfReport = tail.match(/succ-model-info:\s*([^,\n]+),\s*context:\s*(\w+)/i);
+  const selfReportMatches = [...tail.matchAll(/succ-model-info:\s*([^,\n]+),\s*context:\s*(\w+)/gi)];
+  const selfReport = selfReportMatches.length > 0 ? selfReportMatches[selfReportMatches.length - 1] : null;
   if (selfReport) {
     const ctxStr = selfReport[2].toLowerCase();
     if (ctxStr === '1m') return 1_000_000;
