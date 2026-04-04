@@ -202,6 +202,42 @@ export function ensureGitignore(projectRoot: string): void {
   }
 }
 
+// ─── Path Safety ───────────────────────────────────────────────────
+
+/** Check if a path is a symlink or junction (including dangling). */
+function isSymlinkOrJunction(p: string): boolean {
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logWarn('undercover', `lstatSync failed for ${p}: ${getErrorMessage(e)}`);
+    }
+    return false;
+  }
+}
+
+/** Check if resolved path is contained within a base directory. */
+function isWithinDir(targetPath: string, baseDir: string): boolean {
+  try {
+    // Dangling symlinks are caught by lstat before we get here
+    try {
+      if (fs.lstatSync(targetPath).isSymbolicLink()) return false;
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+    }
+
+    if (fs.existsSync(targetPath)) {
+      const resolved = fs.realpathSync.native(targetPath);
+      const resolvedBase = fs.realpathSync.native(baseDir);
+      return resolved.startsWith(resolvedBase + path.sep) || resolved === resolvedBase;
+    }
+    return true; // non-existent paths are OK (will be created)
+  } catch (e: unknown) {
+    logWarn('undercover', `Path safety check failed for ${targetPath}: ${getErrorMessage(e)}`);
+    return false;
+  }
+}
+
 // ─── Internal Helpers ───────────────────────────────────────────────
 
 /** Validate parsed JSON is a plain object (not null, array, or primitive). */
@@ -217,6 +253,14 @@ function enableUndercover(
   succDir: string,
   statePath: string
 ): void {
+  const projectRoot = path.dirname(claudeDir);
+
+  // Symlink/containment safety — prevent writes outside the project tree
+  if (isSymlinkOrJunction(claudeDir) || !isWithinDir(claudeDir, projectRoot)) {
+    logWarn('undercover', `Refusing to write: .claude dir fails safety check (${claudeDir})`);
+    return;
+  }
+
   // Ensure directories exist
   if (!fs.existsSync(claudeDir)) {
     fs.mkdirSync(claudeDir, { recursive: true });
@@ -241,6 +285,12 @@ function enableUndercover(
     }
   }
 
+  // Safety check for statePath before writing
+  if (isSymlinkOrJunction(statePath) || !isWithinDir(statePath, projectRoot)) {
+    logWarn('undercover', `Refusing to write: state path fails safety check (${statePath})`);
+    return;
+  }
+
   // Create snapshot only if one doesn't already exist (avoid overwriting original values)
   if (!fs.existsSync(statePath)) {
     const snapshot: UndercoverSnapshot = {
@@ -257,6 +307,12 @@ function enableUndercover(
       },
     };
     fs.writeFileSync(statePath, JSON.stringify(snapshot, null, 2));
+  }
+
+  // Safety check for settingsPath before writing
+  if (isSymlinkOrJunction(settingsPath) || !isWithinDir(settingsPath, projectRoot)) {
+    logWarn('undercover', `Refusing to write: settings path fails safety check (${settingsPath})`);
+    return;
   }
 
   // Write undercover values — preserving all other keys
