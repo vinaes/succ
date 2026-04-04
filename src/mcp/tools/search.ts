@@ -24,7 +24,8 @@ import {
   extractAnswerFromResults,
 } from '../helpers.js';
 import { logWarn } from '../../lib/fault-logger.js';
-import { getErrorMessage } from '../../lib/errors.js';
+import { getErrorMessage, isSuccError } from '../../lib/errors.js';
+import { searchPatternInContent, formatPatternResults } from '../../lib/search/ast-grep-search.js';
 
 /**
  * Filter search results by include/exclude path glob patterns.
@@ -125,20 +126,20 @@ export function registerSearchTools(server: McpServer) {
       extract,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
-      // Check if project is initialized
-      if (isGlobalOnlyMode()) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable project-local search.\n\nTip: Use succ_recall for global memories that work across all projects.`,
-            },
-          ],
-        };
-      }
-
       try {
+        await applyProjectPath(project_path);
+        // Check if project is initialized
+        if (isGlobalOnlyMode()) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable project-local search.\n\nTip: Use succ_recall for global memories that work across all projects.`,
+              },
+            ],
+          };
+        }
+
         // Special case: "*" means "show recent documents" (no semantic search)
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
@@ -281,7 +282,7 @@ export function registerSearchTools(server: McpServer) {
     'succ_search_code',
     {
       description:
-        'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter and symbol_type filter. Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
+        'Search indexed source code using hybrid search (BM25 + semantic). Find functions, classes, and code patterns. Supports regex pre-filter, symbol_type filter, and structural pattern matching via ast-grep (20 languages). Output modes: full (default), lean (file+lines only), signatures (symbol names+signatures).\n\nExamples:\n- Find functions: succ_search_code(query="handleAuth", symbol_type="function")\n- Regex filter: succ_search_code(query="error handling", regex="catch\\\\s*\\\\(")\n- Structural pattern: succ_search_code(query="error handling", pattern="try { $$$BODY } catch ($ERR) { $$$HANDLER }")\n- Find all console.log calls: succ_search_code(query="logging", pattern="console.log($$$ARGS)")\n- Quick overview: succ_search_code(query="storage", output="signatures", limit=10)',
       inputSchema: {
         query: z
           .string()
@@ -319,6 +320,12 @@ export function registerSearchTools(server: McpServer) {
           .describe(
             'Output mode: full (code blocks), lean (file+lines, saves tokens), signatures (symbol info only)'
           ),
+        pattern: z
+          .string()
+          .optional()
+          .describe(
+            'Structural pattern for ast-grep matching (20 languages). Uses metavariables: $VAR (single node), $$VAR (optional), $$$VAR (multiple). Example: "try { $$$BODY } catch ($ERR) { $$$HANDLER }"'
+          ),
         extract: z
           .string()
           .optional()
@@ -343,31 +350,32 @@ export function registerSearchTools(server: McpServer) {
       include_paths,
       exclude_paths,
       output,
+      pattern,
       extract,
       project_path,
     }) => {
-      await applyProjectPath(project_path);
-      // Check if project is initialized
-      if (isGlobalOnlyMode()) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable code search.`,
-            },
-          ],
-        };
-      }
-
       try {
+        await applyProjectPath(project_path);
+        // Check if project is initialized
+        if (isGlobalOnlyMode()) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Project not initialized (no .succ/ directory). Run \`succ init\` to enable code search.`,
+              },
+            ],
+          };
+        }
+
         const queryEmbedding = await getEmbedding(query);
         // Build filters from optional params
         const filters = regex || symbol_type ? { regex, symbolType: symbol_type } : undefined;
-        // Overfetch if path filters are applied
+        // Overfetch if path filters or pattern matching are applied
         const hasPathFilters =
           (include_paths && include_paths.length > 0) ||
           (exclude_paths && exclude_paths.length > 0);
-        const fetchLimit = hasPathFilters ? Math.min(limit * 5, 100) : limit;
+        const fetchLimit = hasPathFilters || pattern ? Math.min(limit * 5, 100) : limit;
         // Hybrid search: BM25 + vector with RRF fusion
         let codeResults = await hybridSearchCode(
           query,
@@ -381,6 +389,93 @@ export function registerSearchTools(server: McpServer) {
         // Apply path filters
         if (hasPathFilters) {
           codeResults = filterByPaths(codeResults, include_paths, exclude_paths).slice(0, limit);
+        }
+
+        // Structural pattern matching via ast-grep
+        if (pattern && codeResults.length > 0) {
+          const patternMatches = [];
+          let patternError: string | null = null;
+          let failedFilesCount = 0;
+          for (const result of codeResults) {
+            const filePath = result.file_path.replace(/^code:/, '');
+            try {
+              const matches = await searchPatternInContent(result.content, filePath, pattern);
+              for (const m of matches) {
+                // Adjust line numbers from chunk-relative to file-absolute
+                patternMatches.push({
+                  ...m,
+                  start_line: m.start_line + result.start_line - 1,
+                  end_line: m.end_line + result.start_line - 1,
+                });
+                if (patternMatches.length >= limit) break;
+              }
+            } catch (err) {
+              failedFilesCount++;
+              if (isSuccError(err)) {
+                patternError = err.message;
+              } else {
+                patternError = getErrorMessage(err);
+              }
+              logWarn('search', `Pattern search failed for ${filePath}: ${patternError}`);
+            }
+            if (patternMatches.length >= limit) break;
+          }
+
+          // If all files failed with no matches, report the error
+          if (patternMatches.length === 0 && patternError) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Structural pattern search failed: ${patternError}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          if (patternMatches.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `No structural matches for pattern "${pattern}" in ${codeResults.length} candidate results for "${query}".`,
+                },
+              ],
+            };
+          }
+
+          const patternFormatted = formatPatternResults(patternMatches, output);
+          const failedNote =
+            failedFilesCount > 0 ? ` (${failedFilesCount} file(s) failed to parse)` : '';
+
+          // Support extract parameter for pattern results
+          if (extract) {
+            const answer = await extractAnswerFromResults(
+              patternFormatted,
+              extract,
+              'succ_search_code'
+            );
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}", extracted)${failedNote}:\n\n${answer}`,
+                },
+              ],
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Found ${patternMatches.length} structural matches for pattern "${pattern}" (from ${codeResults.length} candidates for "${query}")${failedNote}:
+
+${patternFormatted}`,
+              },
+            ],
+          };
         }
 
         if (codeResults.length === 0) {
