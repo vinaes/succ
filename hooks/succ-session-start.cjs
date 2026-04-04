@@ -995,7 +995,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
   // Model self-report request — Claude includes this in first response for context limit detection
   // This is a bonus signal; the system also uses usage.input_tokens for automatic detection.
-  if (!isServiceSession) {
+  if (!isServiceSession && agent === 'claude') {
     contextParts.push(
       '<model-report>Include this line verbatim in your first response:\n' +
         'succ-model-info: {your_model_family}, context: {context_window_size}\n' +
