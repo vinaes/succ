@@ -349,7 +349,7 @@ const TIER1_PATTERNS = [
   { re: /<\|endoftext\|>/i, desc: 'GPT endoftext token' },
   { re: /<\|system\|>/i, desc: 'System role token' },
   {
-    re: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|succ-agents)>/i,
+    re: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|context-pressure|succ-agents)>/i,
     desc: 'Closing succ XML tag',
   },
   { re: /<\/?system>/i, desc: 'XML system tag' },
