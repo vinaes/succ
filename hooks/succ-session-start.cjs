@@ -123,6 +123,21 @@ BAD commit messages:
        * Returns true if safe to write, false if should skip.
        */
       function isSafeWriteTarget(targetPath, label) {
+        // Detect dangling symlinks (fs.existsSync returns false for broken symlinks)
+        try {
+          const st = fs.lstatSync(targetPath);
+          if (st.isSymbolicLink()) {
+            log(`[undercover] ${label} is a symlink/junction (possibly dangling) — skipping write`);
+            return false;
+          }
+        } catch (e) {
+          if (!e || e.code !== 'ENOENT') {
+            log(`[undercover] lstatSync failed for ${label}: ${e.message || e}`);
+            return false;
+          }
+          // ENOENT = truly doesn't exist, proceed to existing checks
+        }
+
         if (fs.existsSync(targetPath)) {
           if (isSymlinkOrJunction(targetPath)) {
             log(`[undercover] ${label} is a symlink/junction — skipping write`);
