@@ -110,14 +110,14 @@ export async function decomposeQuery(query: string): Promise<DecompositionResult
     const seen = new Set<string>();
     const subQueries = response
       .split('\n')
-      .map((line) => line.replace(/^\s*(?:(?:\d+\s*[.)-])|[-*])\s+/, '').trim())
-      .filter((line) => line.length >= 3 && line.length <= 300)
-      .filter(
-        (line) =>
-          !/^(?:sub-quer(?:y|ies)?(?:\s*\d+)?\s*:|here\s+(?:is|are)\b|the query\s*:|split\s+into\b)/i.test(
-            line
-          )
+      .map((line) =>
+        line
+          .replace(/^\s*(?:(?:\d+\s*[.)-])|[-*])\s+/, '')
+          .replace(/^(?:sub-?quer(?:y|ies)?\s*\d*\s*:\s*|query\s*\d*\s*:\s*)/i, '')
+          .trim()
       )
+      .filter((line) => line.length >= 3 && line.length <= 300)
+      .filter((line) => !/^(?:here\s+(?:is|are)\b|the query\s*:|split\s+into\b)/i.test(line))
       .filter((line) => {
         const key = line.toLowerCase();
         if (seen.has(key)) return false;
