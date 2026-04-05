@@ -176,13 +176,34 @@ export class ContextMonitor {
   }
 
   /**
+   * Side-effect-free read of current context usage for a session.
+   * Does NOT trigger preemptive extraction — safe for read-only endpoints
+   * like GET /api/status.
+   */
+  peekUsage(sessionId: string, currentTranscriptSize: number): ContextUsage | null {
+    return this._computeUsage(sessionId, currentTranscriptSize, false);
+  }
+
+  /**
    * Compute current context usage for a session.
+   * May trigger preemptive extraction as a side effect at high+ urgency.
    *
    * @param sessionId - Session identifier
    * @param currentTranscriptSize - Current transcript file size in bytes (O(1) stat)
    * @returns ContextUsage or null if session is not registered
    */
   getUsage(sessionId: string, currentTranscriptSize: number): ContextUsage | null {
+    return this._computeUsage(sessionId, currentTranscriptSize, true);
+  }
+
+  /**
+   * Internal: compute usage with optional side effects (extraction trigger).
+   */
+  private _computeUsage(
+    sessionId: string,
+    currentTranscriptSize: number,
+    allowSideEffects: boolean
+  ): ContextUsage | null {
     if (!this.config.enabled) return null;
 
     const session = this.sessions.get(sessionId);
@@ -190,19 +211,23 @@ export class ContextMonitor {
 
     const now = Date.now();
 
-    // Lazy model detection — re-check ambiguous models every REDETECT_INTERVAL_MS
-    if (session.contextLimit === null) {
-      const timeSinceLastAttempt = now - session.lastDetectAttempt;
-      if (timeSinceLastAttempt >= REDETECT_INTERVAL_MS || session.lastDetectAttempt === 0) {
-        session.lastDetectAttempt = now;
-        try {
-          session.contextLimit = detectContextLimit(
-            session.transcriptPath,
-            this.config.context_limit > 0 ? this.config.context_limit : undefined
-          );
-        } catch (err) {
-          logWarn('context-monitor', `detectContextLimit failed: ${getErrorMessage(err)}`);
+    // Lazy model detection — re-check periodically even when resolved,
+    // because the model may change mid-session (e.g. user switches from
+    // Sonnet to Opus). Only update if the new result differs.
+    const timeSinceLastAttempt = now - session.lastDetectAttempt;
+    if (timeSinceLastAttempt >= REDETECT_INTERVAL_MS || session.lastDetectAttempt === 0) {
+      session.lastDetectAttempt = now;
+      try {
+        const detected = detectContextLimit(
+          session.transcriptPath,
+          this.config.context_limit > 0 ? this.config.context_limit : undefined
+        );
+        // Only update if detection returned a definitive result
+        if (detected !== null) {
+          session.contextLimit = detected;
         }
+      } catch (err) {
+        logWarn('context-monitor', `detectContextLimit failed: ${getErrorMessage(err)}`);
       }
     }
 
@@ -241,6 +266,7 @@ export class ContextMonitor {
     // Preemptive extraction at high+ urgency (async, non-blocking)
     // Guards: per-session in-flight lock + one-per-cycle flag (reset on compact)
     if (
+      allowSideEffects &&
       shouldCompact &&
       !cooldownActive &&
       (urgency === 'high' || urgency === 'critical') &&

@@ -4432,8 +4432,8 @@ export class PostgresBackend {
   > {
     const pool = await this.getPool();
     const scopeCond = this.projectId
-      ? 'WHERE superseded_at IS NULL AND LOWER(project_id) = $1'
-      : 'WHERE superseded_at IS NULL';
+      ? 'WHERE superseded_at IS NULL AND embedding IS NOT NULL AND LOWER(project_id) = $1'
+      : 'WHERE superseded_at IS NULL AND embedding IS NOT NULL';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query<{

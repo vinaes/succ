@@ -93,10 +93,15 @@ export function detectContextLimit(transcriptPath: string, configOverride?: numb
   const tail = readTranscriptTail(transcriptPath, 50_000);
   if (!tail) return null;
 
-  // Real API data: usage.input_tokens > 200K → definitive 1M signal
+  // Real API data: check the LAST (most recent) input_tokens value.
+  // Using the last match avoids the sticky problem where any historical
+  // value > 200K would permanently resolve to 1M even after a model switch.
   const inputTokenMatches = [...tail.matchAll(/"input_tokens"\s*:\s*(\d+)/g)];
-  if (inputTokenMatches.some((m) => parseInt(m[1], 10) > 200_000)) {
-    return 1_000_000;
+  if (inputTokenMatches.length > 0) {
+    const lastInputTokens = parseInt(inputTokenMatches[inputTokenMatches.length - 1][1], 10);
+    if (lastInputTokens > 200_000) {
+      return 1_000_000;
+    }
   }
 
   // 4. Claude self-report: "succ-model-info: {family}, context: {size}"

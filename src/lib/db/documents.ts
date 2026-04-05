@@ -132,9 +132,9 @@ export function upsertDocument(
           existing.id
         );
       } else {
-        // New doc - get the inserted ID
+        // New doc - get the inserted ID (scope to non-superseded to avoid matching stale rows)
         const newDoc = cachedPrepare(
-          'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?'
+          'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ? AND superseded_at IS NULL'
         ).get(filePath, chunkIndex) as { id: number };
         const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(
           embeddingBlob
