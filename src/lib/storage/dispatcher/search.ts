@@ -286,6 +286,29 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
         }
       }
 
+      // Also include original query results as an RRF signal
+      const originalResults = await this.hybridSearchMemories(
+        originalQuery,
+        queryEmbedding,
+        limit,
+        threshold,
+        alpha
+      );
+      for (let rank = 0; rank < originalResults.length; rank++) {
+        const r = originalResults[rank];
+        const id = r.id;
+        const rrfScore = 1 / (RRF_K + rank + 1);
+        const existing = scoreMap.get(id);
+        if (existing) {
+          existing.score += rrfScore;
+          if (r.similarity > existing.result.similarity) {
+            existing.result = r;
+          }
+        } else {
+          scoreMap.set(id, { score: rrfScore, result: r });
+        }
+      }
+
       // Sort by combined RRF score; keep original similarity for downstream merge with global results
       const merged = Array.from(scoreMap.values())
         .sort((a, b) => b.score - a.score)

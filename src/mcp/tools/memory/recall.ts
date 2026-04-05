@@ -279,35 +279,42 @@ export function registerRecallTool(server: McpServer): void {
 
         const queryEmbedding = await getEmbedding(query);
 
-        // ── Query decomposition preprocessing: runs BEFORE branch selection ──
-        // Decomposition is a query preprocessing step — it enriches any search path.
-        let decomposedSubQueries: string[] | null = null;
-        if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
-          const decompositionGated = gateAction('succ_recall', 'decompose');
-          if (decompositionGated) {
-            logWarn('recall', 'Query decomposition enabled but gated by profile');
-          } else {
-            try {
-              const { decomposeQuery } = await import('../../../lib/search/query-decomposition.js');
-              const decomposition = await decomposeQuery(query);
-              if (decomposition.wasDecomposed) {
-                decomposedSubQueries = decomposition.subQueries;
+        // ── Lazy query decomposition: only invoked when searchWithOptionalDecomposition runs ──
+        let _decomposedSubQueries: string[] | null = null;
+        let _decompositionResolved = false;
+        async function getDecomposedSubQueries(): Promise<string[] | null> {
+          if (_decompositionResolved) return _decomposedSubQueries;
+          _decompositionResolved = true;
+          if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
+            const decompositionGated = gateAction('succ_recall', 'decompose');
+            if (decompositionGated) {
+              logWarn('recall', 'Query decomposition enabled but gated by profile');
+            } else {
+              try {
+                const { decomposeQuery } =
+                  await import('../../../lib/search/query-decomposition.js');
+                const decomposition = await decomposeQuery(query);
+                if (decomposition.wasDecomposed) {
+                  _decomposedSubQueries = decomposition.subQueries;
+                }
+              } catch (err) {
+                logWarn('recall', 'Query decomposition failed, continuing without decomposition', {
+                  error: getErrorMessage(err),
+                });
               }
-            } catch (err) {
-              logWarn('recall', 'Query decomposition failed, continuing without decomposition', {
-                error: getErrorMessage(err),
-              });
             }
+          } else if (retrievalConfig.query_decomposition_enabled && globalOnlyMode) {
+            logWarn('recall', 'Query decomposition enabled but skipped in global-only mode');
           }
-        } else if (retrievalConfig.query_decomposition_enabled && globalOnlyMode) {
-          logWarn('recall', 'Query decomposition enabled but skipped in global-only mode');
+          return _decomposedSubQueries;
         }
 
-        // Helper: run decomposed or standard search depending on preprocessing result
+        // Helper: run decomposed or standard search depending on lazy decomposition result
         async function searchWithOptionalDecomposition(
           searchLimit: number,
           threshold: number
         ): Promise<HybridMemoryResult[]> {
+          const decomposedSubQueries = await getDecomposedSubQueries();
           if (decomposedSubQueries) {
             return decomposedSearchMemories(
               decomposedSubQueries,
@@ -385,15 +392,8 @@ export function registerRecallTool(server: McpServer): void {
           }
         } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
           // Graph-enhanced search: BM25 + vector + PPR as third signal
-          // Note: decomposed sub-queries are not passed into graph search (PPR operates
-          // on the original query embedding). If decomposition produced sub-queries,
-          // log that they are unused in this path.
-          if (decomposedSubQueries) {
-            logWarn(
-              'recall',
-              'Query decomposition produced sub-queries but graph PPR path does not support them yet'
-            );
-          }
+          // Decomposition is deferred/lazy — it won't run on this path since
+          // searchWithOptionalDecomposition is not called here.
           try {
             const { graphEnhancedSearchMemories } =
               await import('../../../lib/db/hybrid-search.js');
