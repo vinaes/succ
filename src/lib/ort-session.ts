@@ -303,11 +303,7 @@ export async function resolveModelPath(modelName: string, signal?: AbortSignal):
         if (signal.aborted) {
           reject(makeAbortError());
         } else {
-          signal.addEventListener(
-            'abort',
-            () => reject(makeAbortError()),
-            { once: true }
-          );
+          signal.addEventListener('abort', () => reject(makeAbortError()), { once: true });
         }
       });
       tempModel = await Promise.race([downloadPromise, abortPromise]);

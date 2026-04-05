@@ -15,7 +15,10 @@ try {
     modelAvailable = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/abort|timeout|timed out|unavailable|ENOENT|ENOTFOUND|network/i.test(msg) || (e as any).aborted) {
+    if (
+      /abort|timeout|timed out|unavailable|ENOENT|ENOTFOUND|network/i.test(msg) ||
+      (e as any).aborted
+    ) {
       console.warn('ort-session.test: model resolution rejected or timed out', e);
     } else {
       throw e; // Rethrow unexpected errors

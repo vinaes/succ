@@ -234,9 +234,7 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
       for (const filePath of uniquePaths) {
         // Clean up vec entries for superseded docs before rebuilding
         const supersededDocs = database
-          .prepare(
-            'SELECT id FROM documents WHERE file_path = ? AND superseded_at IS NOT NULL'
-          )
+          .prepare('SELECT id FROM documents WHERE file_path = ? AND superseded_at IS NOT NULL')
           .all(filePath) as Array<{ id: number }>;
 
         if (supersededDocs.length > 0) {
@@ -245,29 +243,25 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
             const chunk = supersededIds.slice(i, i + 500);
             const placeholders = chunk.map(() => '?').join(',');
             const vecRows = database
-              .prepare(
-                `SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`
-              )
+              .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
               .all(...chunk) as Array<{ vec_rowid: number }>;
             if (vecRows.length > 0) {
               const vecPlaceholders = vecRows.map(() => '?').join(',');
               database
-                .prepare(
-                  `DELETE FROM vec_documents WHERE rowid IN (${vecPlaceholders})`
-                )
+                .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPlaceholders})`)
                 .run(...vecRows.map((r) => r.vec_rowid));
             }
             database
-              .prepare(
-                `DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`
-              )
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
               .run(...chunk);
           }
         }
 
         // Get all non-superseded docs for this file
         const docs = database
-          .prepare('SELECT id, embedding FROM documents WHERE file_path = ? AND superseded_at IS NULL')
+          .prepare(
+            'SELECT id, embedding FROM documents WHERE file_path = ? AND superseded_at IS NULL'
+          )
           .all(filePath) as Array<{ id: number; embedding: Buffer }>;
 
         for (const doc of docs) {

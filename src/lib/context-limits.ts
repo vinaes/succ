@@ -100,8 +100,11 @@ export function detectContextLimit(transcriptPath: string, configOverride?: numb
   }
 
   // 4. Claude self-report: "succ-model-info: {family}, context: {size}"
-  const selfReportMatches = [...tail.matchAll(/succ-model-info:\s*([^,\n]+),\s*context:\s*(\w+)/gi)];
-  const selfReport = selfReportMatches.length > 0 ? selfReportMatches[selfReportMatches.length - 1] : null;
+  const selfReportMatches = [
+    ...tail.matchAll(/succ-model-info:\s*([^,\n]+),\s*context:\s*(\w+)/gi),
+  ];
+  const selfReport =
+    selfReportMatches.length > 0 ? selfReportMatches[selfReportMatches.length - 1] : null;
   if (selfReport) {
     const ctxStr = selfReport[2].toLowerCase();
     if (ctxStr === '1m') return 1_000_000;
