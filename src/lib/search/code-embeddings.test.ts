@@ -13,7 +13,6 @@ vi.mock('../config.js', () => ({
     model: 'jinaai/jina-embeddings-v2-base-code',
     api_url: 'http://localhost:11434/v1',
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../fault-logger.js', () => ({

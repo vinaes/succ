@@ -272,7 +272,6 @@ vi.mock('../config.js', () => {
     __setConfig: (cfg: Record<string, unknown>) => {
       _config = cfg;
     },
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

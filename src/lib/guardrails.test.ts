@@ -27,7 +27,6 @@ vi.mock('./config.js', () => ({
       },
     },
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 // Mock fault logger

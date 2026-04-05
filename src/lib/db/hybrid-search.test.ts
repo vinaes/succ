@@ -60,7 +60,6 @@ vi.mock('../config.js', () => {
     getGlobalDbPath: () => path.join(tempDir, 'global.db'),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

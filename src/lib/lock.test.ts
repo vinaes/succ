@@ -14,7 +14,6 @@ vi.mock('./config.js', () => {
     getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

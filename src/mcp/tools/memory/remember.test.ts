@@ -17,7 +17,6 @@ vi.mock('../../../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/tmp/project'),
   isGlobalOnlyMode: vi.fn(() => false),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({

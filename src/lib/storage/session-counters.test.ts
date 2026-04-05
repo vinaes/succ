@@ -23,7 +23,6 @@ vi.mock('../config.js', () => ({
   getSuccDir: vi.fn(() => '/test/project/.succ'),
   getStorageConfig: vi.fn(() => ({ backend: 'sqlite', vector: 'builtin' })),
   invalidateConfigCache: vi.fn(),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('Session Counters', () => {

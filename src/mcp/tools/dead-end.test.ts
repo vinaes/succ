@@ -18,7 +18,6 @@ vi.mock('../../lib/config.js', () => ({
     thresholds: { dead_end_dedup: 0.85 },
   })),
   isGlobalOnlyMode: vi.fn(() => false),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/embeddings.js', () => ({

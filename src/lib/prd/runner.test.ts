@@ -32,7 +32,6 @@ vi.mock('../config.js', () => ({
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getProjectRoot: () => '/fake/project',
   getConfig: () => ({}),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('./executor.js', () => ({

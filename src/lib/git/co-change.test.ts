@@ -21,7 +21,6 @@ vi.mock('util', async (importOriginal) => {
 vi.mock('../config.js', () => ({
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getProjectRoot: vi.fn(() => '/test/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../fault-logger.js', () => ({

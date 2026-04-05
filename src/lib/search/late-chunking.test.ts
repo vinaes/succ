@@ -15,7 +15,6 @@ vi.mock('../config.js', () => ({
     api_url: 'http://localhost:11434/v1',
   })),
   getProjectRoot: vi.fn(() => '/mock/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../config-defaults.js', () => ({

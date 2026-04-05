@@ -6,7 +6,6 @@ vi.mock('./config.js', () => ({
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: vi.fn(() => '/tmp/test-succ'),
   getConfig: vi.fn(() => ({})),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 // Mock fault-logger

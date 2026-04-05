@@ -5,7 +5,6 @@ import { fetchAsMarkdown } from './md-fetch.js';
 vi.mock('./config.js', () => ({
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({ md_api_url: 'https://md.test.local' })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 // Mock global fetch

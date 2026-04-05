@@ -175,7 +175,6 @@ vi.mock('../lib/config.js', () => ({
     graph_ppr_enabled: false,
     graph_ppr_weight: 0.3,
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../lib/quality.js', () => ({

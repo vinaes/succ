@@ -109,14 +109,29 @@ export function findSimilarMemory(
         )
         .all(queryBuffer) as Array<{ memory_id: number; distance: number }>;
 
+      // Collect all candidates above threshold, then batch-filter for is_latest
+      // so non-latest entries don't consume k slots and cause misses.
+      const candidates: Array<{ memory_id: number; similarity: number }> = [];
       for (const result of vecResults) {
         const similarity = 1 - result.distance;
         if (similarity >= threshold) {
-          const memory = cachedPrepare(
-            'SELECT id, content FROM memories WHERE id = ? AND COALESCE(is_latest, 1) = 1'
-          ).get(result.memory_id) as { id: number; content: string } | undefined;
-          if (memory) {
-            return { id: memory.id, content: memory.content, similarity };
+          candidates.push({ memory_id: result.memory_id, similarity });
+        }
+      }
+
+      if (candidates.length > 0) {
+        const placeholders = candidates.map(() => '?').join(',');
+        const ids = candidates.map((c) => c.memory_id);
+        const latestRows = cachedPrepare(
+          `SELECT id, content FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
+        ).all(...ids) as Array<{ id: number; content: string }>;
+
+        const latestSet = new Map(latestRows.map((r) => [r.id, r.content]));
+        // Return best (first) candidate that is still latest
+        for (const c of candidates) {
+          const content = latestSet.get(c.memory_id);
+          if (content !== undefined) {
+            return { id: c.memory_id, content, similarity: c.similarity };
           }
         }
       }
@@ -170,6 +185,8 @@ export function saveMemory(
     sourceType?: string;
     sourceContext?: string;
     forgetAfter?: string | null;
+    // Version chain fields
+    versionFields?: { parentMemoryId: number; rootMemoryId: number; version: number };
   } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
   const {
@@ -217,24 +234,47 @@ export function saveMemory(
       : validUntil
     : null;
 
-  const result = cachedPrepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, forget_after, embedding)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-    content,
-    tagsJson,
-    source ?? null,
-    type,
-    qualityScore?.score ?? null,
-    qualityFactorsJson,
-    validFromStr,
-    validUntilStr,
-    confidence,
-    sourceType,
-    sourceContext ?? null,
-    forgetAfter ?? null,
-    embeddingBlob
-  );
+  const vf = options.versionFields;
+  const result = vf
+    ? cachedPrepare(`
+        INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, forget_after, embedding, version, parent_memory_id, root_memory_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        content,
+        tagsJson,
+        source ?? null,
+        type,
+        qualityScore?.score ?? null,
+        qualityFactorsJson,
+        validFromStr,
+        validUntilStr,
+        confidence,
+        sourceType,
+        sourceContext ?? null,
+        forgetAfter ?? null,
+        embeddingBlob,
+        vf.version,
+        vf.parentMemoryId,
+        vf.rootMemoryId
+      )
+    : cachedPrepare(`
+        INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, forget_after, embedding)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        content,
+        tagsJson,
+        source ?? null,
+        type,
+        qualityScore?.score ?? null,
+        qualityFactorsJson,
+        validFromStr,
+        validUntilStr,
+        confidence,
+        sourceType,
+        sourceContext ?? null,
+        forgetAfter ?? null,
+        embeddingBlob
+      );
 
   const newId = result.lastInsertRowid as number;
 

@@ -1916,7 +1916,7 @@ export class PostgresBackend {
     if (tsq) {
       const textParams: unknown[] = [tsq];
       let paramIdx = 2;
-      let whereCond = `WHERE search_vector @@ to_tsquery('simple', $1) AND invalidated_by IS NULL`;
+      let whereCond = `WHERE search_vector @@ to_tsquery('simple', $1) AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       whereCond += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
       textParams.push(now);
       paramIdx++;
@@ -1954,7 +1954,7 @@ export class PostgresBackend {
     {
       const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
       let paramIdx = 3;
-      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND invalidated_by IS NULL`;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       whereVec += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
       vecParams.push(now);
       paramIdx++;
@@ -2056,7 +2056,7 @@ export class PostgresBackend {
     if (tsq) {
       const textParams: unknown[] = [tsq];
       const paramIdx = 2;
-      let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL`;
+      let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       if (since) {
         whereText += ` AND created_at >= $${paramIdx}`;
         textParams.push(since.toISOString());
@@ -2086,7 +2086,7 @@ export class PostgresBackend {
     {
       const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
       const paramIdx = 3;
-      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL`;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       if (since) {
         whereVec += ` AND created_at >= $${paramIdx}`;
         vecParams.push(since.toISOString());
@@ -2252,7 +2252,8 @@ export class PostgresBackend {
     confidence: number = 0.5,
     sourceType: string = 'human',
     sourceContext?: string,
-    forgetAfter?: string | null
+    forgetAfter?: string | null,
+    versionFields?: { parentMemoryId: number; rootMemoryId: number; version: number }
   ): Promise<number> {
     // Validate provenance fields
     ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
@@ -2261,10 +2262,14 @@ export class PostgresBackend {
     const projectId = isGlobal ? null : this.projectId;
 
     const result = await this.queryPrepared<{ id: number }>(
-      'saveMemory',
-      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       RETURNING id`,
+      'saveMemory' + (versionFields ? '_v' : ''),
+      versionFields
+        ? `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after, version, parent_memory_id, root_memory_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           RETURNING id`
+        : `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           RETURNING id`,
       [
         projectId,
         content,
@@ -2280,6 +2285,9 @@ export class PostgresBackend {
         sourceType,
         sourceContext ?? null,
         forgetAfter ?? null,
+        ...(versionFields
+          ? [versionFields.version, versionFields.parentMemoryId, versionFields.rootMemoryId]
+          : []),
       ]
     );
 
@@ -2316,6 +2324,7 @@ export class PostgresBackend {
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
         AND invalidated_by IS NULL
+        AND COALESCE(is_latest, TRUE) = TRUE
     `;
     const params: unknown[] = [toPgVector(queryEmbedding), threshold];
     let paramIndex = 3;
@@ -2604,11 +2613,14 @@ export class PostgresBackend {
     const pool = await this.getPool();
     if (this.projectId) {
       await pool.query(
-        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND LOWER(project_id) = $2`,
         [memoryId, this.projectId]
       );
     } else {
-      await pool.query(`UPDATE memories SET is_latest = FALSE WHERE id = $1`, [memoryId]);
+      await pool.query(
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND project_id IS NULL`,
+        [memoryId]
+      );
     }
   }
 
@@ -2616,11 +2628,14 @@ export class PostgresBackend {
     const pool = await this.getPool();
     if (this.projectId) {
       await pool.query(
-        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND LOWER(project_id) = $2`,
         [memoryId, this.projectId]
       );
     } else {
-      await pool.query(`UPDATE memories SET is_latest = TRUE WHERE id = $1`, [memoryId]);
+      await pool.query(
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND project_id IS NULL`,
+        [memoryId]
+      );
     }
   }
 
@@ -3021,6 +3036,7 @@ export class PostgresBackend {
       WHERE 1 - (embedding <=> $1) >= $2
         AND project_id IS NULL
         AND invalidated_by IS NULL
+        AND COALESCE(is_latest, TRUE) = TRUE
       ORDER BY embedding <=> $1
       LIMIT $3
     `;

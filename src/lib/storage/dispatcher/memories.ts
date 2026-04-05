@@ -139,7 +139,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         confidence,
         sourceType,
         sourceContext,
-        forgetAfter
+        forgetAfter,
+        versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined
       );
 
       // Sync to Qdrant with full payload
@@ -175,6 +182,13 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         sourceType,
         sourceContext,
         forgetAfter,
+        versionFields: versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined,
       });
 
       savedId = result.id;

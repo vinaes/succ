@@ -46,7 +46,6 @@ vi.mock('../../../lib/config.js', () => ({
     graph_ppr_weight: 0.3,
   })),
   getConfig: vi.fn(() => ({ dead_end_boost: 0 })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({

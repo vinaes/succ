@@ -65,7 +65,6 @@ vi.mock('../../lib/config.js', () => ({
   getConfigDisplay: vi.fn(() => ({ tool_profile: 'full' })),
   formatConfigDisplay: vi.fn(() => 'tool_profile = full'),
   invalidateConfigCache: vi.fn(),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/checkpoint.js', () => ({
