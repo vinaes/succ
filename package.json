@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.6.14",
+  "version": "1.6.15",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {
@@ -100,6 +100,7 @@
     "zod": "^3.25.76"
   },
   "optionalDependencies": {
+    "@ast-grep/napi": "^0.42.0",
     "@ast-grep/lang-bash": "0.0.8",
     "@ast-grep/lang-c": "0.0.6",
     "@ast-grep/lang-cpp": "0.0.6",
