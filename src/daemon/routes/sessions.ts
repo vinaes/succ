@@ -220,11 +220,35 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
       }
 
-      // Notify ContextMonitor so it resets usage offset post-compact
-      const transcriptBytes = typeof stats.transcriptBytes === 'number' ? stats.transcriptBytes : 0;
-      if (transcriptBytes > 0) {
-        getContextMonitor().recordCompact(sessionId, transcriptBytes);
-        ctx.log(`[pre-compact] ContextMonitor offset reset to ${transcriptBytes} bytes`);
+      // Notify ContextMonitor so it resets usage offset post-compact.
+      // Use the ACTUAL post-compact transcript size (not the pre-compact
+      // transcriptBytes from stats) — after compaction the transcript is
+      // rewritten and shrinks, so using the old size would make
+      // (currentSize - compactOffset) go negative until the file grows past
+      // its previous length.
+      const manager2 = requireSessionManager(ctx);
+      const compactSession = manager2.get(sessionId);
+      const compactTranscriptPath = compactSession?.transcriptPath || '';
+      let postCompactSize = 0;
+      if (compactTranscriptPath) {
+        try {
+          postCompactSize = fs.statSync(compactTranscriptPath).size;
+        } catch (err) {
+          logWarn(
+            'sessions',
+            `Failed to stat transcript after compact for ${sessionId}: ${getErrorMessage(err)}`
+          );
+        }
+      }
+      if (postCompactSize > 0) {
+        getContextMonitor().recordCompact(sessionId, postCompactSize);
+        ctx.log(
+          `[pre-compact] ContextMonitor offset reset to ${postCompactSize} bytes (post-compact actual size)`
+        );
+      } else {
+        // Fallback: reset offset to 0 so usage starts fresh
+        getContextMonitor().recordCompact(sessionId, 0);
+        ctx.log(`[pre-compact] ContextMonitor offset reset to 0 (transcript not found or empty)`);
       }
 
       ctx.log(

@@ -183,6 +183,10 @@ async function indexCode(
       // File parsed successfully but produced zero chunks (e.g. empty file,
       // unsupported syntax).  Clean up any stale chunks left from a previous
       // indexing pass so they don't pollute search results.
+      // NOTE: Hard delete (not supersede) is intentional here —
+      // supersedeDocumentsByPath is not available through the storage
+      // abstraction layer, and zero-chunk results mean there is no new
+      // content to replace the old, so soft-delete offers no recovery value.
       await deleteDocumentsByPath(`code:${relativePath}`);
       await deleteFileHash(`code:${relativePath}`);
       log(`  Cleaned stale chunks: ${relativePath} (0 chunks on reindex)`);

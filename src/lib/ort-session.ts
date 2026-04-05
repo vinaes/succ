@@ -286,6 +286,13 @@ export async function resolveModelPath(modelName: string, signal?: AbortSignal):
   const transformers = await import('@huggingface/transformers');
   const AutoModel = (transformers as any).AutoModel;
 
+  // Check abort after async import, before starting expensive download
+  if (signal?.aborted) {
+    const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+    (err as any).aborted = true;
+    throw err;
+  }
+
   let tempModel;
   try {
     const downloadPromise = AutoModel.from_pretrained(modelName, {
