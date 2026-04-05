@@ -2612,8 +2612,10 @@ export class PostgresBackend {
   async markMemoryNotLatest(memoryId: number): Promise<void> {
     const pool = await this.getPool();
     if (this.projectId) {
+      // Match project-scoped OR global memories (global memories have NULL project_id
+      // and are accessible from project-scoped dispatchers for version demotion)
       await pool.query(
-        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND LOWER(project_id) = $2`,
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
         [memoryId, this.projectId]
       );
     } else {
@@ -2628,7 +2630,7 @@ export class PostgresBackend {
     const pool = await this.getPool();
     if (this.projectId) {
       await pool.query(
-        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND LOWER(project_id) = $2`,
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
         [memoryId, this.projectId]
       );
     } else {

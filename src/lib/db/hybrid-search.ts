@@ -534,9 +534,20 @@ export function hybridSearchMemories(
 ): HybridMemoryResult[] {
   const database = getDb();
 
-  // 1. BM25 search
+  // 1. BM25 search — filter out demoted (non-latest) memories before RRF
+  // so they don't consume fused slots and reduce result quality
   const bm25Index = getMemoriesBm25Index();
-  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+  const bm25Raw = bm25.search(query, bm25Index, 'docs', limit * 3);
+  let bm25Results = bm25Raw;
+  if (bm25Raw.length > 0) {
+    const bm25Ids = bm25Raw.map((r) => r.docId);
+    const placeholders = bm25Ids.map(() => '?').join(',');
+    const latestRows = cachedPrepare(
+      `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
+    ).all(...bm25Ids) as Array<{ id: number }>;
+    const latestSet = new Set(latestRows.map((r) => r.id));
+    bm25Results = bm25Raw.filter((r) => latestSet.has(r.docId));
+  }
 
   // 2. Vector search — try sqlite-vec first
   let vectorResults: { docId: number; score: number }[] = [];
