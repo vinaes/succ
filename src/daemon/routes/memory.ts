@@ -4,6 +4,7 @@ import { getConfig } from '../../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../../lib/quality.js';
 import { scanSensitive } from '../../lib/sensitive-filter.js';
 import { saveGlobalMemory, saveMemory } from '../../lib/storage/index.js';
+import type { MemoryType } from '../../lib/storage/types.js';
 import { invalidateHookRulesCache } from './search.js';
 import {
   parseRequestBody,
@@ -76,7 +77,8 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
 
         let result;
         if (global) {
-          result = await saveGlobalMemory(finalContent, embedding, tags, type, {
+          result = await saveGlobalMemory(finalContent, embedding, tags, source, {
+            type: type as MemoryType,
             sourceContext: finalSourceContext,
           });
         } else {
