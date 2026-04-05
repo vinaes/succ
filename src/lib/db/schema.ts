@@ -511,6 +511,25 @@ export function initDb(database: Database.Database): void {
     'idx_documents_filepath_updated'
   );
 
+  // ========================================================================
+  // Area 10: Memory mutation audit trail
+  // ========================================================================
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      old_content TEXT,
+      new_content TEXT,
+      changed_by TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
+  `);
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 
@@ -928,6 +947,23 @@ export function initGlobalDb(database: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_global_memories_temporal ON memories(valid_from, valid_until)`,
     'idx_global_memories_temporal'
   );
+
+  // Area 10: Memory mutation audit trail (must mirror initDb)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      old_content TEXT,
+      new_content TEXT,
+      changed_by TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
+  `);
 
   // Migration: create sqlite-vec virtual table for global memories
   initGlobalVecTable(database);

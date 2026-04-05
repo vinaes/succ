@@ -550,6 +550,39 @@ export interface WebSearchHistorySummary {
 }
 
 // ============================================================================
+// Memory Audit Trail Types
+// ============================================================================
+
+/**
+ * Audit event types for memory mutations.
+ * Currently emitted: 'create' (saveMemory), 'delete' (invalidateMemory).
+ * TODO: 'update', 'merge', 'version' are reserved for future edit-in-place,
+ * merge-with-history, and bi-temporal versioning workflows respectively.
+ * Consider adding database CHECK constraints for runtime validation.
+ */
+export const AUDIT_EVENT_TYPES = ['create', 'update', 'delete', 'merge', 'version'] as const;
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+/**
+ * Attribution sources for audit events.
+ * Currently emitted: 'hook' (supersession), 'user' (retention CLI),
+ * 'consolidation' (consolidate module), 'extraction' (auto-memory extraction).
+ * Consider adding database CHECK constraints for runtime validation.
+ */
+export const AUDIT_CHANGED_BY = ['hook', 'user', 'consolidation', 'extraction'] as const;
+export type AuditChangedBy = (typeof AUDIT_CHANGED_BY)[number];
+
+export interface MemoryAuditRecord {
+  id: number;
+  memory_id: number;
+  event_type: AuditEventType;
+  old_content: string | null;
+  new_content: string | null;
+  changed_by: AuditChangedBy;
+  created_at: string;
+}
+
+// ============================================================================
 // Vector Search Types (for VectorStore interface)
 // ============================================================================
 

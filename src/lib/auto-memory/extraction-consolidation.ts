@@ -400,7 +400,7 @@ export async function executeUpdates(
 
       // Invalidate the old memory (mark as superseded by the new one)
       if (!saveResult.isDuplicate) {
-        await invalidateMemory(update.existingMemoryId, saveResult.id);
+        await invalidateMemory(update.existingMemoryId, saveResult.id, 'extraction');
         executed++;
       }
     } catch (err) {
@@ -428,7 +428,7 @@ export async function executeDeletes(memoryIds: number[]): Promise<number> {
       const existing = await getMemoryById(memoryId);
       if (existing) {
         // Invalidate with supersededById=0 as a sentinel for "contradicted, no replacement"
-        await invalidateMemory(memoryId, 0);
+        await invalidateMemory(memoryId, 0, 'extraction');
         executed++;
       }
     } catch (err) {
