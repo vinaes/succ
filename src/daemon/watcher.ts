@@ -175,11 +175,17 @@ async function indexCode(
     // upsert path (marks old rows superseded_at before inserting new ones).
     // A pre-delete here would create a data-loss window if indexCodeFile()
     // fails after the delete — the file would be left completely unindexed.
-    const result = await indexCodeFile(filePath, { force: true });
-    if (result.success && result.chunks && result.chunks > 0) {
+    let result: Awaited<ReturnType<typeof indexCodeFile>> | undefined;
+    try {
+      result = await indexCodeFile(filePath, { force: true });
+    } catch (err) {
+      logWarn('watcher', `indexCodeFile threw for ${relativePath}: ${getErrorMessage(err)}`);
+      return;
+    }
+    if (result?.success && result.chunks && result.chunks > 0) {
       await setFileHash(`code:${relativePath}`, hash);
       log(`  Indexed code: ${relativePath} (${result.chunks} chunks)`);
-    } else if (result.success && !result.skipped && (!result.chunks || result.chunks === 0)) {
+    } else if (result?.success && !result.skipped && (!result.chunks || result.chunks === 0)) {
       // File parsed successfully but produced zero chunks (e.g. empty file,
       // unsupported syntax).  Clean up any stale chunks left from a previous
       // indexing pass so they don't pollute search results.
@@ -190,7 +196,7 @@ async function indexCode(
       await deleteDocumentsByPath(`code:${relativePath}`);
       await deleteFileHash(`code:${relativePath}`);
       log(`  Cleaned stale chunks: ${relativePath} (0 chunks on reindex)`);
-    } else if (!result.success) {
+    } else if (result && !result.success) {
       logWarn('watcher', `indexCodeFile failed for ${relativePath}`, {
         error: getErrorMessage(result.error ?? 'unknown indexCodeFile error'),
       });

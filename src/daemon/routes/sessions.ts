@@ -241,13 +241,13 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         }
       }
       if (postCompactSize > 0) {
-        getContextMonitor().recordCompact(sessionId, postCompactSize);
+        getContextMonitor().recordCompact(sessionId, postCompactSize, compactTranscriptPath);
         ctx.log(
           `[pre-compact] ContextMonitor offset reset to ${postCompactSize} bytes (post-compact actual size)`
         );
       } else {
         // Fallback: reset offset to 0 so usage starts fresh
-        getContextMonitor().recordCompact(sessionId, 0);
+        getContextMonitor().recordCompact(sessionId, 0, compactTranscriptPath);
         ctx.log(`[pre-compact] ContextMonitor offset reset to 0 (transcript not found or empty)`);
       }
 

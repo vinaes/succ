@@ -151,9 +151,14 @@ export class ContextMonitor {
    * Record a compact event — resets the byte offset so usage calculation
    * restarts from the current transcript size.
    */
-  recordCompact(sessionId: string, transcriptBytes: number): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
+  recordCompact(sessionId: string, transcriptBytes: number, transcriptPath?: string): void {
+    let session = this.sessions.get(sessionId);
+    if (!session) {
+      // Activity-only sessions may not be registered yet — auto-register
+      // so the compact offset is tracked correctly.
+      this.registerSession(sessionId, transcriptPath || '');
+      session = this.sessions.get(sessionId)!;
+    }
     session.compactOffset = transcriptBytes;
     session.lastAdvisoryAt = 0; // reset cooldown after compact
     session.advisoryCount = 0;
@@ -165,14 +170,15 @@ export class ContextMonitor {
   }
 
   /**
-   * Mark cooldown after a successful advisory emission.
-   * Called by hook via POST /api/context-usage/ack.
+   * Refresh cooldown after a successful advisory ACK from the hook.
+   * Cooldown is already set inline when the advisory is generated in
+   * _computeUsage(), so this just extends the timestamp. Safe to call
+   * multiple times (idempotent refresh).
    */
   markAdvisory(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.lastAdvisoryAt = Date.now();
-    session.advisoryCount++;
   }
 
   /**
@@ -262,6 +268,13 @@ export class ContextMonitor {
 
     const cooldownMs = this.config.cooldown_seconds * 1000;
     const cooldownActive = session.lastAdvisoryAt > 0 && now - session.lastAdvisoryAt < cooldownMs;
+
+    // Set cooldown inline when an advisory will be emitted, so cooldown is
+    // guaranteed even if the hook's best-effort ACK POST is dropped.
+    if (allowSideEffects && shouldCompact && !cooldownActive) {
+      session.lastAdvisoryAt = now;
+      session.advisoryCount++;
+    }
 
     // Preemptive extraction at high+ urgency (async, non-blocking)
     // Guards: per-session in-flight lock + one-per-cycle flag (reset on compact)
