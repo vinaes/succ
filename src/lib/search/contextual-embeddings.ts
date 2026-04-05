@@ -21,21 +21,26 @@ const CONTEXT_SYSTEM =
   'You describe code chunks in one sentence. Be precise and technical. ' +
   'Focus on what the code does, not how. No markdown, no bullet points.';
 
-const CONTEXT_PROMPT = `File context (first 200 lines):
-{file_context}
+/**
+ * Build the context prompt via direct interpolation (avoids String.replace
+ * corruption when file content contains literal `{chunk}`).
+ */
+function buildContextPrompt(fileContext: string, chunkContent: string): string {
+  const clippedContext = fileContext.slice(0, 4000);
+  const clippedChunk = chunkContent.slice(0, 2000);
+  return `File context (first 200 lines):
+${clippedContext}
 
 Describe what this code chunk does in one sentence:
-{chunk}`;
+${clippedChunk}`;
+}
 
 /**
  * Generate a semantic context description for a code chunk using LLM.
  * Returns the description string, or null on failure (fail-open).
  */
 async function generateChunkContext(chunk: Chunk, fileContext: string): Promise<string | null> {
-  const prompt = CONTEXT_PROMPT.replace('{file_context}', fileContext.slice(0, 4000)).replace(
-    '{chunk}',
-    chunk.content.slice(0, 2000)
-  );
+  const prompt = buildContextPrompt(fileContext, chunk.content);
 
   const response = await callLLM(prompt, {
     maxTokens: 100,
