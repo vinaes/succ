@@ -62,7 +62,7 @@ export interface SuccConfig {
   graph_export_path?: string; // Custom export path (default: .succ/brain/graph)
   // Quality scoring feature toggles (mode/model/api under llm.quality.*)
   quality_scoring_enabled?: boolean; // Enable quality scoring for memories (default: true)
-  quality_scoring_threshold?: number; // Minimum quality score to keep (0-1, default: 0)
+  quality_scoring_threshold?: number; // Minimum quality score to keep (0-1, default: 0.3)
   // Sensitive info filter settings
   sensitive_filter_enabled?: boolean; // Enable sensitive info detection (default: true)
   sensitive_auto_redact?: boolean; // Auto-redact sensitive info without prompting (default: false)
@@ -383,7 +383,7 @@ export interface DaemonConfig {
   watch?: {
     auto_start?: boolean; // Auto-start watch service (default: false)
     patterns?: string[]; // Patterns to watch (default: ['**/*.md'])
-    include_code?: boolean; // Also watch code files (default: false)
+    include_code?: boolean; // Also watch code files (default: true)
     debounce_ms?: number; // Debounce interval (default: 500)
   };
   analyze?: {
@@ -442,13 +442,13 @@ export interface GraphContextualProximityConfig {
 }
 
 export interface GraphCommunityDetectionConfig {
-  enabled?: boolean; // Enable community detection (default: false)
+  enabled?: boolean; // Enable community detection (default: true)
   max_iterations?: number; // Label propagation max iterations (default: 100)
   min_community_size?: number; // Min members to form a community (default: 2)
 }
 
 export interface GraphCentralityConfig {
-  enabled?: boolean; // Enable centrality boost in recall (default: false)
+  enabled?: boolean; // Enable centrality boost in recall (default: true)
   boost_weight?: number; // Weight of centrality boost (default: 0.1)
   cache_ttl_hours?: number; // Centrality cache TTL in hours (default: 24)
 }

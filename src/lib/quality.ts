@@ -594,7 +594,7 @@ export async function scoreMemory(
  */
 export function passesQualityThreshold(score: QualityScore, threshold?: number): boolean {
   const config = getConfig();
-  const minScore = threshold ?? config.quality_scoring_threshold ?? 0;
+  const minScore = threshold ?? config.quality_scoring_threshold ?? 0.3;
   return score.score >= minScore;
 }
 

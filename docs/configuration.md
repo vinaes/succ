@@ -463,7 +463,7 @@ Quality scoring is configured under the `llm.quality` namespace, consistent with
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `quality_scoring_enabled` | boolean | true | Enable quality scoring |
-| `quality_scoring_threshold` | number | 0 | Min score to keep (0-1) |
+| `quality_scoring_threshold` | number | 0.3 | Min score to keep (0-1) |
 | `llm.quality.mode` | `"local"` \| `"api"` | `"local"` | Scoring provider |
 | `llm.quality.model` | string | - | Model for LLM-based scoring |
 | `llm.quality.api_url` | string | - | API URL for custom mode |
@@ -560,7 +560,7 @@ Auto-group memories into thematic communities via Label Propagation algorithm. R
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `graph_community_detection.enabled` | boolean | false | Enable community detection |
+| `graph_community_detection.enabled` | boolean | true | Enable community detection |
 | `graph_community_detection.algorithm` | string | `"label-propagation"` | Detection algorithm |
 | `graph_community_detection.max_iterations` | number | 100 | Max LP iterations |
 | `graph_community_detection.min_community_size` | number | 2 | Min members to form a community |
@@ -586,7 +586,7 @@ Degree centrality scoring with recall boost — well-connected memories rank hig
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `graph_centrality.enabled` | boolean | false | Enable centrality boost |
+| `graph_centrality.enabled` | boolean | true | Enable centrality boost |
 | `graph_centrality.algorithm` | string | `"degree"` | Centrality algorithm |
 | `graph_centrality.boost_weight` | number | 0.1 | Max recall boost (10%) |
 | `graph_centrality.cache_ttl_hours` | number | 24 | Cache TTL for scores |
@@ -1134,11 +1134,11 @@ Controls the background daemon service.
 | `daemon.enabled` | boolean | true | Enable daemon |
 | `daemon.port` | number | (auto) | Fixed daemon port. Default: deterministic hash of project path (range 18000-27999). Set explicitly if firewall or port conflicts require a specific port |
 | `daemon.port_range_start` | number | 37842 | Starting port for fallback scan if stable port is unavailable |
-| `daemon.watch.auto_start` | boolean | false | Auto-start file watcher |
+| `daemon.watch.auto_start` | boolean | true | Auto-start file watcher |
 | `daemon.watch.patterns` | string[] | `["**/*.md"]` | Watch patterns |
-| `daemon.watch.include_code` | boolean | false | Watch code files |
+| `daemon.watch.include_code` | boolean | true | Watch code files |
 | `daemon.watch.debounce_ms` | number | 500 | Debounce interval |
-| `daemon.analyze.auto_start` | boolean | false | Auto-start analyzer |
+| `daemon.analyze.auto_start` | boolean | true | Auto-start analyzer |
 | `daemon.analyze.interval_minutes` | number | 30 | Analysis interval |
 | `daemon.analyze.mode` | `"claude"` \| `"openrouter"` \| `"local"` | `"claude"` | Analysis LLM mode (legacy, prefer `llm.*`) |
 
@@ -1163,7 +1163,7 @@ Triggers reflections after periods of inactivity.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `idle_watcher.enabled` | boolean | true | Enable idle detection |
-| `idle_watcher.idle_minutes` | number | 2 | Minutes before reflection |
+| `idle_watcher.idle_minutes` | number | 5 | Minutes before reflection |
 | `idle_watcher.check_interval` | number | 30 | Seconds between checks |
 | `idle_watcher.min_conversation_length` | number | 5 | Min entries to trigger |
 | `idle_watcher.reflection_cooldown_minutes` | number | 30 | Cooldown between reflections |
@@ -1453,7 +1453,7 @@ Controls the briefing generated after `/compact`.
 | `compact_briefing.format` | `"structured"` \| `"prose"` \| `"minimal"` | `"structured"` | Output format |
 | `compact_briefing.include_learnings` | boolean | true | Include learnings |
 | `compact_briefing.include_memories` | boolean | true | Include memories |
-| `compact_briefing.max_memories` | number | 3 | Max memories |
+| `compact_briefing.max_memories` | number | 5 | Max memories |
 | `compact_briefing.timeout_ms` | number | 30000 | LLM timeout |
 
 ---
@@ -1517,7 +1517,7 @@ LLM-powered skill discovery and suggestions.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `skills.skyll.enabled` | boolean | true | Enable Skyll integration |
+| `skills.skyll.enabled` | boolean | false | Enable Skyll integration |
 | `skills.skyll.endpoint` | string | `"https://api.skyll.app"` | Skyll API URL |
 | `skills.skyll.api_key` | string | - | Optional API key for higher limits |
 | `skills.skyll.cache_ttl` | number | 604800 | Cache TTL in seconds (7 days) |
@@ -1560,9 +1560,9 @@ Fine-tune search result ranking and expansion.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `retrieval.quality_boost_enabled` | boolean | false | Boost results by quality score |
+| `retrieval.quality_boost_enabled` | boolean | true | Boost results by quality score |
 | `retrieval.quality_boost_weight` | number | 0.15 | Weight of quality boost (0-1) |
-| `retrieval.mmr_enabled` | boolean | false | Enable Maximal Marginal Relevance for diversity |
+| `retrieval.mmr_enabled` | boolean | true | Enable Maximal Marginal Relevance for diversity |
 | `retrieval.mmr_lambda` | number | 0.8 | MMR trade-off: 1.0 = pure relevance, 0.0 = pure diversity |
 | `retrieval.query_expansion_enabled` | boolean | false | Expand queries with synonyms/related terms |
 | `retrieval.query_expansion_mode` | string | from `llm.type` | LLM backend for expansion |
@@ -1614,7 +1614,7 @@ The reranker loads lazily on first search and uses the same GPU fallback chain a
 
 ## Auto Memory Settings
 
-Automatic memory extraction from coding sessions. Phase 1 extracts facts at session end via LLM with a quality gate. Phase 2 periodically consolidates (merges duplicates, promotes high-usage memories). Phase 1.5 (extraction consolidation) uses LLM to make intelligent ADD/UPDATE/DELETE/NONE decisions per extracted fact.
+Automatic memory extraction from coding sessions. Facts are extracted at session end via LLM with a quality gate, then periodically consolidated (merges duplicates, promotes high-usage memories). When extraction consolidation is enabled, each extracted fact goes through intelligent ADD/UPDATE/DELETE/NONE decisions before storage.
 
 ```json
 {
@@ -2075,8 +2075,12 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
   "daemon": {
     "enabled": true,
     "watch": {
-      "auto_start": false,
+      "auto_start": true,
+      "include_code": true,
       "patterns": ["**/*.md"]
+    },
+    "analyze": {
+      "auto_start": true
     }
   },
 
@@ -2087,7 +2091,7 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
 
   "idle_watcher": {
     "enabled": true,
-    "idle_minutes": 2
+    "idle_minutes": 5
   },
 
   "idle_reflection": {
@@ -2109,7 +2113,7 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
     "enabled": true,
     "format": "structured",
     "include_memories": true,
-    "max_memories": 3
+    "max_memories": 5
   },
 
   "skills": {
@@ -2119,7 +2123,7 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
       "min_confidence": 0.7
     },
     "skyll": {
-      "enabled": true,
+      "enabled": false,
       "only_when_no_local": true
     }
   },
@@ -2161,6 +2165,8 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
   },
 
   "retrieval": {
+    "quality_boost_enabled": true,
+    "mmr_enabled": true,
     "graph_ppr_enabled": false,
     "graph_ppr_weight": 0.3
   },

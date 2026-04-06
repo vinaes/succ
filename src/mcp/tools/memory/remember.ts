@@ -203,7 +203,7 @@ export function registerRememberTool(server: McpServer): void {
               content: [
                 {
                   type: 'text' as const,
-                  text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`,
+                  text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0.3) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`,
                 },
               ],
             };
