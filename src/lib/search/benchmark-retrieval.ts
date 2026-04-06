@@ -1,0 +1,712 @@
+/**
+ * Retrieval Quality Benchmark — measure and track search quality over time.
+ *
+ * Uses existing project memories/code as test corpus with tag-based ground truth.
+ * Generates diverse query sets, runs through hybrid search pipeline, computes
+ * MRR@10, Recall@20, NDCG@10, and latency P50/P95.
+ *
+ * Saves baselines as JSON for regression detection across improvements.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { createHash } from 'crypto';
+import { z } from 'zod';
+import { getEmbedding } from '../embeddings.js';
+import { getSuccDir } from '../config.js';
+import {
+  calculateAccuracyMetrics,
+  calculateLatencyStats,
+  type AccuracyMetrics,
+  type LatencyStats,
+  type SearchResult as BenchmarkSearchResult,
+} from '../benchmark.js';
+import { logWarn, logInfo } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface RetrievalBenchmarkConfig {
+  /** K for Recall@K, Precision@K, and NDCG@K (default: 10) */
+  k?: number;
+  /** Number of search results to retrieve per query (default: 20) */
+  retrievalLimit?: number;
+  /** Minimum similarity threshold (default: 0.2) */
+  threshold?: number;
+}
+
+export interface RetrievalBenchmarkResult {
+  accuracy: AccuracyMetrics;
+  latency: {
+    embedding: LatencyStats;
+    search: LatencyStats;
+    pipeline: LatencyStats;
+  };
+  queryBreakdown: Array<{
+    query: string;
+    category: string;
+    mrr: number;
+    recall: number;
+    latencyMs: number;
+    hitsInTopK: number;
+    totalRelevant: number;
+  }>;
+  metadata: {
+    timestamp: string;
+    totalQueries: number;
+    totalMemories: number;
+    config: RetrievalBenchmarkConfig;
+    /** SHA-256 hash of the benchmark query definitions for change detection */
+    queryHash?: string;
+    /** Whether the embedding cache was warmed before the benchmark loop */
+    cacheMode?: 'warm' | 'cold';
+  };
+}
+
+export interface BaselineComparison {
+  current: RetrievalBenchmarkResult;
+  baseline: RetrievalBenchmarkResult | null;
+  regressions: Array<{
+    metric: string;
+    baseline: number;
+    current: number;
+    delta: number;
+    deltaPct: number;
+  }>;
+  improvements: Array<{
+    metric: string;
+    baseline: number;
+    current: number;
+    delta: number;
+    deltaPct: number;
+  }>;
+}
+
+// ============================================================================
+// Baseline validation schema (zod)
+// ============================================================================
+
+const LatencyStatsSchema = z.object({
+  min: z.number(),
+  max: z.number(),
+  avg: z.number(),
+  p50: z.number(),
+  p95: z.number(),
+  p99: z.number(),
+  samples: z.number(),
+});
+
+const RetrievalBenchmarkResultSchema = z.object({
+  accuracy: z.object({
+    recallAtK: z.number(),
+    precisionAtK: z.number(),
+    f1AtK: z.number(),
+    k: z.number(),
+    mrr: z.number(),
+    ndcg: z.number(),
+    queryCount: z.number(),
+    queriesWithHits: z.number(),
+  }),
+  latency: z.object({
+    embedding: LatencyStatsSchema,
+    search: LatencyStatsSchema,
+    pipeline: LatencyStatsSchema,
+  }),
+  queryBreakdown: z.array(
+    z.object({
+      query: z.string(),
+      category: z.string(),
+      mrr: z.number(),
+      recall: z.number(),
+      latencyMs: z.number(),
+      hitsInTopK: z.number(),
+      totalRelevant: z.number(),
+    })
+  ),
+  metadata: z.object({
+    timestamp: z.string(),
+    totalQueries: z.number(),
+    totalMemories: z.number(),
+    config: z
+      .object({
+        k: z.number().optional(),
+        retrievalLimit: z.number().optional(),
+        threshold: z.number().optional(),
+      })
+      .passthrough(),
+    queryHash: z.string().optional(),
+    cacheMode: z.enum(['warm', 'cold']).optional(),
+  }),
+});
+
+// ============================================================================
+// Query Generation
+// ============================================================================
+
+/** Built-in diverse query set covering different retrieval scenarios */
+export const BENCHMARK_QUERIES: Array<{ query: string; category: string; tags: string[] }> = [
+  // Symbol lookup (exact match, BM25-dominant)
+  { query: 'getEmbedding function', category: 'symbol', tags: ['embedding', 'search'] },
+  { query: 'saveMemory implementation', category: 'symbol', tags: ['memory', 'storage'] },
+  { query: 'hybridSearchMemories', category: 'symbol', tags: ['search', 'memory'] },
+  { query: 'callLLM function', category: 'symbol', tags: ['llm'] },
+  { query: 'createMemoryLink', category: 'symbol', tags: ['graph', 'link'] },
+  { query: 'personalizedPageRank', category: 'symbol', tags: ['graph', 'search'] },
+  { query: 'reciprocalRankFusion', category: 'symbol', tags: ['search', 'bm25'] },
+  { query: 'scoreMemory quality', category: 'symbol', tags: ['quality'] },
+  { query: 'detectInvariant', category: 'symbol', tags: ['memory'] },
+  { query: 'sanitizeForContext', category: 'symbol', tags: ['security'] },
+
+  // Natural language (semantic, vector-dominant)
+  {
+    query: 'how does memory consolidation work',
+    category: 'nl-code',
+    tags: ['memory', 'consolidation'],
+  },
+  { query: 'what is the search pipeline flow', category: 'nl-code', tags: ['search'] },
+  { query: 'how are embeddings generated and cached', category: 'nl-code', tags: ['embedding'] },
+  { query: 'explain the hook system architecture', category: 'nl-code', tags: ['hooks'] },
+  {
+    query: 'how does the daemon handle sessions',
+    category: 'nl-code',
+    tags: ['daemon', 'session'],
+  },
+  {
+    query: 'what security checks are performed on input',
+    category: 'nl-code',
+    tags: ['security', 'injection'],
+  },
+  {
+    query: 'how does temporal decay affect memory ranking',
+    category: 'nl-code',
+    tags: ['temporal', 'memory'],
+  },
+  { query: 'explain the knowledge graph structure', category: 'nl-code', tags: ['graph'] },
+  {
+    query: 'how are MCP tools registered and dispatched',
+    category: 'nl-code',
+    tags: ['mcp', 'tools'],
+  },
+  { query: 'what is the working memory pipeline', category: 'nl-code', tags: ['memory'] },
+
+  // Memory recall (temporal + relevance)
+  {
+    query: 'recent architecture decisions',
+    category: 'memory',
+    tags: ['decision', 'architecture'],
+  },
+  { query: 'bugs fixed this week', category: 'memory', tags: ['error', 'fix'] },
+  { query: 'performance improvements made', category: 'memory', tags: ['performance'] },
+  { query: 'configuration changes', category: 'memory', tags: ['config'] },
+  { query: 'security findings and fixes', category: 'memory', tags: ['security'] },
+  { query: 'test failures and resolutions', category: 'memory', tags: ['test'] },
+  { query: 'database schema changes', category: 'memory', tags: ['schema', 'database'] },
+  { query: 'API endpoint modifications', category: 'memory', tags: ['api'] },
+  { query: 'dependency updates', category: 'memory', tags: ['dependency'] },
+  { query: 'refactoring decisions', category: 'memory', tags: ['refactor'] },
+
+  // Multi-concept (complex, benefits from decomposition)
+  {
+    query: 'how does BM25 interact with vector search in the RRF fusion pipeline',
+    category: 'multi',
+    tags: ['bm25', 'search'],
+  },
+  {
+    query: 'memory quality scoring and retention threshold',
+    category: 'multi',
+    tags: ['quality', 'retention'],
+  },
+  {
+    query: 'graph traversal for PPR and community detection',
+    category: 'multi',
+    tags: ['graph', 'search'],
+  },
+  {
+    query: 'SQLite storage backend and migration pattern',
+    category: 'multi',
+    tags: ['storage', 'sqlite'],
+  },
+  { query: 'embedding model loading and GPU detection', category: 'multi', tags: ['embedding'] },
+
+  // Cross-type (memory about code, code implementing decisions)
+  {
+    query: 'why was the storage dispatcher pattern chosen',
+    category: 'cross',
+    tags: ['storage', 'decision'],
+  },
+  {
+    query: 'what led to the hook architecture refactor',
+    category: 'cross',
+    tags: ['hooks', 'refactor'],
+  },
+  {
+    query: 'reasoning behind config-gating expensive features',
+    category: 'cross',
+    tags: ['config'],
+  },
+  {
+    query: 'decision to use tree-sitter for AST parsing',
+    category: 'cross',
+    tags: ['tree-sitter', 'decision'],
+  },
+  {
+    query: 'why onnxruntime-node over transformers.js',
+    category: 'cross',
+    tags: ['embedding', 'decision'],
+  },
+];
+
+/**
+ * Compute a stable SHA-256 hash of the benchmark query definitions.
+ * Used to detect when BENCHMARK_QUERIES change between baseline save and load,
+ * so stale baselines are not silently compared against a different query set.
+ */
+export function computeQueryHash(
+  queries: ReadonlyArray<{ query: string; category: string; tags: string[] }> = BENCHMARK_QUERIES
+): string {
+  const canonical = JSON.stringify(
+    queries.map((q) => ({ query: q.query, category: q.category, tags: [...q.tags].sort() }))
+  );
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+// ============================================================================
+// Benchmark Runner
+// ============================================================================
+
+/**
+ * Run the retrieval quality benchmark against existing project data.
+ *
+ * @param searchFn - The search function to benchmark (injected for testability)
+ * @param getStatsFn - Function to get memory count
+ * @param config - Benchmark configuration
+ */
+export async function runRetrievalBenchmark(
+  searchFn: (
+    query: string,
+    embedding: number[],
+    limit: number,
+    threshold: number
+  ) => Promise<Array<{ id: number; similarity: number; tags: string[] }>>,
+  getStatsFn: () => Promise<{ total_memories: number }>,
+  config: RetrievalBenchmarkConfig = {}
+): Promise<RetrievalBenchmarkResult> {
+  const k = config.k ?? 10;
+  const limit = config.retrievalLimit ?? 20;
+  const threshold = config.threshold ?? 0.2;
+
+  const stats = await getStatsFn();
+  const queries = BENCHMARK_QUERIES;
+
+  // Accumulate metric inputs in lock-step with queryBreakdown so every query
+  // (including failures) contributes to the denominator.
+  const accuracyInput: Array<{
+    results: BenchmarkSearchResult[];
+    relevantIds: Set<number>;
+  }> = [];
+  const queryBreakdown: RetrievalBenchmarkResult['queryBreakdown'] = [];
+  const embeddingTimes: number[] = [];
+  const searchTimes: number[] = [];
+  const pipelineTimes: number[] = [];
+
+  // Warm up the embedding cache/model so all benchmark iterations measure
+  // warm-cache latency consistently, avoiding cold-start skew on the first query.
+  let cacheWarmed = false;
+  try {
+    await getEmbedding('benchmark warm-up query');
+    cacheWarmed = true;
+    logInfo('benchmark', 'Embedding cache warmed up before benchmark loop');
+  } catch (err) {
+    logWarn('benchmark', `Embedding warm-up failed: ${getErrorMessage(err)}`);
+  }
+
+  for (const q of queries) {
+    const pipelineStart = Date.now();
+
+    // Embed query
+    const embedStart = Date.now();
+    let embedding: number[];
+    try {
+      embedding = await getEmbedding(q.query);
+    } catch (err) {
+      embeddingTimes.push(Date.now() - embedStart);
+      pipelineTimes.push(Date.now() - pipelineStart);
+      logWarn('benchmark', `Failed to embed query: ${q.query}`, {
+        error: getErrorMessage(err),
+      });
+      // Record a zero-score entry so failed queries count in the denominator
+      accuracyInput.push({ results: [], relevantIds: new Set() });
+      queryBreakdown.push({
+        query: q.query,
+        category: q.category,
+        mrr: 0,
+        recall: 0,
+        latencyMs: Date.now() - pipelineStart,
+        hitsInTopK: 0,
+        totalRelevant: 0,
+      });
+      continue;
+    }
+    embeddingTimes.push(Date.now() - embedStart);
+
+    // Search
+    const searchStart = Date.now();
+    let results: Array<{ id: number; similarity: number; tags: string[] }>;
+    try {
+      results = await searchFn(q.query, embedding, limit, threshold);
+    } catch (err) {
+      searchTimes.push(Date.now() - searchStart);
+      pipelineTimes.push(Date.now() - pipelineStart);
+      logWarn('benchmark', `Search failed for query: ${q.query}`, {
+        error: getErrorMessage(err),
+      });
+      // Record a zero-score entry so failed queries count in the denominator
+      accuracyInput.push({ results: [], relevantIds: new Set() });
+      queryBreakdown.push({
+        query: q.query,
+        category: q.category,
+        mrr: 0,
+        recall: 0,
+        latencyMs: Date.now() - pipelineStart,
+        hitsInTopK: 0,
+        totalRelevant: 0,
+      });
+      continue;
+    }
+    searchTimes.push(Date.now() - searchStart);
+    const pipelineTime = Date.now() - pipelineStart;
+    pipelineTimes.push(pipelineTime);
+
+    // Validate that results include tags — without them, all relevance
+    // scores will be 0 and the benchmark is meaningless.
+    const missingTagCount = results.filter((r) => !r.tags || r.tags.length === 0).length;
+    if (missingTagCount > 0) {
+      logWarn(
+        'benchmark',
+        `${missingTagCount}/${results.length} results for "${q.query}" have no tags — relevance scores will be degraded`
+      );
+    }
+
+    // Build the real ranked result list for metric calculation — preserves
+    // the original ranking order and non-relevant entries.
+    const searchResults: BenchmarkSearchResult[] = results.map((r) => ({
+      id: r.id,
+      score: r.similarity,
+    }));
+
+    // Ground truth: a result is relevant if it shares at least one tag with
+    // the query's expected tags.  This uses independent labels defined in
+    // BENCHMARK_QUERIES instead of self-referential similarity thresholds.
+    // Tags are normalized to lowercase because the storage layer is
+    // case-insensitive (e.g. "Security" stored vs "security" queried).
+    const queryTags = new Set(q.tags.map((t) => t.toLowerCase()));
+    const relevantIds = new Set<number>(
+      results.filter((r) => r.tags?.some((t) => queryTags.has(t.toLowerCase()))).map((r) => r.id)
+    );
+
+    // Build the full relevant set from a broader search so Recall@K measures
+    // how many of the *total* relevant items appear in the top-K, not just
+    // how many of the *retrieved* items are relevant (which conflates recall
+    // with precision).  We use a 5x multiplier over the retrieval limit to
+    // approximate the full relevant population without scanning the entire
+    // corpus.
+    const groundTruthLimit = limit * 5;
+    let groundTruthRelevantCount = relevantIds.size;
+    if (groundTruthLimit > limit) {
+      try {
+        const widerResults = await searchFn(q.query, embedding, groundTruthLimit, threshold);
+        groundTruthRelevantCount = widerResults.filter((r) =>
+          r.tags?.some((t) => queryTags.has(t.toLowerCase()))
+        ).length;
+      } catch (err) {
+        // Fall back to the narrower relevant set on failure — recall will be
+        // an upper-bound estimate but the benchmark still completes.
+        logWarn(
+          'benchmark',
+          `Wider ground-truth search failed for "${q.query}": ${getErrorMessage(err)}`
+        );
+      }
+    }
+
+    // Feed the real ranked list (including non-relevant hits) so
+    // calculateAccuracyMetrics computes MRR/NDCG/Recall correctly.
+    // For recall, pass the wider ground-truth set so the denominator
+    // reflects the true relevant population, not just retrieved items.
+    const groundTruthIds = new Set<number>(relevantIds);
+    // Add phantom IDs for relevant items found in the wider search but
+    // outside the retrieved window — this inflates the denominator so
+    // recallAtK divides by the correct total.
+    // Phantom IDs: negative range starting at -1_000_000 — safe because real memory IDs are always positive auto-increment integers
+    const phantomBase = -1_000_000;
+    for (let i = 0; i < groundTruthRelevantCount - relevantIds.size; i++) {
+      groundTruthIds.add(phantomBase - i);
+    }
+    accuracyInput.push({ results: searchResults, relevantIds: groundTruthIds });
+
+    // Per-query metrics
+    const hitsInTopK = searchResults.slice(0, k).filter((r) => relevantIds.has(r.id)).length;
+    const firstRelevantRank = searchResults.findIndex((r) => relevantIds.has(r.id));
+    const mrr = firstRelevantRank >= 0 ? 1 / (firstRelevantRank + 1) : 0;
+
+    queryBreakdown.push({
+      query: q.query,
+      category: q.category,
+      mrr,
+      recall: groundTruthRelevantCount > 0 ? hitsInTopK / groundTruthRelevantCount : 0,
+      latencyMs: pipelineTime,
+      hitsInTopK,
+      totalRelevant: groundTruthRelevantCount,
+    });
+  }
+
+  const accuracy = calculateAccuracyMetrics(accuracyInput, k);
+
+  return {
+    accuracy,
+    latency: {
+      embedding: calculateLatencyStats(embeddingTimes),
+      search: calculateLatencyStats(searchTimes),
+      pipeline: calculateLatencyStats(pipelineTimes),
+    },
+    queryBreakdown,
+    metadata: {
+      timestamp: new Date().toISOString(),
+      totalQueries: queries.length,
+      totalMemories: stats.total_memories,
+      config: { k, retrievalLimit: limit, threshold },
+      queryHash: computeQueryHash(queries),
+      cacheMode: cacheWarmed ? 'warm' : 'cold',
+    },
+  };
+}
+
+// ============================================================================
+// Baseline Management
+// ============================================================================
+
+function getBaselinePath(): string {
+  const succDir = getSuccDir();
+  return path.join(succDir, 'benchmark-baseline.json');
+}
+
+/** Save benchmark results as the new baseline */
+export function saveBaseline(result: RetrievalBenchmarkResult): void {
+  try {
+    const baselinePath = getBaselinePath();
+    const dir = path.dirname(baselinePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(baselinePath, JSON.stringify(result, null, 2), 'utf8');
+    logInfo(
+      'benchmark',
+      `Baseline saved: MRR=${result.accuracy.mrr.toFixed(3)}, Recall@${result.accuracy.k}=${result.accuracy.recallAtK.toFixed(3)}`
+    );
+  } catch (err) {
+    logWarn('benchmark', 'Failed to save baseline', {
+      error: getErrorMessage(err),
+    });
+  }
+}
+
+/** Load the saved baseline, or null if none exists */
+export function loadBaseline(): RetrievalBenchmarkResult | null {
+  try {
+    const baselinePath = getBaselinePath();
+    if (!fs.existsSync(baselinePath)) return null;
+    const parsed: unknown = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+
+    // Validate baseline structure with zod to catch corrupted/incompatible files
+    const result = RetrievalBenchmarkResultSchema.safeParse(parsed);
+    if (!result.success) {
+      logWarn('benchmark', 'Invalid baseline format', {
+        error: result.error.message,
+      });
+      return null;
+    }
+
+    return result.data as RetrievalBenchmarkResult;
+  } catch (err) {
+    logWarn('benchmark', 'Failed to load baseline', {
+      error: getErrorMessage(err),
+    });
+    return null;
+  }
+}
+
+/** Compare current results against baseline, flag regressions >5% */
+export function compareToBaseline(
+  current: RetrievalBenchmarkResult,
+  baseline: RetrievalBenchmarkResult | null,
+  regressionThreshold: number = 0.05
+): BaselineComparison {
+  const regressions: BaselineComparison['regressions'] = [];
+  const improvements: BaselineComparison['improvements'] = [];
+
+  if (!baseline) {
+    return { current, baseline, regressions, improvements };
+  }
+
+  // Reject comparisons when the benchmark configs differ — numeric deltas
+  // across unlike runs are misleading.
+  const curCfg = current.metadata.config;
+  const baseCfg = baseline.metadata.config;
+  if (
+    curCfg.k !== baseCfg.k ||
+    curCfg.retrievalLimit !== baseCfg.retrievalLimit ||
+    curCfg.threshold !== baseCfg.threshold
+  ) {
+    logWarn(
+      'benchmark',
+      `Baseline config mismatch (k=${baseCfg.k}→${curCfg.k}, limit=${baseCfg.retrievalLimit}→${curCfg.retrievalLimit}, threshold=${baseCfg.threshold}→${curCfg.threshold}) — comparison skipped`
+    );
+    return { current, baseline, regressions, improvements };
+  }
+
+  // Reject comparisons when the benchmark query definitions have changed —
+  // metrics from a different query set are not comparable.
+  const curHash = current.metadata.queryHash;
+  const baseHash = baseline.metadata.queryHash;
+  if (curHash && baseHash && curHash !== baseHash) {
+    logWarn(
+      'benchmark',
+      `Benchmark query definitions changed (hash ${baseHash.slice(0, 8)}→${curHash.slice(0, 8)}) — comparison skipped, re-save baseline`
+    );
+    return { current, baseline, regressions, improvements };
+  }
+
+  const metrics: Array<{ name: string; cur: number; base: number }> = [
+    { name: 'MRR', cur: current.accuracy.mrr, base: baseline.accuracy.mrr },
+    {
+      name: `Recall@${current.accuracy.k}`,
+      cur: current.accuracy.recallAtK,
+      base: baseline.accuracy.recallAtK,
+    },
+    { name: 'NDCG', cur: current.accuracy.ndcg, base: baseline.accuracy.ndcg },
+    {
+      name: `Precision@${current.accuracy.k}`,
+      cur: current.accuracy.precisionAtK,
+      base: baseline.accuracy.precisionAtK,
+    },
+    { name: 'Latency P50', cur: current.latency.pipeline.p50, base: baseline.latency.pipeline.p50 },
+    { name: 'Latency P95', cur: current.latency.pipeline.p95, base: baseline.latency.pipeline.p95 },
+  ];
+
+  for (const m of metrics) {
+    const delta = m.cur - m.base;
+    let deltaPct: number;
+    if (m.base === 0) {
+      // Handle zero-baseline: classify based on whether current is also zero
+      deltaPct = m.cur === 0 ? 0 : m.cur > 0 ? Infinity : -Infinity;
+    } else {
+      deltaPct = delta / m.base;
+    }
+
+    // For latency, higher is worse (regression if current > baseline)
+    const isLatency = m.name.startsWith('Latency');
+    const isRegression = isLatency
+      ? deltaPct > regressionThreshold
+      : deltaPct < -regressionThreshold;
+    const isImprovement = isLatency
+      ? deltaPct < -regressionThreshold
+      : deltaPct > regressionThreshold;
+
+    if (isRegression) {
+      regressions.push({ metric: m.name, baseline: m.base, current: m.cur, delta, deltaPct });
+    } else if (isImprovement) {
+      improvements.push({ metric: m.name, baseline: m.base, current: m.cur, delta, deltaPct });
+    }
+  }
+
+  return { current, baseline, regressions, improvements };
+}
+
+// ============================================================================
+// Formatting
+// ============================================================================
+
+/** Format benchmark results for console output */
+export function formatRetrievalResults(result: RetrievalBenchmarkResult): string {
+  const lines: string[] = [];
+  const a = result.accuracy;
+
+  lines.push('Retrieval Quality Benchmark');
+  lines.push('═'.repeat(50));
+  lines.push('');
+  lines.push('Accuracy Metrics:');
+  lines.push(`  MRR:           ${a.mrr.toFixed(3)}`);
+  lines.push(`  Recall@${a.k}:     ${a.recallAtK.toFixed(3)}`);
+  lines.push(`  Precision@${a.k}:  ${a.precisionAtK.toFixed(3)}`);
+  lines.push(`  NDCG:          ${a.ndcg.toFixed(3)}`);
+  lines.push(`  Queries:       ${a.queryCount} (${a.queriesWithHits} with hits)`);
+  lines.push('');
+  lines.push('Latency:');
+  lines.push(
+    `  Embedding:     P50=${result.latency.embedding.p50.toFixed(3)}ms  P95=${result.latency.embedding.p95.toFixed(3)}ms`
+  );
+  lines.push(
+    `  Search:        P50=${result.latency.search.p50.toFixed(3)}ms  P95=${result.latency.search.p95.toFixed(3)}ms`
+  );
+  lines.push(
+    `  Pipeline:      P50=${result.latency.pipeline.p50.toFixed(3)}ms  P95=${result.latency.pipeline.p95.toFixed(3)}ms`
+  );
+  lines.push('');
+
+  // Category breakdown
+  const categories = new Map<string, { count: number; mrrSum: number; recallSum: number }>();
+  for (const q of result.queryBreakdown) {
+    const cat = categories.get(q.category) ?? { count: 0, mrrSum: 0, recallSum: 0 };
+    cat.count++;
+    cat.mrrSum += q.mrr;
+    cat.recallSum += q.recall;
+    categories.set(q.category, cat);
+  }
+
+  lines.push('By Category:');
+  for (const [cat, stats] of categories) {
+    const avgMrr = (stats.mrrSum / stats.count).toFixed(3);
+    const avgRecall = (stats.recallSum / stats.count).toFixed(3);
+    lines.push(`  ${cat.padEnd(12)} MRR=${avgMrr}  Recall=${avgRecall}  (${stats.count} queries)`);
+  }
+
+  return lines.join('\n');
+}
+
+/** Format baseline comparison for console output */
+export function formatComparison(comparison: BaselineComparison): string {
+  const lines: string[] = [];
+
+  if (!comparison.baseline) {
+    lines.push('No baseline found — saving current results as baseline.');
+    return lines.join('\n');
+  }
+
+  lines.push('');
+  lines.push('vs Baseline:');
+
+  if (comparison.regressions.length > 0) {
+    lines.push('  REGRESSIONS (>5% worse):');
+    for (const r of comparison.regressions) {
+      lines.push(
+        `    ${r.metric}: ${r.baseline.toFixed(3)} → ${r.current.toFixed(3)} (${(r.deltaPct * 100).toFixed(1)}%)`
+      );
+    }
+  }
+
+  if (comparison.improvements.length > 0) {
+    lines.push('  IMPROVEMENTS (>5% better):');
+    for (const i of comparison.improvements) {
+      lines.push(
+        `    ${i.metric}: ${i.baseline.toFixed(3)} → ${i.current.toFixed(3)} (${i.deltaPct >= 0 ? '+' : ''}${(i.deltaPct * 100).toFixed(1)}%)`
+      );
+    }
+  }
+
+  if (comparison.regressions.length === 0 && comparison.improvements.length === 0) {
+    lines.push('  No significant changes (within 5% of baseline)');
+  }
+
+  return lines.join('\n');
+}

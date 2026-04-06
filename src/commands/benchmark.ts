@@ -283,7 +283,8 @@ async function runAdvancedBenchmark(
     const searchResults = await searchMemories(queryEmbedding, k * 2, 0.0);
     searchTimes.push(Date.now() - searchStart);
 
-    pipelineTimes.push(Date.now() - pipelineStart);
+    const pipelineLatency = Date.now() - pipelineStart;
+    pipelineTimes.push(pipelineLatency);
 
     // Convert to benchmark format
     const benchmarkResults: BenchmarkSearchResult[] = searchResults.map((r) => ({
@@ -574,7 +575,8 @@ export async function benchmarkExisting(
       await searchMemories(embedding, k, 0.3);
       searchTimes.push(Date.now() - searchStart);
 
-      pipelineTimes.push(Date.now() - pipelineStart);
+      const pipelineLatency = Date.now() - pipelineStart;
+      pipelineTimes.push(pipelineLatency);
     }
   }
 
