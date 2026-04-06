@@ -13,6 +13,7 @@ import {
 } from './storage/index.js';
 import { tokenizeCode, tokenizeCodeWithAST } from './bm25.js';
 import { logError, logInfo } from './fault-logger.js';
+import { getErrorMessage } from './errors.js';
 
 import { enrichForEmbedding, type Chunk } from './chunker.js';
 export type { Chunk };
@@ -107,6 +108,19 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
 
   const totalBatches = Math.ceil(uniqueFiles.length / batchSize);
 
+  // Check contextual embeddings config once (stable during an indexing run)
+  let contextualEnabled = false;
+  if (pathPrefix === 'code:') {
+    const { getConfig } = await import('./config.js');
+    contextualEnabled = getConfig().indexing?.contextual_embeddings === true;
+
+    // Reset circuit breaker once per indexing run so LLM enrichment gets a fresh chance
+    if (contextualEnabled) {
+      const { resetLlmCircuitBreaker } = await import('./search/contextual-embeddings.js');
+      resetLlmCircuitBreaker();
+    }
+  }
+
   // Process files in batches with parallel file reading and single batch embedding
   for (let i = 0; i < uniqueFiles.length; i += batchSize) {
     const batchNum = Math.floor(i / batchSize) + 1;
@@ -119,6 +133,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     interface FileData {
       filePath: string;
       relativePath: string;
+      content: string;
       hash: string;
       chunks: Chunk[];
       isNew: boolean;
@@ -163,7 +178,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
       const chunks = await Promise.resolve(chunker(content, filePath));
       if (chunks.length === 0) return null;
 
-      return { filePath, relativePath, hash, chunks, isNew };
+      return { filePath, relativePath, content, hash, chunks, isNew };
     });
 
     const fileDataResults = await Promise.all(fileDataPromises);
@@ -203,10 +218,32 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
     try {
       // 3. Single batch embedding for all chunks in batch
       // For code files, prepend symbol metadata to improve semantic embedding quality
-      const embeddingTexts =
-        pathPrefix === 'code:'
-          ? allChunksWithMeta.map((c) => enrichForEmbedding(c as Chunk))
-          : allChunksWithMeta.map((c) => c.content);
+      let embeddingTexts: string[];
+      if (pathPrefix === 'code:') {
+        if (contextualEnabled && allChunksWithMeta.length > 0) {
+          try {
+            const { enrichWithContext } = await import('./search/contextual-embeddings.js');
+            // Enrich per-file so each file gets its own context
+            const perFileTexts: string[] = [];
+            for (const file of validFiles) {
+              perFileTexts.push(
+                ...(await enrichWithContext(file.chunks, file.content, enrichForEmbedding))
+              );
+            }
+            embeddingTexts = perFileTexts;
+          } catch (err) {
+            logError(
+              'indexer',
+              `Contextual embeddings failed, falling back to structural: ${getErrorMessage(err)}`
+            );
+            embeddingTexts = allChunksWithMeta.map((c) => enrichForEmbedding(c as Chunk));
+          }
+        } else {
+          embeddingTexts = allChunksWithMeta.map((c) => enrichForEmbedding(c as Chunk));
+        }
+      } else {
+        embeddingTexts = allChunksWithMeta.map((c) => c.content);
+      }
       const allEmbeddings = await getEmbeddings(embeddingTexts);
 
       // 4. Group by file and save
