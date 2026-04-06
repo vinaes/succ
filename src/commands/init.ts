@@ -432,9 +432,14 @@ export async function init(options: InitOptions = {}): Promise<void> {
     // existing permissions and any non-succ hooks.
     // Determine hooks path based on installation mode
     // Use $CLAUDE_PROJECT_DIR for portability (works regardless of cwd)
+    // On Windows, Claude Code's $CLAUDE_PROJECT_DIR substitution + path normalization
+    // can eat the `/` before `.succ`, producing `project.succ` instead of `project\.succ`.
+    // Use backslash separators on Windows so the path survives normalization.
     const hooksPath = useGlobalHooks
       ? path.join(SUCC_PACKAGE_DIR, 'hooks').replace(/\\/g, '/')
-      : '$CLAUDE_PROJECT_DIR/.succ/hooks';
+      : process.platform === 'win32'
+        ? '$CLAUDE_PROJECT_DIR\\.succ\\hooks'
+        : '$CLAUDE_PROJECT_DIR/.succ/hooks';
 
     // Detect Claude Code version for HTTP hooks support
     const claudeVersion = getClaudeCodeVersion();
@@ -454,9 +459,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
     }
 
     // Helper to build a command hook entry
+    const sep = process.platform === 'win32' && !useGlobalHooks ? '\\' : '/';
     const cmdHook = (script: string, timeout: number, statusMsg: string) => ({
       type: 'command' as const,
-      command: `node --no-warnings --no-deprecation "${hooksPath}/${script}"`,
+      command: `node --no-warnings --no-deprecation "${hooksPath}${sep}${script}"`,
       timeout,
       statusMessage: statusMsg,
     });
