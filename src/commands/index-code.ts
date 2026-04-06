@@ -10,6 +10,7 @@ import {
   resetChunkingStats,
 } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
+import { resetLlmCircuitBreaker } from '../lib/search/contextual-embeddings.js';
 import {
   getStoredEmbeddingDimension,
   clearCodeDocuments,
@@ -127,6 +128,7 @@ export async function indexCode(
   console.log(`Mode: ${force ? 'Force reindex all files' : 'Incremental (skip unchanged files)'}`);
 
   resetChunkingStats();
+  resetLlmCircuitBreaker();
 
   const result = await runIndexer({
     searchPath,

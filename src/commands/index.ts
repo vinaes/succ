@@ -5,6 +5,7 @@ import inquirer from 'inquirer';
 import { getClaudeDir, getProjectRoot } from '../lib/config.js';
 import { chunkText, extractFrontmatter } from '../lib/chunker.js';
 import { runIndexer, printResults } from '../lib/indexer.js';
+import { resetLlmCircuitBreaker } from '../lib/search/contextual-embeddings.js';
 import {
   getStoredEmbeddingDimension,
   clearDocuments,
@@ -112,6 +113,8 @@ export async function index(targetPath?: string, options: IndexOptions = {}): Pr
   console.log(`Indexing ${path.relative(projectRoot, searchPath) || searchPath}`);
   console.log(`Pattern: ${pattern}`);
   console.log(`Mode: ${force ? 'Force reindex all files' : 'Incremental (skip unchanged files)'}`);
+
+  resetLlmCircuitBreaker();
 
   const result = await runIndexer({
     searchPath,
