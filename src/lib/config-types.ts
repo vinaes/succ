@@ -123,6 +123,8 @@ export interface SuccConfig {
   retrieval?: RetrievalConfig;
   // Mid-conversation observer settings
   observer?: ObserverConfig;
+  // Auto-compact context pressure monitoring
+  auto_compact?: AutoCompactConfig;
   // Error reporting (brain-faults.log + webhook + sentry)
   error_reporting?: ErrorReportingConfig;
   // Tool profile: controls which MCP tools are registered
@@ -483,6 +485,14 @@ export interface ObserverConfig {
   enabled?: boolean; // Enable mid-conversation observer (default: true)
   min_tokens?: number; // Extract after N new tokens (default: 15000)
   max_minutes?: number; // Or after N minutes, whichever first (default: 10)
+}
+
+export interface AutoCompactConfig {
+  enabled?: boolean; // Enable context pressure monitoring (default: true)
+  threshold_percent?: number; // Compact when this % of context is USED (default: 15, range: 5-80)
+  cooldown_seconds?: number; // Minimum seconds between advisories (default: 90)
+  context_limit?: number; // Explicit context window override in tokens (e.g., 1000000)
+  preemptive_extract?: boolean; // Extract memories at high pressure before compaction (default: true)
 }
 
 export interface ErrorReportingConfig {

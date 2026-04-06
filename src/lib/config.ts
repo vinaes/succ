@@ -37,6 +37,7 @@ export type {
   WebSearchConfig,
   RetrievalConfig,
   ObserverConfig,
+  AutoCompactConfig,
   ErrorReportingConfig,
   BPETokenizerConfig,
   IdleWatcherConfig,
@@ -78,6 +79,7 @@ import type {
   WebSearchConfig,
   RetrievalConfig,
   ObserverConfig,
+  AutoCompactConfig,
   GlobalConfig,
   DaemonStatus,
   IdleOperation,
@@ -1030,6 +1032,28 @@ export function getObserverConfig(): Required<ObserverConfig> {
     enabled: userConfig.enabled ?? true,
     min_tokens: userConfig.min_tokens ?? 15000,
     max_minutes: userConfig.max_minutes ?? 10,
+  };
+}
+
+/**
+ * Get auto-compact config with validated defaults.
+ * Used by ContextMonitor to determine pressure thresholds.
+ */
+export function getAutoCompactConfig(): Required<AutoCompactConfig> {
+  const config = getConfig();
+  const userConfig = config.auto_compact || {};
+  // Clamp threshold to 5-80 to prevent nonsensical values
+  const rawThreshold = userConfig.threshold_percent ?? 15;
+  const threshold_percent = Math.max(5, Math.min(80, rawThreshold));
+  // context_limit: 0 = not set (sentinel), otherwise respect the user's explicit value
+  const rawLimit = userConfig.context_limit;
+  const context_limit = rawLimit !== undefined && rawLimit > 0 ? rawLimit : 0;
+  return {
+    enabled: userConfig.enabled ?? true,
+    threshold_percent,
+    cooldown_seconds: Math.max(0, userConfig.cooldown_seconds ?? 90),
+    context_limit,
+    preemptive_extract: userConfig.preemptive_extract ?? true,
   };
 }
 

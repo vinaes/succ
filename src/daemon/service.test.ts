@@ -63,6 +63,32 @@ vi.mock('../lib/config.js', () => ({
   isProjectInitialized: vi.fn(() => true),
   isGlobalOnlyMode: vi.fn(() => false),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getAutoCompactConfig: vi.fn(() => ({
+    enabled: true,
+    threshold_percent: 15,
+    cooldown_seconds: 90,
+    context_limit: 0,
+    preemptive_extract: true,
+  })),
+  getObserverConfig: vi.fn(() => ({
+    enabled: true,
+    min_tokens: 15000,
+    max_minutes: 10,
+  })),
+  getRetrievalConfig: vi.fn(() => ({
+    bm25_alpha: 0.4,
+    default_top_k: 10,
+    temporal_auto_skip: true,
+    preference_quality_boost: true,
+    quality_boost_enabled: false,
+    quality_boost_weight: 0.15,
+    mmr_enabled: false,
+    mmr_lambda: 0.8,
+    query_expansion_enabled: false,
+    query_expansion_mode: 'api',
+    graph_ppr_enabled: false,
+    graph_ppr_weight: 0.3,
+  })),
 }));
 
 vi.mock('../lib/quality.js', () => ({

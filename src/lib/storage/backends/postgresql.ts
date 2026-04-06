@@ -280,7 +280,13 @@ export class PostgresBackend {
     this.lastSlowQueryLogMs = now;
 
     try {
-      const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
+      // When params are present, skip EXPLAIN to avoid inlining sensitive
+      // values (embeddings, project IDs) into log output.
+      if (params.length > 0) {
+        logWarn('postgresql', `Slow query (${durationMs}ms)`, { query: queryText });
+        return;
+      }
+      const explainResult = await pool.query(`EXPLAIN ${queryText}`);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {
@@ -363,8 +369,7 @@ export class PostgresBackend {
         symbol_type TEXT,
         signature TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(project_id, file_path, chunk_index)
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
@@ -422,6 +427,14 @@ export class PostgresBackend {
     );
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)'
+    );
+    // Drop legacy unconditional UNIQUE constraints that block bi-temporal versioning.
+    // The partial unique index idx_documents_chunk_current replaces them (uniqueness only for current rows).
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_file_chunk_key'
+    );
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_id_file_path_chunk_index_key'
     );
     // Partial unique index: only current (non-superseded) rows must be unique per project+path+chunk.
     // This allows superseded rows to coexist with new versions of the same chunk.
@@ -907,46 +920,101 @@ export class PostgresBackend {
     // Area 9: Composite indexes for frequent query patterns
     // ========================================================================
 
-    // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
+    // Composite indexes for frequent query patterns.
     // Use CONCURRENTLY to avoid blocking writes on populated tables during startup.
+    //
+    // IMPORTANT: CREATE INDEX CONCURRENTLY cannot run inside a transaction, and
+    // pooled connections inherit `statement_timeout=30s` (set in getPool on-connect).
+    // A 30s timeout can kill long-running index builds mid-way, leaving INVALID
+    // index stubs.  We use a dedicated client with statement_timeout=0 so index
+    // creation can finish regardless of table size.
+    //
     // Each index creation is wrapped in try/catch because CONCURRENTLY can fail
     // without blocking (e.g. duplicate index from a prior interrupted build).
-    try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
-      );
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
-      );
-    }
 
-    // Composite index for active memories per project (most common query pattern)
-    try {
-      await pool.query(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
-        ON memories(LOWER(project_id), created_at DESC)
-        WHERE invalidated_by IS NULL
-      `);
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
-      );
-    }
+    // First drop any invalid indexes left by previous failed attempts (using pool is fine)
+    await this.dropInvalidIndex(pool, 'idx_memories_project_source_type');
+    await this.dropInvalidIndex(pool, 'idx_memories_project_active');
+    await this.dropInvalidIndex(pool, 'idx_memories_tags_gin');
+    await this.dropInvalidIndex(pool, 'idx_documents_project_filepath');
+    await this.dropInvalidIndex(pool, 'idx_documents_project_symbol');
 
-    // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
-    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+    // Acquire a dedicated client and disable statement_timeout for index creation
+    const idxClient = await pool.connect();
     try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
-      );
+      await idxClient.query('SET statement_timeout = 0');
+
+      // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for active memories per project (most common query pattern)
+      try {
+        await idxClient.query(`
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
+          ON memories(LOWER(project_id), created_at DESC)
+          WHERE invalidated_by IS NULL
+        `);
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
+        );
+      }
+
+      // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
+      // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for documents — use LOWER(project_id) to match query predicates
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for documents (project + symbol_type for code search)
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
+        );
+      }
+
+      await idxClient.query('RESET statement_timeout');
     } catch (error) {
       logWarn(
         'postgresql',
-        `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+        `Dedicated client for index creation encountered an error: ${getErrorMessage(error)}`
       );
+    } finally {
+      idxClient.release();
     }
 
     // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
@@ -971,29 +1039,32 @@ export class PostgresBackend {
         AND tags::text != lower(tags::text)
       `);
     }
+  }
 
-    // Composite index for documents — use LOWER(project_id) to match query predicates
+  /**
+   * Drop an index if it exists and is marked invalid in pg_index.
+   *
+   * When `CREATE INDEX CONCURRENTLY` fails (e.g. due to a crash or deadlock),
+   * PostgreSQL leaves behind an INVALID index stub.  A subsequent
+   * `CREATE INDEX CONCURRENTLY IF NOT EXISTS` will see the name already taken
+   * and silently no-op — the invalid index is never rebuilt.  By proactively
+   * dropping invalid indexes we allow the next CONCURRENTLY attempt to succeed.
+   */
+  private async dropInvalidIndex(pool: import('pg').Pool, indexName: string): Promise<void> {
     try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
-      );
+      await pool.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = '${indexName}' AND NOT i.indisvalid
+          ) THEN
+            EXECUTE 'DROP INDEX ${indexName}';
+          END IF;
+        END $$;
+      `);
     } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
-      );
-    }
-
-    // Composite index for documents (project + symbol_type for code search)
-    try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
-      );
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
-      );
+      logWarn('postgresql', `Failed to drop invalid index ${indexName}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1097,12 +1168,20 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -1162,14 +1241,22 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       const processedFiles = new Set<string>();
 
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -1276,7 +1363,7 @@ export class PostgresBackend {
     const queryText = `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
+       WHERE LOWER(project_id) = $2 AND superseded_at IS NULL AND 1 - (embedding <=> $1) >= $3${whereExtra}
        ORDER BY embedding <=> $1
        LIMIT $4`;
 
@@ -3699,7 +3786,7 @@ export class PostgresBackend {
     }>(
       `SELECT file_path, content, start_line, end_line
        FROM documents
-       WHERE LOWER(project_id) = $1 AND file_path NOT LIKE 'code:%'
+       WHERE LOWER(project_id) = $1 AND superseded_at IS NULL AND file_path NOT LIKE 'code:%'
        ORDER BY id DESC
        LIMIT $2`,
       [this.projectId, limit]
@@ -4379,7 +4466,9 @@ export class PostgresBackend {
     }>
   > {
     const pool = await this.getPool();
-    const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
+    const scopeCond = this.projectId
+      ? 'WHERE superseded_at IS NULL AND embedding IS NOT NULL AND LOWER(project_id) = $1'
+      : 'WHERE superseded_at IS NULL AND embedding IS NOT NULL';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query<{

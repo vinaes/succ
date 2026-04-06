@@ -8,7 +8,7 @@
  */
 
 // Anthropic's recommended heuristic for mixed content
-const CHARS_PER_TOKEN = 3.5;
+export const CHARS_PER_TOKEN = 3.5;
 
 /**
  * Estimate token count for a string.
