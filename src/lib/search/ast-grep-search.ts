@@ -247,9 +247,10 @@ export async function searchPatternInContent(
   pattern: string,
   lang?: string
 ): Promise<PatternMatch[]> {
+  // Bootstrap errors (missing @ast-grep/napi) must propagate — callers need to
+  // know structural search is unavailable rather than seeing "no matches".
+  const sg = await getAstGrep();
   try {
-    const sg = await getAstGrep();
-
     const ext = getExtension(filePath);
     const langName = lang ?? getLangForExtension(ext);
     if (!langName) return [];

@@ -861,6 +861,41 @@ export class PostgresBackend {
     );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name)');
 
+    // ========================================================================
+    // Area 10: Memory mutation audit trail
+    // ========================================================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS memory_audit (
+        id SERIAL PRIMARY KEY,
+        memory_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        old_content TEXT,
+        new_content TEXT,
+        changed_by TEXT NOT NULL,
+        project_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    // Migration: add project_id column if table already exists without it
+    await pool.query(`
+      DO $$ BEGIN
+        ALTER TABLE memory_audit ADD COLUMN IF NOT EXISTS project_id TEXT;
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_project_id ON memory_audit(project_id)'
+    );
+
     // One-time backfill: populate search_vector for rows that existed before tsvector migration
     const migrationKey = 'search_vector_backfill_done';
     const migCheck = await pool.query<{ value: string }>(

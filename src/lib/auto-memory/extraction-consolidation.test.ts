@@ -373,7 +373,7 @@ describe('executeUpdates', () => {
 
     expect(executed).toBe(1);
     expect(saveMemory).toHaveBeenCalledTimes(1);
-    expect(invalidateMemory).toHaveBeenCalledWith(42, 99);
+    expect(invalidateMemory).toHaveBeenCalledWith(42, 99, 'extraction');
   });
 
   it('should not invalidate if save produces duplicate', async () => {
@@ -453,8 +453,8 @@ describe('executeDeletes', () => {
     const executed = await executeDeletes([10, 20]);
 
     expect(executed).toBe(2);
-    expect(invalidateMemory).toHaveBeenCalledWith(10, 0);
-    expect(invalidateMemory).toHaveBeenCalledWith(20, 0);
+    expect(invalidateMemory).toHaveBeenCalledWith(10, 0, 'extraction');
+    expect(invalidateMemory).toHaveBeenCalledWith(20, 0, 'extraction');
   });
 
   it('should skip non-existent memories', async () => {

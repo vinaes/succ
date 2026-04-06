@@ -108,7 +108,7 @@ export async function retention(options: RetentionOptions = {}): Promise<void> {
 
     // Batch-invalidate all memories in parallel (mirrors --apply path's batch delete)
     const results = await Promise.allSettled(
-      analysis.delete.map((m) => invalidateMemory(m.memoryId, 0)) // 0 = system cleanup, no superseder
+      analysis.delete.map((m) => invalidateMemory(m.memoryId, 0, 'user')) // 0 = system cleanup, no superseder
     );
     let invalidated = 0;
     for (const result of results) {
