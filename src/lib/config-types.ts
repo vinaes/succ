@@ -479,6 +479,7 @@ export interface RetrievalConfig {
   query_expansion_mode?: 'claude' | 'api'; // LLM backend for expansion (default: from llm.type)
   graph_ppr_enabled?: boolean; // Use PPR graph traversal as 3rd RRF signal in memory search (default: false)
   graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
+  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: false)
 }
 
 export interface ObserverConfig {
@@ -706,6 +707,7 @@ export interface ConfigDisplay {
     query_expansion_mode: string;
     graph_ppr_enabled: boolean;
     graph_ppr_weight: number;
+    query_decomposition_enabled: boolean;
   };
   // Web search settings
   web_search: {

@@ -5,6 +5,7 @@ import {
   getStorageDispatcher,
   hybridSearchMemories,
   hybridSearchGlobalMemories,
+  decomposedSearchMemories,
   getRecentMemories,
   getRecentGlobalMemories,
   closeDb,
@@ -28,6 +29,7 @@ import {
   extractAnswerFromResults,
   createErrorResponse,
 } from '../../helpers.js';
+import { gateAction } from '../../profile.js';
 import { logWarn } from '../../../lib/fault-logger.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
@@ -277,6 +279,59 @@ export function registerRecallTool(server: McpServer): void {
 
         const queryEmbedding = await getEmbedding(query);
 
+        // ── Lazy query decomposition: only invoked when searchWithOptionalDecomposition runs ──
+        let _decomposedSubQueries: string[] | null = null;
+        let _decompositionResolved = false;
+        async function getDecomposedSubQueries(): Promise<string[] | null> {
+          if (_decompositionResolved) return _decomposedSubQueries;
+          _decompositionResolved = true;
+          if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
+            const decompositionGated = gateAction('succ_recall', 'decompose');
+            if (decompositionGated) {
+              logWarn('recall', 'Query decomposition enabled but gated by profile');
+            } else {
+              try {
+                const { decomposeQuery } =
+                  await import('../../../lib/search/query-decomposition.js');
+                const decomposition = await decomposeQuery(query);
+                if (decomposition.wasDecomposed) {
+                  _decomposedSubQueries = decomposition.subQueries;
+                }
+              } catch (err) {
+                logWarn('recall', 'Query decomposition failed, continuing without decomposition', {
+                  error: getErrorMessage(err),
+                });
+              }
+            }
+          }
+          return _decomposedSubQueries;
+        }
+
+        // Helper: run decomposed or standard search depending on lazy decomposition result
+        async function searchWithOptionalDecomposition(
+          searchLimit: number,
+          threshold: number
+        ): Promise<HybridMemoryResult[]> {
+          const decomposedSubQueries = await getDecomposedSubQueries();
+          if (decomposedSubQueries) {
+            return decomposedSearchMemories(
+              decomposedSubQueries,
+              query,
+              queryEmbedding,
+              searchLimit,
+              threshold,
+              retrievalConfig.bm25_alpha
+            );
+          }
+          return hybridSearchMemories(
+            query,
+            queryEmbedding,
+            searchLimit,
+            threshold,
+            retrievalConfig.bm25_alpha
+          );
+        }
+
         // ── Temporal query decomposition: multi-pass retrieval for time-spanning questions ──
         const isTemporalQuery =
           /\b(between|after|before|days|weeks|months|since|how long|how many days|when did|first time|last time|started|ended|began|stopped)\b/i.test(
@@ -319,14 +374,8 @@ export function registerRecallTool(server: McpServer): void {
               }
             }
 
-            // Also include results from the original query
-            const originalResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            // Also include results from the original query (with decomposition if available)
+            const originalResults = await searchWithOptionalDecomposition(limit, 0.3);
             for (const r of originalResults) {
               if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id)!.similarity) {
                 allSubResults.set(r.id, r);
@@ -337,16 +386,13 @@ export function registerRecallTool(server: McpServer): void {
               .sort((a, b) => b.similarity - a.similarity)
               .slice(0, limit * 2);
           } else {
-            localResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit * 2,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            localResults = await searchWithOptionalDecomposition(limit * 2, 0.3);
           }
         } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
           // Graph-enhanced search: BM25 + vector + PPR as third signal
+          // Decomposition is deferred/lazy — on success, decomposition won't run
+          // since graphEnhancedSearchMemories is used directly; only the fallback
+          // path invokes searchWithOptionalDecomposition which may trigger it.
           try {
             const { graphEnhancedSearchMemories } =
               await import('../../../lib/db/hybrid-search.js');
@@ -362,25 +408,13 @@ export function registerRecallTool(server: McpServer): void {
             logWarn('recall', 'Graph-enhanced search failed, falling back to standard', {
               error: getErrorMessage(err),
             });
-            localResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit * 2,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            localResults = await searchWithOptionalDecomposition(limit * 2, 0.3);
           }
         } else {
-          // Standard single-pass search
+          // Standard or decomposed search
           localResults = globalOnlyMode
             ? []
-            : await hybridSearchMemories(
-                query,
-                queryEmbedding,
-                limit * 2,
-                0.3,
-                retrievalConfig.bm25_alpha
-              );
+            : await searchWithOptionalDecomposition(limit * 2, 0.3);
         }
 
         // ── Query expansion: LLM-generated alternative queries for broader recall ──

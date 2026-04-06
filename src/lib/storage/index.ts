@@ -812,6 +812,25 @@ export async function hybridSearchMemories(
   return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
 }
 
+export async function decomposedSearchMemories(
+  subQueries: string[],
+  originalQuery: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
+  alpha?: number
+): Promise<any[]> {
+  const d = await getStorageDispatcher();
+  return d.decomposedSearchMemories(
+    subQueries,
+    originalQuery,
+    queryEmbedding,
+    limit,
+    threshold,
+    alpha
+  );
+}
+
 export async function hybridSearchGlobalMemories(
   query: string,
   queryEmbedding: number[],

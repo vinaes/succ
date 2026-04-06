@@ -219,6 +219,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         query_expansion_mode: rc.query_expansion_mode,
         graph_ppr_enabled: rc.graph_ppr_enabled,
         graph_ppr_weight: rc.graph_ppr_weight,
+        query_decomposition_enabled: rc.query_decomposition_enabled,
       };
     })(),
     web_search: (() => {
@@ -424,6 +425,7 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(
     `  Graph PPR: ${display.retrieval.graph_ppr_enabled} (weight: ${display.retrieval.graph_ppr_weight})`
   );
+  lines.push(`  Query decomposition: ${display.retrieval.query_decomposition_enabled}`);
   lines.push('');
 
   // Web Search
