@@ -41,7 +41,7 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
                 `Failed to stat transcript for ${sessionId}: ${getErrorMessage(err)}`
               );
             }
-            const usage = monitor.peekUsage(sessionId, size);
+            const usage = monitor.getUsage(sessionId, size);
             if (usage) contextUsageMap[sessionId] = usage;
           } catch (err) {
             logWarn(
