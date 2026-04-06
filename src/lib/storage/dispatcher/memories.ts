@@ -4,6 +4,8 @@ import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
+  AutoMemoryRow,
+  AutoMemoryStatsRow,
   ConsolidationRecord,
   HybridMemoryResult,
   MemoryType,
@@ -72,6 +74,12 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     let savedId: number;
     let wasDuplicate = false;
 
+    // Compute forget_after at save time so it's included in the INSERT
+    const forgetAfter =
+      sourceType === 'auto_extracted'
+        ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
     if (this.backend === 'postgresql' && this.postgres) {
       savedId = await this.postgres.saveMemory(
         content,
@@ -86,7 +94,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         false, // isGlobal
         confidence,
         sourceType,
-        sourceContext
+        sourceContext,
+        forgetAfter
       );
 
       // Sync to Qdrant with full payload
@@ -121,6 +130,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         confidence,
         sourceType,
         sourceContext,
+        forgetAfter,
       });
 
       savedId = result.id;
@@ -364,12 +374,21 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     deduplicateThreshold?: number,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
   ): Promise<MemoryBatchResult> {
+    // Pre-compute forget_after for auto-extracted memories so it's included in the INSERT
+    const enriched = memories.map((mem) => ({
+      ...mem,
+      forgetAfter:
+        mem.sourceType === 'auto_extracted'
+          ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+          : (mem.forgetAfter ?? undefined),
+    }));
+
     let result: MemoryBatchResult;
     if (this.backend === 'postgresql' && this.postgres) {
-      result = await this.postgres.saveMemoriesBatch(memories, deduplicateThreshold, options);
+      result = await this.postgres.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     } else {
       const sqlite = await this.getSqliteFns();
-      result = await sqlite.saveMemoriesBatch(memories, deduplicateThreshold, options);
+      result = await sqlite.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     }
 
     // Sync newly saved memories to Qdrant
@@ -609,6 +628,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return deleted;
   }
 
+  async collectExpiredMemoryIds(): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectExpiredMemoryIds();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectExpiredMemoryIds();
+  }
+
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
     if (ids.length === 0) return 0;
     // Filter out pinned memories (Tier 1 immutability)
@@ -635,6 +662,79 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     }
 
     return deleted;
+  }
+
+  async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.promoteMemoryConfidence(memoryId);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.promoteMemoryConfidence(memoryId);
+  }
+
+  async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.degradeMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.degradeMemoryConfidence(memoryId, amount);
+  }
+
+  async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.boostMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.boostMemoryConfidence(memoryId, amount);
+  }
+
+  async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfter(memoryId, forgetAfter);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfter(memoryId, forgetAfter);
+  }
+
+  async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfterDays(memoryId, days);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfterDays(memoryId, days);
+  }
+
+  async getAutoExtractedMemories(): Promise<AutoMemoryRow[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoExtractedMemories();
+    }
+    const sqlite = await this.getSqliteFns();
+    const rows = sqlite.getAutoExtractedMemories();
+    // Convert SQLite Buffer embeddings to number[] for uniform interface
+    return rows.map((r) => ({
+      id: r.id,
+      content: r.content,
+      embedding: sqlite.bufferToFloatArray(r.embedding),
+      access_count: r.access_count,
+      confidence: r.confidence,
+      created_at: r.created_at,
+    }));
+  }
+
+  async collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectPruneableAutoMemoryIds(maxUnusedDays);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectPruneableAutoMemoryIds(maxUnusedDays);
+  }
+
+  async getAutoMemoryStatsRow(): Promise<AutoMemoryStatsRow> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoMemoryStatsRow();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getAutoMemoryStatsRow();
   }
 
   async searchMemoriesAsOf(

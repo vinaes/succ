@@ -262,6 +262,23 @@ export interface MemoryStats {
   stale_count: number;
 }
 
+export interface AutoMemoryRow {
+  id: number;
+  content: string;
+  embedding: number[];
+  access_count: number;
+  confidence: number | null;
+  created_at: string;
+}
+
+export interface AutoMemoryStatsRow {
+  total: number;
+  low_confidence: number;
+  high_confidence: number;
+  never_accessed: number;
+  avg_access: number;
+}
+
 export interface ConsolidationRecord {
   mergedMemoryId: number;
   mergedContent: string;

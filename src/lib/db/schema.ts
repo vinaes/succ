@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { getConfig, getLLMTaskConfig } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import { getModelDimension } from '../embeddings.js';
 
 // Flag to track if sqlite-vec is available
@@ -475,6 +476,30 @@ export function initDb(database: Database.Database): void {
     `ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`,
     'memories.source_type'
   );
+
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'memories.forget_after'
+  );
+
+  // Backfill forget_after for existing auto-extracted memories.
+  // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
+  // have already been backfilled (or had forget_after set at INSERT time) are
+  // skipped on subsequent startups. No migration marker needed.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+  } catch (backfillErr) {
+    logWarn('schema', `forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
+  }
 
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
   safeMigrate(
@@ -963,6 +988,28 @@ export function initGlobalDb(database: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_global_memories_invalidated_by ON memories(invalidated_by)`,
     'idx_global_memories_invalidated_by'
   );
+
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'global memories.forget_after'
+  );
+
+  // Backfill forget_after for existing auto-extracted global memories.
+  // Idempotent: `forget_after IS NULL` skips already-backfilled rows.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+  } catch (backfillErr) {
+    logWarn('schema', `global forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
+  }
 
   // Migration: add correction_count and is_invariant columns for working memory pins
   safeMigrate(

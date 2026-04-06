@@ -149,6 +149,11 @@ export type { AutoMemoryRow } from './auto-memory.js';
 export {
   getAutoExtractedMemories,
   promoteMemoryConfidence,
+  degradeMemoryConfidence,
+  boostMemoryConfidence,
+  setForgetAfter,
+  setForgetAfterDays,
+  collectExpiredMemoryIds,
   collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
 } from './auto-memory.js';

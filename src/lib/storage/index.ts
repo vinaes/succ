@@ -560,9 +560,63 @@ export async function getMemoriesByTag(
   return d.getMemoriesByTag(tag, limit, offset);
 }
 
+export async function collectExpiredMemoryIds(): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectExpiredMemoryIds();
+}
+
 export async function deleteMemoriesByIds(ids: number[]): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesByIds(ids);
+}
+
+export async function promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.promoteMemoryConfidence(memoryId);
+}
+
+export async function degradeMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.05
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.degradeMemoryConfidence(memoryId, amount);
+}
+
+export async function boostMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.02
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.boostMemoryConfidence(memoryId, amount);
+}
+
+export async function setForgetAfter(
+  memoryId: number,
+  forgetAfter: string | null
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.setForgetAfter(memoryId, forgetAfter);
+}
+
+export async function setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.setForgetAfterDays(memoryId, days);
+}
+
+export async function getAutoExtractedMemories(): Promise<import('./types.js').AutoMemoryRow[]> {
+  const d = await getStorageDispatcher();
+  return d.getAutoExtractedMemories();
+}
+
+export async function collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectPruneableAutoMemoryIds(maxUnusedDays);
+}
+
+export async function getAutoMemoryStatsRow(): Promise<import('./types.js').AutoMemoryStatsRow> {
+  const d = await getStorageDispatcher();
+  return d.getAutoMemoryStatsRow();
 }
 
 export async function searchMemoriesAsOf(

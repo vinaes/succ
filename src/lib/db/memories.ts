@@ -163,6 +163,7 @@ export function saveMemory(
     confidence?: number;
     sourceType?: string;
     sourceContext?: string;
+    forgetAfter?: string | null;
   } = {}
 ): SaveMemoryResult & { linksCreated?: number } {
   const {
@@ -175,6 +176,7 @@ export function saveMemory(
     validUntil,
     sourceType: rawSourceType = 'human',
     sourceContext,
+    forgetAfter,
   } = options;
   let { confidence = 0.5 } = options;
 
@@ -210,8 +212,8 @@ export function saveMemory(
     : null;
 
   const result = cachedPrepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, embedding)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, valid_from, valid_until, confidence, source_type, source_context, forget_after, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
     content,
     tagsJson,
@@ -224,6 +226,7 @@ export function saveMemory(
     confidence,
     sourceType,
     sourceContext ?? null,
+    forgetAfter ?? null,
     embeddingBlob
   );
 
@@ -1191,6 +1194,7 @@ export interface MemoryBatchInput {
   confidence?: number;
   sourceType?: SourceType;
   sourceContext?: string;
+  forgetAfter?: string | null;
 }
 
 export interface MemoryBatchResult {
@@ -1293,8 +1297,8 @@ export function saveMemoriesBatch(
   // Batch insert all non-duplicates in a transaction
   if (toInsert.length > 0) {
     const insertStmt = database.prepare(`
-      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // Prepare vec_memories statements if available
@@ -1343,7 +1347,8 @@ export function saveMemoriesBatch(
           validUntilStr,
           confidence,
           sourceType,
-          input.sourceContext ?? null
+          input.sourceContext ?? null,
+          input.forgetAfter ?? null
         );
 
         const memoryId = Number(result.lastInsertRowid);
