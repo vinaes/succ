@@ -243,7 +243,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     subQueries: string[],
     originalQuery: string,
     queryEmbedding: number[],
-    limit: number = 5,
+    limit: number = 10,
     threshold: number = 0.3,
     alpha: number = 0.5
   ): Promise<Array<MemorySearchResult | HybridMemoryResult>> {

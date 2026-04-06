@@ -303,8 +303,6 @@ export function registerRecallTool(server: McpServer): void {
                 });
               }
             }
-          } else if (retrievalConfig.query_decomposition_enabled && globalOnlyMode) {
-            logWarn('recall', 'Query decomposition enabled but skipped in global-only mode');
           }
           return _decomposedSubQueries;
         }
@@ -392,8 +390,9 @@ export function registerRecallTool(server: McpServer): void {
           }
         } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
           // Graph-enhanced search: BM25 + vector + PPR as third signal
-          // Decomposition is deferred/lazy — it won't run on this path since
-          // searchWithOptionalDecomposition is not called here.
+          // Decomposition is deferred/lazy — on success, decomposition won't run
+          // since graphEnhancedSearchMemories is used directly; only the fallback
+          // path invokes searchWithOptionalDecomposition which may trigger it.
           try {
             const { graphEnhancedSearchMemories } =
               await import('../../../lib/db/hybrid-search.js');
