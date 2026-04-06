@@ -267,6 +267,9 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       if (!session?.transcriptPath) {
         return { error: 'session not found or no transcript' };
       }
+      if (session.isService) {
+        return { error: 'context monitoring not applicable to service sessions' };
+      }
 
       // O(1) stat for transcript size
       let transcriptSize = 0;
@@ -290,8 +293,8 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       const sessionId = searchParams.get('session_id') || '';
       if (!sessionId) return { error: 'session_id required' };
       if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
-      getContextMonitor().markAdvisory(sessionId);
-      return { success: true };
+      const acked = getContextMonitor().markAdvisory(sessionId);
+      return { success: acked };
     },
 
     'GET /api/session/stats': async (_body, searchParams) => {

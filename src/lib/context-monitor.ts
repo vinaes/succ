@@ -175,10 +175,11 @@ export class ContextMonitor {
    * _computeUsage(), so this just extends the timestamp. Safe to call
    * multiple times (idempotent refresh).
    */
-  markAdvisory(sessionId: string): void {
+  markAdvisory(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
+    if (!session) return false;
     session.lastAdvisoryAt = Date.now();
+    return true;
   }
 
   /**
