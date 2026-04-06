@@ -2626,9 +2626,9 @@ export class PostgresBackend {
       );
     }
     if (res.rowCount === 0) {
-      logWarn('postgresql', `markMemoryNotLatest: no rows updated for memory #${memoryId}`, {
-        projectId: this.projectId ?? 'global',
-      });
+      throw new Error(
+        `markMemoryNotLatest: no rows updated for memory #${memoryId} (project: ${this.projectId ?? 'global'})`
+      );
     }
   }
 
@@ -2647,9 +2647,9 @@ export class PostgresBackend {
       );
     }
     if (res.rowCount === 0) {
-      logWarn('postgresql', `markMemoryLatest: no rows updated for memory #${memoryId}`, {
-        projectId: this.projectId ?? 'global',
-      });
+      throw new Error(
+        `markMemoryLatest: no rows updated for memory #${memoryId} (project: ${this.projectId ?? 'global'})`
+      );
     }
   }
 
