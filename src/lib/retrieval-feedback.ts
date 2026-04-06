@@ -135,7 +135,10 @@ export function recordRecallBatch(
 
   const inserted = insertRecallEventsBatch(events);
   if (!inserted) {
-    logWarn('retrieval-feedback', 'Skipping confidence adjustments — recall event batch insert failed');
+    logWarn(
+      'retrieval-feedback',
+      'Skipping confidence adjustments — recall event batch insert failed'
+    );
     return;
   }
 
@@ -150,9 +153,13 @@ export function recordRecallBatch(
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (result.status === 'rejected') {
-        logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${events[i].memoryId}`, {
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        });
+        logWarn(
+          'retrieval-feedback',
+          `Confidence adjustment failed for memory #${events[i].memoryId}`,
+          {
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          }
+        );
       }
     }
   });
