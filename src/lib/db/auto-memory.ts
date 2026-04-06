@@ -168,14 +168,19 @@ export function collectExpiredMemoryIds(): number[] {
  */
 export function collectPruneableAutoMemoryIds(maxUnusedDays: number): number[] {
   try {
-    // Prune by forget_after expiry OR by unused duration (whichever matches)
+    // Prune by forget_after expiry OR by unused duration (whichever matches).
+    // Exclude promoted memories (forget_after cleared + high confidence) from the
+    // unused-days path — they were intentionally made permanent.
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
        AND invalidated_by IS NULL
        AND (
          (forget_after IS NOT NULL AND datetime(forget_after) < datetime('now'))
-         OR COALESCE(last_accessed, created_at) < datetime('now', '-' || ? || ' days')
+         OR (
+           forget_after IS NOT NULL
+           AND COALESCE(last_accessed, created_at) < datetime('now', '-' || ? || ' days')
+         )
        )`
     ).all(maxUnusedDays) as Array<{ id: number }>;
 
