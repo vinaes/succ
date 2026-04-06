@@ -10,6 +10,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { logWarn } from './fault-logger.js';
+import { CHARS_PER_TOKEN } from './token-counter.js';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -88,9 +89,9 @@ export interface SessionAnalysis {
 /** Fallback char estimate when an image block has no source metadata. */
 const DEFAULT_IMAGE_CHAR_ESTIMATE = 100;
 
-/** Estimate tokens from character count (industry standard: ~4 chars/token). */
+/** Estimate tokens from character count (Anthropic's recommended heuristic: ~3.5 chars/token). */
 export function estimateTokens(chars: number): number {
-  return Math.ceil(chars / 4);
+  return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
 // ── JSONL parsing ────────────────────────────────────────────────────

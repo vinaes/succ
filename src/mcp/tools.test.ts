@@ -171,6 +171,8 @@ vi.mock('../lib/config.js', () => ({
     mmr_lambda: 0.8,
     query_expansion_enabled: false,
     query_expansion_mode: 'local',
+    graph_ppr_enabled: false,
+    graph_ppr_weight: 0.3,
   })),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));

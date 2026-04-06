@@ -16,7 +16,16 @@ vi.mock('./config.js', () => ({
   getApiKey: () => 'test-key',
   getApiUrl: () => 'http://localhost:11434/v1',
   getOpenRouterApiKey: () => null,
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getErrorReportingConfig: vi.fn().mockReturnValue({
+    enabled: false,
+    level: 'warn' as const,
+    max_file_size_mb: 5,
+    webhook_url: '',
+    webhook_headers: {} as Record<string, string>,
+    sentry_dsn: '',
+    sentry_environment: 'test',
+    sentry_sample_rate: 1.0,
+  }),
 }));
 
 // Mock fault-logger
