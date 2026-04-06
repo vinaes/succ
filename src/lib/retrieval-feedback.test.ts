@@ -72,12 +72,55 @@ describe('retrieval-feedback', () => {
     });
   });
 
+  describe('recordRecallEvent — confidence side effects', () => {
+    it('should boost confidence for used memories', () => {
+      recordRecallEvent(42, 'auth flow', true, 1, 0.95);
+      expect(mockBoostMemoryConfidence).toHaveBeenCalledWith(42, 0.02);
+      expect(mockDegradeMemoryConfidence).not.toHaveBeenCalled();
+    });
+
+    it('should degrade confidence for unused memories', () => {
+      recordRecallEvent(42, 'auth flow', false, 5, 0.3);
+      expect(mockDegradeMemoryConfidence).toHaveBeenCalledWith(42, 0.05);
+      expect(mockBoostMemoryConfidence).not.toHaveBeenCalled();
+    });
+
+    it('should skip confidence adjustment when insert fails', () => {
+      mockRun.mockReturnValueOnce({ lastInsertRowid: 0, changes: 0 });
+      recordRecallEvent(42, 'query', true);
+      expect(mockBoostMemoryConfidence).not.toHaveBeenCalled();
+      expect(mockDegradeMemoryConfidence).not.toHaveBeenCalled();
+    });
+  });
+
   describe('recordRecallBatch', () => {
     it('should record batch of recall events', () => {
       const usedIds = new Set([1, 3]);
       recordRecallBatch([1, 2, 3, 4], usedIds, 'test query');
       // Should be called within a transaction
       expect(mockTransaction).toHaveBeenCalled();
+    });
+
+    it('should boost used and degrade unused memories', async () => {
+      const usedIds = new Set([1, 3]);
+      recordRecallBatch([1, 2, 3, 4], usedIds, 'test query');
+      // Allow microtask queue to flush (Promise.allSettled is async)
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockBoostMemoryConfidence).toHaveBeenCalledWith(1, 0.02);
+      expect(mockBoostMemoryConfidence).toHaveBeenCalledWith(3, 0.02);
+      expect(mockDegradeMemoryConfidence).toHaveBeenCalledWith(2, 0.05);
+      expect(mockDegradeMemoryConfidence).toHaveBeenCalledWith(4, 0.05);
+    });
+
+    it('should skip confidence adjustments when batch insert fails', async () => {
+      mockTransaction.mockImplementationOnce(() => {
+        throw new Error('DB locked');
+      });
+      const usedIds = new Set([1]);
+      recordRecallBatch([1, 2], usedIds, 'test query');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockBoostMemoryConfidence).not.toHaveBeenCalled();
+      expect(mockDegradeMemoryConfidence).not.toHaveBeenCalled();
     });
   });
 

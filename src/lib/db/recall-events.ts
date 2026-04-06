@@ -59,7 +59,7 @@ export function insertRecallEventsBatch(
     rankPosition: number | null;
     similarityScore: number | null;
   }>
-): void {
+): boolean {
   try {
     const db = getDb();
     const stmt = db.prepare(
@@ -81,10 +81,12 @@ export function insertRecallEventsBatch(
     });
 
     transaction();
+    return true;
   } catch (error) {
     logWarn('recall-events', 'Failed to insert recall events batch', {
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 

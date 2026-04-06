@@ -133,7 +133,11 @@ export function recordRecallBatch(
     similarityScore: similarityScores?.get(memId) ?? null,
   }));
 
-  insertRecallEventsBatch(events);
+  const inserted = insertRecallEventsBatch(events);
+  if (!inserted) {
+    logWarn('retrieval-feedback', 'Skipping confidence adjustments — recall event batch insert failed');
+    return;
+  }
 
   // Adjust confidence for all recalled memories (async — fire-and-forget with error logging)
   Promise.allSettled(
@@ -142,10 +146,15 @@ export function recordRecallBatch(
         ? boostMemoryConfidence(event.memoryId, 0.02)
         : degradeMemoryConfidence(event.memoryId, 0.05)
     )
-  ).catch((err: unknown) => {
-    logWarn('retrieval-feedback', 'Batch confidence adjustment failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  ).then((results) => {
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'rejected') {
+        logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${events[i].memoryId}`, {
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
+    }
   });
 }
 
