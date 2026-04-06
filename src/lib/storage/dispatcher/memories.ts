@@ -31,6 +31,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       validUntil?: string;
       confidence?: number;
       sourceType?: SourceType;
+      sourceContext?: string;
     }
   ): Promise<{
     id: number;
@@ -46,6 +47,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const confidence = options?.confidence ?? 0.5;
     // No default — DB layers default to 'human'. Callers should pass explicitly.
     const sourceType = options?.sourceType;
+    const sourceContext = options?.sourceContext;
 
     // Auto-correction: detect similar (but not duplicate) memories in 0.82-0.92 range
     if (deduplicate) {
@@ -83,7 +85,8 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         validUntil,
         false, // isGlobal
         confidence,
-        sourceType
+        sourceType,
+        sourceContext
       );
 
       // Sync to Qdrant with full payload
@@ -100,6 +103,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -116,6 +120,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         validUntil,
         confidence,
         sourceType,
+        sourceContext,
       });
 
       savedId = result.id;
@@ -135,6 +140,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -398,6 +404,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
                   : null,
                 confidence: mem.confidence ?? null,
                 sourceType: mem.sourceType ?? null,
+                sourceContext: mem.sourceContext ?? null,
               },
             };
           });

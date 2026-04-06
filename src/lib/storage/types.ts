@@ -148,6 +148,7 @@ export interface Memory {
   priority_score: number | null;
   confidence: number | null;
   source_type: SourceType | null;
+  source_context: string | null;
   created_at: string;
 }
 
@@ -180,6 +181,7 @@ export interface MemoryInput {
   qualityScore?: QualityScoreData;
   validFrom?: string | Date;
   validUntil?: string | Date;
+  sourceContext?: string;
 }
 
 export interface QualityScoreData {
@@ -219,6 +221,7 @@ export interface GlobalMemory {
   type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  source_context: string | null;
   created_at: string;
   isGlobal: true;
 }
@@ -300,6 +303,7 @@ export interface HybridMemoryResult {
   access_count?: number;
   valid_from?: string | null;
   valid_until?: string | null;
+  source_context?: string | null;
 }
 
 export interface HybridGlobalMemoryResult {
@@ -313,6 +317,7 @@ export interface HybridGlobalMemoryResult {
   similarity: number;
   bm25Score?: number;
   vectorScore?: number;
+  source_context?: string | null;
 }
 
 // ============================================================================

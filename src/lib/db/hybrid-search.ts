@@ -55,6 +55,7 @@ export interface HybridGlobalMemoryResult {
   source: string | null;
   project: string | null;
   type: MemoryType | null;
+  source_context?: string | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;

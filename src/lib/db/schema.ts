@@ -588,6 +588,13 @@ export function initDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
   `);
 
+  // Migration: add source_context column for memory-then-chunk retrieval
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL`,
+    'memories.source_context'
+  );
+
   // Check if embedding model changed - warn user if reindex needed
   checkModelCompatibility(database);
 
@@ -1024,6 +1031,13 @@ export function initGlobalDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
     CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
   `);
+
+  // Migration: add source_context column for memory-then-chunk retrieval
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL`,
+    'global memories.source_context'
+  );
 
   // Migration: create sqlite-vec virtual table for global memories
   initGlobalVecTable(database);

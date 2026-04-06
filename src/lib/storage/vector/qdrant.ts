@@ -227,6 +227,7 @@ export interface MemoryPayload {
   quality_score: number | null;
   confidence: number | null;
   source_type: SourceType | null;
+  source_context: string | null;
 }
 
 // ============================================================================
@@ -260,6 +261,7 @@ export interface MemoryUpsertMeta {
   qualityScore?: number | null;
   confidence?: number | null;
   sourceType?: SourceType | null;
+  sourceContext?: string | null;
 }
 
 // ============================================================================
@@ -916,6 +918,7 @@ export class QdrantVectorStore implements VectorStore {
             quality_score: null,
             confidence: meta.confidence ?? null,
             source_type: meta.sourceType ?? null,
+            source_context: meta.sourceContext ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -956,6 +959,7 @@ export class QdrantVectorStore implements VectorStore {
             quality_score: null,
             confidence: meta.confidence ?? null,
             source_type: meta.sourceType ?? null,
+            source_context: meta.sourceContext ?? null,
           } satisfies MemoryPayload,
         },
       ],
@@ -998,6 +1002,7 @@ export class QdrantVectorStore implements VectorStore {
             quality_score: item.meta.qualityScore ?? null,
             confidence: item.meta.confidence ?? null,
             source_type: item.meta.sourceType ?? null,
+            source_context: item.meta.sourceContext ?? null,
           } satisfies MemoryPayload,
         })),
       });
@@ -1040,6 +1045,7 @@ export class QdrantVectorStore implements VectorStore {
             quality_score: item.meta.qualityScore ?? null,
             confidence: item.meta.confidence ?? null,
             source_type: item.meta.sourceType ?? null,
+            source_context: item.meta.sourceContext ?? null,
           } satisfies MemoryPayload,
         })),
       });
@@ -1378,6 +1384,7 @@ export class QdrantVectorStore implements VectorStore {
         if (raw === null) return null;
         return (SOURCE_TYPES as readonly string[]).includes(raw) ? (raw as SourceType) : null;
       })(),
+      source_context: asNullableString(payload.source_context),
       created_at: asString(payload.created_at),
       similarity: point.score,
     };

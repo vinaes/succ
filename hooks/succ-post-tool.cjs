@@ -18,6 +18,8 @@ const path = require('path');
 const adapter = require('./core/adapter.cjs');
 const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
 
+const SOURCE_CONTEXT_MAX_CHARS = 2000;
+
 // ─── Tier 1 Injection Detection (inline — structural patterns) ──────
 
 const POST_TIER1_PATTERNS = [
@@ -60,6 +62,22 @@ function hasSecrets(text) {
     if (re.test(text)) return true;
   }
   return false;
+}
+
+// ─── Source-context secret patterns (broader than INLINE_SECRET_PATTERNS) ──
+// Catches key=value pairs, Bearer tokens, PEM blocks, and provider-specific tokens
+// that could leak via memory recall if persisted.
+const SOURCE_CONTEXT_SECRET_PATTERNS = [
+  /(?:api[_-]?key|token|secret|password|credential|auth)[=:]\s*['"]?[a-zA-Z0-9_\-]{20,}/i,
+  /Bearer\s+[a-zA-Z0-9_\-\.]{20,}/i,
+  /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----/i,
+  /ghp_[a-zA-Z0-9]{36}/,
+  /sk-[a-zA-Z0-9]{20,}/,
+];
+
+function hasSecretPatterns(text) {
+  if (typeof text !== 'string') return false;
+  return SOURCE_CONTEXT_SECRET_PATTERNS.some((p) => p.test(text));
 }
 
 /**
@@ -113,7 +131,7 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
   }
 
   // Helper to save memory via daemon API (with injection scanning)
-  const succRemember = async (content, tagsStr) => {
+  const succRemember = async (content, tagsStr, sourceContext) => {
     try {
       // Scan for injection before saving to memory (prevents memory poisoning)
       if (isInjectionDetected(content)) {
@@ -122,14 +140,22 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
       }
 
       const tags = tagsStr.split(',');
+      const payload = {
+        content: content,
+        tags: tags,
+        source: 'auto-capture',
+      };
+      if (sourceContext) {
+        if (hasSecretPatterns(sourceContext)) {
+          console.error('[succ:post-tool] source_context blocked: secret patterns detected');
+        } else {
+          payload.source_context = sourceContext;
+        }
+      }
       const response = await fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: content,
-          tags: tags,
-          source: 'auto-capture',
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(3000),
       });
       if (!response.ok) {
@@ -183,7 +209,12 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
     if (/git\s+commit/i.test(cmd) && wasSuccess) {
       const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/);
       if (msgMatch) {
-        await succRemember('Committed: ' + msgMatch[1], 'git,commit,milestone');
+        const commitCtx = (toolOutput || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
+        await succRemember(
+          'Committed: ' + msgMatch[1],
+          'git,commit,milestone',
+          commitCtx || undefined
+        );
       }
     }
 
@@ -254,7 +285,12 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
         if (!agentAlreadySaved) {
           const desc = (toolInput.description || '').slice(0, 100);
           const content = `[${agentType}] ${desc}\n\n${text.slice(0, 3000)}`;
-          await succRemember(content, `subagent,${agentType.toLowerCase()},auto-capture`);
+          const agentCtx = (toolInput.prompt || '').slice(0, SOURCE_CONTEXT_MAX_CHARS);
+          await succRemember(
+            content,
+            `subagent,${agentType.toLowerCase()},auto-capture`,
+            agentCtx || undefined
+          );
         }
       }
     }

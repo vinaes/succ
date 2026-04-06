@@ -811,6 +811,18 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)'
     );
 
+    // Migration: add source_context column for memory-then-chunk retrieval
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'source_context'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+
     // Learning deltas table for session progress tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS learning_deltas (
@@ -1427,7 +1439,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, correction_count, is_invariant,
-             priority_score, valid_from, valid_until, confidence, source_type,
+             priority_score, valid_from, valid_until, confidence, source_type, source_context,
              created_at
       FROM memories WHERE id = ANY($1)`;
     const params: unknown[] = [ids];
@@ -1484,6 +1496,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -1916,7 +1929,7 @@ export class PostgresBackend {
     // Fetch full rows
     const rows = await pool.query(
       `SELECT id, content, tags, source, type, created_at,
-              access_count, last_accessed, valid_from, valid_until
+              access_count, last_accessed, valid_from, valid_until, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -1936,6 +1949,7 @@ export class PostgresBackend {
             last_accessed: string | null;
             valid_from: string | null;
             valid_until: string | null;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -1953,6 +1967,7 @@ export class PostgresBackend {
         last_accessed: row.last_accessed,
         valid_from: row.valid_from,
         valid_until: row.valid_until,
+        source_context: row.source_context ?? null,
       });
     }
     return results;
@@ -2037,7 +2052,7 @@ export class PostgresBackend {
 
     // Fetch full rows
     const rows = await pool.query(
-      `SELECT id, project_id, content, tags, source, type, created_at
+      `SELECT id, project_id, content, tags, source, type, created_at, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -2054,6 +2069,7 @@ export class PostgresBackend {
             source: string | null;
             type: string | null;
             created_at: string;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -2068,6 +2084,7 @@ export class PostgresBackend {
         similarity: fusedScoreMap.get(docId) ?? 0,
         bm25Score: textScoreMap.get(docId) ?? 0,
         vectorScore: vecScoreMap.get(docId) ?? 0,
+        source_context: row.source_context ?? null,
       });
     }
 
@@ -2169,7 +2186,8 @@ export class PostgresBackend {
     validUntil?: string,
     isGlobal: boolean = false,
     confidence: number = 0.5,
-    sourceType: string = 'human'
+    sourceType: string = 'human',
+    sourceContext?: string
   ): Promise<number> {
     // Validate provenance fields
     ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
@@ -2179,8 +2197,8 @@ export class PostgresBackend {
 
     const result = await this.queryPrepared<{ id: number }>(
       'saveMemory',
-      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
       [
         projectId,
@@ -2195,6 +2213,7 @@ export class PostgresBackend {
         validUntil ?? null,
         confidence,
         sourceType,
+        sourceContext ?? null,
       ]
     );
 
@@ -2226,7 +2245,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, correction_count, is_invariant,
-             priority_score, valid_from, valid_until, confidence, source_type,
+             priority_score, valid_from, valid_until, confidence, source_type, source_context,
              created_at, 1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
@@ -2290,6 +2309,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(row.similarity),
     }));
@@ -2309,7 +2329,7 @@ export class PostgresBackend {
       'getMemoryById',
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
        FROM memories WHERE id = $1`,
       [id]
     );
@@ -2338,6 +2358,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     };
   }
@@ -2361,11 +2382,12 @@ export class PostgresBackend {
       priority_score: number | null;
       confidence: number | null;
       source_type: string | null;
+      source_context: string | null;
       created_at: string;
     }>(
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
        FROM memories
        WHERE tags IS NOT NULL
          AND tags @> $1::jsonb
@@ -2398,6 +2420,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2446,7 +2469,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
       FROM memories
     `;
     const params: unknown[] = [];
@@ -2491,6 +2514,7 @@ export class PostgresBackend {
       priority_score: row.priority_score ?? null,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2524,7 +2548,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
       FROM memories
     `;
     const params: unknown[] = [];
@@ -2565,6 +2589,7 @@ export class PostgresBackend {
       priority_score: row.priority_score ?? null,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2861,7 +2886,8 @@ export class PostgresBackend {
     source?: string,
     type: MemoryType = 'observation',
     qualityScore?: number,
-    qualityFactors?: Record<string, number>
+    qualityFactors?: Record<string, number>,
+    sourceContext?: string
   ): Promise<number> {
     return this.saveMemory(
       content,
@@ -2873,7 +2899,10 @@ export class PostgresBackend {
       qualityFactors,
       undefined, // validFrom
       undefined, // validUntil
-      true // isGlobal
+      true, // isGlobal
+      undefined, // confidence — use default
+      undefined, // sourceType — use default
+      sourceContext
     );
   }
 
@@ -2891,7 +2920,7 @@ export class PostgresBackend {
     const query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at,
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at,
              1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
@@ -2925,6 +2954,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(row.similarity),
     }));
@@ -2948,7 +2978,7 @@ export class PostgresBackend {
     const result = await pool.query(
       `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
        FROM memories
        WHERE project_id IS NULL
          AND invalidated_by IS NULL
@@ -2978,6 +3008,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -3900,6 +3931,7 @@ export class PostgresBackend {
       validUntil?: string | Date;
       confidence?: number;
       sourceType?: string;
+      sourceContext?: string;
     }>,
     deduplicateThreshold: number = 0.92,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
@@ -3997,8 +4029,8 @@ export class PostgresBackend {
         );
 
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            RETURNING id`,
           [
             this.projectId,
@@ -4013,6 +4045,7 @@ export class PostgresBackend {
             validUntilStr,
             confidence,
             sourceType,
+            memory.sourceContext ?? null,
           ]
         );
 
@@ -4225,12 +4258,13 @@ export class PostgresBackend {
       priority_score: number | null;
       confidence: number | null;
       source_type: string | null;
+      source_context: string | null;
       created_at: string;
       similarity: number | string;
     }>(
       `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at,
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at,
               1 - (embedding <=> $1) as similarity
        FROM memories
        WHERE created_at <= $2
@@ -4264,6 +4298,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(String(row.similarity)),
     }));
@@ -4397,6 +4432,7 @@ export class PostgresBackend {
       accessCount: number;
       lastAccessed: string | null;
       qualityScore: number | null;
+      sourceContext: string | null;
       embedding: number[];
     }>
   > {
@@ -4420,12 +4456,13 @@ export class PostgresBackend {
       access_count: number | null;
       last_accessed: string | null;
       quality_score: number | null;
+      source_context: string | null;
       embedding: string;
     }>(
       `SELECT id, content, tags, source, type, project_id,
               created_at::text as created_at, valid_from::text as valid_from,
               valid_until::text as valid_until, invalidated_by, access_count,
-              last_accessed::text as last_accessed, quality_score,
+              last_accessed::text as last_accessed, quality_score, source_context,
               embedding::text as embedding
        FROM memories ${scopeCond}
        ORDER BY id ASC`,
@@ -4450,6 +4487,7 @@ export class PostgresBackend {
       accessCount: row.access_count ?? 0,
       lastAccessed: row.last_accessed,
       qualityScore: row.quality_score,
+      sourceContext: row.source_context ?? null,
       embedding: fromPgVector(row.embedding),
     }));
   }
