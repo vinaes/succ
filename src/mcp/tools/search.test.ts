@@ -22,11 +22,11 @@ vi.mock('../../lib/config.js', () => ({
     mmr_enabled: false,
     mmr_lambda: 0.8,
     query_expansion_enabled: false,
-    query_expansion_mode: 'local',
+    query_expansion_mode: 'api',
     graph_ppr_enabled: false,
     graph_ppr_weight: 0.3,
     rrf_k: 60,
-    adaptive_alpha: false,
+    adaptive_alpha: true, // match production default
   })),
 }));
 
