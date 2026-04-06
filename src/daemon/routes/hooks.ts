@@ -195,7 +195,7 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   }
 
   // preCommitReview remains active and independent — even under undercover
-  if (config.preCommitReview) {
+  if (config.preCommitReview !== false) {
     parts.push(`<pre-commit-review>
 STOP. Before committing, you MUST run the succ-diff-reviewer agent first.
 Use: Task tool with subagent_type="succ-diff-reviewer"
@@ -520,7 +520,7 @@ export function hookRoutes(ctx: RouteContext): RouteMap {
             if (/\bgit\s+commit\b/.test(command) || /\bgh\s+pr\s+(create|edit)\b/.test(command)) {
               contextParts.push(UNDERCOVER_COMMIT_REMINDER);
               // Still inject pre-commit-review if enabled (independent of undercover)
-              if (/\bgit\s+commit\b/.test(command) && config.preCommitReview) {
+              if (/\bgit\s+commit\b/.test(command) && config.preCommitReview !== false) {
                 contextParts.push(`<pre-commit-review>
 STOP. Before committing, you MUST run the succ-diff-reviewer agent first.
 Use: Task tool with subagent_type="succ-diff-reviewer"

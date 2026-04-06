@@ -318,6 +318,7 @@ Controls how documents are split for indexing.
 |--------|------|---------|-------------|
 | `chunk_size` | number | 500 | Max characters per chunk |
 | `chunk_overlap` | number | 50 | Overlap between chunks |
+| `indexing.contextual_embeddings` | boolean | true | LLM-generated semantic context per chunk before embedding (via Claude WS). +35-49% recall improvement |
 
 ---
 
@@ -649,7 +650,7 @@ Set to `false` to disable the `<commit-format>` block injection:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `preCommitReview` | boolean | false | Run `succ-diff-reviewer` agent before every git commit |
+| `preCommitReview` | boolean | true | Run `succ-diff-reviewer` agent before every git commit |
 
 When enabled, the `PreToolUse` hook injects a `<pre-commit-review>` instruction at the exact moment Claude attempts a `git commit`. This tells the AI to run the `succ-diff-reviewer` agent on staged changes before committing. The agent checks for security issues (OWASP Top 10), bugs, regressions, and leftover debug code.
 
@@ -1421,7 +1422,7 @@ Optional enhancement for better text segmentation.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `bpe.enabled` | boolean | false | Enable BPE tokenizer |
+| `bpe.enabled` | boolean | true | Enable BPE tokenizer |
 | `bpe.vocab_size` | number | 5000 | Vocabulary size |
 | `bpe.min_frequency` | number | 2 | Min pair frequency |
 | `bpe.retrain_interval` | `"hourly"` \| `"daily"` | `"hourly"` | Retrain schedule |
@@ -1564,8 +1565,9 @@ Fine-tune search result ranking and expansion.
 | `retrieval.quality_boost_weight` | number | 0.15 | Weight of quality boost (0-1) |
 | `retrieval.mmr_enabled` | boolean | true | Enable Maximal Marginal Relevance for diversity |
 | `retrieval.mmr_lambda` | number | 0.8 | MMR trade-off: 1.0 = pure relevance, 0.0 = pure diversity |
-| `retrieval.query_expansion_enabled` | boolean | false | Expand queries with synonyms/related terms |
+| `retrieval.query_expansion_enabled` | boolean | true | Expand queries with synonyms/related terms (via Claude WS) |
 | `retrieval.query_expansion_mode` | string | from `llm.type` | LLM backend for expansion |
+| `retrieval.query_decomposition_enabled` | boolean | true | Split complex multi-concept queries into sub-queries (via Claude WS) |
 
 ```json
 {
@@ -1573,7 +1575,9 @@ Fine-tune search result ranking and expansion.
     "mmr_enabled": true,
     "mmr_lambda": 0.7,
     "quality_boost_enabled": true,
-    "quality_boost_weight": 0.15
+    "quality_boost_weight": 0.15,
+    "query_expansion_enabled": true,
+    "query_decomposition_enabled": true
   }
 }
 ```
@@ -2059,7 +2063,7 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
   "dead_end_boost": 0.15,
 
   "includeCoAuthoredBy": true,
-  "preCommitReview": false,
+  "preCommitReview": true,
   "communicationAutoAdapt": true,
   "communicationTrackHistory": false,
 
@@ -2167,6 +2171,8 @@ Enable via MCP: `succ_config action="set" key="undercover" value="true"`
   "retrieval": {
     "quality_boost_enabled": true,
     "mmr_enabled": true,
+    "query_expansion_enabled": true,
+    "query_decomposition_enabled": true,
     "graph_ppr_enabled": false,
     "graph_ppr_weight": 0.3
   },

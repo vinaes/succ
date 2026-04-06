@@ -165,11 +165,11 @@ export async function indexCode(
   // Only if we actually indexed new files
   if (result.newFiles > 0 || result.updatedFiles > 0) {
     const config = getConfig();
-    if (config.bpe?.enabled) {
+    if (config.bpe?.enabled !== false) {
       const lastIndexTime = new Date().toISOString();
-      if (needsBPERetrain(config.bpe.retrain_interval || 'hourly', lastIndexTime)) {
+      if (needsBPERetrain(config.bpe?.retrain_interval || 'hourly', lastIndexTime)) {
         console.log('\nBPE vocabulary may be stale, retraining...');
-        await trainBPEFromDatabase(config.bpe.vocab_size, config.bpe.min_frequency);
+        await trainBPEFromDatabase(config.bpe?.vocab_size, config.bpe?.min_frequency);
       }
     }
   }
