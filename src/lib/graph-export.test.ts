@@ -12,6 +12,7 @@ let tempDir: string;
 // Mock config
 vi.mock('./config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
     getConfig: () => ({
       graph_auto_export: false,
       graph_export_format: 'obsidian',
@@ -20,7 +21,6 @@ vi.mock('./config.js', () => {
     getProjectRoot: () => tempDir,
     getDbPath: () => ':memory:',
     getGlobalDbPath: () => ':memory:',
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

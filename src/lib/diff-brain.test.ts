@@ -6,8 +6,8 @@ vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
 }));
 vi.mock('./config.js', () => ({
-  getProjectRoot: vi.fn(() => '/mock/project'),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getProjectRoot: vi.fn(() => '/mock/project'),
 }));
 
 import { execFileSync } from 'child_process';

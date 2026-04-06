@@ -2,6 +2,7 @@ import pLimit from 'p-limit';
 import { StorageDispatcherBase } from './base.js';
 import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
+import { getConfig } from '../../config.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
   AutoMemoryRow,
@@ -71,6 +72,49 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
+    // Version detection: classify relationship with similar existing memory
+    let versionInfo: {
+      parentMemoryId: number;
+      rootMemoryId: number;
+      version: number;
+      relation: 'updates' | 'extends' | 'derives';
+    } | null = null;
+
+    if (deduplicate) {
+      try {
+        const config = getConfig();
+        if (config.auto_memory?.version_detection) {
+          // Find the most similar memory in the 0.82-0.92 range for version detection
+          const candidate = await this.findSimilarMemory(embedding, 0.85);
+          if (candidate && candidate.similarity < 0.92) {
+            const { classifyVersionRelation } =
+              await import('../../auto-memory/version-classifier.js');
+            const classification = await classifyVersionRelation(content, candidate);
+            if (classification) {
+              // Get existing memory's version info and verify it's still the latest
+              const existing = await this.getMemoryById(candidate.id);
+              if (existing && existing.is_latest !== false) {
+                const rootId = existing.root_memory_id ?? null;
+
+                versionInfo = {
+                  parentMemoryId: candidate.id,
+                  rootMemoryId: rootId ?? candidate.id,
+                  version: (existing.version ?? 1) + 1,
+                  relation: classification.relation as 'updates' | 'extends' | 'derives',
+                };
+              }
+              // If parent was superseded between similarity check and reload, skip
+              // versioning — save as a new independent memory instead.
+            }
+          }
+        }
+      } catch (error) {
+        logWarn('storage', 'Version detection failed during saveMemory (continuing without)', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let savedId: number;
     let wasDuplicate = false;
 
@@ -95,7 +139,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         confidence,
         sourceType,
         sourceContext,
-        forgetAfter
+        forgetAfter,
+        versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined
       );
 
       // Sync to Qdrant with full payload
@@ -131,6 +182,13 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         sourceType,
         sourceContext,
         forgetAfter,
+        versionFields: versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined,
       });
 
       savedId = result.id;
@@ -194,6 +252,50 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         logWarn('storage', 'Invariant detection or priority recompute failed during saveMemory', {
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+
+      // Create version link if version detection found a relationship
+      if (versionInfo) {
+        let linkCreated = false;
+        try {
+          await this.createMemoryLink(
+            savedId,
+            versionInfo.parentMemoryId,
+            versionInfo.relation,
+            versionInfo.version / 10 // weight proportional to version depth
+          );
+          linkCreated = true;
+        } catch (error) {
+          logWarn('storage', 'Failed to create version link, skipping parent demotion', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        // If 'updates': mark old memory as not latest AFTER successful link creation
+        // Only demote the parent if the version link was persisted — otherwise
+        // we'd hide the previous head without recording the version edge.
+        // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
+        // this update — concurrent saves could both mark the same candidate as
+        // not-latest and fork the version chain. Acceptable for v1 since the
+        // feature is config-gated and the LLM call serializes most concurrent saves.
+        if (versionInfo.relation === 'updates' && linkCreated) {
+          try {
+            await this.markMemoryNotLatest(versionInfo.parentMemoryId);
+          } catch (err) {
+            // Rollback: re-mark the parent as latest since demotion failed —
+            // the new child is saved but the parent should remain visible.
+            logWarn('storage', 'Failed to mark old memory as not latest, rolling back', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            try {
+              await this.markMemoryLatest(versionInfo.parentMemoryId);
+            } catch (rollbackErr) {
+              logWarn('storage', 'Rollback markMemoryLatest also failed', {
+                error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+              });
+            }
+          }
+        }
       }
     } else {
       this._sessionCounters.memoriesDuplicated++;
@@ -335,27 +437,32 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const thresh = threshold ?? 0.92;
     if (this.vectorBackend === 'qdrant' && this.qdrant) {
       try {
-        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 3, thresh);
-        if (results.length > 0 && results[0].similarity >= thresh) {
-          return {
-            id: results[0].id,
-            content: results[0].content,
-            similarity: results[0].similarity,
-          };
+        // Over-fetch to account for superseded (non-latest) rows that Qdrant
+        // doesn't know about — demotion only flips the SQL column today.
+        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 10, thresh);
+        for (const hit of results) {
+          if (hit.similarity < thresh) break;
+          // Re-check is_latest against SQL — Qdrant may still return
+          // superseded parents whose is_latest was flipped only in SQL.
+          const mem = await this.getMemoryById(hit.id);
+          if (mem && mem.is_latest !== false) {
+            return { id: hit.id, content: hit.content, similarity: hit.similarity };
+          }
         }
         // v1 schema fallback: IDs only -> PG
         if (results.length === 0 && this.backend === 'postgresql' && this.postgres) {
-          const qr = await this.qdrant.searchMemories(embedding, 3, thresh);
+          const qr = await this.qdrant.searchMemories(embedding, 10, thresh);
           if (qr.length > 0) {
             const pgRows = await this.postgres.getMemoriesByIds(
               qr.map((r) => r.id),
               { excludeInvalidated: false }
             );
-            if (pgRows.length > 0) {
-              const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
-              const score = scoreMap.get(pgRows[0].id) ?? 0;
-              if (score >= thresh)
-                return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
+            const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
+            for (const row of pgRows) {
+              const score = scoreMap.get(row.id) ?? 0;
+              if (score >= thresh && row.is_latest !== false) {
+                return { id: row.id, content: row.content, similarity: score };
+              }
             }
           }
         }

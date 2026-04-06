@@ -42,6 +42,7 @@ const tempDir = path.join(
 // Mock config
 vi.mock('../config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
     getConfig: () => ({
       chunk_size: 500,
       chunk_overlap: 50,
@@ -59,7 +60,6 @@ vi.mock('../config.js', () => {
     getGlobalDbPath: () => path.join(tempDir, 'global.db'),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 
@@ -131,7 +131,14 @@ const SCHEMA_DDL = `
     last_accessed TEXT,
     valid_from TEXT,
     valid_until TEXT,
-    invalidated_by INTEGER
+    invalidated_by INTEGER,
+    correction_count INTEGER DEFAULT 0,
+    is_invariant INTEGER DEFAULT 0,
+    priority_score REAL DEFAULT NULL,
+    version INTEGER DEFAULT 1,
+    parent_memory_id INTEGER DEFAULT NULL,
+    root_memory_id INTEGER DEFAULT NULL,
+    is_latest INTEGER DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
 

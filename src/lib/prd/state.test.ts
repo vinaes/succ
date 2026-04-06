@@ -26,8 +26,8 @@ import { createPrd, createTask, createExecution } from './types.js';
 let tempDir: string;
 
 vi.mock('../config.js', () => ({
-  getSuccDir: () => tempDir,
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getSuccDir: () => tempDir,
 }));
 
 describe('PRD State', () => {

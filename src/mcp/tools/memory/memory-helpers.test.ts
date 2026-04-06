@@ -10,10 +10,10 @@ vi.mock('../../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({})),
   getProjectRoot: vi.fn(() => '/tmp/test-project'),
   getIdleReflectionConfig: vi.fn(() => ({ agent_model: 'haiku' })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({

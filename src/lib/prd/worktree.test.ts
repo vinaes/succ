@@ -19,8 +19,8 @@ vi.mock('cross-spawn', () => ({
 vi.mock('fs', () => ({ default: mockFs, ...mockFs }));
 
 vi.mock('../config.js', () => ({
-  getSuccDir: () => '/project/.succ',
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getSuccDir: () => '/project/.succ',
 }));
 
 import {

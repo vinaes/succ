@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock dependencies to avoid loading real models
 vi.mock('../config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({ chunk_size: 500, chunk_overlap: 50 })),
   getConfigWithOverride: vi.fn(() => ({})),
   getLLMTaskConfig: vi.fn(() => ({
@@ -14,7 +15,6 @@ vi.mock('../config.js', () => ({
     api_url: 'http://localhost:11434/v1',
   })),
   getProjectRoot: vi.fn(() => '/mock/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../config-defaults.js', () => ({

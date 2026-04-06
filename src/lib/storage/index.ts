@@ -466,6 +466,16 @@ export async function incrementCorrectionCount(memoryId: number): Promise<void> 
   return d.incrementCorrectionCount(memoryId);
 }
 
+export async function markMemoryNotLatest(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.markMemoryNotLatest(memoryId);
+}
+
+export async function markMemoryLatest(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.markMemoryLatest(memoryId);
+}
+
 export async function setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
   const d = await getStorageDispatcher();
   return d.setMemoryInvariant(memoryId, isInvariant);

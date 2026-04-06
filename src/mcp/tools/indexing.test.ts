@@ -41,8 +41,8 @@ vi.mock('../../commands/scan-code.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
-  getProjectRoot: vi.fn(() => '/project'),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getProjectRoot: vi.fn(() => '/project'),
 }));
 
 vi.mock('../helpers.js', () => ({

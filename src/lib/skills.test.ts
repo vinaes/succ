@@ -27,6 +27,7 @@ let currentProject = projectA;
 // Mock config to use temp directory with dynamic project root
 vi.mock('./config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false, level: 'warn' }),
     getConfig: () => ({
       chunk_size: 500,
       chunk_overlap: 50,
@@ -48,7 +49,6 @@ vi.mock('./config.js', () => {
     getClaudeDir: () => tempDir,
     getProjectRoot: () => currentProject,
     getSuccDir: () => path.join(currentProject, '.succ'),
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

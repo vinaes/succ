@@ -41,6 +41,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),
   getIdleReflectionConfig: vi.fn(() => ({
@@ -78,7 +79,6 @@ vi.mock('../lib/config.js', () => ({
   getDaemonStatuses: vi.fn(async () => ({})),
   isProjectInitialized: vi.fn(() => true),
   isGlobalOnlyMode: vi.fn(() => false),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getAutoCompactConfig: vi.fn(() => ({
     enabled: true,
     threshold_percent: 15,

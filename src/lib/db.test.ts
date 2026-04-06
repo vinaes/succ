@@ -12,6 +12,7 @@ const tempDir = path.join(
 // Mock config to use temp directory
 vi.mock('./config.js', () => {
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
     getConfig: () => ({
       chunk_size: 500,
       chunk_overlap: 50,
@@ -29,7 +30,6 @@ vi.mock('./config.js', () => {
     getGlobalDbPath: () => path.join(tempDir, 'global.db'),
     getClaudeDir: () => tempDir,
     getProjectRoot: () => tempDir,
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

@@ -57,6 +57,8 @@ export {
   incrementMemoryAccessBatch,
   getAllMemoriesForRetention,
   incrementCorrectionCount,
+  markMemoryNotLatest,
+  markMemoryLatest,
   setMemoryInvariant,
   getPinnedMemories,
   updatePriorityScore,

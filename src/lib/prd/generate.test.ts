@@ -263,6 +263,7 @@ vi.mock('../config.js', () => {
   let _projectRoot = '';
   let _config: Record<string, unknown> = {};
   return {
+    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
     getProjectRoot: () => _projectRoot,
     getConfig: () => _config,
     __setProjectRoot: (root: string) => {
@@ -271,7 +272,6 @@ vi.mock('../config.js', () => {
     __setConfig: (cfg: Record<string, unknown>) => {
       _config = cfg;
     },
-    getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   };
 });
 

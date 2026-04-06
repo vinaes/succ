@@ -28,6 +28,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   isGlobalOnlyMode: vi.fn(() => false),
   getReadinessGateConfig: vi.fn(() => ({ enabled: false })),
   getRetrievalConfig: vi.fn(() => ({
@@ -45,7 +46,6 @@ vi.mock('../../../lib/config.js', () => ({
     graph_ppr_weight: 0.3,
   })),
   getConfig: vi.fn(() => ({ dead_end_boost: 0 })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({
