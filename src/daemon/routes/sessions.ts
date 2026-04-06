@@ -267,6 +267,9 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       if (!session?.transcriptPath) {
         return { error: 'session not found or no transcript' };
       }
+      if (session.isService) {
+        return { error: 'context monitoring not applicable to service sessions' };
+      }
 
       // O(1) stat for transcript size
       let transcriptSize = 0;
