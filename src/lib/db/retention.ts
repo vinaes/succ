@@ -1,6 +1,7 @@
 import { getDb } from './connection.js';
 import type { MemoryType } from './schema.js';
 import { parseTags, parseMemoryType, parseQualityFactors } from './parse-helpers.js';
+import { logWarn } from '../fault-logger.js';
 
 /**
  * Increment access count for a memory.
@@ -69,7 +70,10 @@ export function incrementCorrectionCount(memoryId: number): void {
  */
 export function markMemoryNotLatest(memoryId: number): void {
   const database = getDb();
-  database.prepare(`UPDATE memories SET is_latest = 0 WHERE id = ?`).run(memoryId);
+  const result = database.prepare(`UPDATE memories SET is_latest = 0 WHERE id = ?`).run(memoryId);
+  if (result.changes === 0) {
+    logWarn('retention', `markMemoryNotLatest: memory ${memoryId} not found`);
+  }
 }
 
 /**
@@ -77,7 +81,10 @@ export function markMemoryNotLatest(memoryId: number): void {
  */
 export function markMemoryLatest(memoryId: number): void {
   const database = getDb();
-  database.prepare(`UPDATE memories SET is_latest = 1 WHERE id = ?`).run(memoryId);
+  const result = database.prepare(`UPDATE memories SET is_latest = 1 WHERE id = ?`).run(memoryId);
+  if (result.changes === 0) {
+    logWarn('retention', `markMemoryLatest: memory ${memoryId} not found`);
+  }
 }
 
 /**
