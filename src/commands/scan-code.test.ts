@@ -48,9 +48,9 @@ vi.mock('../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getProjectRoot: vi.fn(() => '/project'),
   getConfig: vi.fn(() => ({})),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('./index-code.js', () => ({

@@ -4,6 +4,7 @@ import { getConfig } from '../../lib/config.js';
 import { scoreMemory, passesQualityThreshold } from '../../lib/quality.js';
 import { scanSensitive } from '../../lib/sensitive-filter.js';
 import { saveGlobalMemory, saveMemory } from '../../lib/storage/index.js';
+import type { MemoryType } from '../../lib/storage/types.js';
 import { invalidateHookRulesCache } from './search.js';
 import {
   parseRequestBody,
@@ -32,6 +33,7 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
         global = false,
         valid_from,
         valid_until,
+        source_context,
       } = parseRequestBody(RememberBodySchema, body, 'content required');
 
       const contentHash = content.slice(0, 200) + '|' + (tags || []).join(',');
@@ -44,6 +46,7 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
       const processRemember = async (): Promise<RememberInFlightResult> => {
         const config = getConfig();
         let finalContent = content;
+        let finalSourceContext = source_context;
         if (config.sensitive_filter_enabled !== false) {
           const scanResult = scanSensitive(content);
           if (scanResult.hasSensitive) {
@@ -51,6 +54,17 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
               finalContent = scanResult.redactedText;
             } else {
               throw new ValidationError('Content contains sensitive information');
+            }
+          }
+          // Scan source_context for sensitive info with same policy
+          if (finalSourceContext) {
+            const ctxScan = scanSensitive(finalSourceContext);
+            if (ctxScan.hasSensitive) {
+              if (config.sensitive_auto_redact) {
+                finalSourceContext = ctxScan.redactedText;
+              } else {
+                throw new ValidationError('source_context contains sensitive information');
+              }
             }
           }
         }
@@ -63,12 +77,16 @@ export function memoryRoutes(_ctx: RouteContext): RouteMap {
 
         let result;
         if (global) {
-          result = await saveGlobalMemory(finalContent, embedding, tags, type);
+          result = await saveGlobalMemory(finalContent, embedding, tags, source, {
+            type: type as MemoryType,
+            sourceContext: finalSourceContext,
+          });
         } else {
           result = await saveMemory(finalContent, embedding, tags, source ?? type, {
             qualityScore: { score: qualityResult.score, factors: qualityResult.factors },
             validFrom: valid_from,
             validUntil: valid_until,
+            sourceContext: finalSourceContext,
           });
         }
 

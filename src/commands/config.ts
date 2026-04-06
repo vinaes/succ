@@ -143,7 +143,7 @@ export async function config(options: ConfigOptions = {}): Promise<void> {
             new URL(input);
             return true;
           } catch {
-            // Expected during interactive input: user may type an invalid URL.
+            logWarn('config', 'Invalid URL entered during interactive wizard');
             return 'Please enter a valid URL';
           }
         },

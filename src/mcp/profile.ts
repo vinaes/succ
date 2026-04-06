@@ -36,6 +36,7 @@ const TIER_ORDER: Record<string, number> = { core: 0, standard: 1, full: 2 };
  * |-------------|---------|-------------------------------------|----------|
  * | succ_status | core    | stats, score                        | standard |
  * | succ_fetch  | core    | __extract (schema present)          | standard |
+ * | succ_recall | core    | decompose (LLM query decomposition) | standard |
  * | succ_config | standard| checkpoint_create, checkpoint_list  | full     |
  * | succ_web    | standard| deep, history                       | full     |
  */
@@ -44,6 +45,7 @@ const ACTION_GATES: Record<string, Record<string, 'standard' | 'full'>> = {
   succ_fetch: { __extract: 'standard' },
   succ_config: { checkpoint_create: 'full', checkpoint_list: 'full' },
   succ_web: { deep: 'full', history: 'full' },
+  succ_recall: { decompose: 'standard' },
   succ_link: { critical_nodes: 'full', pagerank: 'full' },
 };
 

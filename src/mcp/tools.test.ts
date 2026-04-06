@@ -140,6 +140,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   isGlobalOnlyMode: vi.fn(() => false),
   getConfig: vi.fn(() => ({
     sensitive_filter_enabled: false,
@@ -171,8 +172,9 @@ vi.mock('../lib/config.js', () => ({
     mmr_lambda: 0.8,
     query_expansion_enabled: false,
     query_expansion_mode: 'local',
+    graph_ppr_enabled: false,
+    graph_ppr_weight: 0.3,
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../lib/quality.js', () => ({

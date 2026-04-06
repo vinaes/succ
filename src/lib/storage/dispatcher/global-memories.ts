@@ -21,6 +21,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
       deduplicate?: boolean;
       qualityScore?: number;
       qualityFactors?: Record<string, number>;
+      sourceContext?: string;
     }
   ): Promise<{
     id: number;
@@ -31,6 +32,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
     const deduplicate = options?.deduplicate ?? true;
     const qualityScore = options?.qualityScore;
     const qualityFactors = options?.qualityFactors;
+    const sourceContext = options?.sourceContext;
 
     if (this.backend === 'postgresql' && this.postgres) {
       if (deduplicate) {
@@ -47,7 +49,8 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
         source,
         type,
         qualityScore,
-        qualityFactors
+        qualityFactors,
+        sourceContext
       );
 
       if (this.hasQdrant()) {
@@ -58,6 +61,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
             source,
             type,
             createdAt: new Date().toISOString(),
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync global memory vector ${id}`, error);
@@ -71,6 +75,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
     const result = sqlite.saveGlobalMemory(content, embedding, tags, source, undefined, {
       type,
       deduplicate,
+      sourceContext,
     });
 
     if (this.hasQdrant() && !result.isDuplicate) {
@@ -81,6 +86,7 @@ export class GlobalMemoriesDispatcherMixin extends StorageDispatcherBase {
           source,
           type,
           createdAt: new Date().toISOString(),
+          sourceContext,
         });
       } catch (error) {
         this._warnQdrantFailure(`Failed to sync global memory vector ${result.id}`, error);

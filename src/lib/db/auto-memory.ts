@@ -22,20 +22,21 @@ export function getAutoExtractedMemories(): AutoMemoryRow[] {
     `SELECT id, content, embedding, access_count, confidence, created_at
      FROM memories
      WHERE source_type = 'auto_extracted'
+       AND invalidated_by IS NULL
      ORDER BY created_at DESC`
   ).all() as AutoMemoryRow[];
 }
 
 /**
- * Promote a memory's confidence to 0.7.
+ * Promote a memory's confidence to 0.75 (above the >= 0.7 permanence threshold).
  * Only updates the confidence value — source_type is intentionally left unchanged
  * so that non-auto memories are not relabelled.
  */
 export function promoteMemoryConfidence(memoryId: number): boolean {
   try {
     const result = cachedPrepare(
-      `UPDATE memories SET confidence = 0.7
-       WHERE id = ? AND (confidence IS NULL OR confidence < 0.7)`
+      `UPDATE memories SET confidence = 0.75
+       WHERE id = ? AND (confidence IS NULL OR confidence < 0.75)`
     ).run(memoryId);
     return result.changes > 0;
   } catch (error) {
@@ -47,18 +48,140 @@ export function promoteMemoryConfidence(memoryId: number): boolean {
 }
 
 /**
+ * Degrade a memory's confidence by a given amount (min 0.05).
+ * Used when a memory is recalled but not used.
+ */
+export function degradeMemoryConfidence(memoryId: number, amount: number = 0.05): boolean {
+  const delta = Math.max(0, amount);
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET confidence = MAX(0.05, COALESCE(confidence, 0.5) - ?)
+       WHERE id = ? AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05`
+    ).run(delta, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to degrade confidence for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Boost a memory's confidence by a given amount (cap at 0.95).
+ * Used when a memory is recalled and actively used.
+ */
+export function boostMemoryConfidence(memoryId: number, amount: number = 0.02): boolean {
+  const delta = Math.max(0, amount);
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET confidence = MIN(0.95, COALESCE(confidence, 0.5) + ?)
+       WHERE id = ? AND source_type = 'auto_extracted'`
+    ).run(delta, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to boost confidence for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Set forget_after to DB-native now()+days, avoiding Node.js/DB clock skew.
+ */
+export function setForgetAfterDays(memoryId: number, days: number): boolean {
+  if (!Number.isFinite(days) || !Number.isInteger(days) || days < 0) {
+    logWarn('auto-memory-db', `Invalid forget_after days for memory #${memoryId}`, { days });
+    return false;
+  }
+  try {
+    const result = cachedPrepare(
+      `UPDATE memories SET forget_after = datetime('now', ? || ' days') WHERE id = ?`
+    ).run(`+${days}`, memoryId);
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to set forget_after (days) for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Set forget_after date on a memory.
+ */
+export function setForgetAfter(memoryId: number, forgetAfter: string | null): boolean {
+  if (forgetAfter !== null) {
+    const parsed = new Date(forgetAfter);
+    if (isNaN(parsed.getTime())) {
+      logWarn('auto-memory-db', `Invalid forget_after value for memory #${memoryId}`, {
+        forgetAfter,
+      });
+      return false;
+    }
+    forgetAfter = parsed.toISOString();
+  }
+  try {
+    const result = cachedPrepare(`UPDATE memories SET forget_after = ? WHERE id = ?`).run(
+      forgetAfter,
+      memoryId
+    );
+    return result.changes > 0;
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to set forget_after for memory #${memoryId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Collect IDs of memories past their forget_after date.
+ */
+export function collectExpiredMemoryIds(): number[] {
+  try {
+    const rows = cachedPrepare(
+      `SELECT id FROM memories
+       WHERE forget_after IS NOT NULL
+       AND datetime(forget_after) < datetime('now')
+       AND invalidated_by IS NULL`
+    ).all() as Array<{ id: number }>;
+    return rows.map((r) => r.id);
+  } catch (error) {
+    logWarn('auto-memory-db', `Failed to collect expired memories`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+/**
  * Collect IDs of old unused auto-extracted memories eligible for pruning.
+ *
+ * Prunes by two criteria (OR):
+ * 1. forget_after expired — the canonical retention timestamp set at insertion
+ * 2. Unused for maxUnusedDays — memories not accessed within the retention window
  *
  * Returns IDs only — callers are responsible for deletion so that the storage
  * dispatcher (including Qdrant vector deletion) is invoked correctly.
  */
 export function collectPruneableAutoMemoryIds(maxUnusedDays: number): number[] {
   try {
+    // Prune by forget_after expiry OR by unused duration (whichever matches).
+    // Exclude promoted memories (forget_after cleared + high confidence) from the
+    // unused-days path — they were intentionally made permanent.
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
-       AND access_count = 0
-       AND created_at < datetime('now', '-' || ? || ' days')`
+       AND invalidated_by IS NULL
+       AND (
+         (forget_after IS NOT NULL AND datetime(forget_after) < datetime('now'))
+         OR (
+           forget_after IS NOT NULL
+           AND COALESCE(last_accessed, created_at) < datetime('now', '-' || ? || ' days')
+         )
+       )`
     ).all(maxUnusedDays) as Array<{ id: number }>;
 
     return rows.map((r) => r.id);
@@ -90,7 +213,8 @@ export function getAutoMemoryStatsRow(): AutoMemoryStatsRow {
        SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
        AVG(access_count) as avg_access
      FROM memories
-     WHERE source_type = 'auto_extracted'`
+     WHERE source_type = 'auto_extracted'
+       AND invalidated_by IS NULL`
   ).get() as AutoMemoryStatsRow | undefined;
 
   return {

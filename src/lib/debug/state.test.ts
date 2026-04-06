@@ -4,8 +4,8 @@ import path from 'path';
 import os from 'os';
 
 vi.mock('../config.js', () => ({
-  getSuccDir: vi.fn(() => ''),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getSuccDir: vi.fn(() => ''),
 }));
 
 import {

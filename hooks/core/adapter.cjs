@@ -407,6 +407,17 @@ function resolveTranscriptPath(sessionId, cwd) {
   const pathMod = require('path');
   const fsMod = require('fs');
 
+  // Canonicalize cwd to resolve Windows 8.3 short paths (e.g. RUNNER~1 → RUNNERADMIN)
+  // before hashing, so it matches the directory Claude Code created using the long path.
+  // Only on Windows — realpathSync.native resolves symlinks on Unix which breaks transcript discovery.
+  if (process.platform === 'win32') {
+    try {
+      cwd = fsMod.realpathSync.native(cwd);
+    } catch (e) {
+      console.error(`[succ:adapter] realpathSync.native failed for cwd: ${errMsg(e)}`);
+    }
+  }
+
   const projectsDir = pathMod.join(os.homedir(), '.claude', 'projects');
   if (!fsMod.existsSync(projectsDir)) return '';
 
@@ -417,7 +428,8 @@ function resolveTranscriptPath(sessionId, cwd) {
   let dirs;
   try {
     dirs = fsMod.readdirSync(projectsDir);
-  } catch {
+  } catch (e) {
+    console.error(`[succ:adapter] readdirSync failed for projectsDir: ${errMsg(e)}`);
     return '';
   }
   const match = dirs.find((d) => d.toLowerCase() === hash.toLowerCase());

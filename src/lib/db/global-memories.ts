@@ -20,6 +20,7 @@ export interface GlobalMemory {
   type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  source_context: string | null;
   created_at: string;
   isGlobal: true;
 }
@@ -105,9 +106,9 @@ export function saveGlobalMemory(
   tags: string[] = [],
   source?: string,
   project?: string,
-  options: { deduplicate?: boolean; type?: MemoryType } = {}
+  options: { deduplicate?: boolean; type?: MemoryType; sourceContext?: string } = {}
 ): SaveMemoryResult {
-  const { deduplicate = true, type = 'observation' } = options;
+  const { deduplicate = true, type = 'observation', sourceContext } = options;
 
   // Check for duplicates if enabled
   if (deduplicate) {
@@ -124,11 +125,19 @@ export function saveGlobalMemory(
   const result = database
     .prepare(
       `
-      INSERT INTO memories (content, tags, source, project, type, embedding)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO memories (content, tags, source, project, type, source_context, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `
     )
-    .run(content, tagsJson, source ?? null, project ?? null, type, embeddingBlob);
+    .run(
+      content,
+      tagsJson,
+      source ?? null,
+      project ?? null,
+      type,
+      sourceContext ?? null,
+      embeddingBlob
+    );
 
   const memoryId = result.lastInsertRowid as number;
 
@@ -167,6 +176,7 @@ export function searchGlobalMemories(
     type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
+    source_context: string | null;
     embedding: Buffer;
     created_at: string;
   }>;
@@ -196,6 +206,7 @@ export function searchGlobalMemories(
         type: parseMemoryType(row.type),
         quality_score: row.quality_score,
         quality_factors: parseQualityFactors(row.quality_factors),
+        source_context: row.source_context ?? null,
         created_at: row.created_at,
         similarity,
         isGlobal: true,
@@ -215,7 +226,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
   const rows = database
     .prepare(
       `
-      SELECT id, content, tags, source, project, type, quality_score, quality_factors, created_at
+      SELECT id, content, tags, source, project, type, quality_score, quality_factors, source_context, created_at
       FROM memories
       ORDER BY created_at DESC
       LIMIT ?
@@ -230,6 +241,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
     type: string | null;
     quality_score: number | null;
     quality_factors: string | null;
+    source_context: string | null;
     created_at: string;
   }>;
 
@@ -242,6 +254,7 @@ export function getRecentGlobalMemories(limit: number = 10): GlobalMemory[] {
     type: parseMemoryType(row.type),
     quality_score: row.quality_score,
     quality_factors: parseQualityFactors(row.quality_factors),
+    source_context: row.source_context ?? null,
     created_at: row.created_at,
     isGlobal: true as const,
   }));

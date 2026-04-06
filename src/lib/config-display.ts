@@ -219,6 +219,9 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
         query_expansion_mode: rc.query_expansion_mode,
         graph_ppr_enabled: rc.graph_ppr_enabled,
         graph_ppr_weight: rc.graph_ppr_weight,
+        query_decomposition_enabled: rc.query_decomposition_enabled,
+        rrf_k: rc.rrf_k,
+        adaptive_alpha: rc.adaptive_alpha,
       };
     })(),
     web_search: (() => {
@@ -424,6 +427,9 @@ export function formatConfigDisplay(display: ConfigDisplay): string {
   lines.push(
     `  Graph PPR: ${display.retrieval.graph_ppr_enabled} (weight: ${display.retrieval.graph_ppr_weight})`
   );
+  lines.push(`  Query decomposition: ${display.retrieval.query_decomposition_enabled}`);
+  lines.push(`  RRF K: ${display.retrieval.rrf_k}`);
+  lines.push(`  Adaptive alpha: ${display.retrieval.adaptive_alpha}`);
   lines.push('');
 
   // Web Search

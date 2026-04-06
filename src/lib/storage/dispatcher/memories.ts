@@ -1,7 +1,12 @@
+import pLimit from 'p-limit';
 import { StorageDispatcherBase } from './base.js';
+import { getErrorMessage } from '../../errors.js';
 import { logWarn } from '../../fault-logger.js';
+import { getConfig } from '../../config.js';
 import type { MemoryBatchInput } from '../../db/memories.js';
 import type {
+  AutoMemoryRow,
+  AutoMemoryStatsRow,
   ConsolidationRecord,
   HybridMemoryResult,
   MemoryType,
@@ -11,6 +16,7 @@ import type {
   MemoryStats,
   SourceType,
   WorkingMemoryRecord,
+  AuditChangedBy,
 } from '../types.js';
 
 export class MemoriesDispatcherMixin extends StorageDispatcherBase {
@@ -28,6 +34,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       validUntil?: string;
       confidence?: number;
       sourceType?: SourceType;
+      sourceContext?: string;
     }
   ): Promise<{
     id: number;
@@ -43,6 +50,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const confidence = options?.confidence ?? 0.5;
     // No default — DB layers default to 'human'. Callers should pass explicitly.
     const sourceType = options?.sourceType;
+    const sourceContext = options?.sourceContext;
 
     // Auto-correction: detect similar (but not duplicate) memories in 0.82-0.92 range
     if (deduplicate) {
@@ -64,8 +72,57 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
+    // Version detection: classify relationship with similar existing memory
+    let versionInfo: {
+      parentMemoryId: number;
+      rootMemoryId: number;
+      version: number;
+      relation: 'updates' | 'extends' | 'derives';
+    } | null = null;
+
+    if (deduplicate) {
+      try {
+        const config = getConfig();
+        if (config.auto_memory?.version_detection) {
+          // Find the most similar memory in the 0.82-0.92 range for version detection
+          const candidate = await this.findSimilarMemory(embedding, 0.85);
+          if (candidate && candidate.similarity < 0.92) {
+            const { classifyVersionRelation } =
+              await import('../../auto-memory/version-classifier.js');
+            const classification = await classifyVersionRelation(content, candidate);
+            if (classification) {
+              // Get existing memory's version info and verify it's still the latest
+              const existing = await this.getMemoryById(candidate.id);
+              if (existing && existing.is_latest !== false) {
+                const rootId = existing.root_memory_id ?? null;
+
+                versionInfo = {
+                  parentMemoryId: candidate.id,
+                  rootMemoryId: rootId ?? candidate.id,
+                  version: (existing.version ?? 1) + 1,
+                  relation: classification.relation as 'updates' | 'extends' | 'derives',
+                };
+              }
+              // If parent was superseded between similarity check and reload, skip
+              // versioning — save as a new independent memory instead.
+            }
+          }
+        }
+      } catch (error) {
+        logWarn('storage', 'Version detection failed during saveMemory (continuing without)', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let savedId: number;
     let wasDuplicate = false;
+
+    // Compute forget_after at save time so it's included in the INSERT
+    const forgetAfter =
+      sourceType === 'auto_extracted'
+        ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
 
     if (this.backend === 'postgresql' && this.postgres) {
       savedId = await this.postgres.saveMemory(
@@ -80,7 +137,16 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         validUntil,
         false, // isGlobal
         confidence,
-        sourceType
+        sourceType,
+        sourceContext,
+        forgetAfter,
+        versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined
       );
 
       // Sync to Qdrant with full payload
@@ -97,6 +163,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -113,6 +180,15 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         validUntil,
         confidence,
         sourceType,
+        sourceContext,
+        forgetAfter,
+        versionFields: versionInfo
+          ? {
+              parentMemoryId: versionInfo.parentMemoryId,
+              rootMemoryId: versionInfo.rootMemoryId,
+              version: versionInfo.version,
+            }
+          : undefined,
       });
 
       savedId = result.id;
@@ -132,6 +208,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
             validUntil,
             confidence,
             sourceType,
+            sourceContext,
           });
         } catch (error) {
           this._warnQdrantFailure(`Failed to sync memory vector ${savedId}`, error);
@@ -143,6 +220,18 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       this._sessionCounters.memoriesCreated++;
       this._sessionCounters.typesCreated[type] =
         (this._sessionCounters.typesCreated[type] ?? 0) + 1;
+
+      // Record audit trail for memory creation
+      try {
+        const changedBy: AuditChangedBy =
+          sourceType === 'auto_extracted' ? 'extraction' : source === 'hook' ? 'hook' : 'user';
+        await this.recordAuditEvent(savedId, 'create', null, content, changedBy);
+      } catch (auditError) {
+        logWarn('storage', 'Audit trail recording failed for saveMemory', {
+          memoryId: savedId,
+          error: getErrorMessage(auditError),
+        });
+      }
 
       // Auto-detect invariant content and set is_invariant + compute priority_score
       // Hybrid: regex fast path (8 languages) + embedding similarity fallback (any language)
@@ -163,6 +252,50 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
         logWarn('storage', 'Invariant detection or priority recompute failed during saveMemory', {
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+
+      // Create version link if version detection found a relationship
+      if (versionInfo) {
+        let linkCreated = false;
+        try {
+          await this.createMemoryLink(
+            savedId,
+            versionInfo.parentMemoryId,
+            versionInfo.relation,
+            versionInfo.version / 10 // weight proportional to version depth
+          );
+          linkCreated = true;
+        } catch (error) {
+          logWarn('storage', 'Failed to create version link, skipping parent demotion', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        // If 'updates': mark old memory as not latest AFTER successful link creation
+        // Only demote the parent if the version link was persisted — otherwise
+        // we'd hide the previous head without recording the version edge.
+        // NOTE (v1 known limitation): TOCTOU race between findSimilarMemory and
+        // this update — concurrent saves could both mark the same candidate as
+        // not-latest and fork the version chain. Acceptable for v1 since the
+        // feature is config-gated and the LLM call serializes most concurrent saves.
+        if (versionInfo.relation === 'updates' && linkCreated) {
+          try {
+            await this.markMemoryNotLatest(versionInfo.parentMemoryId);
+          } catch (err) {
+            // Rollback: re-mark the parent as latest since demotion failed —
+            // the new child is saved but the parent should remain visible.
+            logWarn('storage', 'Failed to mark old memory as not latest, rolling back', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            try {
+              await this.markMemoryLatest(versionInfo.parentMemoryId);
+            } catch (rollbackErr) {
+              logWarn('storage', 'Rollback markMemoryLatest also failed', {
+                error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+              });
+            }
+          }
+        }
       }
     } else {
       this._sessionCounters.memoriesDuplicated++;
@@ -304,27 +437,32 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     const thresh = threshold ?? 0.92;
     if (this.vectorBackend === 'qdrant' && this.qdrant) {
       try {
-        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 3, thresh);
-        if (results.length > 0 && results[0].similarity >= thresh) {
-          return {
-            id: results[0].id,
-            content: results[0].content,
-            similarity: results[0].similarity,
-          };
+        // Over-fetch to account for superseded (non-latest) rows that Qdrant
+        // doesn't know about — demotion only flips the SQL column today.
+        const results = await this.qdrant.findSimilarWithContent('memories', embedding, 10, thresh);
+        for (const hit of results) {
+          if (hit.similarity < thresh) break;
+          // Re-check is_latest against SQL — Qdrant may still return
+          // superseded parents whose is_latest was flipped only in SQL.
+          const mem = await this.getMemoryById(hit.id);
+          if (mem && mem.is_latest !== false) {
+            return { id: hit.id, content: hit.content, similarity: hit.similarity };
+          }
         }
         // v1 schema fallback: IDs only -> PG
         if (results.length === 0 && this.backend === 'postgresql' && this.postgres) {
-          const qr = await this.qdrant.searchMemories(embedding, 3, thresh);
+          const qr = await this.qdrant.searchMemories(embedding, 10, thresh);
           if (qr.length > 0) {
             const pgRows = await this.postgres.getMemoriesByIds(
               qr.map((r) => r.id),
               { excludeInvalidated: false }
             );
-            if (pgRows.length > 0) {
-              const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
-              const score = scoreMap.get(pgRows[0].id) ?? 0;
-              if (score >= thresh)
-                return { id: pgRows[0].id, content: pgRows[0].content, similarity: score };
+            const scoreMap = new Map(qr.map((r) => [r.id, r.similarity]));
+            for (const row of pgRows) {
+              const score = scoreMap.get(row.id) ?? 0;
+              if (score >= thresh && row.is_latest !== false) {
+                return { id: row.id, content: row.content, similarity: score };
+              }
             }
           }
         }
@@ -343,12 +481,21 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     deduplicateThreshold?: number,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
   ): Promise<MemoryBatchResult> {
+    // Pre-compute forget_after for auto-extracted memories so it's included in the INSERT
+    const enriched = memories.map((mem) => ({
+      ...mem,
+      forgetAfter:
+        mem.sourceType === 'auto_extracted'
+          ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+          : (mem.forgetAfter ?? undefined),
+    }));
+
     let result: MemoryBatchResult;
     if (this.backend === 'postgresql' && this.postgres) {
-      result = await this.postgres.saveMemoriesBatch(memories, deduplicateThreshold, options);
+      result = await this.postgres.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     } else {
       const sqlite = await this.getSqliteFns();
-      result = await sqlite.saveMemoriesBatch(memories, deduplicateThreshold, options);
+      result = await sqlite.saveMemoriesBatch(enriched, deduplicateThreshold, options);
     }
 
     // Sync newly saved memories to Qdrant
@@ -383,6 +530,7 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
                   : null,
                 confidence: mem.confidence ?? null,
                 sourceType: mem.sourceType ?? null,
+                sourceContext: mem.sourceContext ?? null,
               },
             };
           });
@@ -393,17 +541,78 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
       }
     }
 
+    // Record audit trail for batch creates with bounded parallelism (CONCURRENCY=5)
+    // to avoid SQLITE_BUSY while not serializing every insert.
+    if (result?.results?.length > 0) {
+      const saved = result.results.filter(
+        (r): r is (typeof result.results)[number] & { id: number } => !r.isDuplicate && r.id != null
+      );
+      const auditWriteLimit = pLimit(5);
+      await Promise.all(
+        saved.map((r) =>
+          auditWriteLimit(async () => {
+            try {
+              const mem = memories[r.index];
+              const changedBy: AuditChangedBy =
+                mem.sourceType === 'auto_extracted'
+                  ? 'extraction'
+                  : mem.source === 'hook'
+                    ? 'hook'
+                    : 'user';
+              await this.recordAuditEvent(r.id, 'create', null, mem.content, changedBy);
+            } catch (auditError) {
+              logWarn('storage', 'Audit trail recording failed for saveMemoriesBatch', {
+                memoryId: r.id,
+                error: getErrorMessage(auditError),
+              });
+            }
+          })
+        )
+      );
+    }
+
     return result;
   }
 
-  async invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+  async invalidateMemory(
+    memoryId: number,
+    supersededById: number,
+    changedBy: AuditChangedBy = 'consolidation'
+  ): Promise<boolean> {
     // Tier 1 immutability guard: pinned memories cannot be invalidated
     await this._guardPinned(memoryId);
 
-    if (this.backend === 'postgresql' && this.postgres)
-      return this.postgres.invalidateMemory(memoryId, supersededById);
-    const sqlite = await this.getSqliteFns();
-    return sqlite.invalidateMemory(memoryId, supersededById);
+    let oldContent: string | null = null;
+    try {
+      const memory = await this.getMemoryById(memoryId);
+      if (memory) oldContent = memory.content;
+    } catch (fetchError) {
+      logWarn('storage', 'Failed to fetch memory content for audit before invalidation', {
+        memoryId,
+        error: getErrorMessage(fetchError),
+      });
+    }
+
+    let result: boolean;
+    if (this.backend === 'postgresql' && this.postgres) {
+      result = await this.postgres.invalidateMemory(memoryId, supersededById);
+    } else {
+      const sqlite = await this.getSqliteFns();
+      result = sqlite.invalidateMemory(memoryId, supersededById);
+    }
+
+    if (result) {
+      try {
+        await this.recordAuditEvent(memoryId, 'delete', oldContent, null, changedBy);
+      } catch (auditError) {
+        logWarn('storage', 'Audit trail recording failed for invalidateMemory', {
+          memoryId,
+          error: getErrorMessage(auditError),
+        });
+      }
+    }
+
+    return result;
   }
 
   async restoreInvalidatedMemory(memoryId: number): Promise<boolean> {
@@ -526,6 +735,14 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     return deleted;
   }
 
+  async collectExpiredMemoryIds(): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectExpiredMemoryIds();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectExpiredMemoryIds();
+  }
+
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
     if (ids.length === 0) return 0;
     // Filter out pinned memories (Tier 1 immutability)
@@ -552,6 +769,79 @@ export class MemoriesDispatcherMixin extends StorageDispatcherBase {
     }
 
     return deleted;
+  }
+
+  async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.promoteMemoryConfidence(memoryId);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.promoteMemoryConfidence(memoryId);
+  }
+
+  async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.degradeMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.degradeMemoryConfidence(memoryId, amount);
+  }
+
+  async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.boostMemoryConfidence(memoryId, amount);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.boostMemoryConfidence(memoryId, amount);
+  }
+
+  async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfter(memoryId, forgetAfter);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfter(memoryId, forgetAfter);
+  }
+
+  async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.setForgetAfterDays(memoryId, days);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.setForgetAfterDays(memoryId, days);
+  }
+
+  async getAutoExtractedMemories(): Promise<AutoMemoryRow[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoExtractedMemories();
+    }
+    const sqlite = await this.getSqliteFns();
+    const rows = sqlite.getAutoExtractedMemories();
+    // Convert SQLite Buffer embeddings to number[] for uniform interface
+    return rows.map((r) => ({
+      id: r.id,
+      content: r.content,
+      embedding: sqlite.bufferToFloatArray(r.embedding),
+      access_count: r.access_count,
+      confidence: r.confidence,
+      created_at: r.created_at,
+    }));
+  }
+
+  async collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.collectPruneableAutoMemoryIds(maxUnusedDays);
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.collectPruneableAutoMemoryIds(maxUnusedDays);
+  }
+
+  async getAutoMemoryStatsRow(): Promise<AutoMemoryStatsRow> {
+    if (this.backend === 'postgresql' && this.postgres) {
+      return this.postgres.getAutoMemoryStatsRow();
+    }
+    const sqlite = await this.getSqliteFns();
+    return sqlite.getAutoMemoryStatsRow();
   }
 
   async searchMemoriesAsOf(

@@ -58,6 +58,13 @@ export interface DocumentBatchWithHash extends DocumentBatch {
   hash: string;
 }
 
+/**
+ * Insert or update a single document chunk.
+ *
+ * NOTE: This function does NOT supersede existing chunks for the same file_path.
+ * For full-file reindexing (where stale chunks must be cleared), use
+ * upsertDocumentsBatch() or upsertDocumentsBatchWithHashes() instead.
+ */
 export function upsertDocument(
   filePath: string,
   chunkIndex: number,
@@ -74,7 +81,7 @@ export function upsertDocument(
 
   // Get existing doc ID if any (for vec table update)
   const existing = cachedPrepare(
-    'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?'
+    'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ? AND superseded_at IS NULL'
   ).get(filePath, chunkIndex) as { id: number } | undefined;
 
   database
@@ -82,7 +89,7 @@ export function upsertDocument(
       `
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
@@ -125,9 +132,9 @@ export function upsertDocument(
           existing.id
         );
       } else {
-        // New doc - get the inserted ID
+        // New doc - get the inserted ID (scope to non-superseded to avoid matching stale rows)
         const newDoc = cachedPrepare(
-          'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ?'
+          'SELECT id FROM documents WHERE file_path = ? AND chunk_index = ? AND superseded_at IS NULL'
         ).get(filePath, chunkIndex) as { id: number };
         const vecResult = cachedPrepare('INSERT INTO vec_documents(embedding) VALUES (?)').run(
           embeddingBlob
@@ -159,7 +166,7 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
   const stmt = database.prepare(`
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
@@ -170,8 +177,19 @@ export function upsertDocumentsBatch(documents: DocumentBatch[]): number[] {
       updated_at = CURRENT_TIMESTAMP
   `);
 
+  // Supersede all current rows for affected files before inserting new versions.
+  // This ensures stale chunks (e.g. file shrunk from 5 to 3 chunks) get marked superseded.
+  const supersedeStmt = database.prepare(
+    `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+  );
+
   const transaction = database.transaction((docs: DocumentBatch[]) => {
+    const supersededFiles = new Set<string>();
     for (const doc of docs) {
+      if (!supersededFiles.has(doc.filePath)) {
+        supersedeStmt.run(doc.filePath);
+        supersededFiles.add(doc.filePath);
+      }
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
       stmt.run(
         doc.filePath,
@@ -214,9 +232,36 @@ function rebuildVecDocumentsForFiles(filePaths: string[]): void {
   try {
     const transaction = database.transaction(() => {
       for (const filePath of uniquePaths) {
-        // Get all docs for this file
+        // Clean up vec entries for superseded docs before rebuilding
+        const supersededDocs = database
+          .prepare('SELECT id FROM documents WHERE file_path = ? AND superseded_at IS NOT NULL')
+          .all(filePath) as Array<{ id: number }>;
+
+        if (supersededDocs.length > 0) {
+          const supersededIds = supersededDocs.map((d) => d.id);
+          for (let i = 0; i < supersededIds.length; i += 500) {
+            const chunk = supersededIds.slice(i, i + 500);
+            const placeholders = chunk.map(() => '?').join(',');
+            const vecRows = database
+              .prepare(`SELECT vec_rowid FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .all(...chunk) as Array<{ vec_rowid: number }>;
+            if (vecRows.length > 0) {
+              const vecPlaceholders = vecRows.map(() => '?').join(',');
+              database
+                .prepare(`DELETE FROM vec_documents WHERE rowid IN (${vecPlaceholders})`)
+                .run(...vecRows.map((r) => r.vec_rowid));
+            }
+            database
+              .prepare(`DELETE FROM vec_documents_map WHERE doc_id IN (${placeholders})`)
+              .run(...chunk);
+          }
+        }
+
+        // Get all non-superseded docs for this file
         const docs = database
-          .prepare('SELECT id, embedding FROM documents WHERE file_path = ?')
+          .prepare(
+            'SELECT id, embedding FROM documents WHERE file_path = ? AND superseded_at IS NULL'
+          )
           .all(filePath) as Array<{ id: number; embedding: Buffer }>;
 
         for (const doc of docs) {
@@ -260,7 +305,7 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
   const docStmt = database.prepare(`
     INSERT INTO documents (file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(file_path, chunk_index) DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       content = excluded.content,
       start_line = excluded.start_line,
       end_line = excluded.end_line,
@@ -279,10 +324,21 @@ export function upsertDocumentsBatchWithHashes(documents: DocumentBatchWithHash[
       indexed_at = CURRENT_TIMESTAMP
   `);
 
+  // Supersede all current rows for affected files before inserting new versions.
+  // This ensures stale chunks (e.g. file shrunk from 5 to 3 chunks) get marked superseded.
+  const supersedeStmt = database.prepare(
+    `UPDATE documents SET superseded_at = datetime('now') WHERE file_path = ? AND superseded_at IS NULL`
+  );
+
   const transaction = database.transaction((docs: DocumentBatchWithHash[]) => {
     const processedFiles = new Set<string>();
 
     for (const doc of docs) {
+      // Supersede existing chunks for this file (once per file)
+      if (!processedFiles.has(doc.filePath)) {
+        supersedeStmt.run(doc.filePath);
+      }
+
       // Insert document
       const embeddingBlob = Buffer.from(new Float32Array(doc.embedding).buffer);
       docStmt.run(
@@ -439,9 +495,12 @@ export function purgeSupersededDocuments(olderThanDays: number = 30): number {
               .run(...chunk);
           }
         } catch (err) {
-          logWarn('documents', 'Vector cleanup failed during superseded purge', {
-            error: getErrorMessage(err),
-          });
+          logWarn(
+            'documents',
+            'Vector cleanup failed during superseded purge — skipping doc deletes to avoid orphaned vec entries',
+            { error: getErrorMessage(err) }
+          );
+          return 0;
         }
       }
 
@@ -503,7 +562,7 @@ export function searchDocuments(
           .prepare(
             `
           SELECT id, file_path, content, start_line, end_line
-          FROM documents WHERE id IN (${placeholders})
+          FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL
         `
           )
           .all(...docIds) as Array<{
@@ -541,7 +600,7 @@ export function searchDocuments(
   }
 
   // Brute-force fallback
-  const rows = cachedPrepare('SELECT * FROM documents').all() as Array<{
+  const rows = cachedPrepare('SELECT * FROM documents WHERE superseded_at IS NULL').all() as Array<{
     file_path: string;
     content: string;
     start_line: number;
@@ -582,7 +641,7 @@ export function getRecentDocuments(limit: number = 10): Array<{
   const rows = cachedPrepare(`
       SELECT file_path, content, start_line, end_line
       FROM documents
-      WHERE file_path NOT LIKE 'code:%'
+      WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL
       ORDER BY rowid DESC
       LIMIT ?
     `).all(limit) as Array<{
@@ -600,13 +659,17 @@ export function getStats(): {
   total_files: number;
   last_indexed: string | null;
 } {
-  const totalDocs = cachedPrepare('SELECT COUNT(*) as count FROM documents').get() as {
+  const totalDocs = cachedPrepare(
+    'SELECT COUNT(*) as count FROM documents WHERE superseded_at IS NULL'
+  ).get() as {
     count: number;
   };
   const totalFiles = cachedPrepare(
-    'SELECT COUNT(DISTINCT file_path) as count FROM documents'
+    'SELECT COUNT(DISTINCT file_path) as count FROM documents WHERE superseded_at IS NULL'
   ).get() as { count: number };
-  const lastIndexed = cachedPrepare('SELECT MAX(updated_at) as last FROM documents').get() as {
+  const lastIndexed = cachedPrepare(
+    'SELECT MAX(updated_at) as last FROM documents WHERE superseded_at IS NULL'
+  ).get() as {
     last: string | null;
   };
 

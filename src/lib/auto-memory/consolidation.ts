@@ -8,14 +8,15 @@
  * - Update existing memories rather than creating duplicates
  */
 
-import { deleteMemoriesByIds } from '../storage/index.js';
 import {
-  getAutoExtractedMemories,
+  deleteMemoriesByIds,
+  collectExpiredMemoryIds,
   promoteMemoryConfidence,
+  setForgetAfter,
+  getAutoExtractedMemories,
   collectPruneableAutoMemoryIds,
   getAutoMemoryStatsRow,
-  bufferToFloatArray,
-} from '../db/index.js';
+} from '../storage/index.js';
 import { findSimilarPairs, groupByUnionFind } from '../similarity-utils.js';
 import { logInfo, logWarn } from '../fault-logger.js';
 
@@ -27,6 +28,7 @@ export interface ConsolidationResult {
   merged: number;
   promoted: number;
   pruned: number;
+  forgotten: number;
   scanned: number;
 }
 
@@ -57,12 +59,22 @@ export async function consolidateAutoMemories(options?: {
     merged: 0,
     promoted: 0,
     pruned: 0,
+    forgotten: 0,
     scanned: 0,
   };
 
   try {
+    // Step 4 (early): Delete memories past their forget_after date.
+    // Runs unconditionally before the early-return guard below so that
+    // expired memories are cleaned up even when the local SQLite has zero
+    // auto-extracted rows (e.g. PostgreSQL-backed deployments).
+    const expiredIds = await collectExpiredMemoryIds();
+    if (expiredIds.length > 0) {
+      result.forgotten = await deleteMemoriesByIds(expiredIds);
+    }
+
     // Get all auto-extracted memories
-    const autoMemories = getAutoExtractedMemories();
+    const autoMemories = await getAutoExtractedMemories();
 
     result.scanned = autoMemories.length;
 
@@ -83,7 +95,7 @@ export async function consolidateAutoMemories(options?: {
     // Dimension mismatch can happen after embedding model change — skip those items.
     const embeds = new Map<number, number[]>();
     for (const mem of autoMemories) {
-      embeds.set(mem.id, bufferToFloatArray(mem.embedding));
+      embeds.set(mem.id, mem.embedding);
     }
 
     // Only include items whose embedding dimension matches the majority.
@@ -145,17 +157,31 @@ export async function consolidateAutoMemories(options?: {
       result.merged = await deleteMemoriesByIds(toDelete);
     }
 
-    // Step 2: Promote high-usage memories.
+    // Step 2: Promote high-usage memories and make permanent.
     // Don't use toDelete as exclusion — pinned memories may survive deletion
     // and should still be eligible for promotion. promoteMemoryConfidence
     // returns false for missing IDs, so deleted memories are naturally skipped.
+    //
+    // Two sub-steps:
+    // (a) Promote confidence to 0.7 for memories below that threshold.
+    // (b) Clear forget_after for ALL memories with enough accesses — even those
+    //     already at high confidence — so they become permanent.
     const toPromote = autoMemories.filter(
       (m) => m.access_count >= promotionAccesses && (m.confidence === null || m.confidence < 0.7)
     );
 
     for (const mem of toPromote) {
-      if (promoteMemoryConfidence(mem.id)) {
+      await promoteMemoryConfidence(mem.id);
+    }
+
+    // Clear forget_after for all high-access memories regardless of confidence
+    const toClearForgetAfter = autoMemories.filter((m) => m.access_count >= promotionAccesses);
+
+    for (const mem of toClearForgetAfter) {
+      if (await setForgetAfter(mem.id, null)) {
         result.promoted++;
+      } else {
+        logWarn('consolidation', `Failed to clear forget_after for promoted memory #${mem.id}`);
       }
     }
 
@@ -163,7 +189,7 @@ export async function consolidateAutoMemories(options?: {
     // Collect IDs via SQL, then delete through the storage dispatcher so that
     // Qdrant vector deletion is also triggered (avoids orphaned vectors).
     if (maxUnusedDays > 0) {
-      const pruneIds = collectPruneableAutoMemoryIds(maxUnusedDays);
+      const pruneIds = await collectPruneableAutoMemoryIds(maxUnusedDays);
       if (pruneIds.length > 0) {
         result.pruned = await deleteMemoriesByIds(pruneIds);
       }
@@ -171,7 +197,7 @@ export async function consolidateAutoMemories(options?: {
 
     logInfo(
       'consolidation',
-      `Auto-memory consolidation: ${result.merged} merged, ${result.promoted} promoted, ${result.pruned} pruned (${result.scanned} scanned)`
+      `Auto-memory consolidation: ${result.merged} merged, ${result.promoted} promoted, ${result.pruned} pruned, ${result.forgotten} forgotten (${result.scanned} scanned)`
     );
   } catch (error) {
     logWarn('consolidation', 'Consolidation failed', {
@@ -185,14 +211,14 @@ export async function consolidateAutoMemories(options?: {
 /**
  * Get stats about auto-extracted memories for display.
  */
-export function getAutoMemoryStats(): {
+export async function getAutoMemoryStats(): Promise<{
   total: number;
   lowConfidence: number;
   highConfidence: number;
   neverAccessed: number;
   avgAccessCount: number;
-} {
-  const row = getAutoMemoryStatsRow();
+}> {
+  const row = await getAutoMemoryStatsRow();
 
   return {
     total: row.total,

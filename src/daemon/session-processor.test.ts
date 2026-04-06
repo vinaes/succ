@@ -37,6 +37,7 @@ vi.mock('../lib/embeddings.js', () => ({
 }));
 
 vi.mock('../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: vi.fn(() => testTmpDir),
   getIdleReflectionConfig: vi.fn(() => ({
     agent_model: 'haiku',
@@ -45,7 +46,6 @@ vi.mock('../lib/config.js', () => ({
   getConfig: vi.fn(() => ({
     sensitive_filter_enabled: false,
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../lib/quality.js', () => ({

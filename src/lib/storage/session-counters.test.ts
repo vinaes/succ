@@ -17,12 +17,12 @@ import { StorageDispatcher, getStorageDispatcher, resetStorageDispatcher } from 
 
 // Mock config to avoid real file reads
 vi.mock('../config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({ storage: {} })),
   getProjectRoot: vi.fn(() => '/test/project'),
   getSuccDir: vi.fn(() => '/test/project/.succ'),
   getStorageConfig: vi.fn(() => ({ backend: 'sqlite', vector: 'builtin' })),
   invalidateConfigCache: vi.fn(),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('Session Counters', () => {

@@ -1,8 +1,10 @@
 import safeRegex from 'safe-regex2';
 import { StorageDispatcherBase } from './base.js';
-import { logWarn } from '../../fault-logger.js';
+import { logInfo, logWarn } from '../../fault-logger.js';
+import { getEmbedding } from '../../embeddings.js';
 import { tokenizeCode, tokenizeCodeWithAST, tokenizeDocs } from '../../bm25.js';
 import { rerank, type Rerankable } from '../../reranker.js';
+import { getErrorMessage } from '../../errors.js';
 import type {
   GlobalMemorySearchResult,
   HybridGlobalMemoryResult,
@@ -91,7 +93,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     limit?: number,
     threshold?: number,
     alpha?: number,
-    filters?: { regex?: string; symbolType?: string }
+    filters?: { regex?: string; symbolType?: string },
+    rrfK?: number
   ): Promise<HybridSearchResult[]> {
     this._sessionCounters.codeSearchQueries++;
     const lim = limit ?? 10;
@@ -144,7 +147,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       fetchLimit,
       thresh,
       alpha,
-      filters
+      filters,
+      rrfK
     );
     return rerank(query, results, lim);
   }
@@ -154,7 +158,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     queryEmbedding: number[],
     limit?: number,
     threshold?: number,
-    alpha?: number
+    alpha?: number,
+    rrfK?: number
   ): Promise<HybridSearchResult[]> {
     this._sessionCounters.searchQueries++;
     const lim = limit ?? 10;
@@ -191,7 +196,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       return rerank(query, results, lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha);
+    results = await sqlite.hybridSearchDocs(query, queryEmbedding, fetchLimit, thresh, alpha, rrfK);
     return rerank(query, results, lim);
   }
 
@@ -200,7 +205,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     queryEmbedding: number[],
     limit?: number,
     threshold?: number,
-    alpha?: number
+    alpha?: number,
+    rrfK?: number
   ): Promise<Array<MemorySearchResult | HybridMemoryResult>> {
     this._sessionCounters.recallQueries++;
     const lim = limit ?? 10;
@@ -209,6 +215,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     let results: Array<MemorySearchResult | HybridMemoryResult>;
     if (this.hasQdrant()) {
       try {
+        // Note: Qdrant uses its own internal fusion strategy; alpha/rrfK not applicable
         results = await this.qdrant!.hybridSearchMemories(
           query,
           queryEmbedding,
@@ -225,12 +232,114 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
+      // Note: PG uses ts_rank for text scoring; alpha/rrfK not applicable
       results = await this.postgres.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh);
       return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
     }
     const sqlite = await this.getSqliteFns();
-    results = await sqlite.hybridSearchMemories(query, queryEmbedding, fetchLimit, thresh, alpha);
+    results = await sqlite.hybridSearchMemories(
+      query,
+      queryEmbedding,
+      fetchLimit,
+      thresh,
+      alpha,
+      rrfK
+    );
     return rerank(query, results as (MemorySearchResult & Rerankable)[], lim);
+  }
+
+  /**
+   * Run hybridSearchMemories for each sub-query, then merge via Reciprocal Rank Fusion.
+   * Routes through the storage dispatcher so all backends (SQLite, PostgreSQL, Qdrant) are supported.
+   */
+  async decomposedSearchMemories(
+    subQueries: string[],
+    originalQuery: string,
+    queryEmbedding: number[],
+    limit: number = 10,
+    threshold: number = 0.3,
+    alpha: number = 0.5
+  ): Promise<Array<MemorySearchResult | HybridMemoryResult>> {
+    if (subQueries.length === 0) {
+      return this.hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
+    }
+
+    try {
+      // Get embeddings for all sub-queries in parallel
+      const subEmbeddings = await Promise.all(subQueries.map((sq) => getEmbedding(sq)));
+
+      // Run search for each sub-query through the dispatcher (backend-agnostic)
+      const subResults = await Promise.all(
+        subQueries.map((sq, i) =>
+          this.hybridSearchMemories(sq, subEmbeddings[i], limit, threshold, alpha)
+        )
+      );
+
+      // Merge via RRF: each sub-query's results contribute rank-based scores
+      const RRF_K = 60;
+      const scoreMap = new Map<
+        number,
+        { score: number; result: MemorySearchResult | HybridMemoryResult }
+      >();
+
+      for (const results of subResults) {
+        for (let rank = 0; rank < results.length; rank++) {
+          const r = results[rank];
+          const id = r.id;
+          const rrfScore = 1 / (RRF_K + rank + 1);
+          const existing = scoreMap.get(id);
+          if (existing) {
+            existing.score += rrfScore;
+            if (r.similarity > existing.result.similarity) {
+              existing.result = r;
+            }
+          } else {
+            scoreMap.set(id, { score: rrfScore, result: r });
+          }
+        }
+      }
+
+      // Also include original query results as an RRF signal
+      const originalResults = await this.hybridSearchMemories(
+        originalQuery,
+        queryEmbedding,
+        limit,
+        threshold,
+        alpha
+      );
+      for (let rank = 0; rank < originalResults.length; rank++) {
+        const r = originalResults[rank];
+        const id = r.id;
+        const rrfScore = 1 / (RRF_K + rank + 1);
+        const existing = scoreMap.get(id);
+        if (existing) {
+          existing.score += rrfScore;
+          if (r.similarity > existing.result.similarity) {
+            existing.result = r;
+          }
+        } else {
+          scoreMap.set(id, { score: rrfScore, result: r });
+        }
+      }
+
+      // Sort by combined RRF score; keep original similarity for downstream merge with global results
+      const merged = Array.from(scoreMap.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((entry) => entry.result);
+
+      logInfo(
+        'storage-search',
+        `Decomposed search: ${subQueries.length} sub-queries → ${merged.length} merged results`
+      );
+
+      return merged;
+    } catch (error) {
+      logWarn('storage-search', 'Decomposed search failed, falling back to single query', {
+        error: getErrorMessage(error),
+      });
+      return this.hybridSearchMemories(originalQuery, queryEmbedding, limit, threshold, alpha);
+    }
   }
 
   async hybridSearchGlobalMemories(
@@ -240,13 +349,15 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
     threshold?: number,
     alpha?: number,
     tags?: string[],
-    since?: Date
+    since?: Date,
+    rrfK?: number
   ): Promise<Array<GlobalMemorySearchResult | MemorySearchResult | HybridGlobalMemoryResult>> {
     const lim = limit ?? 10;
     const fetchLimit = Math.min(lim * 3, RERANK_FETCH_CAP); // Overfetch for reranking
     const thresh = threshold ?? 0.3;
     if (this.hasQdrant()) {
       try {
+        // Note: Qdrant uses its own internal fusion strategy; alpha/rrfK not applicable
         const results = await this.qdrant!.hybridSearchGlobalMemories(
           query,
           queryEmbedding,
@@ -267,6 +378,7 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       }
     }
     if (this.backend === 'postgresql' && this.postgres) {
+      // Note: PG uses ts_rank for text scoring; alpha/rrfK not applicable
       const results = await this.postgres.hybridSearchGlobalMemories(
         query,
         queryEmbedding,
@@ -285,7 +397,8 @@ export class SearchDispatcherMixin extends StorageDispatcherBase {
       thresh,
       alpha,
       tags,
-      since
+      since,
+      rrfK
     );
     return rerank(query, results as (GlobalMemorySearchResult & Rerankable)[], lim);
   }

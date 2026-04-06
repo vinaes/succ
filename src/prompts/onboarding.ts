@@ -34,7 +34,7 @@ Explain these concepts naturally throughout the conversation (start with the fir
    - Semantic search across source code (succ_search_code)
    - AST-aware: finds functions, classes, interfaces by name or meaning
    - Structural pattern matching via ast-grep (e.g. "catch ($ERR) { $$$HANDLER }")
-   - Supports 13+ languages via tree-sitter, 20 languages for ast-grep patterns
+   - Supports broad multi-language coverage via tree-sitter and ast-grep patterns
 
 4. **Background Services**
    - Daemon with watch (auto-index) + analyze (discover patterns)
@@ -142,7 +142,7 @@ export const WIZARD_CONCEPTS_OVERVIEW = `
   Related memories are linked together for deeper context
 
 **Code Index**
-  AST-aware semantic search across your source code (13+ languages)
+  AST-aware semantic search across your source code (broad language support)
 
 **Web Tools**
   Fetch any URL as clean markdown, extract structured data from pages

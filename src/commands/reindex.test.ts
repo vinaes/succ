@@ -21,8 +21,8 @@ const mockIndexDocFile = vi.fn();
 const mockIndexCodeFile = vi.fn();
 
 vi.mock('../lib/config.js', () => ({
-  getProjectRoot: vi.fn(() => '/test/project'),
   getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getProjectRoot: vi.fn(() => '/test/project'),
 }));
 
 vi.mock('../lib/storage/index.js', () => ({

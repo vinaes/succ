@@ -12,11 +12,11 @@ import {
 
 // Mock config
 vi.mock('./config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: () => ({
     chunk_size: 500,
     chunk_overlap: 50,
   }),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 describe('Chunker Module', () => {

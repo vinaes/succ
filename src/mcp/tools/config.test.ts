@@ -60,11 +60,11 @@ vi.mock('../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getSuccDir: vi.fn(() => '/project/.succ'),
   getConfigDisplay: vi.fn(() => ({ tool_profile: 'full' })),
   formatConfigDisplay: vi.fn(() => 'tool_profile = full'),
   invalidateConfigCache: vi.fn(),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/checkpoint.js', () => ({
