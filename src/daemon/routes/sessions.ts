@@ -90,7 +90,7 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
           const cfgLimit =
             autoCompactCfg.context_limit > 0 ? autoCompactCfg.context_limit : undefined;
           const limit = detectContextLimit(transcript_path, cfgLimit);
-          if (limit !== null) detectedContextLimit = limit >= 1_000_000 ? '1m' : '200k';
+          if (limit !== null) detectedContextLimit = String(limit);
         } catch (err) {
           logWarn('sessions', `model detection failed: ${getErrorMessage(err)}`);
         }

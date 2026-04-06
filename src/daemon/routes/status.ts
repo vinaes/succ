@@ -31,17 +31,24 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
         for (const [sessionId, session] of manager.sessions) {
           if (session.isService) continue;
           if (!session.transcriptPath) continue;
-          let size = 0;
           try {
-            size = fs.statSync(session.transcriptPath).size;
+            let size = 0;
+            try {
+              size = fs.statSync(session.transcriptPath).size;
+            } catch (err) {
+              logWarn(
+                'status',
+                `Failed to stat transcript for ${sessionId}: ${getErrorMessage(err)}`
+              );
+            }
+            const usage = monitor.peekUsage(sessionId, size);
+            if (usage) contextUsageMap[sessionId] = usage;
           } catch (err) {
             logWarn(
               'status',
-              `Failed to stat transcript for ${sessionId}: ${getErrorMessage(err)}`
+              `Failed to get usage for session ${sessionId}: ${getErrorMessage(err)}`
             );
           }
-          const usage = monitor.peekUsage(sessionId, size);
-          if (usage) contextUsageMap[sessionId] = usage;
         }
       } catch (err) {
         logWarn('status', `Failed to collect context usage: ${getErrorMessage(err)}`);
