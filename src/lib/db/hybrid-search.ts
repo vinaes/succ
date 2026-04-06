@@ -16,6 +16,10 @@ import {
 import { parseTags, parseMemoryType } from './parse-helpers.js';
 import { getMemoriesByIds } from './memories.js';
 
+// Re-export classifyQuery for convenience (hybrid-search consumers)
+export { classifyQuery } from '../query-classifier.js';
+export type { QueryType } from '../query-classifier.js';
+
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
 const BRUTE_FORCE_MAX_ROWS = 10000;
@@ -91,7 +95,8 @@ export function hybridSearchCode(
   limit: number = 5,
   threshold: number = 0.25,
   alpha: number = 0.5,
-  filters?: CodeSearchFilters
+  filters?: CodeSearchFilters,
+  rrfK?: number
 ): HybridSearchResult[] {
   const database = getDb();
 
@@ -240,7 +245,7 @@ export function hybridSearchCode(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows in the map (for BM25 results that might not be in vec results)
   if (combined.length > 0) {
@@ -374,7 +379,8 @@ export function hybridSearchDocs(
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.2,
-  alpha: number = 0.5
+  alpha: number = 0.5,
+  rrfK?: number
 ): HybridSearchResult[] {
   const database = getDb();
 
@@ -468,7 +474,7 @@ export function hybridSearchDocs(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows (BM25 results may not be in vec results)
   if (combined.length > 0) {
@@ -523,7 +529,8 @@ export function hybridSearchMemories(
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.3,
-  alpha: number = 0.5
+  alpha: number = 0.5,
+  rrfK?: number
 ): HybridMemoryResult[] {
   const database = getDb();
 
@@ -616,7 +623,7 @@ export function hybridSearchMemories(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
@@ -683,10 +690,18 @@ export async function graphEnhancedSearchMemories(
   limit: number = 5,
   threshold: number = 0.3,
   alpha: number = 0.5,
-  graphWeight: number = 0.3
+  graphWeight: number = 0.3,
+  rrfK?: number
 ): Promise<HybridMemoryResult[]> {
   // Step 1: Standard BM25 + vector search
-  const baseResults = hybridSearchMemories(query, queryEmbedding, limit * 2, threshold, alpha);
+  const baseResults = hybridSearchMemories(
+    query,
+    queryEmbedding,
+    limit * 2,
+    threshold,
+    alpha,
+    rrfK
+  );
 
   if (baseResults.length === 0) return baseResults;
 
@@ -789,7 +804,8 @@ export function hybridSearchGlobalMemories(
   threshold: number = 0.3,
   alpha: number = 0.5,
   tags?: string[],
-  since?: Date
+  since?: Date,
+  rrfK?: number
 ): HybridGlobalMemoryResult[] {
   const database = getGlobalDb();
 
@@ -892,7 +908,7 @@ export function hybridSearchGlobalMemories(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
