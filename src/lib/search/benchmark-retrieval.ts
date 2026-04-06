@@ -129,7 +129,13 @@ const RetrievalBenchmarkResultSchema = z.object({
     timestamp: z.string(),
     totalQueries: z.number(),
     totalMemories: z.number(),
-    config: z.object({}).passthrough(),
+    config: z
+      .object({
+        k: z.number().optional(),
+        retrievalLimit: z.number().optional(),
+        threshold: z.number().optional(),
+      })
+      .passthrough(),
     queryHash: z.string().optional(),
     cacheMode: z.enum(['warm', 'cold']).optional(),
   }),
@@ -638,13 +644,13 @@ export function formatRetrievalResults(result: RetrievalBenchmarkResult): string
   lines.push('');
   lines.push('Latency:');
   lines.push(
-    `  Embedding:     P50=${result.latency.embedding.p50}ms  P95=${result.latency.embedding.p95}ms`
+    `  Embedding:     P50=${result.latency.embedding.p50.toFixed(3)}ms  P95=${result.latency.embedding.p95.toFixed(3)}ms`
   );
   lines.push(
-    `  Search:        P50=${result.latency.search.p50}ms  P95=${result.latency.search.p95}ms`
+    `  Search:        P50=${result.latency.search.p50.toFixed(3)}ms  P95=${result.latency.search.p95.toFixed(3)}ms`
   );
   lines.push(
-    `  Pipeline:      P50=${result.latency.pipeline.p50}ms  P95=${result.latency.pipeline.p95}ms`
+    `  Pipeline:      P50=${result.latency.pipeline.p50.toFixed(3)}ms  P95=${result.latency.pipeline.p95.toFixed(3)}ms`
   );
   lines.push('');
 
