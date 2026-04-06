@@ -2611,33 +2611,45 @@ export class PostgresBackend {
 
   async markMemoryNotLatest(memoryId: number): Promise<void> {
     const pool = await this.getPool();
+    let res;
     if (this.projectId) {
       // Match project-scoped OR global memories (global memories have NULL project_id
       // and are accessible from project-scoped dispatchers for version demotion)
-      await pool.query(
+      res = await pool.query(
         `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
         [memoryId, this.projectId]
       );
     } else {
-      await pool.query(
+      res = await pool.query(
         `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND project_id IS NULL`,
         [memoryId]
       );
+    }
+    if (res.rowCount === 0) {
+      logWarn('postgresql', `markMemoryNotLatest: no rows updated for memory #${memoryId}`, {
+        projectId: this.projectId ?? 'global',
+      });
     }
   }
 
   async markMemoryLatest(memoryId: number): Promise<void> {
     const pool = await this.getPool();
+    let res;
     if (this.projectId) {
-      await pool.query(
+      res = await pool.query(
         `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
         [memoryId, this.projectId]
       );
     } else {
-      await pool.query(
+      res = await pool.query(
         `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND project_id IS NULL`,
         [memoryId]
       );
+    }
+    if (res.rowCount === 0) {
+      logWarn('postgresql', `markMemoryLatest: no rows updated for memory #${memoryId}`, {
+        projectId: this.projectId ?? 'global',
+      });
     }
   }
 
@@ -4020,6 +4032,7 @@ export class PostgresBackend {
       `SELECT id, content, 1 - (embedding <=> $1) as similarity
        FROM memories
        WHERE project_id IS NULL
+         AND COALESCE(is_latest, TRUE) = TRUE
          AND 1 - (embedding <=> $1) >= $2
        ORDER BY embedding <=> $1
        LIMIT 1`,

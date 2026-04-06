@@ -79,7 +79,6 @@ vi.mock('../lib/config.js', () => ({
   getDaemonStatuses: vi.fn(async () => ({})),
   isProjectInitialized: vi.fn(() => true),
   isGlobalOnlyMode: vi.fn(() => false),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getAutoCompactConfig: vi.fn(() => ({
     enabled: true,
     threshold_percent: 15,

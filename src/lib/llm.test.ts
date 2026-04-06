@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock config before importing llm
 vi.mock('./config.js', () => ({
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: () => ({
     llm: { type: 'api', model: 'test-model', temperature: 0.3, max_tokens: 2000 },
   }),
