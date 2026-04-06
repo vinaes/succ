@@ -8,21 +8,27 @@ const MODEL = 'Xenova/all-MiniLM-L6-v2';
 // Use a 10s timeout to prevent hanging on slow model downloads.
 let modelAvailable = false;
 try {
-  const modelPromise = resolveModelPath(MODEL)
-    .then(() => true)
-    .catch((e) => {
-      console.warn('ort-session.test: model resolution rejected', e);
-      return false;
-    });
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<false>((resolve) => {
-    timeoutId = setTimeout(() => resolve(false), 10_000);
-  });
-  modelAvailable = await Promise.race([modelPromise, timeoutPromise]);
-  if (timeoutId) clearTimeout(timeoutId);
-} catch {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  try {
+    await resolveModelPath(MODEL, controller.signal);
+    modelAvailable = true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (
+      /abort|timeout|timed out|unavailable|ENOENT|ENOTFOUND|network/i.test(msg) ||
+      (e as any).aborted
+    ) {
+      console.warn('ort-session.test: model resolution rejected or timed out', e);
+    } else {
+      throw e; // Rethrow unexpected errors
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+} catch (err) {
   // Model resolution threw unexpectedly — log and skip tests
-  console.warn('ort-session.test: model resolution failed, skipping tests');
+  console.warn('ort-session.test: model resolution failed, skipping tests', err);
 }
 
 let sharedSession: NativeOrtSession | null = null;

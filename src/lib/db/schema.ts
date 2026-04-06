@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { getConfig, getLLMTaskConfig } from '../config.js';
 import { logWarn } from '../fault-logger.js';
+import { getErrorMessage } from '../errors.js';
 import { getModelDimension } from '../embeddings.js';
 
 // Flag to track if sqlite-vec is available
@@ -75,8 +76,7 @@ export function initDb(database: Database.Database): void {
       end_line INTEGER NOT NULL,
       embedding BLOB NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(file_path, chunk_index)
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
@@ -322,6 +322,38 @@ export function initDb(database: Database.Database): void {
     'idx_memories_priority'
   );
 
+  // Migration: add memory versioning columns
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1`,
+    'memories.version'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL`,
+    'memories.parent_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL`,
+    'memories.root_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_latest INTEGER DEFAULT 1`,
+    'memories.is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest)`,
+    'idx_memories_is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)`,
+    'idx_memories_root'
+  );
+
   // Migration: add AST metadata columns to documents table (tree-sitter integration)
   for (const col of ['symbol_name TEXT', 'symbol_type TEXT', 'signature TEXT']) {
     safeMigrate(
@@ -379,6 +411,65 @@ export function initDb(database: Database.Database): void {
     `CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)`,
     'idx_documents_superseded'
   );
+  // Migration: drop legacy global UNIQUE(file_path, chunk_index) constraint from existing databases.
+  // SQLite requires table recreation to remove a table-level constraint.
+  // The partial unique index idx_documents_chunk_current replaces it (uniqueness only for current rows).
+  safeMigrate(
+    database,
+    `CREATE TABLE IF NOT EXISTS _documents_migration_check (done INTEGER)`,
+    'documents_unique_drop_check'
+  );
+  const migrationDone = database
+    .prepare(`SELECT done FROM _documents_migration_check LIMIT 1`)
+    .get() as { done: number } | undefined;
+  if (!migrationDone) {
+    // Check if the legacy constraint exists by inspecting the table SQL
+    const tableInfo = database
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'`)
+      .get() as { sql: string } | undefined;
+    if (tableInfo?.sql && /UNIQUE\s*\(\s*file_path\s*,\s*chunk_index\s*\)/i.test(tableInfo.sql)) {
+      logWarn('schema', 'Dropping legacy UNIQUE(file_path, chunk_index) from documents table');
+      // Wrap the entire rebuild in a transaction so partial failure cannot leave
+      // documents_new half-built or the original documents table already dropped.
+      const rebuildDocuments = database.transaction(() => {
+        database.exec(`
+          CREATE TABLE documents_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            embedding BLOB NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            symbol_name TEXT,
+            symbol_type TEXT,
+            signature TEXT,
+            superseded_at TEXT DEFAULT NULL,
+            git_commit_date TEXT DEFAULT NULL
+          );
+          INSERT INTO documents_new SELECT
+            id, file_path, chunk_index, content, start_line, end_line, embedding,
+            created_at, updated_at, symbol_name, symbol_type, signature,
+            superseded_at, git_commit_date
+          FROM documents;
+          DROP TABLE documents;
+          ALTER TABLE documents_new RENAME TO documents;
+          CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
+          CREATE INDEX IF NOT EXISTS idx_documents_symbol_type ON documents(symbol_type);
+          CREATE INDEX IF NOT EXISTS idx_documents_symbol_name ON documents(symbol_name);
+          CREATE INDEX IF NOT EXISTS idx_documents_updated_at ON documents(updated_at);
+          CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at);
+        `);
+        database.exec(`INSERT INTO _documents_migration_check (done) VALUES (1)`);
+      });
+      rebuildDocuments();
+    } else {
+      database.exec(`INSERT INTO _documents_migration_check (done) VALUES (1)`);
+    }
+  }
+
   // Partial unique index: only current (non-superseded) rows must be unique per path+chunk.
   // This allows superseded rows to coexist with new versions of the same chunk.
   safeMigrate(
@@ -417,6 +508,30 @@ export function initDb(database: Database.Database): void {
     `ALTER TABLE memories ADD COLUMN source_type TEXT DEFAULT 'human'`,
     'memories.source_type'
   );
+
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'memories.forget_after'
+  );
+
+  // Backfill forget_after for existing auto-extracted memories.
+  // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
+  // have already been backfilled (or had forget_after set at INSERT time) are
+  // skipped on subsequent startups. No migration marker needed.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+  } catch (backfillErr) {
+    logWarn('schema', `forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
+  }
 
   // Migration: add llm_enriched column to memory_links (for LLM relation extraction)
   safeMigrate(
@@ -509,6 +624,32 @@ export function initDb(database: Database.Database): void {
     database,
     `CREATE INDEX IF NOT EXISTS idx_documents_filepath_updated ON documents(file_path, updated_at)`,
     'idx_documents_filepath_updated'
+  );
+
+  // ========================================================================
+  // Area 10: Memory mutation audit trail
+  // ========================================================================
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      old_content TEXT,
+      new_content TEXT,
+      changed_by TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
+  `);
+
+  // Migration: add source_context column for memory-then-chunk retrieval
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL`,
+    'memories.source_context'
   );
 
   // Check if embedding model changed - warn user if reindex needed
@@ -739,7 +880,9 @@ export function initVecTables(database: Database.Database): void {
       // Migrate existing embeddings (only if same dimensions — skip on dim change)
       if (!documentsDimChange) {
         const docs = database
-          .prepare('SELECT id, embedding FROM documents WHERE embedding IS NOT NULL ORDER BY id')
+          .prepare(
+            'SELECT id, embedding FROM documents WHERE embedding IS NOT NULL AND superseded_at IS NULL ORDER BY id'
+          )
           .all() as Array<{ id: number; embedding: Buffer }>;
 
         if (docs.length > 0) {
@@ -878,6 +1021,28 @@ export function initGlobalDb(database: Database.Database): void {
     'idx_global_memories_invalidated_by'
   );
 
+  // Migration: add forget_after column for automatic memory forgetting
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN forget_after TEXT DEFAULT NULL`,
+    'global memories.forget_after'
+  );
+
+  // Backfill forget_after for existing auto-extracted global memories.
+  // Idempotent: `forget_after IS NULL` skips already-backfilled rows.
+  // High-confidence (promoted) memories keep NULL forget_after (= permanent).
+  try {
+    database.exec(`
+      UPDATE memories
+      SET forget_after = datetime(created_at, '+90 days')
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+  } catch (backfillErr) {
+    logWarn('schema', `global forget_after backfill skipped: ${getErrorMessage(backfillErr)}`);
+  }
+
   // Migration: add correction_count and is_invariant columns for working memory pins
   safeMigrate(
     database,
@@ -927,6 +1092,62 @@ export function initGlobalDb(database: Database.Database): void {
     database,
     `CREATE INDEX IF NOT EXISTS idx_global_memories_temporal ON memories(valid_from, valid_until)`,
     'idx_global_memories_temporal'
+  );
+
+  // Area 10: Memory mutation audit trail (must mirror initDb)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      old_content TEXT,
+      new_content TEXT,
+      changed_by TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type);
+    CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at);
+  `);
+
+  // Migration: add source_context column for memory-then-chunk retrieval
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL`,
+    'global memories.source_context'
+  );
+
+  // Migration: add memory versioning columns
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1`,
+    'global memories.version'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL`,
+    'global memories.parent_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL`,
+    'global memories.root_memory_id'
+  );
+  safeMigrate(
+    database,
+    `ALTER TABLE memories ADD COLUMN is_latest INTEGER DEFAULT 1`,
+    'global memories.is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest)`,
+    'idx_global_memories_is_latest'
+  );
+  safeMigrate(
+    database,
+    `CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)`,
+    'idx_global_memories_root'
   );
 
   // Migration: create sqlite-vec virtual table for global memories

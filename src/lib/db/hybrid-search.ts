@@ -16,6 +16,10 @@ import {
 import { parseTags, parseMemoryType } from './parse-helpers.js';
 import { getMemoriesByIds } from './memories.js';
 
+// Re-export classifyQuery for convenience (hybrid-search consumers)
+export { classifyQuery } from '../query-classifier.js';
+export type { QueryType } from '../query-classifier.js';
+
 // Safety limit for brute-force vector search when sqlite-vec is unavailable.
 // Beyond this, fall back to BM25-only to prevent OOM.
 const BRUTE_FORCE_MAX_ROWS = 10000;
@@ -55,6 +59,7 @@ export interface HybridGlobalMemoryResult {
   source: string | null;
   project: string | null;
   type: MemoryType | null;
+  source_context?: string | null;
   created_at: string;
   similarity: number;
   bm25Score?: number;
@@ -90,7 +95,8 @@ export function hybridSearchCode(
   limit: number = 5,
   threshold: number = 0.25,
   alpha: number = 0.5,
-  filters?: CodeSearchFilters
+  filters?: CodeSearchFilters,
+  rrfK?: number
 ): HybridSearchResult[] {
   const database = getDb();
 
@@ -239,7 +245,7 @@ export function hybridSearchCode(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows in the map (for BM25 results that might not be in vec results)
   if (combined.length > 0) {
@@ -373,7 +379,8 @@ export function hybridSearchDocs(
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.2,
-  alpha: number = 0.5
+  alpha: number = 0.5,
+  rrfK?: number
 ): HybridSearchResult[] {
   const database = getDb();
 
@@ -467,7 +474,7 @@ export function hybridSearchDocs(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows (BM25 results may not be in vec results)
   if (combined.length > 0) {
@@ -522,13 +529,25 @@ export function hybridSearchMemories(
   queryEmbedding: number[],
   limit: number = 5,
   threshold: number = 0.3,
-  alpha: number = 0.5
+  alpha: number = 0.5,
+  rrfK?: number
 ): HybridMemoryResult[] {
   const database = getDb();
 
-  // 1. BM25 search
+  // 1. BM25 search — filter out demoted (non-latest) memories before RRF
+  // so they don't consume fused slots and reduce result quality
   const bm25Index = getMemoriesBm25Index();
-  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+  const bm25Raw = bm25.search(query, bm25Index, 'docs', limit * 3);
+  let bm25Results = bm25Raw;
+  if (bm25Raw.length > 0) {
+    const bm25Ids = bm25Raw.map((r) => r.docId);
+    const placeholders = bm25Ids.map(() => '?').join(',');
+    const latestRows = cachedPrepare(
+      `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
+    ).all(...bm25Ids) as Array<{ id: number }>;
+    const latestSet = new Set(latestRows.map((r) => r.id));
+    bm25Results = bm25Raw.filter((r) => latestSet.has(r.docId));
+  }
 
   // 2. Vector search — try sqlite-vec first
   let vectorResults: { docId: number; score: number }[] = [];
@@ -568,7 +587,9 @@ export function hybridSearchMemories(
             `
           SELECT id, content, tags, source, type, created_at,
                  last_accessed, access_count, valid_from, valid_until, quality_score
-          FROM memories WHERE id IN (${placeholders})
+          FROM memories
+          WHERE id IN (${placeholders})
+            AND COALESCE(is_latest, 1) = 1
         `
           )
           .all(...docIds) as MemoryRow[];
@@ -597,7 +618,7 @@ export function hybridSearchMemories(
     const rows = cachedPrepare(`
       SELECT id, content, tags, source, type, created_at, embedding,
              last_accessed, access_count, valid_from, valid_until, quality_score
-      FROM memories WHERE embedding IS NOT NULL LIMIT ?
+      FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1 LIMIT ?
     `).all(BRUTE_FORCE_MAX_ROWS) as Array<MemoryRow & { embedding: Buffer }>;
 
     if (rows.length === 0) return [];
@@ -615,7 +636,7 @@ export function hybridSearchMemories(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
@@ -627,7 +648,9 @@ export function hybridSearchMemories(
           `
         SELECT id, content, tags, source, type, created_at,
                last_accessed, access_count, valid_from, valid_until, quality_score
-        FROM memories WHERE id IN (${placeholders})
+        FROM memories
+        WHERE id IN (${placeholders})
+          AND COALESCE(is_latest, 1) = 1
       `
         )
         .all(...missingIds) as MemoryRow[];
@@ -682,10 +705,18 @@ export async function graphEnhancedSearchMemories(
   limit: number = 5,
   threshold: number = 0.3,
   alpha: number = 0.5,
-  graphWeight: number = 0.3
+  graphWeight: number = 0.3,
+  rrfK?: number
 ): Promise<HybridMemoryResult[]> {
   // Step 1: Standard BM25 + vector search
-  const baseResults = hybridSearchMemories(query, queryEmbedding, limit * 2, threshold, alpha);
+  const baseResults = hybridSearchMemories(
+    query,
+    queryEmbedding,
+    limit * 2,
+    threshold,
+    alpha,
+    rrfK
+  );
 
   if (baseResults.length === 0) return baseResults;
 
@@ -788,13 +819,26 @@ export function hybridSearchGlobalMemories(
   threshold: number = 0.3,
   alpha: number = 0.5,
   tags?: string[],
-  since?: Date
+  since?: Date,
+  rrfK?: number
 ): HybridGlobalMemoryResult[] {
   const database = getGlobalDb();
 
-  // 1. BM25 search
+  // 1. BM25 search (post-filter by is_latest)
   const bm25Index = getGlobalMemoriesBm25Index();
-  const bm25Results = bm25.search(query, bm25Index, 'docs', limit * 3);
+  const bm25Raw = bm25.search(query, bm25Index, 'docs', limit * 3);
+  let bm25Results = bm25Raw;
+  if (bm25Raw.length > 0) {
+    const bm25Ids = bm25Raw.map((r) => r.docId);
+    const placeholders = bm25Ids.map(() => '?').join(',');
+    const latestRows = database
+      .prepare(
+        `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
+      )
+      .all(...bm25Ids) as Array<{ id: number }>;
+    const latestSet = new Set(latestRows.map((r) => r.id));
+    bm25Results = bm25Raw.filter((r) => latestSet.has(r.docId));
+  }
 
   // 2. Vector search — try sqlite-vec first
   type GlobalMemRow = {
@@ -826,7 +870,7 @@ export function hybridSearchGlobalMemories(
         const docIds = vecResults.map((r) => r.doc_id);
         const placeholders = docIds.map(() => '?').join(',');
 
-        let whereClause = `id IN (${placeholders})`;
+        let whereClause = `id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
         const params: any[] = [...docIds];
         if (since) {
           whereClause += ' AND created_at >= ?';
@@ -864,7 +908,7 @@ export function hybridSearchGlobalMemories(
   // Brute-force fallback with safety limit
   if (vectorResults.length === 0) {
     let sqlQuery =
-      'SELECT id, content, tags, source, project, type, embedding, created_at FROM memories WHERE embedding IS NOT NULL';
+      'SELECT id, content, tags, source, project, type, embedding, created_at FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1';
     const params: any[] = [];
     if (since) {
       sqlQuery += ' AND created_at >= ?';
@@ -891,7 +935,7 @@ export function hybridSearchGlobalMemories(
   const topVectorResults = vectorResults.slice(0, limit * 3);
 
   // 3. Combine using RRF
-  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit);
+  const combined = bm25.reciprocalRankFusion(bm25Results, topVectorResults, alpha, limit, rrfK);
 
   // 4. Ensure we have all needed rows
   if (combined.length > 0) {
@@ -902,7 +946,7 @@ export function hybridSearchGlobalMemories(
         .prepare(
           `
         SELECT id, content, tags, source, project, type, created_at
-        FROM memories WHERE id IN (${placeholders})
+        FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1
       `
         )
         .all(...missingIds) as GlobalMemRow[];

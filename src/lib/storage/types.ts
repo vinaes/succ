@@ -148,6 +148,11 @@ export interface Memory {
   priority_score: number | null;
   confidence: number | null;
   source_type: SourceType | null;
+  source_context: string | null;
+  version?: number;
+  parent_memory_id?: number | null;
+  root_memory_id?: number | null;
+  is_latest?: boolean;
   created_at: string;
 }
 
@@ -180,6 +185,7 @@ export interface MemoryInput {
   qualityScore?: QualityScoreData;
   validFrom?: string | Date;
   validUntil?: string | Date;
+  sourceContext?: string;
 }
 
 export interface QualityScoreData {
@@ -219,6 +225,7 @@ export interface GlobalMemory {
   type: MemoryType | null;
   quality_score: number | null;
   quality_factors: Record<string, number> | null;
+  source_context: string | null;
   created_at: string;
   isGlobal: true;
 }
@@ -257,6 +264,23 @@ export interface MemoryStats {
   newest_memory: string | null;
   by_type: Record<string, number>;
   stale_count: number;
+}
+
+export interface AutoMemoryRow {
+  id: number;
+  content: string;
+  embedding: number[];
+  access_count: number;
+  confidence: number | null;
+  created_at: string;
+}
+
+export interface AutoMemoryStatsRow {
+  total: number;
+  low_confidence: number;
+  high_confidence: number;
+  never_accessed: number;
+  avg_access: number;
 }
 
 export interface ConsolidationRecord {
@@ -300,6 +324,7 @@ export interface HybridMemoryResult {
   access_count?: number;
   valid_from?: string | null;
   valid_until?: string | null;
+  source_context?: string | null;
 }
 
 export interface HybridGlobalMemoryResult {
@@ -313,6 +338,7 @@ export interface HybridGlobalMemoryResult {
   similarity: number;
   bm25Score?: number;
   vectorScore?: number;
+  source_context?: string | null;
 }
 
 // ============================================================================
@@ -333,6 +359,9 @@ export const LINK_RELATIONS = [
   'bug_in',
   'test_covers',
   'motivates',
+  'updates',
+  'extends',
+  'derives',
 ] as const;
 
 export type LinkRelation = (typeof LINK_RELATIONS)[number];
@@ -547,6 +576,39 @@ export interface WebSearchHistorySummary {
   by_tool: Record<string, { count: number; cost: number }>;
   today_searches: number;
   today_cost_usd: number;
+}
+
+// ============================================================================
+// Memory Audit Trail Types
+// ============================================================================
+
+/**
+ * Audit event types for memory mutations.
+ * Currently emitted: 'create' (saveMemory), 'delete' (invalidateMemory).
+ * TODO: 'update', 'merge', 'version' are reserved for future edit-in-place,
+ * merge-with-history, and bi-temporal versioning workflows respectively.
+ * Consider adding database CHECK constraints for runtime validation.
+ */
+export const AUDIT_EVENT_TYPES = ['create', 'update', 'delete', 'merge', 'version'] as const;
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+/**
+ * Attribution sources for audit events.
+ * Currently emitted: 'hook' (supersession), 'user' (retention CLI),
+ * 'consolidation' (consolidate module), 'extraction' (auto-memory extraction).
+ * Consider adding database CHECK constraints for runtime validation.
+ */
+export const AUDIT_CHANGED_BY = ['hook', 'user', 'consolidation', 'extraction'] as const;
+export type AuditChangedBy = (typeof AUDIT_CHANGED_BY)[number];
+
+export interface MemoryAuditRecord {
+  id: number;
+  memory_id: number;
+  event_type: AuditEventType;
+  old_content: string | null;
+  new_content: string | null;
+  changed_by: AuditChangedBy;
+  created_at: string;
 }
 
 // ============================================================================

@@ -1,8 +1,11 @@
+import pLimit from 'p-limit';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
+  getStorageDispatcher,
   hybridSearchMemories,
   hybridSearchGlobalMemories,
+  decomposedSearchMemories,
   getRecentMemories,
   getRecentGlobalMemories,
   closeDb,
@@ -26,15 +29,31 @@ import {
   extractAnswerFromResults,
   createErrorResponse,
 } from '../../helpers.js';
+import { gateAction } from '../../profile.js';
 import { logWarn } from '../../../lib/fault-logger.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { extractTemporalSubqueriesAsync } from './temporal-query.js';
+import { classifyQuery } from '../../../lib/query-classifier.js';
+
+/**
+ * Escape XML-sensitive characters in source_context and wrap in tags.
+ * Returns empty string when value is absent or empty.
+ */
+function renderSourceContext(value: unknown, leadingNewlines = '\n'): string {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `${leadingNewlines}<source-context>\n${escaped}\n</source-context>\n`;
+}
 
 interface ExtendedMemoryResult extends HybridMemoryResult {
   isGlobal?: boolean;
   project?: string;
   _isDeadEnd?: boolean;
 }
+
+/** Composite key for audit maps — prevents local/global ID collisions on SQLite. */
+const auditKey = (id: number, isGlobal: boolean): string =>
+  `${isGlobal ? 'global' : 'local'}:${id}`;
 
 export function registerRecallTool(server: McpServer): void {
   server.registerTool(
@@ -65,6 +84,12 @@ export function registerRecallTool(server: McpServer): void {
           .describe(
             'Extract a specific answer from results using LLM. Instead of returning raw results, returns a concise answer to this question. Adds latency but saves 50-80% output tokens.'
           ),
+        history: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, includes edit/mutation history for each returned memory. Shows create/update/delete/merge events over time.'
+          ),
         project_path: projectPathParam,
       },
       annotations: {
@@ -74,13 +99,14 @@ export function registerRecallTool(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    async ({ query, limit: rawLimit, tags, since, as_of_date, extract, project_path }) => {
-      await applyProjectPath(project_path);
-      const globalOnlyMode = isGlobalOnlyMode();
-      const retrievalConfig = getRetrievalConfig();
-      const limit = rawLimit ?? retrievalConfig.default_top_k;
-
+    async ({ query, limit: rawLimit, tags, since, as_of_date, extract, history, project_path }) => {
       try {
+        await applyProjectPath(project_path);
+        const globalOnlyMode = isGlobalOnlyMode();
+        const retrievalConfig = getRetrievalConfig();
+        const getAlpha = (q: string) =>
+          retrievalConfig.adaptive_alpha ? classifyQuery(q).alpha : retrievalConfig.bm25_alpha;
+        const limit = rawLimit ?? retrievalConfig.default_top_k;
         // Special case: "*" means "show recent memories" (no semantic search)
         const isWildcard = query === '*' || query === '**' || query.trim() === '';
 
@@ -159,6 +185,59 @@ export function registerRecallTool(server: McpServer): void {
 
           const localCount = filteredLocal.length;
           const globalCount = filteredGlobal.length;
+
+          // Fetch audit history for wildcard results if requested
+          const wildcardAuditMap = new Map<
+            string,
+            Array<{ event_type: string; changed_by: string; created_at: string }>
+          >();
+          if (history) {
+            try {
+              const dispatcher = await getStorageDispatcher();
+              const auditReadLimit = pLimit(5);
+              const localIds = allRecent
+                .filter((r) => !r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const globalIds = allRecent
+                .filter((r) => r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const auditSettled = await Promise.allSettled([
+                ...localIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, false),
+                    events: await dispatcher.getAuditHistory(id, false),
+                  }))
+                ),
+                ...globalIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, true),
+                    events: await dispatcher.getAuditHistory(id, true),
+                  }))
+                ),
+              ]);
+              for (const result of auditSettled) {
+                if (result.status === 'fulfilled' && result.value.events.length > 0) {
+                  wildcardAuditMap.set(
+                    result.value.key,
+                    result.value.events.map((e) => ({
+                      event_type: e.event_type,
+                      changed_by: e.changed_by,
+                      created_at: e.created_at,
+                    }))
+                  );
+                } else if (result.status === 'rejected') {
+                  logWarn('mcp-memory', 'Failed to fetch audit history for wildcard entry', {
+                    error: getErrorMessage(result.reason),
+                  });
+                }
+              }
+            } catch (histError) {
+              logWarn('mcp-memory', 'Failed to fetch audit history for wildcard recall', {
+                error: getErrorMessage(histError),
+              });
+            }
+          }
+
           const formatted = allRecent
             .map((m, i) => {
               const tagStr =
@@ -170,7 +249,24 @@ export function registerRecallTool(server: McpServer): void {
                 'similarity' in m && m.similarity
                   ? ` (${Math.round(m.similarity * 100)}% match)`
                   : '';
-              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}\n`;
+
+              // Append audit history if available
+              let historyStr = '';
+              const wKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+              if (history && wKey && wildcardAuditMap.has(wKey)) {
+                const events = wildcardAuditMap.get(wKey)!;
+                historyStr =
+                  '\n\n**Edit History:**\n' +
+                  events
+                    .map(
+                      (e: { event_type: string; changed_by: string; created_at: string }) =>
+                        `- ${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                    )
+                    .join('\n');
+              }
+
+              const srcCtx = 'source_context' in m ? renderSourceContext(m.source_context) : '';
+              return `### ${i + 1}. ${scope}${date}${tagStr}${source}${matchPct}\n\n${m.content}${historyStr}${srcCtx}\n`;
             })
             .join('\n---\n\n');
 
@@ -185,6 +281,59 @@ export function registerRecallTool(server: McpServer): void {
         }
 
         const queryEmbedding = await getEmbedding(query);
+
+        // ── Lazy query decomposition: only invoked when searchWithOptionalDecomposition runs ──
+        let _decomposedSubQueries: string[] | null = null;
+        let _decompositionResolved = false;
+        async function getDecomposedSubQueries(): Promise<string[] | null> {
+          if (_decompositionResolved) return _decomposedSubQueries;
+          _decompositionResolved = true;
+          if (retrievalConfig.query_decomposition_enabled && !globalOnlyMode) {
+            const decompositionGated = gateAction('succ_recall', 'decompose');
+            if (decompositionGated) {
+              logWarn('recall', 'Query decomposition enabled but gated by profile');
+            } else {
+              try {
+                const { decomposeQuery } =
+                  await import('../../../lib/search/query-decomposition.js');
+                const decomposition = await decomposeQuery(query);
+                if (decomposition.wasDecomposed) {
+                  _decomposedSubQueries = decomposition.subQueries;
+                }
+              } catch (err) {
+                logWarn('recall', 'Query decomposition failed, continuing without decomposition', {
+                  error: getErrorMessage(err),
+                });
+              }
+            }
+          }
+          return _decomposedSubQueries;
+        }
+
+        // Helper: run decomposed or standard search depending on lazy decomposition result
+        async function searchWithOptionalDecomposition(
+          searchLimit: number,
+          threshold: number
+        ): Promise<HybridMemoryResult[]> {
+          const decomposedSubQueries = await getDecomposedSubQueries();
+          if (decomposedSubQueries) {
+            return decomposedSearchMemories(
+              decomposedSubQueries,
+              query,
+              queryEmbedding,
+              searchLimit,
+              threshold,
+              retrievalConfig.bm25_alpha
+            );
+          }
+          return hybridSearchMemories(
+            query,
+            queryEmbedding,
+            searchLimit,
+            threshold,
+            retrievalConfig.bm25_alpha
+          );
+        }
 
         // ── Temporal query decomposition: multi-pass retrieval for time-spanning questions ──
         const isTemporalQuery =
@@ -213,7 +362,14 @@ export function registerRecallTool(server: McpServer): void {
             // Run all subquery searches in parallel
             const subSearchResults = await Promise.all(
               subQueries.map((sq, i) =>
-                hybridSearchMemories(sq, subEmbeddings[i], limit, 0.2, retrievalConfig.bm25_alpha)
+                hybridSearchMemories(
+                  sq,
+                  subEmbeddings[i],
+                  limit,
+                  0.2,
+                  getAlpha(sq),
+                  retrievalConfig.rrf_k
+                )
               )
             );
 
@@ -228,14 +384,8 @@ export function registerRecallTool(server: McpServer): void {
               }
             }
 
-            // Also include results from the original query
-            const originalResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            // Also include results from the original query (with decomposition if available)
+            const originalResults = await searchWithOptionalDecomposition(limit, 0.3);
             for (const r of originalResults) {
               if (!allSubResults.has(r.id) || r.similarity > allSubResults.get(r.id)!.similarity) {
                 allSubResults.set(r.id, r);
@@ -246,16 +396,13 @@ export function registerRecallTool(server: McpServer): void {
               .sort((a, b) => b.similarity - a.similarity)
               .slice(0, limit * 2);
           } else {
-            localResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit * 2,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            localResults = await searchWithOptionalDecomposition(limit * 2, 0.3);
           }
         } else if (retrievalConfig.graph_ppr_enabled && !globalOnlyMode) {
           // Graph-enhanced search: BM25 + vector + PPR as third signal
+          // Decomposition is deferred/lazy — on success, decomposition won't run
+          // since graphEnhancedSearchMemories is used directly; only the fallback
+          // path invokes searchWithOptionalDecomposition which may trigger it.
           try {
             const { graphEnhancedSearchMemories } =
               await import('../../../lib/db/hybrid-search.js');
@@ -264,32 +411,21 @@ export function registerRecallTool(server: McpServer): void {
               queryEmbedding,
               limit * 2,
               0.3,
-              retrievalConfig.bm25_alpha,
-              retrievalConfig.graph_ppr_weight
+              getAlpha(query),
+              retrievalConfig.graph_ppr_weight,
+              retrievalConfig.rrf_k
             );
           } catch (err) {
             logWarn('recall', 'Graph-enhanced search failed, falling back to standard', {
               error: getErrorMessage(err),
             });
-            localResults = await hybridSearchMemories(
-              query,
-              queryEmbedding,
-              limit * 2,
-              0.3,
-              retrievalConfig.bm25_alpha
-            );
+            localResults = await searchWithOptionalDecomposition(limit * 2, 0.3);
           }
         } else {
-          // Standard single-pass search
+          // Standard or decomposed search
           localResults = globalOnlyMode
             ? []
-            : await hybridSearchMemories(
-                query,
-                queryEmbedding,
-                limit * 2,
-                0.3,
-                retrievalConfig.bm25_alpha
-              );
+            : await searchWithOptionalDecomposition(limit * 2, 0.3);
         }
 
         // ── Query expansion: LLM-generated alternative queries for broader recall ──
@@ -306,7 +442,14 @@ export function registerRecallTool(server: McpServer): void {
               const eqEmbeddings = await Promise.all(expandedQueries.map((eq) => getEmbedding(eq)));
               const eqSearchResults = await Promise.all(
                 expandedQueries.map((eq, i) =>
-                  hybridSearchMemories(eq, eqEmbeddings[i], limit, 0.3, retrievalConfig.bm25_alpha)
+                  hybridSearchMemories(
+                    eq,
+                    eqEmbeddings[i],
+                    limit,
+                    0.3,
+                    getAlpha(eq),
+                    retrievalConfig.rrf_k
+                  )
                 )
               );
 
@@ -398,9 +541,10 @@ export function registerRecallTool(server: McpServer): void {
           queryEmbedding,
           limit,
           0.3,
-          retrievalConfig.bm25_alpha,
+          getAlpha(query),
           tags,
-          sinceDate
+          sinceDate,
+          retrievalConfig.rrf_k
         );
 
         // Merge and sort by similarity
@@ -533,13 +677,78 @@ export function registerRecallTool(server: McpServer): void {
             };
           }
 
+          // Fetch audit history for fallback memories if requested
+          const fallbackAuditMap = new Map<
+            string,
+            Array<{ event_type: string; changed_by: string; created_at: string }>
+          >();
+          if (history) {
+            try {
+              const dispatcher = await getStorageDispatcher();
+              const auditReadLimit = pLimit(5);
+              const localFallbackIds = recent
+                .filter((r) => !r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const globalFallbackIds = recent
+                .filter((r) => r.isGlobal && r.id)
+                .map((r) => r.id as number);
+              const fallbackSettled = await Promise.allSettled([
+                ...localFallbackIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, false),
+                    events: await dispatcher.getAuditHistory(id, false),
+                  }))
+                ),
+                ...globalFallbackIds.map((id) =>
+                  auditReadLimit(async () => ({
+                    key: auditKey(id, true),
+                    events: await dispatcher.getAuditHistory(id, true),
+                  }))
+                ),
+              ]);
+              for (const result of fallbackSettled) {
+                if (result.status === 'fulfilled' && result.value.events.length > 0) {
+                  fallbackAuditMap.set(
+                    result.value.key,
+                    result.value.events.map((e) => ({
+                      event_type: e.event_type,
+                      changed_by: e.changed_by,
+                      created_at: e.created_at,
+                    }))
+                  );
+                } else if (result.status === 'rejected') {
+                  logWarn('mcp-memory', 'Failed to fetch audit history for fallback entry', {
+                    error: getErrorMessage(result.reason),
+                  });
+                }
+              }
+            } catch (histError) {
+              logWarn('mcp-memory', 'Failed to fetch audit history for fallback memories', {
+                error: getErrorMessage(histError),
+              });
+            }
+          }
+
           const recentFormatted = recent
             .map((m, i) => {
               const memTags = parseTags(m.tags);
               const tagStr = memTags.length > 0 ? ` [${memTags.join(', ')}]` : '';
               const date = new Date(m.created_at).toLocaleDateString();
               const scope = m.isGlobal ? '[GLOBAL] ' : '';
-              return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}`;
+              let historyStr = '';
+              const fbKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+              if (history && fbKey && fallbackAuditMap.has(fbKey)) {
+                const events = fallbackAuditMap.get(fbKey)!;
+                historyStr =
+                  '\n  Edit History: ' +
+                  events
+                    .map(
+                      (e) =>
+                        `${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                    )
+                    .join('; ');
+              }
+              return `${i + 1}. ${scope}(${date})${tagStr}: ${m.content.substring(0, 150)}${m.content.length > 150 ? '...' : ''}${historyStr}`;
             })
             .join('\n');
 
@@ -566,6 +775,58 @@ export function registerRecallTool(server: McpServer): void {
           .map((r) => r.id as number);
         await trackMemoryAccess(localMemoryIds, limit, localResults.length + globalResults.length);
 
+        // Fetch audit history if requested
+        const auditMap = new Map<
+          string,
+          Array<{ event_type: string; changed_by: string; created_at: string }>
+        >();
+        if (history) {
+          try {
+            const dispatcher = await getStorageDispatcher();
+            const auditReadLimit = pLimit(5);
+            const localIds = allResults
+              .filter((r) => !r.isGlobal && r.id)
+              .map((r) => r.id as number);
+            const globalIds = allResults
+              .filter((r) => r.isGlobal && r.id)
+              .map((r) => r.id as number);
+            const auditSettled = await Promise.allSettled([
+              ...localIds.map((id) =>
+                auditReadLimit(async () => ({
+                  key: auditKey(id, false),
+                  events: await dispatcher.getAuditHistory(id, false),
+                }))
+              ),
+              ...globalIds.map((id) =>
+                auditReadLimit(async () => ({
+                  key: auditKey(id, true),
+                  events: await dispatcher.getAuditHistory(id, true),
+                }))
+              ),
+            ]);
+            for (const result of auditSettled) {
+              if (result.status === 'fulfilled' && result.value.events.length > 0) {
+                auditMap.set(
+                  result.value.key,
+                  result.value.events.map((e) => ({
+                    event_type: e.event_type,
+                    changed_by: e.changed_by,
+                    created_at: e.created_at,
+                  }))
+                );
+              } else if (result.status === 'rejected') {
+                logWarn('mcp-memory', 'Failed to fetch audit history for entry', {
+                  error: getErrorMessage(result.reason),
+                });
+              }
+            }
+          } catch (histError) {
+            logWarn('mcp-memory', 'Failed to fetch audit history', {
+              error: getErrorMessage(histError),
+            });
+          }
+        }
+
         const formatted = allResults
           .map((m, i) => {
             const similarity = (m.similarity * 100).toFixed(0);
@@ -591,7 +852,25 @@ export function registerRecallTool(server: McpServer): void {
             // Dead-end warning prefix
             const deadEndPrefix = result._isDeadEnd ? '**WARNING: Dead End** ' : '';
 
-            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}`;
+            // Append audit history if available
+            let historyStr = '';
+            const mKey = m.id ? auditKey(m.id as number, !!m.isGlobal) : '';
+            if (history && mKey && auditMap.has(mKey)) {
+              const events = auditMap.get(mKey)!;
+              historyStr =
+                '\n\n**Edit History:**\n' +
+                events
+                  .map(
+                    (e: { event_type: string; changed_by: string; created_at: string }) =>
+                      `- ${new Date(e.created_at).toLocaleString()}: ${e.event_type} (by ${e.changed_by})`
+                  )
+                  .join('\n');
+            }
+
+            // Source context: the original conversation/code excerpt that produced this memory
+            const sourceCtx = renderSourceContext(result.source_context, '\n\n');
+
+            return `### ${i + 1}. ${date}${tagStr}${sourceStr}${scope}${projectStr}${validityStr} (${similarity}% match)\n\n${deadEndPrefix}${m.content}${historyStr}${sourceCtx}`;
           })
           .join('\n\n---\n\n');
 

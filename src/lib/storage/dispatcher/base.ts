@@ -1,7 +1,14 @@
 import { logError } from '../../fault-logger.js';
 import type { PostgresBackend } from '../backends/postgresql.js';
 import type { QdrantVectorStore } from '../vector/qdrant.js';
-import type { MemoryRecord, MemoryStats } from '../types.js';
+import type {
+  AuditChangedBy,
+  AuditEventType,
+  LinkRelation,
+  MemoryAuditRecord,
+  MemoryRecord,
+  MemoryStats,
+} from '../types.js';
 
 export interface StorageDispatcherInit {
   backend: 'sqlite' | 'postgresql';
@@ -79,6 +86,26 @@ export class StorageDispatcherBase {
     throw new Error('StorageDispatcher mixin method setMemoryInvariant not initialized');
   }
 
+  async markMemoryNotLatest(_memoryId: number): Promise<void> {
+    throw new Error('StorageDispatcher mixin method markMemoryNotLatest not initialized');
+  }
+
+  async markMemoryLatest(_memoryId: number): Promise<void> {
+    throw new Error('StorageDispatcher mixin method markMemoryLatest not initialized');
+  }
+
+  async createMemoryLink(
+    _sourceId: number,
+    _targetId: number,
+    _relation?: LinkRelation,
+    _weight?: number,
+    _validFrom?: string,
+    _validUntil?: string,
+    _metadata?: Record<string, unknown>
+  ): Promise<{ id: number; created: boolean }> {
+    throw new Error('StorageDispatcher mixin method createMemoryLink not initialized');
+  }
+
   async recomputePriorityScore(_memoryId: number): Promise<void> {
     throw new Error('StorageDispatcher mixin method recomputePriorityScore not initialized');
   }
@@ -97,6 +124,25 @@ export class StorageDispatcherBase {
 
   async _filterOutPinned(_ids: number[]): Promise<number[]> {
     throw new Error('StorageDispatcher mixin method _filterOutPinned not initialized');
+  }
+
+  async recordAuditEvent(
+    _memoryId: number,
+    _eventType: AuditEventType,
+    _oldContent: string | null,
+    _newContent: string | null,
+    _changedBy: AuditChangedBy,
+    _global?: boolean
+  ): Promise<void> {
+    throw new Error('StorageDispatcher mixin method recordAuditEvent not initialized');
+  }
+
+  async getAuditHistory(_memoryId: number, _global?: boolean): Promise<MemoryAuditRecord[]> {
+    throw new Error('StorageDispatcher mixin method getAuditHistory not initialized');
+  }
+
+  async pruneAuditTrail(_olderThanDays?: number, _global?: boolean): Promise<number> {
+    throw new Error('StorageDispatcher mixin method pruneAuditTrail not initialized');
   }
 
   // Qdrant circuit breaker — disable after consecutive failures to stop log spam

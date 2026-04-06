@@ -16,6 +16,7 @@ import { logWarn } from '../fault-logger.js';
 import { getStorageDispatcher } from './dispatcher.js';
 import { ConfigError } from '../errors.js';
 import type {
+  AuditChangedBy,
   MemoryType,
   LinkRelation,
   WebSearchHistoryInput,
@@ -384,6 +385,7 @@ export async function saveMemory(
     autoLink?: boolean;
     confidence?: number;
     sourceType?: import('./types.js').SourceType;
+    sourceContext?: string;
   }
 ): Promise<{
   id: number;
@@ -420,6 +422,7 @@ export async function saveMemory(
     validUntil,
     confidence: options?.confidence,
     sourceType: options?.sourceType,
+    sourceContext: options?.sourceContext,
   });
 
   // Convert dispatcher result to backward-compatible format
@@ -463,6 +466,16 @@ export async function incrementCorrectionCount(memoryId: number): Promise<void> 
   return d.incrementCorrectionCount(memoryId);
 }
 
+export async function markMemoryNotLatest(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.markMemoryNotLatest(memoryId);
+}
+
+export async function markMemoryLatest(memoryId: number): Promise<void> {
+  const d = await getStorageDispatcher();
+  return d.markMemoryLatest(memoryId);
+}
+
 export async function setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
   const d = await getStorageDispatcher();
   return d.setMemoryInvariant(memoryId, isInvariant);
@@ -493,9 +506,13 @@ export async function forceDeleteMemory(id: number): Promise<boolean> {
   return d.forceDeleteMemory(id);
 }
 
-export async function invalidateMemory(memoryId: number, supersededById: number): Promise<boolean> {
+export async function invalidateMemory(
+  memoryId: number,
+  supersededById: number,
+  changedBy?: AuditChangedBy
+): Promise<boolean> {
   const d = await getStorageDispatcher();
-  return d.invalidateMemory(memoryId, supersededById);
+  return d.invalidateMemory(memoryId, supersededById, changedBy);
 }
 
 export async function restoreInvalidatedMemory(memoryId: number): Promise<boolean> {
@@ -553,9 +570,63 @@ export async function getMemoriesByTag(
   return d.getMemoriesByTag(tag, limit, offset);
 }
 
+export async function collectExpiredMemoryIds(): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectExpiredMemoryIds();
+}
+
 export async function deleteMemoriesByIds(ids: number[]): Promise<number> {
   const d = await getStorageDispatcher();
   return d.deleteMemoriesByIds(ids);
+}
+
+export async function promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.promoteMemoryConfidence(memoryId);
+}
+
+export async function degradeMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.05
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.degradeMemoryConfidence(memoryId, amount);
+}
+
+export async function boostMemoryConfidence(
+  memoryId: number,
+  amount: number = 0.02
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.boostMemoryConfidence(memoryId, amount);
+}
+
+export async function setForgetAfter(
+  memoryId: number,
+  forgetAfter: string | null
+): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.setForgetAfter(memoryId, forgetAfter);
+}
+
+export async function setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+  const d = await getStorageDispatcher();
+  return d.setForgetAfterDays(memoryId, days);
+}
+
+export async function getAutoExtractedMemories(): Promise<import('./types.js').AutoMemoryRow[]> {
+  const d = await getStorageDispatcher();
+  return d.getAutoExtractedMemories();
+}
+
+export async function collectPruneableAutoMemoryIds(maxUnusedDays: number): Promise<number[]> {
+  const d = await getStorageDispatcher();
+  return d.collectPruneableAutoMemoryIds(maxUnusedDays);
+}
+
+export async function getAutoMemoryStatsRow(): Promise<import('./types.js').AutoMemoryStatsRow> {
+  const d = await getStorageDispatcher();
+  return d.getAutoMemoryStatsRow();
 }
 
 export async function searchMemoriesAsOf(
@@ -602,13 +673,13 @@ export async function saveGlobalMemory(
   embedding: number[],
   tags?: string[],
   source?: string,
-  projectOrOptions?: string | { type?: MemoryType; deduplicate?: boolean },
-  options?: { type?: MemoryType; deduplicate?: boolean }
+  projectOrOptions?: string | { type?: MemoryType; deduplicate?: boolean; sourceContext?: string },
+  options?: { type?: MemoryType; deduplicate?: boolean; sourceContext?: string }
 ): Promise<{ id: number; isDuplicate: boolean; existingId?: number; similarity?: number }> {
   const d = await getStorageDispatcher();
 
   // Handle overloaded signature: (content, embedding, tags, source, project?, options?)
-  let opts: { type?: MemoryType; deduplicate?: boolean } | undefined;
+  let opts: { type?: MemoryType; deduplicate?: boolean; sourceContext?: string } | undefined;
   if (typeof projectOrOptions === 'string') {
     // Called as: saveGlobalMemory(content, embedding, tags, source, projectName, options?)
     opts = options;
@@ -723,10 +794,11 @@ export async function hybridSearchCode(
   limit?: number,
   threshold?: number,
   alpha?: number,
-  filters?: { regex?: string; symbolType?: string }
+  filters?: { regex?: string; symbolType?: string },
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters);
+  return d.hybridSearchCode(query, queryEmbedding, limit, threshold, alpha, filters, rrfK);
 }
 
 export async function hybridSearchDocs(
@@ -734,10 +806,11 @@ export async function hybridSearchDocs(
   queryEmbedding: number[],
   limit?: number,
   threshold?: number,
-  alpha?: number
+  alpha?: number,
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha);
+  return d.hybridSearchDocs(query, queryEmbedding, limit, threshold, alpha, rrfK);
 }
 
 export async function hybridSearchMemories(
@@ -745,10 +818,30 @@ export async function hybridSearchMemories(
   queryEmbedding: number[],
   limit?: number,
   threshold?: number,
+  alpha?: number,
+  rrfK?: number
+): Promise<any[]> {
+  const d = await getStorageDispatcher();
+  return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha, rrfK);
+}
+
+export async function decomposedSearchMemories(
+  subQueries: string[],
+  originalQuery: string,
+  queryEmbedding: number[],
+  limit?: number,
+  threshold?: number,
   alpha?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchMemories(query, queryEmbedding, limit, threshold, alpha);
+  return d.decomposedSearchMemories(
+    subQueries,
+    originalQuery,
+    queryEmbedding,
+    limit,
+    threshold,
+    alpha
+  );
 }
 
 export async function hybridSearchGlobalMemories(
@@ -758,10 +851,20 @@ export async function hybridSearchGlobalMemories(
   threshold?: number,
   alpha?: number,
   tags?: string[],
-  since?: Date
+  since?: Date,
+  rrfK?: number
 ): Promise<any[]> {
   const d = await getStorageDispatcher();
-  return d.hybridSearchGlobalMemories(query, queryEmbedding, limit, threshold, alpha, tags, since);
+  return d.hybridSearchGlobalMemories(
+    query,
+    queryEmbedding,
+    limit,
+    threshold,
+    alpha,
+    tags,
+    since,
+    rrfK
+  );
 }
 
 // ===========================================================================

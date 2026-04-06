@@ -46,10 +46,10 @@ vi.mock('../quality.js', () => ({
 }));
 
 vi.mock('../config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({
     auto_memory: { extraction_consolidation: true },
   })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 import {
@@ -64,6 +64,7 @@ import type { ExtractedFactInput, FactToUpdate } from './extraction-consolidatio
 import { searchMemories, invalidateMemory, saveMemory, getMemoryById } from '../storage/index.js';
 import { callLLM } from '../llm.js';
 import { getConfig } from '../config.js';
+import { logWarn } from '../fault-logger.js';
 
 // ============================================================================
 // parseConsolidationResponse
@@ -282,6 +283,7 @@ describe('consolidateExtractedFacts', () => {
 
     expect(result.fallbackAdd).toHaveLength(1);
     expect(result.toAdd).toHaveLength(0);
+    expect(logWarn).toHaveBeenCalled();
   });
 
   it('should handle UPDATE with no valid existing_id by falling back to ADD', async () => {
@@ -373,7 +375,7 @@ describe('executeUpdates', () => {
 
     expect(executed).toBe(1);
     expect(saveMemory).toHaveBeenCalledTimes(1);
-    expect(invalidateMemory).toHaveBeenCalledWith(42, 99);
+    expect(invalidateMemory).toHaveBeenCalledWith(42, 99, 'extraction');
   });
 
   it('should not invalidate if save produces duplicate', async () => {
@@ -411,6 +413,7 @@ describe('executeUpdates', () => {
     const executed = await executeUpdates(updates);
 
     expect(executed).toBe(0);
+    expect(logWarn).toHaveBeenCalled();
   });
 
   it('should cap confidence at 0.9 for auto-extracted updates', async () => {
@@ -430,7 +433,6 @@ describe('executeUpdates', () => {
 
     // Check that saveMemory was called with confidence capped at 0.9
     const saveCall = vi.mocked(saveMemory).mock.calls[0];
-    expect(saveCall[4]?.confidence).toBeLessThanOrEqual(0.9);
     expect(saveCall[4]?.confidence).toBe(0.9);
   });
 });
@@ -453,8 +455,8 @@ describe('executeDeletes', () => {
     const executed = await executeDeletes([10, 20]);
 
     expect(executed).toBe(2);
-    expect(invalidateMemory).toHaveBeenCalledWith(10, 0);
-    expect(invalidateMemory).toHaveBeenCalledWith(20, 0);
+    expect(invalidateMemory).toHaveBeenCalledWith(10, 0, 'extraction');
+    expect(invalidateMemory).toHaveBeenCalledWith(20, 0, 'extraction');
   });
 
   it('should skip non-existent memories', async () => {
@@ -473,6 +475,7 @@ describe('executeDeletes', () => {
     const executed = await executeDeletes([5]);
 
     expect(executed).toBe(0);
+    expect(logWarn).toHaveBeenCalled();
   });
 });
 

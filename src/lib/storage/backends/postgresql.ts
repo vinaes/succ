@@ -280,7 +280,13 @@ export class PostgresBackend {
     this.lastSlowQueryLogMs = now;
 
     try {
-      const explainResult = await pool.query(`EXPLAIN ${queryText}`, params);
+      // When params are present, skip EXPLAIN to avoid inlining sensitive
+      // values (embeddings, project IDs) into log output.
+      if (params.length > 0) {
+        logWarn('postgresql', `Slow query (${durationMs}ms)`, { query: queryText });
+        return;
+      }
+      const explainResult = await pool.query(`EXPLAIN ${queryText}`);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {
@@ -363,8 +369,7 @@ export class PostgresBackend {
         symbol_type TEXT,
         signature TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(project_id, file_path, chunk_index)
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
@@ -422,6 +427,14 @@ export class PostgresBackend {
     );
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_documents_superseded ON documents(superseded_at)'
+    );
+    // Drop legacy unconditional UNIQUE constraints that block bi-temporal versioning.
+    // The partial unique index idx_documents_chunk_current replaces them (uniqueness only for current rows).
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_file_chunk_key'
+    );
+    await pool.query(
+      'ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_project_id_file_path_chunk_index_key'
     );
     // Partial unique index: only current (non-superseded) rows must be unique per project+path+chunk.
     // This allows superseded rows to coexist with new versions of the same chunk.
@@ -798,6 +811,82 @@ export class PostgresBackend {
       'CREATE INDEX IF NOT EXISTS idx_memories_priority ON memories(priority_score DESC)'
     );
 
+    // Migration: add source_context column for memory-then-chunk retrieval
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'source_context'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN source_context TEXT DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Migration: add forget_after column for automatic memory forgetting
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'forget_after'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN forget_after TIMESTAMPTZ DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+    // Partial index on forget_after for collectExpiredMemoryIds() — only rows
+    // with a non-null forget_after are indexed, keeping the index lean.
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_forget_after ON memories(forget_after) WHERE forget_after IS NOT NULL'
+    );
+
+    // Backfill forget_after for existing auto-extracted memories.
+    // Idempotent: the WHERE clause includes `forget_after IS NULL`, so rows that
+    // have already been backfilled (or had forget_after set at INSERT time) are
+    // skipped on subsequent startups. No migration marker needed.
+    // High-confidence (promoted) memories keep NULL forget_after (= permanent).
+    await pool.query(`
+      UPDATE memories
+      SET forget_after = created_at + INTERVAL '90 days'
+      WHERE source_type = 'auto_extracted'
+        AND forget_after IS NULL
+        AND (confidence IS NULL OR confidence < 0.7)
+    `);
+
+    // Migration: add memory versioning columns (each column checked individually)
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'version'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN version INTEGER DEFAULT 1;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'parent_memory_id'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN parent_memory_id INTEGER DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'root_memory_id'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN root_memory_id INTEGER DEFAULT NULL;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'memories' AND column_name = 'is_latest'
+        ) THEN
+          ALTER TABLE memories ADD COLUMN is_latest BOOLEAN DEFAULT TRUE;
+        END IF;
+      END $$;
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_is_latest ON memories(is_latest) WHERE is_latest = TRUE'
+    );
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_memories_root ON memories(root_memory_id)');
+
     // Learning deltas table for session progress tracking
     await pool.query(`
       CREATE TABLE IF NOT EXISTS learning_deltas (
@@ -848,6 +937,41 @@ export class PostgresBackend {
     );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_wsh_tool ON web_search_history(tool_name)');
 
+    // ========================================================================
+    // Area 10: Memory mutation audit trail
+    // ========================================================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS memory_audit (
+        id SERIAL PRIMARY KEY,
+        memory_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        old_content TEXT,
+        new_content TEXT,
+        changed_by TEXT NOT NULL,
+        project_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    // Migration: add project_id column if table already exists without it
+    await pool.query(`
+      DO $$ BEGIN
+        ALTER TABLE memory_audit ADD COLUMN IF NOT EXISTS project_id TEXT;
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$
+    `);
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_id ON memory_audit(memory_id)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_event_type ON memory_audit(event_type)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_created_at ON memory_audit(created_at)'
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_memory_audit_project_id ON memory_audit(project_id)'
+    );
+
     // One-time backfill: populate search_vector for rows that existed before tsvector migration
     const migrationKey = 'search_vector_backfill_done';
     const migCheck = await pool.query<{ value: string }>(
@@ -872,46 +996,101 @@ export class PostgresBackend {
     // Area 9: Composite indexes for frequent query patterns
     // ========================================================================
 
-    // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
+    // Composite indexes for frequent query patterns.
     // Use CONCURRENTLY to avoid blocking writes on populated tables during startup.
+    //
+    // IMPORTANT: CREATE INDEX CONCURRENTLY cannot run inside a transaction, and
+    // pooled connections inherit `statement_timeout=30s` (set in getPool on-connect).
+    // A 30s timeout can kill long-running index builds mid-way, leaving INVALID
+    // index stubs.  We use a dedicated client with statement_timeout=0 so index
+    // creation can finish regardless of table size.
+    //
     // Each index creation is wrapped in try/catch because CONCURRENTLY can fail
     // without blocking (e.g. duplicate index from a prior interrupted build).
-    try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
-      );
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
-      );
-    }
 
-    // Composite index for active memories per project (most common query pattern)
-    try {
-      await pool.query(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
-        ON memories(LOWER(project_id), created_at DESC)
-        WHERE invalidated_by IS NULL
-      `);
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
-      );
-    }
+    // First drop any invalid indexes left by previous failed attempts (using pool is fine)
+    await this.dropInvalidIndex(pool, 'idx_memories_project_source_type');
+    await this.dropInvalidIndex(pool, 'idx_memories_project_active');
+    await this.dropInvalidIndex(pool, 'idx_memories_tags_gin');
+    await this.dropInvalidIndex(pool, 'idx_documents_project_filepath');
+    await this.dropInvalidIndex(pool, 'idx_documents_project_symbol');
 
-    // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
-    // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+    // Acquire a dedicated client and disable statement_timeout for index creation
+    const idxClient = await pool.connect();
     try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
-      );
+      await idxClient.query('SET statement_timeout = 0');
+
+      // Composite index for memory search filtering — use LOWER(project_id) to match query predicates
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_source_type ON memories(LOWER(project_id), source_type, type)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_project_source_type: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for active memories per project (most common query pattern)
+      try {
+        await idxClient.query(`
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_project_active
+          ON memories(LOWER(project_id), created_at DESC)
+          WHERE invalidated_by IS NULL
+        `);
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_project_active: ${getErrorMessage(error)}`
+        );
+      }
+
+      // GIN index on tags for fast JSONB containment queries (@> with jsonb_path_ops).
+      // Tags are normalized to lowercase at write time so @> containment is case-insensitive.
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_tags_gin ON memories USING GIN(tags jsonb_path_ops)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for documents — use LOWER(project_id) to match query predicates
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
+        );
+      }
+
+      // Composite index for documents (project + symbol_type for code search)
+      try {
+        await idxClient.query(
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
+        );
+      } catch (error) {
+        logWarn(
+          'postgresql',
+          `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
+        );
+      }
+
+      await idxClient.query('RESET statement_timeout');
     } catch (error) {
       logWarn(
         'postgresql',
-        `Non-blocking index creation failed for idx_memories_tags_gin: ${getErrorMessage(error)}`
+        `Dedicated client for index creation encountered an error: ${getErrorMessage(error)}`
       );
+    } finally {
+      idxClient.release();
     }
 
     // One-time backfill: lowercase any existing mixed-case tags so @> containment works.
@@ -936,29 +1115,32 @@ export class PostgresBackend {
         AND tags::text != lower(tags::text)
       `);
     }
+  }
 
-    // Composite index for documents — use LOWER(project_id) to match query predicates
+  /**
+   * Drop an index if it exists and is marked invalid in pg_index.
+   *
+   * When `CREATE INDEX CONCURRENTLY` fails (e.g. due to a crash or deadlock),
+   * PostgreSQL leaves behind an INVALID index stub.  A subsequent
+   * `CREATE INDEX CONCURRENTLY IF NOT EXISTS` will see the name already taken
+   * and silently no-op — the invalid index is never rebuilt.  By proactively
+   * dropping invalid indexes we allow the next CONCURRENTLY attempt to succeed.
+   */
+  private async dropInvalidIndex(pool: import('pg').Pool, indexName: string): Promise<void> {
     try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_filepath ON documents(LOWER(project_id), file_path)'
-      );
+      await pool.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = '${indexName}' AND NOT i.indisvalid
+          ) THEN
+            EXECUTE 'DROP INDEX ${indexName}';
+          END IF;
+        END $$;
+      `);
     } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_documents_project_filepath: ${getErrorMessage(error)}`
-      );
-    }
-
-    // Composite index for documents (project + symbol_type for code search)
-    try {
-      await pool.query(
-        'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_project_symbol ON documents(LOWER(project_id), symbol_type) WHERE symbol_type IS NOT NULL'
-      );
-    } catch (error) {
-      logWarn(
-        'postgresql',
-        `Non-blocking index creation failed for idx_documents_project_symbol: ${getErrorMessage(error)}`
-      );
+      logWarn('postgresql', `Failed to drop invalid index ${indexName}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1062,12 +1244,20 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -1127,14 +1317,22 @@ export class PostgresBackend {
     try {
       await client.query('BEGIN');
 
+      // Supersede all current rows per file (not per chunk) so stale chunks
+      // from files that shrunk or rechunked are properly marked superseded.
+      const supersededFiles = new Set<string>();
       const processedFiles = new Set<string>();
 
       for (const doc of documents) {
-        // Supersede existing current row before inserting the new version
-        await client.query(
-          `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND chunk_index = $3 AND superseded_at IS NULL`,
-          [this.projectId, doc.filePath, doc.chunkIndex]
-        );
+        if (!supersededFiles.has(doc.filePath)) {
+          await client.query(
+            `UPDATE documents SET superseded_at = NOW() WHERE project_id = $1 AND file_path = $2 AND superseded_at IS NULL`,
+            [this.projectId, doc.filePath]
+          );
+          supersededFiles.add(doc.filePath);
+        }
+      }
+
+      for (const doc of documents) {
         const result = await client.query<{ id: number }>(
           `INSERT INTO documents (project_id, file_path, chunk_index, content, start_line, end_line, embedding, symbol_name, symbol_type, signature, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -1241,7 +1439,7 @@ export class PostgresBackend {
     const queryText = `SELECT file_path, content, start_line, end_line, symbol_name, symbol_type, signature,
               1 - (embedding <=> $1) as similarity
        FROM documents
-       WHERE LOWER(project_id) = $2 AND 1 - (embedding <=> $1) >= $3${whereExtra}
+       WHERE LOWER(project_id) = $2 AND superseded_at IS NULL AND 1 - (embedding <=> $1) >= $3${whereExtra}
        ORDER BY embedding <=> $1
        LIMIT $4`;
 
@@ -1305,7 +1503,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, correction_count, is_invariant,
-             priority_score, valid_from, valid_until, confidence, source_type,
+             priority_score, valid_from, valid_until, confidence, source_type, source_context,
              created_at
       FROM memories WHERE id = ANY($1)`;
     const params: unknown[] = [ids];
@@ -1362,6 +1560,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -1717,7 +1916,7 @@ export class PostgresBackend {
     if (tsq) {
       const textParams: unknown[] = [tsq];
       let paramIdx = 2;
-      let whereCond = `WHERE search_vector @@ to_tsquery('simple', $1) AND invalidated_by IS NULL`;
+      let whereCond = `WHERE search_vector @@ to_tsquery('simple', $1) AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       whereCond += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
       textParams.push(now);
       paramIdx++;
@@ -1755,7 +1954,7 @@ export class PostgresBackend {
     {
       const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
       let paramIdx = 3;
-      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND invalidated_by IS NULL`;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       whereVec += ` AND (valid_from IS NULL OR valid_from <= $${paramIdx})`;
       vecParams.push(now);
       paramIdx++;
@@ -1794,7 +1993,7 @@ export class PostgresBackend {
     // Fetch full rows
     const rows = await pool.query(
       `SELECT id, content, tags, source, type, created_at,
-              access_count, last_accessed, valid_from, valid_until
+              access_count, last_accessed, valid_from, valid_until, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -1814,6 +2013,7 @@ export class PostgresBackend {
             last_accessed: string | null;
             valid_from: string | null;
             valid_until: string | null;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -1831,6 +2031,7 @@ export class PostgresBackend {
         last_accessed: row.last_accessed,
         valid_from: row.valid_from,
         valid_until: row.valid_until,
+        source_context: row.source_context ?? null,
       });
     }
     return results;
@@ -1855,7 +2056,7 @@ export class PostgresBackend {
     if (tsq) {
       const textParams: unknown[] = [tsq];
       const paramIdx = 2;
-      let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL`;
+      let whereText = `WHERE search_vector @@ to_tsquery('simple', $1) AND project_id IS NULL AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       if (since) {
         whereText += ` AND created_at >= $${paramIdx}`;
         textParams.push(since.toISOString());
@@ -1885,7 +2086,7 @@ export class PostgresBackend {
     {
       const vecParams: unknown[] = [toPgVector(queryEmbedding), threshold];
       const paramIdx = 3;
-      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL`;
+      let whereVec = `WHERE 1 - (embedding <=> $1) >= $2 AND project_id IS NULL AND invalidated_by IS NULL AND COALESCE(is_latest, TRUE) = TRUE`;
       if (since) {
         whereVec += ` AND created_at >= $${paramIdx}`;
         vecParams.push(since.toISOString());
@@ -1915,7 +2116,7 @@ export class PostgresBackend {
 
     // Fetch full rows
     const rows = await pool.query(
-      `SELECT id, project_id, content, tags, source, type, created_at
+      `SELECT id, project_id, content, tags, source, type, created_at, source_context
        FROM memories WHERE id = ANY($1)`,
       [fusedIds]
     );
@@ -1932,6 +2133,7 @@ export class PostgresBackend {
             source: string | null;
             type: string | null;
             created_at: string;
+            source_context: string | null;
           }
         | undefined;
       if (!row) continue;
@@ -1946,6 +2148,7 @@ export class PostgresBackend {
         similarity: fusedScoreMap.get(docId) ?? 0,
         bm25Score: textScoreMap.get(docId) ?? 0,
         vectorScore: vecScoreMap.get(docId) ?? 0,
+        source_context: row.source_context ?? null,
       });
     }
 
@@ -2047,7 +2250,10 @@ export class PostgresBackend {
     validUntil?: string,
     isGlobal: boolean = false,
     confidence: number = 0.5,
-    sourceType: string = 'human'
+    sourceType: string = 'human',
+    sourceContext?: string,
+    forgetAfter?: string | null,
+    versionFields?: { parentMemoryId: number; rootMemoryId: number; version: number }
   ): Promise<number> {
     // Validate provenance fields
     ({ confidence, sourceType } = normalizeProvenance(confidence, sourceType));
@@ -2056,10 +2262,14 @@ export class PostgresBackend {
     const projectId = isGlobal ? null : this.projectId;
 
     const result = await this.queryPrepared<{ id: number }>(
-      'saveMemory',
-      `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id`,
+      'saveMemory' + (versionFields ? '_v' : ''),
+      versionFields
+        ? `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after, version, parent_memory_id, root_memory_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           RETURNING id`
+        : `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           RETURNING id`,
       [
         projectId,
         content,
@@ -2073,6 +2283,11 @@ export class PostgresBackend {
         validUntil ?? null,
         confidence,
         sourceType,
+        sourceContext ?? null,
+        forgetAfter ?? null,
+        ...(versionFields
+          ? [versionFields.version, versionFields.parentMemoryId, versionFields.rootMemoryId]
+          : []),
       ]
     );
 
@@ -2104,11 +2319,12 @@ export class PostgresBackend {
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, correction_count, is_invariant,
-             priority_score, valid_from, valid_until, confidence, source_type,
+             priority_score, valid_from, valid_until, confidence, source_type, source_context,
              created_at, 1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
         AND invalidated_by IS NULL
+        AND COALESCE(is_latest, TRUE) = TRUE
     `;
     const params: unknown[] = [toPgVector(queryEmbedding), threshold];
     let paramIndex = 3;
@@ -2168,6 +2384,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(row.similarity),
     }));
@@ -2187,7 +2404,8 @@ export class PostgresBackend {
       'getMemoryById',
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context,
+              version, parent_memory_id, root_memory_id, is_latest, created_at
        FROM memories WHERE id = $1`,
       [id]
     );
@@ -2216,6 +2434,11 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
+      version: row.version ?? undefined,
+      parent_memory_id: row.parent_memory_id ?? null,
+      root_memory_id: row.root_memory_id ?? null,
+      is_latest: row.is_latest == null ? undefined : !!row.is_latest,
       created_at: row.created_at,
     };
   }
@@ -2239,11 +2462,12 @@ export class PostgresBackend {
       priority_score: number | null;
       confidence: number | null;
       source_type: string | null;
+      source_context: string | null;
       created_at: string;
     }>(
       `SELECT id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
        FROM memories
        WHERE tags IS NOT NULL
          AND tags @> $1::jsonb
@@ -2276,6 +2500,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2324,7 +2549,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
       FROM memories
     `;
     const params: unknown[] = [];
@@ -2369,6 +2594,7 @@ export class PostgresBackend {
       priority_score: row.priority_score ?? null,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2381,6 +2607,50 @@ export class PostgresBackend {
        WHERE id = $1`,
       [memoryId]
     );
+  }
+
+  async markMemoryNotLatest(memoryId: number): Promise<void> {
+    const pool = await this.getPool();
+    let res;
+    if (this.projectId) {
+      // Match project-scoped OR global memories (global memories have NULL project_id
+      // and are accessible from project-scoped dispatchers for version demotion)
+      res = await pool.query(
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        [memoryId, this.projectId]
+      );
+    } else {
+      res = await pool.query(
+        `UPDATE memories SET is_latest = FALSE WHERE id = $1 AND project_id IS NULL`,
+        [memoryId]
+      );
+    }
+    if (res.rowCount === 0) {
+      throw new Error(
+        `markMemoryNotLatest: no rows updated for memory #${memoryId} (project: ${this.projectId ?? 'global'})`
+      );
+    }
+  }
+
+  async markMemoryLatest(memoryId: number): Promise<void> {
+    const pool = await this.getPool();
+    let res;
+    if (this.projectId) {
+      res = await pool.query(
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND (LOWER(project_id) = $2 OR project_id IS NULL)`,
+        [memoryId, this.projectId]
+      );
+    } else {
+      res = await pool.query(
+        `UPDATE memories SET is_latest = TRUE WHERE id = $1 AND project_id IS NULL`,
+        [memoryId]
+      );
+    }
+    if (res.rowCount === 0) {
+      throw new Error(
+        `markMemoryLatest: no rows updated for memory #${memoryId} (project: ${this.projectId ?? 'global'})`
+      );
+    }
   }
 
   async setMemoryInvariant(memoryId: number, isInvariant: boolean): Promise<void> {
@@ -2402,7 +2672,7 @@ export class PostgresBackend {
     let query = `
       SELECT id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
       FROM memories
     `;
     const params: unknown[] = [];
@@ -2443,6 +2713,7 @@ export class PostgresBackend {
       priority_score: row.priority_score ?? null,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -2739,7 +3010,8 @@ export class PostgresBackend {
     source?: string,
     type: MemoryType = 'observation',
     qualityScore?: number,
-    qualityFactors?: Record<string, number>
+    qualityFactors?: Record<string, number>,
+    sourceContext?: string
   ): Promise<number> {
     return this.saveMemory(
       content,
@@ -2751,7 +3023,10 @@ export class PostgresBackend {
       qualityFactors,
       undefined, // validFrom
       undefined, // validUntil
-      true // isGlobal
+      true, // isGlobal
+      undefined, // confidence — use default
+      undefined, // sourceType — use default
+      sourceContext
     );
   }
 
@@ -2769,12 +3044,13 @@ export class PostgresBackend {
     const query = `
       SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
              access_count, last_accessed, valid_from, valid_until,
-             correction_count, is_invariant, priority_score, confidence, source_type, created_at,
+             correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at,
              1 - (embedding <=> $1) as similarity
       FROM memories
       WHERE 1 - (embedding <=> $1) >= $2
         AND project_id IS NULL
         AND invalidated_by IS NULL
+        AND COALESCE(is_latest, TRUE) = TRUE
       ORDER BY embedding <=> $1
       LIMIT $3
     `;
@@ -2803,6 +3079,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(row.similarity),
     }));
@@ -2826,7 +3103,7 @@ export class PostgresBackend {
     const result = await pool.query(
       `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at
        FROM memories
        WHERE project_id IS NULL
          AND invalidated_by IS NULL
@@ -2856,6 +3133,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
     }));
   }
@@ -3664,7 +3942,7 @@ export class PostgresBackend {
     }>(
       `SELECT file_path, content, start_line, end_line
        FROM documents
-       WHERE LOWER(project_id) = $1 AND file_path NOT LIKE 'code:%'
+       WHERE LOWER(project_id) = $1 AND superseded_at IS NULL AND file_path NOT LIKE 'code:%'
        ORDER BY id DESC
        LIMIT $2`,
       [this.projectId, limit]
@@ -3716,6 +3994,7 @@ export class PostgresBackend {
       query = `SELECT id, content, 1 - (embedding <=> $1) as similarity
                FROM memories
                WHERE (LOWER(project_id) = $2 OR project_id IS NULL)
+                 AND COALESCE(is_latest, TRUE) = TRUE
                  AND 1 - (embedding <=> $1) >= $3
                ORDER BY embedding <=> $1
                LIMIT 1`;
@@ -3724,6 +4003,7 @@ export class PostgresBackend {
       query = `SELECT id, content, 1 - (embedding <=> $1) as similarity
                FROM memories
                WHERE project_id IS NULL
+                 AND COALESCE(is_latest, TRUE) = TRUE
                  AND 1 - (embedding <=> $1) >= $2
                ORDER BY embedding <=> $1
                LIMIT 1`;
@@ -3752,6 +4032,7 @@ export class PostgresBackend {
       `SELECT id, content, 1 - (embedding <=> $1) as similarity
        FROM memories
        WHERE project_id IS NULL
+         AND COALESCE(is_latest, TRUE) = TRUE
          AND 1 - (embedding <=> $1) >= $2
        ORDER BY embedding <=> $1
        LIMIT 1`,
@@ -3778,6 +4059,8 @@ export class PostgresBackend {
       validUntil?: string | Date;
       confidence?: number;
       sourceType?: string;
+      sourceContext?: string;
+      forgetAfter?: string | null;
     }>,
     deduplicateThreshold: number = 0.92,
     options?: { autoLink?: boolean; linkThreshold?: number; deduplicate?: boolean }
@@ -3824,6 +4107,7 @@ export class PostgresBackend {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
                        FROM memories
                        WHERE (LOWER(project_id) = $2 OR project_id IS NULL)
+                         AND COALESCE(is_latest, TRUE) = TRUE
                          AND 1 - (embedding <=> $1) >= $3
                        ORDER BY embedding <=> $1
                        LIMIT 1`;
@@ -3832,6 +4116,7 @@ export class PostgresBackend {
             dupQuery = `SELECT id, 1 - (embedding <=> $1) as similarity
                        FROM memories
                        WHERE project_id IS NULL
+                         AND COALESCE(is_latest, TRUE) = TRUE
                          AND 1 - (embedding <=> $1) >= $2
                        ORDER BY embedding <=> $1
                        LIMIT 1`;
@@ -3875,8 +4160,8 @@ export class PostgresBackend {
         );
 
         const insertResult = await client.query<{ id: number }>(
-          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          `INSERT INTO memories (project_id, content, tags, source, type, quality_score, quality_factors, embedding, valid_from, valid_until, confidence, source_type, source_context, forget_after)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING id`,
           [
             this.projectId,
@@ -3891,6 +4176,8 @@ export class PostgresBackend {
             validUntilStr,
             confidence,
             sourceType,
+            memory.sourceContext ?? null,
+            memory.forgetAfter ?? null,
           ]
         );
 
@@ -4062,12 +4349,215 @@ export class PostgresBackend {
     return result.rowCount ?? 0;
   }
 
+  async collectExpiredMemoryIds(): Promise<number[]> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{ id: number }>(
+      `SELECT id FROM memories
+       WHERE forget_after IS NOT NULL
+       AND forget_after < NOW()
+       AND invalidated_by IS NULL
+       ${scopeCond}`,
+      scopeParams
+    );
+    return result.rows.map((r) => r.id);
+  }
+
   async deleteMemoriesByIds(ids: number[]): Promise<number> {
     if (ids.length === 0) return 0;
     const pool = await this.getPool();
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-    const result = await pool.query(`DELETE FROM memories WHERE id IN (${placeholders})`, ids);
+    // Use ANY($1::int[]) — passes the entire array as a single parameter,
+    // avoiding PG's ~65535 individual parameter limit on large batches.
+    // Scope to project to prevent cross-tenant deletion in shared tables.
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(`DELETE FROM memories WHERE id = ANY($1::int[]) ${scopeCond}`, [
+      ids,
+      ...scopeParams,
+    ]);
     return result.rowCount ?? 0;
+  }
+
+  async promoteMemoryConfidence(memoryId: number): Promise<boolean> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $2 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET confidence = 0.75
+       WHERE id = $1 AND (confidence IS NULL OR confidence < 0.75)
+       ${scopeCond}`,
+      [memoryId, ...scopeParams]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async degradeMemoryConfidence(memoryId: number, amount: number = 0.05): Promise<boolean> {
+    const delta = Math.max(0, amount);
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET confidence = GREATEST(0.05, COALESCE(confidence, 0.5) - $1)
+       WHERE id = $2 AND source_type = 'auto_extracted' AND COALESCE(confidence, 0.5) > 0.05
+       ${scopeCond}`,
+      [delta, memoryId, ...scopeParams]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async boostMemoryConfidence(memoryId: number, amount: number = 0.02): Promise<boolean> {
+    const delta = Math.max(0, amount);
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET confidence = LEAST(0.95, COALESCE(confidence, 0.5) + $1)
+       WHERE id = $2 AND source_type = 'auto_extracted'
+       ${scopeCond}`,
+      [delta, memoryId, ...scopeParams]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setForgetAfter(memoryId: number, forgetAfter: string | null): Promise<boolean> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET forget_after = $1 WHERE id = $2
+       ${scopeCond}`,
+      [forgetAfter, memoryId, ...scopeParams]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setForgetAfterDays(memoryId: number, days: number): Promise<boolean> {
+    if (!Number.isFinite(days) || !Number.isInteger(days) || days < 0) {
+      logWarn('postgresql', `Invalid forget_after days for memory #${memoryId}`, { days });
+      return false;
+    }
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $3 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query(
+      `UPDATE memories SET forget_after = NOW() + ($1 || ' days')::INTERVAL
+       WHERE id = $2
+       ${scopeCond}`,
+      [days, memoryId, ...scopeParams]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAutoExtractedMemories(): Promise<
+    Array<{
+      id: number;
+      content: string;
+      embedding: number[];
+      access_count: number;
+      confidence: number | null;
+      created_at: string;
+    }>
+  > {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{
+      id: number;
+      content: string;
+      embedding: string;
+      access_count: number;
+      confidence: number | null;
+      created_at: string;
+    }>(
+      `SELECT id, content, embedding::text, access_count, confidence, created_at::text as created_at
+       FROM memories
+       WHERE source_type = 'auto_extracted'
+       ${scopeCond}
+       ORDER BY created_at DESC`,
+      scopeParams
+    );
+    return result.rows.map((r) => ({
+      ...r,
+      embedding: r.embedding ? fromPgVector(r.embedding) : [],
+    }));
+  }
+
+  async collectPruneableAutoMemoryIds(_maxUnusedDays: number): Promise<number[]> {
+    // Unified on forget_after — the single canonical retention field.
+    // The maxUnusedDays parameter is kept for interface compat but the actual
+    // expiration is driven by the forget_after timestamp set at insertion time.
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{ id: number }>(
+      `SELECT id FROM memories
+       WHERE source_type = 'auto_extracted'
+       AND forget_after IS NOT NULL
+       AND forget_after < NOW()
+       AND invalidated_by IS NULL
+       ${scopeCond}`,
+      scopeParams
+    );
+    return result.rows.map((r) => r.id);
+  }
+
+  async getAutoMemoryStatsRow(): Promise<{
+    total: number;
+    low_confidence: number;
+    high_confidence: number;
+    never_accessed: number;
+    avg_access: number;
+  }> {
+    const pool = await this.getPool();
+    const scopeCond = this.projectId
+      ? 'AND (LOWER(project_id) = $1 OR project_id IS NULL)'
+      : 'AND project_id IS NULL';
+    const scopeParams = this.projectId ? [this.projectId] : [];
+    const result = await pool.query<{
+      total: string;
+      low_confidence: string;
+      high_confidence: string;
+      never_accessed: string;
+      avg_access: string;
+    }>(
+      `SELECT
+         COUNT(*) as total,
+         SUM(CASE WHEN confidence IS NULL OR confidence < 0.5 THEN 1 ELSE 0 END) as low_confidence,
+         SUM(CASE WHEN confidence >= 0.7 THEN 1 ELSE 0 END) as high_confidence,
+         SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
+         AVG(access_count) as avg_access
+       FROM memories
+       WHERE source_type = 'auto_extracted'
+       ${scopeCond}`,
+      scopeParams
+    );
+    const row = result.rows[0];
+    return {
+      total: parseInt(row?.total ?? '0', 10),
+      low_confidence: parseInt(row?.low_confidence ?? '0', 10),
+      high_confidence: parseInt(row?.high_confidence ?? '0', 10),
+      never_accessed: parseInt(row?.never_accessed ?? '0', 10),
+      avg_access: parseFloat(row?.avg_access ?? '0'),
+    };
   }
 
   async searchMemoriesAsOf(
@@ -4103,12 +4593,13 @@ export class PostgresBackend {
       priority_score: number | null;
       confidence: number | null;
       source_type: string | null;
+      source_context: string | null;
       created_at: string;
       similarity: number | string;
     }>(
       `SELECT id, project_id, content, tags, source, type, quality_score, quality_factors,
               access_count, last_accessed, valid_from, valid_until,
-              correction_count, is_invariant, priority_score, confidence, source_type, created_at,
+              correction_count, is_invariant, priority_score, confidence, source_type, source_context, created_at,
               1 - (embedding <=> $1) as similarity
        FROM memories
        WHERE created_at <= $2
@@ -4142,6 +4633,7 @@ export class PostgresBackend {
       valid_until: row.valid_until,
       confidence: row.confidence ?? null,
       source_type: (row.source_type ?? null) as SourceType | null,
+      source_context: (row.source_context ?? null) as string | null,
       created_at: row.created_at,
       similarity: parseFloat(String(row.similarity)),
     }));
@@ -4275,6 +4767,7 @@ export class PostgresBackend {
       accessCount: number;
       lastAccessed: string | null;
       qualityScore: number | null;
+      sourceContext: string | null;
       embedding: number[];
     }>
   > {
@@ -4298,12 +4791,13 @@ export class PostgresBackend {
       access_count: number | null;
       last_accessed: string | null;
       quality_score: number | null;
+      source_context: string | null;
       embedding: string;
     }>(
       `SELECT id, content, tags, source, type, project_id,
               created_at::text as created_at, valid_from::text as valid_from,
               valid_until::text as valid_until, invalidated_by, access_count,
-              last_accessed::text as last_accessed, quality_score,
+              last_accessed::text as last_accessed, quality_score, source_context,
               embedding::text as embedding
        FROM memories ${scopeCond}
        ORDER BY id ASC`,
@@ -4328,6 +4822,7 @@ export class PostgresBackend {
       accessCount: row.access_count ?? 0,
       lastAccessed: row.last_accessed,
       qualityScore: row.quality_score,
+      sourceContext: row.source_context ?? null,
       embedding: fromPgVector(row.embedding),
     }));
   }
@@ -4344,7 +4839,9 @@ export class PostgresBackend {
     }>
   > {
     const pool = await this.getPool();
-    const scopeCond = this.projectId ? 'WHERE LOWER(project_id) = $1' : '';
+    const scopeCond = this.projectId
+      ? 'WHERE superseded_at IS NULL AND embedding IS NOT NULL AND LOWER(project_id) = $1'
+      : 'WHERE superseded_at IS NULL AND embedding IS NOT NULL';
     const params = this.projectId ? [this.projectId] : [];
 
     const result = await pool.query<{

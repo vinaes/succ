@@ -1,12 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getStorageDispatcher } from '../../lib/storage/index.js';
-import { getSuccDir } from '../../lib/config.js';
+import { getAutoCompactConfig, getSuccDir } from '../../lib/config.js';
 import { getErrorMessage } from '../../lib/errors.js';
 import { logWarn } from '../../lib/fault-logger.js';
 import { removeObservations } from '../../lib/session-observations.js';
 import { flushBudgets, removeBudget } from '../../lib/token-budget.js';
 import { processSessionEnd } from '../session-processor.js';
+import { ContextMonitor } from '../../lib/context-monitor.js';
+import { detectContextLimit, readTranscriptTail } from '../../lib/context-limits.js';
+import { extractSessionSummary } from '../../lib/session-summary.js';
 import type { SessionState } from '../sessions.js';
 import {
   parseRequestBody,
@@ -17,6 +20,37 @@ import {
   type RouteContext,
   type RouteMap,
 } from './types.js';
+
+// ── Module-level ContextMonitor instance ──────────────────────────────────────
+
+let _contextMonitor: ContextMonitor | null = null;
+
+export function getContextMonitor(): ContextMonitor {
+  if (!_contextMonitor) {
+    const cfg = getAutoCompactConfig();
+    _contextMonitor = new ContextMonitor(cfg, async (sessionId, transcriptPath) => {
+      // Preemptive extraction: extract memories before compaction at high pressure
+      // Use readTranscriptTail (last 200KB) — enough for extraction, avoids loading huge files
+      try {
+        const content = readTranscriptTail(transcriptPath, 200_000);
+        if (content.length > 200) {
+          await extractSessionSummary(content, { verbose: false });
+        }
+      } catch (err) {
+        logWarn(
+          'context-monitor',
+          `Preemptive extraction error for ${sessionId}: ${getErrorMessage(err)}`
+        );
+      }
+    });
+  }
+  return _contextMonitor;
+}
+
+/** Reset monitor (used in tests). */
+export function resetContextMonitor(): void {
+  _contextMonitor = null;
+}
 
 /** Strict session ID validator — returns null for IDs that would collide after normalization. */
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -42,8 +76,26 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       } = parseRequestBody(SessionRegisterSchema, body, 'session_id required');
       const manager = requireSessionManager(ctx);
       const session = manager.register(session_id, transcript_path || '', is_service);
+      // Register with ContextMonitor (skips service sessions)
+      if (!is_service && transcript_path) {
+        getContextMonitor().registerSession(session_id, transcript_path);
+      }
       ctx.log(`[session] Registered: ${session_id}${is_service ? ' (service)' : ''}`);
-      return { success: true, session };
+
+      // Include detected model info in response for hook logging (best-effort)
+      let detectedContextLimit: string | null = null;
+      if (!is_service && transcript_path) {
+        try {
+          const autoCompactCfg = getAutoCompactConfig();
+          const cfgLimit =
+            autoCompactCfg.context_limit > 0 ? autoCompactCfg.context_limit : undefined;
+          const limit = detectContextLimit(transcript_path, cfgLimit);
+          if (limit !== null) detectedContextLimit = String(limit);
+        } catch (err) {
+          logWarn('sessions', `model detection failed: ${getErrorMessage(err)}`);
+        }
+      }
+      return { success: true, session, detected_context_limit: detectedContextLimit };
     },
 
     'POST /api/session/unregister': async (body) => {
@@ -64,6 +116,7 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
         ctx.log(`[session] Failed to flush session counters: ${getErrorMessage(err)}`);
       }
 
+      getContextMonitor().unregisterSession(session_id);
       const removed = manager.unregister(session_id);
       ctx.clearBriefingCache(session_id);
       removeBudget(session_id);
@@ -166,10 +219,82 @@ export function sessionRoutes(ctx: RouteContext): RouteMap {
       if (session) {
         (session as SessionState & { preCompactStats?: unknown }).preCompactStats = stats;
       }
+
+      // Notify ContextMonitor so it resets usage offset post-compact.
+      // Use the ACTUAL post-compact transcript size (not the pre-compact
+      // transcriptBytes from stats) — after compaction the transcript is
+      // rewritten and shrinks, so using the old size would make
+      // (currentSize - compactOffset) go negative until the file grows past
+      // its previous length.
+      const manager2 = requireSessionManager(ctx);
+      const compactSession = manager2.get(sessionId);
+      const compactTranscriptPath = compactSession?.transcriptPath || '';
+      let postCompactSize = 0;
+      if (compactTranscriptPath) {
+        try {
+          postCompactSize = fs.statSync(compactTranscriptPath).size;
+        } catch (err) {
+          logWarn(
+            'sessions',
+            `Failed to stat transcript after compact for ${sessionId}: ${getErrorMessage(err)}`
+          );
+        }
+      }
+      if (postCompactSize > 0) {
+        getContextMonitor().recordCompact(sessionId, postCompactSize, compactTranscriptPath);
+        ctx.log(
+          `[pre-compact] ContextMonitor offset reset to ${postCompactSize} bytes (post-compact actual size)`
+        );
+      } else {
+        // Fallback: reset offset to 0 so usage starts fresh
+        getContextMonitor().recordCompact(sessionId, 0, compactTranscriptPath);
+        ctx.log(`[pre-compact] ContextMonitor offset reset to 0 (transcript not found or empty)`);
+      }
+
       ctx.log(
         `[pre-compact] Stored stats for session ${sessionId}: ${(stats.tokenTotals as Record<string, number>)?.total || 0} total tokens`
       );
       return { success: true };
+    },
+
+    'GET /api/context-usage': async (_body, searchParams) => {
+      const sessionId = searchParams.get('session_id') || '';
+      if (!sessionId) return { error: 'session_id required' };
+      if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
+
+      const manager = requireSessionManager(ctx);
+      const session = manager.get(sessionId);
+      if (!session?.transcriptPath) {
+        return { error: 'session not found or no transcript' };
+      }
+      if (session.isService) {
+        return { error: 'context monitoring not applicable to service sessions' };
+      }
+
+      // O(1) stat for transcript size
+      let transcriptSize = 0;
+      try {
+        transcriptSize = fs.statSync(session.transcriptPath).size;
+      } catch (err) {
+        logWarn('sessions', `Failed to stat transcript for ${sessionId}: ${getErrorMessage(err)}`);
+      }
+
+      // Ensure session is registered with ContextMonitor (handles auto-registered sessions)
+      getContextMonitor().registerSession(sessionId, session.transcriptPath);
+
+      const usage = getContextMonitor().getUsage(sessionId, transcriptSize);
+      if (!usage) {
+        return { error: 'context monitoring not enabled' };
+      }
+      return usage;
+    },
+
+    'POST /api/context-usage/ack': async (_body, searchParams) => {
+      const sessionId = searchParams.get('session_id') || '';
+      if (!sessionId) return { error: 'session_id required' };
+      if (!validateSessionId(sessionId)) return { error: 'invalid session_id' };
+      const acked = getContextMonitor().markAdvisory(sessionId);
+      return { success: acked };
     },
 
     'GET /api/session/stats': async (_body, searchParams) => {

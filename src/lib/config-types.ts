@@ -123,6 +123,8 @@ export interface SuccConfig {
   retrieval?: RetrievalConfig;
   // Mid-conversation observer settings
   observer?: ObserverConfig;
+  // Auto-compact context pressure monitoring
+  auto_compact?: AutoCompactConfig;
   // Error reporting (brain-faults.log + webhook + sentry)
   error_reporting?: ErrorReportingConfig;
   // Tool profile: controls which MCP tools are registered
@@ -184,6 +186,8 @@ export interface AutoMemoryConfig {
   confidence_promotion_accesses?: number;
   /** Enable mem0-style extraction consolidation — LLM decides ADD/UPDATE/DELETE/NONE per fact (default: false) */
   extraction_consolidation?: boolean;
+  /** Enable ingestion-time version detection — LLM classifies updates/extends/derives (default: false) */
+  version_detection?: boolean;
 }
 
 /**
@@ -479,12 +483,23 @@ export interface RetrievalConfig {
   query_expansion_mode?: 'claude' | 'api'; // LLM backend for expansion (default: from llm.type)
   graph_ppr_enabled?: boolean; // Use PPR graph traversal as 3rd RRF signal in memory search (default: false)
   graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
+  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: false)
+  rrf_k?: number; // RRF constant: lower (20-40) favors top results, 60 is standard (default: 60)
+  adaptive_alpha?: boolean; // Auto-detect query type and adjust BM25/vector balance (default: true)
 }
 
 export interface ObserverConfig {
   enabled?: boolean; // Enable mid-conversation observer (default: true)
   min_tokens?: number; // Extract after N new tokens (default: 15000)
   max_minutes?: number; // Or after N minutes, whichever first (default: 10)
+}
+
+export interface AutoCompactConfig {
+  enabled?: boolean; // Enable context pressure monitoring (default: true)
+  threshold_percent?: number; // Compact when this % of context is USED (default: 15, range: 5-80)
+  cooldown_seconds?: number; // Minimum seconds between advisories (default: 90)
+  context_limit?: number; // Explicit context window override in tokens (e.g., 1000000)
+  preemptive_extract?: boolean; // Extract memories at high pressure before compaction (default: true)
 }
 
 export interface ErrorReportingConfig {
@@ -698,6 +713,9 @@ export interface ConfigDisplay {
     query_expansion_mode: string;
     graph_ppr_enabled: boolean;
     graph_ppr_weight: number;
+    query_decomposition_enabled: boolean;
+    rrf_k: number;
+    adaptive_alpha: boolean;
   };
   // Web search settings
   web_search: {

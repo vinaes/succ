@@ -9,6 +9,7 @@ vi.mock('../../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getConfig: vi.fn(() => ({
     remember_extract_default: true,
     sensitive_filter_enabled: false,
@@ -16,7 +17,6 @@ vi.mock('../../../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/tmp/project'),
   isGlobalOnlyMode: vi.fn(() => false),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../../lib/embeddings.js', () => ({

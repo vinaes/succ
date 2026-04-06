@@ -395,11 +395,17 @@ export function parseMultiFileOutput(
     const part = parts[i];
     const match = part.match(/^([^=\n]+\.md)===\s*\n?([\s\S]*)/i);
     if (match) {
-      const filename = match[1].trim();
+      const filename = sanitizeFilename(match[1].trim());
+      const resolved = path.resolve(baseDir, filename);
+      const rel = path.relative(baseDir, resolved);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        logWarn('analyze-utils', `Skipping file with path traversal: ${filename}`);
+        continue;
+      }
       const fileContent = cleanMarkdownOutput(match[2]);
       if (fileContent) {
         files.push({
-          path: path.join(baseDir, filename),
+          path: resolved,
           content: fileContent,
         });
       }

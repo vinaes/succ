@@ -19,14 +19,13 @@ import { getProjectRoot, getSuccDir } from '../config.js';
 import type { CodebaseContext } from './types.js';
 
 import { logWarn } from '../fault-logger.js';
-// Rough char-to-token ratio (conservative: 1 token ≈ 4 chars)
-const CHARS_PER_TOKEN = 4;
+import { CHARS_PER_TOKEN } from '../token-counter.js';
 
 const BUDGET = {
-  file_tree: 2000 * CHARS_PER_TOKEN, // ~8000 chars
-  code_search: 3000 * CHARS_PER_TOKEN, // ~12000 chars
-  memories: 2000 * CHARS_PER_TOKEN, // ~8000 chars
-  brain_docs: 1500 * CHARS_PER_TOKEN, // ~6000 chars
+  file_tree: 2000 * CHARS_PER_TOKEN, // ~7000 chars
+  code_search: 3000 * CHARS_PER_TOKEN, // ~10500 chars
+  memories: 2000 * CHARS_PER_TOKEN, // ~7000 chars
+  brain_docs: 1500 * CHARS_PER_TOKEN, // ~5250 chars
 };
 
 // ============================================================================

@@ -20,8 +20,13 @@ import {
   getBoostDataForMemories,
   getNeverUsedMemoryRows,
 } from './db/index.js';
-import { deleteOldRecallEvents } from './storage/index.js';
+import {
+  deleteOldRecallEvents,
+  degradeMemoryConfidence,
+  boostMemoryConfidence,
+} from './storage/index.js';
 import { sanitizeQuery } from './query-sanitizer.js';
+import { logWarn } from './fault-logger.js';
 
 // ============================================================================
 // Types
@@ -80,13 +85,29 @@ export function recordRecallEvent(
   similarityScore?: number
 ): number {
   const safeQuery = sanitizeQuery(query).preview256;
-  return insertRecallEvent(
+  const id = insertRecallEvent(
     memoryId,
     safeQuery,
     wasUsed,
     rankPosition ?? null,
     similarityScore ?? null
   );
+
+  // insertRecallEvent returns 0 on failure — skip confidence adjustment
+  if (id === 0) {
+    return 0;
+  }
+
+  // Adjust confidence based on usage feedback (async — fire-and-forget with error logging)
+  (wasUsed ? boostMemoryConfidence(memoryId, 0.02) : degradeMemoryConfidence(memoryId, 0.05)).catch(
+    (err: unknown) => {
+      logWarn('retrieval-feedback', `Confidence adjustment failed for memory #${memoryId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  );
+
+  return id;
 }
 
 /**
@@ -112,7 +133,36 @@ export function recordRecallBatch(
     similarityScore: similarityScores?.get(memId) ?? null,
   }));
 
-  insertRecallEventsBatch(events);
+  const inserted = insertRecallEventsBatch(events);
+  if (!inserted) {
+    logWarn(
+      'retrieval-feedback',
+      'Skipping confidence adjustments — recall event batch insert failed'
+    );
+    return;
+  }
+
+  // Adjust confidence for all recalled memories (async — fire-and-forget with error logging)
+  Promise.allSettled(
+    events.map((event) =>
+      event.wasUsed
+        ? boostMemoryConfidence(event.memoryId, 0.02)
+        : degradeMemoryConfidence(event.memoryId, 0.05)
+    )
+  ).then((results) => {
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === 'rejected') {
+        logWarn(
+          'retrieval-feedback',
+          `Confidence adjustment failed for memory #${events[i].memoryId}`,
+          {
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          }
+        );
+      }
+    }
+  });
 }
 
 // ============================================================================

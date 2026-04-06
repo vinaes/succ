@@ -263,7 +263,7 @@ export class NativeOrtSession {
 /**
  * Resolve ONNX model file path from various cache locations.
  */
-export async function resolveModelPath(modelName: string): Promise<string> {
+export async function resolveModelPath(modelName: string, signal?: AbortSignal): Promise<string> {
   // 1. Check transformers.js cache (node_modules/@huggingface/transformers/.cache/)
   const tfCachePath = findTransformersJsCache(modelName);
   if (tfCachePath) return tfCachePath;
@@ -275,14 +275,48 @@ export async function resolveModelPath(modelName: string): Promise<string> {
   // 3. Not cached — trigger download via AutoModel (downloads config.json + onnx/model.onnx)
   // Note: AutoTokenizer only downloads tokenizer files, NOT the ONNX model.
   // AutoModel.from_pretrained() downloads the full model including onnx/model.onnx.
+
+  // Fast-path: abort before expensive module load
+  if (signal?.aborted) {
+    const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+    (err as any).aborted = true;
+    throw err;
+  }
+
   const transformers = await import('@huggingface/transformers');
   const AutoModel = (transformers as any).AutoModel;
+
+  // Check abort after async import, before starting expensive download
+  if (signal?.aborted) {
+    const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+    (err as any).aborted = true;
+    throw err;
+  }
+
   let tempModel;
   try {
-    tempModel = await AutoModel.from_pretrained(modelName, {
+    const downloadPromise = AutoModel.from_pretrained(modelName, {
       device: 'cpu',
       dtype: 'fp32',
     });
+
+    if (signal) {
+      const abortPromise = new Promise<never>((_, reject) => {
+        const makeAbortError = () => {
+          const err = new DependencyError(`Model resolution aborted for '${modelName}'`);
+          (err as any).aborted = true;
+          return err;
+        };
+        if (signal.aborted) {
+          reject(makeAbortError());
+        } else {
+          signal.addEventListener('abort', () => reject(makeAbortError()), { once: true });
+        }
+      });
+      tempModel = await Promise.race([downloadPromise, abortPromise]);
+    } else {
+      tempModel = await downloadPromise;
+    }
   } finally {
     try {
       if (tempModel?.dispose) {

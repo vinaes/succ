@@ -37,6 +37,7 @@ export type {
   WebSearchConfig,
   RetrievalConfig,
   ObserverConfig,
+  AutoCompactConfig,
   ErrorReportingConfig,
   BPETokenizerConfig,
   IdleWatcherConfig,
@@ -60,6 +61,7 @@ export {
   DEFAULT_COMPACT_BRIEFING_CONFIG,
   DEFAULT_ERROR_REPORTING_CONFIG,
   DEFAULT_IDLE_REFLECTION_CONFIG,
+  DEFAULT_AUTO_MEMORY_CONFIG,
   DEFAULT_CONFIG,
   DEFAULT_API_URL,
 } from './config-defaults.js';
@@ -78,6 +80,7 @@ import type {
   WebSearchConfig,
   RetrievalConfig,
   ObserverConfig,
+  AutoCompactConfig,
   GlobalConfig,
   DaemonStatus,
   IdleOperation,
@@ -95,6 +98,7 @@ import {
   DEFAULT_IDLE_REFLECTION_CONFIG,
   DEFAULT_SLEEP_AGENT_CONFIG,
   DEFAULT_ERROR_REPORTING_CONFIG,
+  DEFAULT_AUTO_MEMORY_CONFIG,
 } from './config-defaults.js';
 
 // ============================================================================
@@ -193,6 +197,11 @@ export function getConfig(): SuccConfig {
   const result: SuccConfig = {
     ...DEFAULT_CONFIG,
     ...validated,
+    // Deep-merge auto_memory so partial user config inherits missing defaults
+    auto_memory: {
+      ...DEFAULT_AUTO_MEMORY_CONFIG,
+      ...(validated.auto_memory ?? {}),
+    },
   };
 
   // Update cache
@@ -1016,6 +1025,9 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     query_expansion_mode: userConfig.query_expansion_mode ?? (getConfig().llm?.type || 'api'),
     graph_ppr_enabled: userConfig.graph_ppr_enabled ?? false,
     graph_ppr_weight: userConfig.graph_ppr_weight ?? 0.3,
+    query_decomposition_enabled: userConfig.query_decomposition_enabled ?? false,
+    rrf_k: userConfig.rrf_k ?? 60,
+    adaptive_alpha: userConfig.adaptive_alpha ?? true,
   };
 }
 
@@ -1030,6 +1042,28 @@ export function getObserverConfig(): Required<ObserverConfig> {
     enabled: userConfig.enabled ?? true,
     min_tokens: userConfig.min_tokens ?? 15000,
     max_minutes: userConfig.max_minutes ?? 10,
+  };
+}
+
+/**
+ * Get auto-compact config with validated defaults.
+ * Used by ContextMonitor to determine pressure thresholds.
+ */
+export function getAutoCompactConfig(): Required<AutoCompactConfig> {
+  const config = getConfig();
+  const userConfig = config.auto_compact || {};
+  // Clamp threshold to 5-80 to prevent nonsensical values
+  const rawThreshold = userConfig.threshold_percent ?? 15;
+  const threshold_percent = Math.max(5, Math.min(80, rawThreshold));
+  // context_limit: 0 = not set (sentinel), otherwise respect the user's explicit value
+  const rawLimit = userConfig.context_limit;
+  const context_limit = rawLimit !== undefined && rawLimit > 0 ? rawLimit : 0;
+  return {
+    enabled: userConfig.enabled ?? true,
+    threshold_percent,
+    cooldown_seconds: Math.max(0, userConfig.cooldown_seconds ?? 90),
+    context_limit,
+    preemptive_extract: userConfig.preemptive_extract ?? true,
   };
 }
 

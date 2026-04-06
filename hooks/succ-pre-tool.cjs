@@ -349,7 +349,7 @@ const TIER1_PATTERNS = [
   { re: /<\|endoftext\|>/i, desc: 'GPT endoftext token' },
   { re: /<\|system\|>/i, desc: 'System role token' },
   {
-    re: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|succ-agents)>/i,
+    re: /<\/(?:hook-rule|file-context|soul|previous-session|session|compact-fallback|security-warning|commit-format|pre-commit-review|context-pressure|succ-agents)>/i,
     desc: 'Closing succ XML tag',
   },
   { re: /<\/?system>/i, desc: 'XML system tag' },
@@ -654,7 +654,9 @@ function checkDangerous(command, config) {
         };
       }
     } catch (e) {
-      console.error(`[succ:pre-tool] Invalid custom safety pattern "${custom.pattern}": ${e.message || e}`);
+      console.error(
+        `[succ:pre-tool] Invalid custom safety pattern "${custom.pattern}": ${e.message || e}`
+      );
     }
   }
 
@@ -744,6 +746,25 @@ function formatFileContext(memories, fileName) {
   return `<file-context file="${sanitizeFileName(fileName)}">\nRelated memories:\n${lines.join('\n')}\n</file-context>`;
 }
 
+// ─── Context pressure advisory ───────────────────────────────────────
+
+function formatCompactAdvisory(usage) {
+  const usedK = Math.round((usage.tokens_used || 0) / 1000);
+  const limitK = Math.round((usage.tokens_limit || 0) / 1000);
+  const pct = Math.round(usage.usage_percent || 0);
+  switch (usage.urgency) {
+    case 'low':
+      return `<context-pressure level="low">Context ${pct}% used (${usedK}K/${limitK}K). Consider running /compact to keep session lean.</context-pressure>`;
+    case 'medium':
+      return `<context-pressure level="medium">[IMPORTANT] Context ${pct}% used (${usedK}K/${limitK}K). Run /compact now to maintain quality.</context-pressure>`;
+    case 'high':
+    case 'critical':
+      return `<context-pressure level="critical">[CRITICAL: Context ${pct}% used — ${usedK}K/${limitK}K tokens] You MUST run /compact immediately. Response quality is degrading.</context-pressure>`;
+    default:
+      return '';
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────
 
 adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) => {
@@ -758,6 +779,7 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
   const command = toolInput.command || '';
   const contextParts = [];
   let askReason = null;
+  let contextUsageAckPromise = null;
 
   // 0. Injection scan on tool input
   const inputToScan = filePath || command || toolInput.url || '';
@@ -893,6 +915,36 @@ MEDIUM and below — commit is OK, mention findings in summary.
     process.exit(exitCode);
   }
 
+  // 5.5. Context pressure advisory (fail-open, 500ms timeout)
+  try {
+    const port = ensureDaemonLazy(projectDir, succDir);
+    if (port && hookInput.session_id) {
+      const usageRes = await fetch(
+        `http://127.0.0.1:${port}/api/context-usage?session_id=${encodeURIComponent(hookInput.session_id)}`,
+        { signal: AbortSignal.timeout(500) }
+      );
+      if (usageRes.ok) {
+        const usage = await usageRes.json();
+        if (usage.should_compact && !usage.cooldown_active) {
+          const advisory = formatCompactAdvisory(usage);
+          if (advisory) {
+            contextParts.push(advisory);
+            // ACK: mark cooldown AFTER successful advisory push (prevents consumed cooldown on hook failure)
+            // Store promise so we can await it before process.exit (unawaited fetch gets killed on exit)
+            contextUsageAckPromise = fetch(
+              `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
+              { method: 'POST', signal: AbortSignal.timeout(300) }
+            ).catch((e) => {
+              console.error('[succ:pre-tool] context-usage ack failed:', e.message || e);
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[succ:pre-tool] context pressure check failed:', e.message || e);
+  }
+
   // 6. Emit combined context
   if (contextParts.length > 0) {
     const { json, exitCode } = adapter.formatOutput(agent, 'PreToolUse', {
@@ -901,8 +953,12 @@ MEDIUM and below — commit is OK, mention findings in summary.
     if (json && Object.keys(json).length > 0) {
       console.log(JSON.stringify(json));
     }
-    if (exitCode) process.exit(exitCode);
+    if (exitCode) {
+      if (contextUsageAckPromise) await contextUsageAckPromise;
+      process.exit(exitCode);
+    }
   }
 
+  if (contextUsageAckPromise) await contextUsageAckPromise;
   process.exit(0);
 });

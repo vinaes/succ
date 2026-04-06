@@ -14,7 +14,8 @@
 // BM25 parameters (tuned for code/docs)
 const K1 = 1.3; // Term frequency saturation (1.2-1.5 optimal)
 const B = 0.75; // Length normalization
-const RRF_K = 60; // RRF constant (standard value)
+/** Default RRF constant. Research suggests K=20-40 better for code. */
+const DEFAULT_RRF_K = 60;
 
 export interface BM25Index {
   invertedIndex: Map<string, Map<number, number>>;
@@ -427,19 +428,20 @@ export function reciprocalRankFusion(
   bm25Results: BM25Result[],
   vectorResults: BM25Result[],
   alpha: number = 0.5,
-  limit: number = 10
+  limit: number = 10,
+  rrfK: number = DEFAULT_RRF_K
 ): BM25Result[] {
   const combined = new Map<number, number>();
 
   // BM25 contribution (weighted by 1-alpha)
   bm25Results.forEach((r, rank) => {
-    const rrfScore = (1 - alpha) / (RRF_K + rank + 1);
+    const rrfScore = (1 - alpha) / (rrfK + rank + 1);
     combined.set(r.docId, (combined.get(r.docId) || 0) + rrfScore);
   });
 
   // Vector contribution (weighted by alpha)
   vectorResults.forEach((r, rank) => {
-    const rrfScore = alpha / (RRF_K + rank + 1);
+    const rrfScore = alpha / (rrfK + rank + 1);
     combined.set(r.docId, (combined.get(r.docId) || 0) + rrfScore);
   });
 

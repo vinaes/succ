@@ -261,7 +261,8 @@ export function parseFactsResponse(response: string): ExtractedFact[] {
 async function saveFactsAsMemories(
   facts: ExtractedFact[],
   minQuality: number,
-  log: (msg: string) => void = console.log
+  log: (msg: string) => void = console.log,
+  sourceExcerpt?: string
 ): Promise<{ saved: number; skipped: number }> {
   const config = getConfig();
   const batch: MemoryBatchInput[] = [];
@@ -305,6 +306,7 @@ async function saveFactsAsMemories(
         qualityScore: { score: qualityScore.score, factors: qualityScore.factors },
         confidence: Math.min(fact.confidence * 0.5, 0.5), // Auto-extracted starts low
         sourceType: 'auto_extracted',
+        sourceContext: sourceExcerpt?.slice(0, 2000),
       });
     } catch (err) {
       log(`[session-processor] Failed to prepare fact for batch: ${getErrorMessage(err)}`);
@@ -461,7 +463,9 @@ export async function processSessionEnd(
 
     // 3. Save facts as memories
     const minQuality = idleConfig.thresholds?.min_quality_for_summary ?? 0.5;
-    const saveResult = await saveFactsAsMemories(factsToSave, minQuality, log);
+    // Pass truncated source content as context for memory-then-chunk retrieval
+    const sourceExcerpt = content?.slice(0, 2000);
+    const saveResult = await saveFactsAsMemories(factsToSave, minQuality, log, sourceExcerpt);
 
     result.factsSaved = saveResult.saved;
     result.factsSkipped = saveResult.skipped;

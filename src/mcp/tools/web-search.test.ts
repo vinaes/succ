@@ -35,6 +35,7 @@ vi.mock('../../lib/llm.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false, level: 'warn' }),
   getWebSearchConfig: vi.fn(() => ({
     enabled: true,
     model: 'perplexity/sonar-pro',
@@ -52,7 +53,6 @@ vi.mock('../../lib/config.js', () => ({
   })),
   getSuccDir: vi.fn(() => '/tmp/test-succ'),
   getProjectRoot: vi.fn(() => '/test/project'),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../helpers.js', () => ({

@@ -65,6 +65,28 @@ export function incrementCorrectionCount(memoryId: number): void {
 }
 
 /**
+ * Mark a memory as no longer the latest version (superseded by a newer version).
+ */
+export function markMemoryNotLatest(memoryId: number): void {
+  const database = getDb();
+  const result = database.prepare(`UPDATE memories SET is_latest = 0 WHERE id = ?`).run(memoryId);
+  if (result.changes === 0) {
+    throw new Error(`markMemoryNotLatest: no rows updated for memory #${memoryId}`);
+  }
+}
+
+/**
+ * Re-mark a memory as the latest version (rollback after failed version save).
+ */
+export function markMemoryLatest(memoryId: number): void {
+  const database = getDb();
+  const result = database.prepare(`UPDATE memories SET is_latest = 1 WHERE id = ?`).run(memoryId);
+  if (result.changes === 0) {
+    throw new Error(`markMemoryLatest: no rows updated for memory #${memoryId}`);
+  }
+}
+
+/**
  * Set the is_invariant flag on a memory (auto-detected rule/constraint).
  */
 export function setMemoryInvariant(memoryId: number, isInvariant: boolean): void {

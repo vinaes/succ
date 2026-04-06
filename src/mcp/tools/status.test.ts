@@ -46,6 +46,7 @@ vi.mock('../../lib/storage/index.js', () => ({
 }));
 
 vi.mock('../../lib/config.js', () => ({
+  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
   getDaemonStatuses: vi.fn(async () => [{ name: 'daemon', running: false }]),
   isGlobalOnlyMode: vi.fn(() => false),
   getIdleReflectionConfig: vi.fn(() => ({ operations: { session_summary: true } })),
@@ -56,7 +57,6 @@ vi.mock('../../lib/config.js', () => ({
   })),
   getProjectRoot: vi.fn(() => '/project'),
   getConfig: vi.fn(() => ({ md_api_url: 'https://md.succ.ai' })),
-  getErrorReportingConfig: vi.fn().mockReturnValue({ enabled: false }),
 }));
 
 vi.mock('../../lib/token-counter.js', () => ({

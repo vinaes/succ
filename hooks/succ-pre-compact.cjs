@@ -179,10 +179,11 @@ process.stdin.on('end', async () => {
     }
     if (malformedLines > 0) log(succDir, `Skipped ${malformedLines} malformed transcript lines`);
 
-    // Convert to tokens (chars / 4)
+    // Convert to tokens (chars / 3.5 — Anthropic's recommended heuristic)
+    const CHARS_PER_TOKEN = 3.5;
     const tokenTotals = {};
     for (const key of Object.keys(totals)) {
-      tokenTotals[key] = Math.ceil(totals[key] / 4);
+      tokenTotals[key] = Math.ceil(totals[key] / CHARS_PER_TOKEN);
     }
 
     // Top tools by total tokens (sorted desc, top 10)
@@ -190,7 +191,7 @@ process.stdin.on('end', async () => {
       .map(([name, stats]) => ({
         name,
         calls: stats.calls,
-        tokens: Math.ceil((stats.inputChars + stats.resultChars) / 4),
+        tokens: Math.ceil((stats.inputChars + stats.resultChars) / CHARS_PER_TOKEN),
       }))
       .sort((a, b) => b.tokens - a.tokens)
       .slice(0, 10);
@@ -202,6 +203,9 @@ process.stdin.on('end', async () => {
 
     // ── Save stats ────────────────────────────────────────────────
 
+    // Current transcript file size (bytes) — used by ContextMonitor to reset offset
+    const transcriptBytes = fs.statSync(transcriptPath).size;
+
     const stats = {
       sessionId,
       timestamp: new Date().toISOString(),
@@ -210,6 +214,7 @@ process.stdin.on('end', async () => {
       topTools,
       strippableTokens,
       strippablePercent: parseFloat(strippablePercent),
+      transcriptBytes,
     };
 
     const tmpDir = path.join(succDir, '.tmp');

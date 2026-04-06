@@ -17,6 +17,7 @@ import { FileHashesDispatcherMixin } from './file-hashes.js';
 import { TokenStatsDispatcherMixin } from './token-stats.js';
 import { WebSearchDispatcherMixin } from './web-search.js';
 import { ExportImportDispatcherMixin } from './export-import.js';
+import { AuditDispatcherMixin } from './audit.js';
 
 // Dispatcher state
 let _backend: 'sqlite' | 'postgresql' = 'sqlite';
@@ -130,7 +131,8 @@ interface StorageDispatcherImpl
     FileHashesDispatcherMixin,
     TokenStatsDispatcherMixin,
     WebSearchDispatcherMixin,
-    ExportImportDispatcherMixin {}
+    ExportImportDispatcherMixin,
+    AuditDispatcherMixin {}
 
 applyMixins(StorageDispatcherImpl, [
   DocumentsDispatcherMixin,
@@ -145,6 +147,7 @@ applyMixins(StorageDispatcherImpl, [
   TokenStatsDispatcherMixin,
   WebSearchDispatcherMixin,
   ExportImportDispatcherMixin,
+  AuditDispatcherMixin,
 ]);
 
 export class StorageDispatcher extends StorageDispatcherImpl {
