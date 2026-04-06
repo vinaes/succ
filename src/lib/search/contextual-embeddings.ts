@@ -48,7 +48,9 @@ ${clippedChunk}`;
 
 /**
  * Generate a semantic context description for a code chunk using LLM.
- * Returns the description string, or null on failure (fail-open).
+ * Returns the description string, or null if the response is invalid
+ * (too short/long). Throws on LLM transport errors — callers like
+ * enrichWithContext handle exceptions via the circuit breaker.
  */
 async function generateChunkContext(chunk: Chunk, fileContext: string): Promise<string | null> {
   const prompt = buildContextPrompt(fileContext, chunk.content);
