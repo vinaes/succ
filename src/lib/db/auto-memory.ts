@@ -22,6 +22,7 @@ export function getAutoExtractedMemories(): AutoMemoryRow[] {
     `SELECT id, content, embedding, access_count, confidence, created_at
      FROM memories
      WHERE source_type = 'auto_extracted'
+       AND invalidated_by IS NULL
      ORDER BY created_at DESC`
   ).all() as AutoMemoryRow[];
 }
@@ -158,22 +159,25 @@ export function collectExpiredMemoryIds(): number[] {
 /**
  * Collect IDs of old unused auto-extracted memories eligible for pruning.
  *
- * Unified on forget_after — the single canonical retention field.
- * The maxUnusedDays parameter is kept for interface compat but the actual
- * expiration is driven by the forget_after timestamp set at insertion time.
+ * Prunes by two criteria (OR):
+ * 1. forget_after expired — the canonical retention timestamp set at insertion
+ * 2. Unused for maxUnusedDays — memories not accessed within the retention window
  *
  * Returns IDs only — callers are responsible for deletion so that the storage
  * dispatcher (including Qdrant vector deletion) is invoked correctly.
  */
-export function collectPruneableAutoMemoryIds(_maxUnusedDays: number): number[] {
+export function collectPruneableAutoMemoryIds(maxUnusedDays: number): number[] {
   try {
+    // Prune by forget_after expiry OR by unused duration (whichever matches)
     const rows = cachedPrepare(
       `SELECT id FROM memories
        WHERE source_type = 'auto_extracted'
-       AND forget_after IS NOT NULL
-       AND datetime(forget_after) < datetime('now')
-       AND invalidated_by IS NULL`
-    ).all() as Array<{ id: number }>;
+       AND invalidated_by IS NULL
+       AND (
+         (forget_after IS NOT NULL AND datetime(forget_after) < datetime('now'))
+         OR COALESCE(last_accessed, created_at) < datetime('now', '-' || ? || ' days')
+       )`
+    ).all(maxUnusedDays) as Array<{ id: number }>;
 
     return rows.map((r) => r.id);
   } catch (error) {
@@ -204,7 +208,8 @@ export function getAutoMemoryStatsRow(): AutoMemoryStatsRow {
        SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END) as never_accessed,
        AVG(access_count) as avg_access
      FROM memories
-     WHERE source_type = 'auto_extracted'`
+     WHERE source_type = 'auto_extracted'
+       AND invalidated_by IS NULL`
   ).get() as AutoMemoryStatsRow | undefined;
 
   return {
