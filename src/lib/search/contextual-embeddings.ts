@@ -17,6 +17,17 @@ import type { Chunk } from '../chunker.js';
 /** Circuit breaker: once an LLM call fails hard, skip all remaining calls. */
 let llmCircuitOpen = false;
 
+/** Return the first `n` lines of `text` without allocating a full split array. */
+function firstNLines(text: string, n: number): string {
+  let count = 0;
+  let i = 0;
+  while (i < text.length && count < n) {
+    if (text.charCodeAt(i) === 10) count++;
+    i++;
+  }
+  return text.slice(0, i);
+}
+
 const CONTEXT_SYSTEM =
   'You describe code chunks in one sentence. Be precise and technical. ' +
   'Focus on what the code does, not how. No markdown, no bullet points.';
@@ -72,8 +83,7 @@ export async function enrichWithContext(
   enrichFn: (chunk: Chunk) => string
 ): Promise<string[]> {
   // Use first 200 lines as file context (prompt caching makes repeated calls cheap)
-  const fileLines = fileContent.split('\n');
-  const fileContext = fileLines.slice(0, 200).join('\n');
+  const fileContext = firstNLines(fileContent, 200);
 
   const results: string[] = [];
   let contextGenerated = 0;
