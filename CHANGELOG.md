@@ -5,6 +5,78 @@ All notable changes to succ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Context pressure monitoring** — per-session context window usage tracking with escalating advisory tiers (none → low → medium → high → critical). Injects `/compact` advisories into hook context when usage exceeds configurable threshold. Preemptive memory extraction at high pressure prevents data loss before compaction. New daemon endpoints `GET /api/context-usage` and `POST /api/context-usage/ack`. Config: `auto_compact.threshold_percent` (5–80%, default 15), `cooldown_seconds` (90), `preemptive_extract` (true)
+- **Token budget context awareness** — `setContextLimit()` / `getSessionContextLimit()` store detected context limit per session in token budget tracker, decoupling detection from downstream consumers (pricing, status)
+- **AST-grep structural pattern matching** — tree-sitter-based structural code search via metavariable patterns (e.g., `catch ($ERR) {}`, `$FUNC($$$ARGS)`) in `succ_search_code`. 5 built-in languages (TS/JS/TSX/CSS/HTML) + 15 optional via `@ast-grep/lang-*` (Python, Go, Rust, Java, C, C++, C#, Ruby, Kotlin, Swift, Bash, Scala, PHP, JSON, YAML). New `pattern` parameter on `succ_search_code`
+- **Undercover mode** — best-effort suppression of all AI/succ attribution in commits, PRs, branch names, code comments. Multi-layer: XML hook injection + `.claude/settings.local.json` sync + runtime suppression. Symlink/junction safety, Windows 8.3 normalization, snapshot/restore on disable. Config: `undercover: true`
+- **PPR graph traversal** — Personalized PageRank as third RRF signal in memory search. Seeds from top-10 base results, discovers graph-connected memories invisible to text/vector. Three-signal weighted RRF fusion (text + vector + graph). Config: `retrieval.graph_ppr_enabled` (false), `retrieval.graph_ppr_weight` (0.3)
+- **Bi-temporal document tracking** — soft-delete code chunks with `superseded_at` + `git_commit_date` columns. Re-index marks old versions, configurable TTL cleanup via `purgeSupersededDocuments()`. All queries filter `superseded_at IS NULL`. Partial unique index preserves constraint safety
+- **Auto-memory extraction consolidation** — LLM-driven ADD/UPDATE/DELETE/NONE decisions per extracted fact instead of naive similarity dedup. Embeds fact → vector-searches top-5 similar → ID remap → LLM decides → batch execute. Graceful fallback to ADD on LLM failure. Config: `auto_memory.extraction_consolidation` (false)
+- **Transcript path auto-discovery** — resolves `transcript_path` from session ID + project directory hash for VSCode extension sessions where hook stdin omits it
+- **Lazy daemon startup** — non-blocking `ensureDaemonLazy()` replaces blocking `getDaemonPort()` in all per-tool hooks. Atomic wx lock, 10s stale timeout. Hooks fire in <100ms instead of 2–5s daemon wait
+- **Recall query sanitization** — PII/secret masking (email, URL, JWT, API key, hex, base64, long numbers) in recall events before storage. All patterns ReDoS-safe. Config: `privacy.recall.retention_days` (30)
+- **New hooks** — `succ-permission.cjs` (auto-approve/deny via hook-rules), `succ-subagent-stop.cjs` (subagent lifecycle), `succ-task-completed.cjs` (memory curator trigger), `succ-worktree-remove.cjs` (safe junction cleanup before worktree removal)
+- **New daemon endpoints** — `POST /api/hooks/permission`, `POST /api/hooks/subagent-stop`, `POST /api/hooks/task-completed`
+- **New config options** — `auto_compact.*`, `retrieval.graph_ppr_enabled`, `retrieval.graph_ppr_weight`, `auto_memory.extraction_consolidation`, `privacy.recall.retention_days`, `undercover`
+
+### Changed
+
+- Session register response now includes `detected_context_limit` field
+- `GET /api/status` includes per-session `context_usage` map
+- `succ_search_code` accepts `pattern` parameter for structural AST search
+- `skills` table UNIQUE changed from `(name)` to `(project_id, name)` for project scoping
+- `token_stats` table gains `model` and `estimated_cost` columns
+- `documents` table gains `superseded_at` and `git_commit_date` columns with partial unique index
+- All schema migrations use `safeMigrate()` helper for graceful duplicate-column handling
+- Qdrant HNSW parameters increased: m=16→32, ef_construct=100→200 for improved recall
+- PostgreSQL: connection pooling (idle timeout 30s), prepared statement cache for frequent queries, EXPLAIN logging for slow queries >100ms, composite indexes on (project_id, source_type, type)
+- Legacy `sleep_agent` config path deprecated — new path: `llm.sleep.enabled` (fallback with warning)
+
+### Fixed
+
+- **[CRITICAL] Worktree junction data loss** — `.succ/` junction following on cleanup could destroy main repo database, config, brain vault. Replaced full-directory junction with targeted subdirectory junctions (hooks/, .tmp/ only). Added `WorktreeRemove` hook + `unlinkJunctionsBeforeRemoval()` safety net (3 independent safeguards)
+- **[HIGH] URL credential exposure** — web-fetch error responses leaked original URL with credentials in query params. Now uses redacted URL
+- **Dual daemon startup race** — concurrent hooks could spawn multiple daemons corrupting state. Fixed with atomic wx spawn lock + PID mutex
+- **EPIPE crash loop** — when parent closes stderr, log→EPIPE→uncaughtException→log infinite loop blocked event loop. Added `stderrBroken` flag
+- **Embedding retry storm** — `getNativeSession()` retried on every call after failure (e.g., HuggingFace 401), degrading responsiveness. Added 60s circuit breaker cooldown
+- **Blocking readFileSync in daemon** — converted to `fs.promises.readFile` with `BATCH_CONCURRENCY=5` limit
+- **Pre-compact stats never displayed** — `normalizeInput()` called with 3 args instead of 2, making `session_id` and `transcript_path` undefined
+- **Negative context usage after compact** — monitor offset reset to pre-compact bytes instead of post-compact file size
+- **Side-effect in GET /api/status** — computing usage mutated monitor state. Added `peekUsage()` without side effects
+- **N+1 query in deleteDocumentsByPath** — batch with `IN(...)` clause, chunked for SQLite bind limits
+- **Promise.all batch failures** — graph operations used `Promise.all`, one failure aborted entire batch. Changed to `Promise.allSettled` with per-failure logging
+- **JSON.parse crash on malformed tags** — single corrupted row crashed global memory search. Added `parseTags()` wrapper returning `[]` on error
+- **Superseded row leakage** — queries returned stale documents post-reindex. Added `superseded_at IS NULL` filter to all retrieval paths
+- **Cache unbounded growth** — `getGraph()` Map had no eviction. Added stale-entry eviction on reconciliation
+- **ReDoS in SQL regex filters** — untrusted patterns with nested quantifiers could trigger catastrophic backtracking. Added `safe-regex2` AST analysis
+- **Path traversal in parseMultiFileOutput** — replaced `startsWith` with `path.relative` + `sanitizeFilename` defense-in-depth
+- **Timer prevents daemon exit** — `setInterval` lacked `.unref()`, blocking process termination
+- **FD leaks in context monitor** — `readTranscriptTail` and `getLatestInputTokens` missing `try/finally` for `fs.closeSync`
+- **Windows 8.3 path in transcript hash** — applied `realpathSync.native` (Windows-only) for consistent hashing
+- **ACK killed on process.exit** — context-usage ACK fetch terminated before response. Now awaits ACK before exit
+- **XML injection guard incomplete** — missing `</context-pressure>` in Tier 1 closing-tag regex
+- **70+ silent catch blocks** — systematic campaign across daemon, hooks (34 catches), MCP core/tools, lib/, commands. All now log via `logWarn()` / `console.error` / `log()` helper
+- **O(n²) compartment array copies** — replaced spread in loop with `push()` in guardrails
+- Type safety uplift: removed `as any` casts across 20+ files, introduced proper interfaces (`RawMemoryLinkRow`, `RecallStatsRow`)
+- Async correctness: missing `await` on file I/O, unbounded concurrency, missing `.catch()` chains — fixed across daemon, storage, MCP layers
+
+### Dependencies
+
+- `better-sqlite3` 12.6.2 → 12.8.0
+- `sqlite-vec` 0.1.7-alpha.2 → 0.1.7 (stable release)
+- `onnxruntime-node` 1.24.1 → 1.24.3
+- `hono` 4.11.10 → 4.12.7 (fixes 4 CVEs: prototype pollution, serveStatic, setCookie, SSE injection)
+- `@hono/node-server` 1.19.9 → 1.19.11 (auth bypass via encoded slashes)
+- `express-rate-limit` 8.2.1 → 8.3.1 (IPv4-mapped IPv6 bypass)
+- `rollup` 4.57.1 → 4.59.0 (path traversal file write)
+- `@ast-grep/napi` ^0.42.0 (new — structural search core)
+- `safe-regex2` ^5.1.0 (new — ReDoS protection)
+- 7 security vulnerabilities patched via npm audit fix
+
 ## [1.5.42] - 2026-03-12
 
 ### Added

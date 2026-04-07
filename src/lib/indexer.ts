@@ -112,7 +112,7 @@ export async function runIndexer(options: IndexerOptions): Promise<IndexerResult
   let contextualEnabled = false;
   if (pathPrefix === 'code:') {
     const { getConfig } = await import('./config.js');
-    contextualEnabled = getConfig().indexing?.contextual_embeddings === true;
+    contextualEnabled = getConfig().indexing?.contextual_embeddings !== false;
 
     // Reset circuit breaker once per indexing run so LLM enrichment gets a fresh chance
     if (contextualEnabled) {

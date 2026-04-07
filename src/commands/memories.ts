@@ -341,7 +341,9 @@ export async function remember(content: string, options: RememberOptions = {}): 
       // Check if it passes the threshold
       if (!passesQualityThreshold(qualityScore)) {
         console.log(`⚠ Memory quality too low: ${formatQualityScore(qualityScore)}`);
-        console.log(`  Threshold: ${((config.quality_scoring_threshold ?? 0) * 100).toFixed(0)}%`);
+        console.log(
+          `  Threshold: ${((config.quality_scoring_threshold ?? 0.3) * 100).toFixed(0)}%`
+        );
         console.log(`  Use --skip-quality to bypass or lower the threshold in config.`);
         closeDb();
         closeGlobalDb();

@@ -62,7 +62,7 @@ export interface SuccConfig {
   graph_export_path?: string; // Custom export path (default: .succ/brain/graph)
   // Quality scoring feature toggles (mode/model/api under llm.quality.*)
   quality_scoring_enabled?: boolean; // Enable quality scoring for memories (default: true)
-  quality_scoring_threshold?: number; // Minimum quality score to keep (0-1, default: 0)
+  quality_scoring_threshold?: number; // Minimum quality score to keep (0-1, default: 0.3)
   // Sensitive info filter settings
   sensitive_filter_enabled?: boolean; // Enable sensitive info detection (default: true)
   sensitive_auto_redact?: boolean; // Auto-redact sensitive info without prompting (default: false)
@@ -88,7 +88,7 @@ export interface SuccConfig {
   compact_briefing?: CompactBriefingConfig;
   // Commit format settings
   includeCoAuthoredBy?: boolean; // Include commit guidelines in session-start hook (default: true)
-  preCommitReview?: boolean; // Run succ-diff-reviewer agent before git commit (default: false)
+  preCommitReview?: boolean; // Run succ-diff-reviewer agent before git commit (default: true)
   // Undercover mode — hide all AI/succ attribution in commits, PRs, and code (default: false)
   undercover?: boolean;
   communicationAutoAdapt?: boolean; // Allow Claude to auto-update communication preferences in soul.md (default: true)
@@ -159,7 +159,7 @@ export interface IndexingConfig {
   max_file_size_kb?: number;
   /** Concurrency limit for parallel file indexing (default: 3) */
   concurrency?: number;
-  /** LLM-generated semantic context for each chunk before embedding (default: false). Costs 1 LLM call per chunk. */
+  /** LLM-generated semantic context for each chunk before embedding (default: true). Costs 1 LLM call per chunk via Claude WS. */
   contextual_embeddings?: boolean;
 }
 
@@ -383,7 +383,7 @@ export interface DaemonConfig {
   watch?: {
     auto_start?: boolean; // Auto-start watch service (default: false)
     patterns?: string[]; // Patterns to watch (default: ['**/*.md'])
-    include_code?: boolean; // Also watch code files (default: false)
+    include_code?: boolean; // Also watch code files (default: true)
     debounce_ms?: number; // Debounce interval (default: 500)
   };
   analyze?: {
@@ -442,13 +442,13 @@ export interface GraphContextualProximityConfig {
 }
 
 export interface GraphCommunityDetectionConfig {
-  enabled?: boolean; // Enable community detection (default: false)
+  enabled?: boolean; // Enable community detection (default: true)
   max_iterations?: number; // Label propagation max iterations (default: 100)
   min_community_size?: number; // Min members to form a community (default: 2)
 }
 
 export interface GraphCentralityConfig {
-  enabled?: boolean; // Enable centrality boost in recall (default: false)
+  enabled?: boolean; // Enable centrality boost in recall (default: true)
   boost_weight?: number; // Weight of centrality boost (default: 0.1)
   cache_ttl_hours?: number; // Centrality cache TTL in hours (default: 24)
 }
@@ -475,15 +475,15 @@ export interface RetrievalConfig {
   default_top_k?: number; // Default number of results for recall (default: 10)
   temporal_auto_skip?: boolean; // Auto-disable decay when all results <24h old (default: true)
   preference_quality_boost?: boolean; // Lower quality threshold for preference facts (default: true)
-  quality_boost_enabled?: boolean; // Boost ranking by quality_score at retrieval time (default: false)
+  quality_boost_enabled?: boolean; // Boost ranking by quality_score at retrieval time (default: true)
   quality_boost_weight?: number; // Weight for quality boost: 0=no effect, 1=full effect (default: 0.15)
-  mmr_enabled?: boolean; // Maximal Marginal Relevance diversity reranking (default: false)
+  mmr_enabled?: boolean; // Maximal Marginal Relevance diversity reranking (default: true)
   mmr_lambda?: number; // MMR balance: 1=pure relevance, 0=pure diversity (default: 0.8)
-  query_expansion_enabled?: boolean; // LLM-based query expansion for richer recall (default: false)
+  query_expansion_enabled?: boolean; // LLM-based query expansion for richer recall (default: true)
   query_expansion_mode?: 'claude' | 'api'; // LLM backend for expansion (default: from llm.type)
   graph_ppr_enabled?: boolean; // Use PPR graph traversal as 3rd RRF signal in memory search (default: false)
   graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
-  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: false)
+  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: true)
   rrf_k?: number; // RRF constant: lower (20-40) favors top results, 60 is standard (default: 60)
   adaptive_alpha?: boolean; // Auto-detect query type and adjust BM25/vector balance (default: true)
 }
@@ -514,7 +514,7 @@ export interface ErrorReportingConfig {
 }
 
 export interface BPETokenizerConfig {
-  enabled?: boolean; // Enable BPE tokenizer (default: false)
+  enabled?: boolean; // Enable BPE tokenizer (default: true)
   vocab_size?: number; // Target vocabulary size (default: 5000)
   min_frequency?: number; // Minimum pair frequency to merge (default: 2)
   retrain_interval?: 'hourly' | 'daily'; // When to retrain (default: 'hourly')

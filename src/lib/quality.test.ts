@@ -108,7 +108,18 @@ describe('Quality Scoring', () => {
       expect(passesQualityThreshold(score, 0.5)).toBe(false);
     });
 
-    it('should pass with default threshold of 0', () => {
+    it('should pass with default threshold of 0.3', () => {
+      const score: QualityScore = {
+        score: 0.5,
+        confidence: 0.8,
+        factors: { specificity: 0.5, clarity: 0.5, relevance: 0.5, uniqueness: 0.5 },
+        mode: 'heuristic',
+      };
+
+      expect(passesQualityThreshold(score)).toBe(true);
+    });
+
+    it('should reject below default threshold of 0.3', () => {
       const score: QualityScore = {
         score: 0.1,
         confidence: 0.8,
@@ -116,7 +127,7 @@ describe('Quality Scoring', () => {
         mode: 'heuristic',
       };
 
-      expect(passesQualityThreshold(score)).toBe(true);
+      expect(passesQualityThreshold(score)).toBe(false);
     });
 
     it('should use exact threshold boundary', () => {

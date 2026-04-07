@@ -1,6 +1,6 @@
 {
   "name": "@vinaes/succ",
-  "version": "1.6.19",
+  "version": "1.6.23",
   "description": "Semantic Understanding for Code Contexts — persistent memory for AI coding assistants (Claude Code, Cursor, Windsurf, Continue.dev)",
   "type": "module",
   "publishConfig": {

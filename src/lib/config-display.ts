@@ -157,7 +157,7 @@ export function getConfigDisplay(maskSecrets: boolean = true): ConfigDisplay {
     },
     quality: {
       enabled: config.quality_scoring_enabled ?? true,
-      threshold: config.quality_scoring_threshold ?? 0,
+      threshold: config.quality_scoring_threshold ?? 0.3,
     },
     sensitive: {
       enabled: config.sensitive_filter_enabled ?? true,

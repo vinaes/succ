@@ -629,7 +629,7 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
     await startWatcher(
       {
         patterns: watchConfig.patterns || ['**/*.md'],
-        includeCode: watchConfig.include_code ?? false,
+        includeCode: watchConfig.include_code ?? true,
         debounceMs: watchConfig.debounce_ms ?? 500,
       },
       log

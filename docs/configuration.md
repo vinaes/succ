@@ -318,6 +318,7 @@ Controls how documents are split for indexing.
 |--------|------|---------|-------------|
 | `chunk_size` | number | 500 | Max characters per chunk |
 | `chunk_overlap` | number | 50 | Overlap between chunks |
+| `indexing.contextual_embeddings` | boolean | true | LLM-generated semantic context per chunk before embedding (via Claude WS). +35-49% recall improvement |
 
 ---
 
@@ -463,7 +464,7 @@ Quality scoring is configured under the `llm.quality` namespace, consistent with
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `quality_scoring_enabled` | boolean | true | Enable quality scoring |
-| `quality_scoring_threshold` | number | 0 | Min score to keep (0-1) |
+| `quality_scoring_threshold` | number | 0.3 | Min score to keep (0-1) |
 | `llm.quality.mode` | `"local"` \| `"api"` | `"local"` | Scoring provider |
 | `llm.quality.model` | string | - | Model for LLM-based scoring |
 | `llm.quality.api_url` | string | - | API URL for custom mode |
@@ -560,7 +561,7 @@ Auto-group memories into thematic communities via Label Propagation algorithm. R
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `graph_community_detection.enabled` | boolean | false | Enable community detection |
+| `graph_community_detection.enabled` | boolean | true | Enable community detection |
 | `graph_community_detection.algorithm` | string | `"label-propagation"` | Detection algorithm |
 | `graph_community_detection.max_iterations` | number | 100 | Max LP iterations |
 | `graph_community_detection.min_community_size` | number | 2 | Min members to form a community |
@@ -586,7 +587,7 @@ Degree centrality scoring with recall boost — well-connected memories rank hig
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `graph_centrality.enabled` | boolean | false | Enable centrality boost |
+| `graph_centrality.enabled` | boolean | true | Enable centrality boost |
 | `graph_centrality.algorithm` | string | `"degree"` | Centrality algorithm |
 | `graph_centrality.boost_weight` | number | 0.1 | Max recall boost (10%) |
 | `graph_centrality.cache_ttl_hours` | number | 24 | Cache TTL for scores |
@@ -649,7 +650,7 @@ Set to `false` to disable the `<commit-format>` block injection:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `preCommitReview` | boolean | false | Run `succ-diff-reviewer` agent before every git commit |
+| `preCommitReview` | boolean | true | Run `succ-diff-reviewer` agent before every git commit |
 
 When enabled, the `PreToolUse` hook injects a `<pre-commit-review>` instruction at the exact moment Claude attempts a `git commit`. This tells the AI to run the `succ-diff-reviewer` agent on staged changes before committing. The agent checks for security issues (OWASP Top 10), bugs, regressions, and leftover debug code.
 
@@ -1134,11 +1135,11 @@ Controls the background daemon service.
 | `daemon.enabled` | boolean | true | Enable daemon |
 | `daemon.port` | number | (auto) | Fixed daemon port. Default: deterministic hash of project path (range 18000-27999). Set explicitly if firewall or port conflicts require a specific port |
 | `daemon.port_range_start` | number | 37842 | Starting port for fallback scan if stable port is unavailable |
-| `daemon.watch.auto_start` | boolean | false | Auto-start file watcher |
+| `daemon.watch.auto_start` | boolean | true | Auto-start file watcher |
 | `daemon.watch.patterns` | string[] | `["**/*.md"]` | Watch patterns |
-| `daemon.watch.include_code` | boolean | false | Watch code files |
+| `daemon.watch.include_code` | boolean | true | Watch code files |
 | `daemon.watch.debounce_ms` | number | 500 | Debounce interval |
-| `daemon.analyze.auto_start` | boolean | false | Auto-start analyzer |
+| `daemon.analyze.auto_start` | boolean | true | Auto-start analyzer |
 | `daemon.analyze.interval_minutes` | number | 30 | Analysis interval |
 | `daemon.analyze.mode` | `"claude"` \| `"openrouter"` \| `"local"` | `"claude"` | Analysis LLM mode (legacy, prefer `llm.*`) |
 
@@ -1163,7 +1164,7 @@ Triggers reflections after periods of inactivity.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `idle_watcher.enabled` | boolean | true | Enable idle detection |
-| `idle_watcher.idle_minutes` | number | 2 | Minutes before reflection |
+| `idle_watcher.idle_minutes` | number | 5 | Minutes before reflection |
 | `idle_watcher.check_interval` | number | 30 | Seconds between checks |
 | `idle_watcher.min_conversation_length` | number | 5 | Min entries to trigger |
 | `idle_watcher.reflection_cooldown_minutes` | number | 30 | Cooldown between reflections |
@@ -1421,7 +1422,7 @@ Optional enhancement for better text segmentation.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `bpe.enabled` | boolean | false | Enable BPE tokenizer |
+| `bpe.enabled` | boolean | true | Enable BPE tokenizer |
 | `bpe.vocab_size` | number | 5000 | Vocabulary size |
 | `bpe.min_frequency` | number | 2 | Min pair frequency |
 | `bpe.retrain_interval` | `"hourly"` \| `"daily"` | `"hourly"` | Retrain schedule |
@@ -1453,7 +1454,7 @@ Controls the briefing generated after `/compact`.
 | `compact_briefing.format` | `"structured"` \| `"prose"` \| `"minimal"` | `"structured"` | Output format |
 | `compact_briefing.include_learnings` | boolean | true | Include learnings |
 | `compact_briefing.include_memories` | boolean | true | Include memories |
-| `compact_briefing.max_memories` | number | 3 | Max memories |
+| `compact_briefing.max_memories` | number | 5 | Max memories |
 | `compact_briefing.timeout_ms` | number | 30000 | LLM timeout |
 
 ---
@@ -1517,7 +1518,7 @@ LLM-powered skill discovery and suggestions.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `skills.skyll.enabled` | boolean | true | Enable Skyll integration |
+| `skills.skyll.enabled` | boolean | false | Enable Skyll integration |
 | `skills.skyll.endpoint` | string | `"https://api.skyll.app"` | Skyll API URL |
 | `skills.skyll.api_key` | string | - | Optional API key for higher limits |
 | `skills.skyll.cache_ttl` | number | 604800 | Cache TTL in seconds (7 days) |
@@ -1560,12 +1561,13 @@ Fine-tune search result ranking and expansion.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `retrieval.quality_boost_enabled` | boolean | false | Boost results by quality score |
+| `retrieval.quality_boost_enabled` | boolean | true | Boost results by quality score |
 | `retrieval.quality_boost_weight` | number | 0.15 | Weight of quality boost (0-1) |
-| `retrieval.mmr_enabled` | boolean | false | Enable Maximal Marginal Relevance for diversity |
+| `retrieval.mmr_enabled` | boolean | true | Enable Maximal Marginal Relevance for diversity |
 | `retrieval.mmr_lambda` | number | 0.8 | MMR trade-off: 1.0 = pure relevance, 0.0 = pure diversity |
-| `retrieval.query_expansion_enabled` | boolean | false | Expand queries with synonyms/related terms |
+| `retrieval.query_expansion_enabled` | boolean | true | Expand queries with synonyms/related terms (via Claude WS) |
 | `retrieval.query_expansion_mode` | string | from `llm.type` | LLM backend for expansion |
+| `retrieval.query_decomposition_enabled` | boolean | true | Split complex multi-concept queries into sub-queries (via Claude WS) |
 
 ```json
 {
@@ -1573,7 +1575,9 @@ Fine-tune search result ranking and expansion.
     "mmr_enabled": true,
     "mmr_lambda": 0.7,
     "quality_boost_enabled": true,
-    "quality_boost_weight": 0.15
+    "quality_boost_weight": 0.15,
+    "query_expansion_enabled": true,
+    "query_decomposition_enabled": true
   }
 }
 ```
@@ -1614,7 +1618,7 @@ The reranker loads lazily on first search and uses the same GPU fallback chain a
 
 ## Auto Memory Settings
 
-Automatic memory extraction from coding sessions. Phase 1 extracts facts at session end via LLM with a quality gate. Phase 2 periodically consolidates (merges duplicates, promotes high-usage memories).
+Automatic memory extraction from coding sessions. Facts are extracted at session end via LLM with a quality gate, then periodically consolidated (merges duplicates, promotes high-usage memories). When extraction consolidation is enabled, each extracted fact goes through intelligent ADD/UPDATE/DELETE/NONE decisions before storage.
 
 ```json
 {
@@ -1625,7 +1629,8 @@ Automatic memory extraction from coding sessions. Phase 1 extracts facts at sess
     "quality_threshold": 0.7,
     "secret_redaction": true,
     "max_unused_days": 90,
-    "confidence_promotion_accesses": 5
+    "confidence_promotion_accesses": 5,
+    "extraction_consolidation": false
   }
 }
 ```
@@ -1639,6 +1644,26 @@ Automatic memory extraction from coding sessions. Phase 1 extracts facts at sess
 | `auto_memory.secret_redaction` | boolean | true | Redact secrets before storing |
 | `auto_memory.max_unused_days` | number | 90 | Auto-prune after N days unused (0 to disable) |
 | `auto_memory.confidence_promotion_accesses` | number | 5 | Promote after N accesses |
+| `auto_memory.extraction_consolidation` | boolean | false | Enable LLM-driven fact consolidation (ADD/UPDATE/DELETE/NONE decisions per extracted fact vs. existing memories) |
+
+### Extraction Consolidation
+
+When `extraction_consolidation` is enabled, each extracted fact goes through an intelligent decision loop instead of naive similarity-based dedup:
+
+1. Embed the fact and vector-search top-5 similar existing memories (threshold 0.75)
+2. Remap real memory IDs to sequential integers (prevents LLM UUID hallucination)
+3. LLM decides: **ADD** (genuinely new), **UPDATE** (improves/corrects old), **DELETE** (old was wrong), **NONE** (already known)
+4. Execute batch save/update/delete operations
+
+On LLM failure, gracefully falls back to ADD (no facts lost). LLM timeout: 30s.
+
+```json
+{
+  "auto_memory": {
+    "extraction_consolidation": true
+  }
+}
+```
 
 ---
 
@@ -1822,6 +1847,162 @@ succ_config action="set" key="error_reporting.level" value="error"
 
 ---
 
+## Context Pressure Monitoring (Auto-Compact)
+
+Per-session context window usage tracking with escalating advisory tiers. When usage exceeds the threshold, succ injects `/compact` advisories into hook context. At high pressure, preemptive memory extraction runs to prevent data loss before compaction.
+
+```json
+{
+  "auto_compact": {
+    "enabled": true,
+    "threshold_percent": 15,
+    "cooldown_seconds": 90,
+    "context_limit": 0,
+    "preemptive_extract": true
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `auto_compact.enabled` | boolean | true | Enable context pressure monitoring |
+| `auto_compact.threshold_percent` | number | 15 | Usage % at which advisories begin (range: 5–80) |
+| `auto_compact.cooldown_seconds` | number | 90 | Minimum seconds between advisories |
+| `auto_compact.context_limit` | number | 0 | Explicit context window override in tokens (0 = auto-detect) |
+| `auto_compact.preemptive_extract` | boolean | true | Run memory extraction at high/critical pressure before compaction |
+
+### Context Limit Detection
+
+When `context_limit` is 0 (default), succ auto-detects the context window via this priority chain:
+
+1. Explicit config override (`auto_compact.context_limit`)
+2. `ANTHROPIC_MODEL` environment variable
+3. Real `input_tokens` from API responses in transcript (>200K signals large model)
+4. Self-report line (`succ-model-info:`) in transcript
+5. Model family heuristic: Opus → 1M, Haiku → 200K, Sonnet → null (ambiguous)
+
+### Urgency Tiers
+
+| Tier | Context Used % | Behavior |
+|------|----------------|----------|
+| none | < threshold | No advisory |
+| low | ≥ threshold | Informational — suggest `/compact` when convenient |
+| medium | ≥ threshold + 15 | Warning — recommend `/compact` soon |
+| high | ≥ threshold + 30 | Urgent — preemptive extraction fires, strong advisory |
+| critical | ≥ 80% | Critical — immediate `/compact` strongly recommended |
+
+### Daemon API
+
+- `GET /api/context-usage?session_id={id}` — returns `ContextUsage` with `tokens_used`, `tokens_limit`, `usage_percent`, `should_compact`, `urgency`, `cooldown_active`
+- `POST /api/context-usage/ack?session_id={id}` — mark advisory as acknowledged (resets cooldown)
+
+---
+
+## Retrieval Settings (PPR Graph Traversal)
+
+Personalized PageRank (PPR) can be used as a third signal in memory search, discovering graph-connected memories invisible to text/vector search alone.
+
+```json
+{
+  "retrieval": {
+    "graph_ppr_enabled": true,
+    "graph_ppr_weight": 0.3
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retrieval.graph_ppr_enabled` | boolean | false | Enable PPR as third RRF signal in memory search |
+| `retrieval.graph_ppr_weight` | number | 0.3 | PPR weight in RRF fusion (0–1). Higher = more graph influence |
+
+### How PPR Search Works
+
+1. Standard BM25 + vector hybrid search (2x limit for wider base)
+2. Top-10 results seed Personalized PageRank traversal
+3. PPR discovers related memories 1+ hops away via graph edges
+4. Weighted RRF merge: `textWeight / (K + rank + 1) + graphWeight / (K + rank + 1)` (K=60)
+5. Batch-fetch hydration for graph-only results (avoids N+1 lookups)
+
+Clamped to [0, 1] with NaN/Infinity guard. Falls back to base results on PPR failure.
+
+---
+
+## Privacy Settings
+
+Controls PII redaction and data retention for recall events.
+
+```json
+{
+  "privacy": {
+    "recall": {
+      "retention_days": 30
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `privacy.recall.retention_days` | number | 30 | Delete recall events older than N days (0 to disable) |
+
+### Query Sanitization
+
+All recall queries are automatically sanitized before persistent storage. The following patterns are redacted:
+
+- **Email addresses** — RFC 5321 compliant, ReDoS-safe
+- **URLs** — `https?://` patterns
+- **JWT tokens** — 3 base64url segments, min 20 chars each
+- **API keys** — prefixed patterns (`sk-`, `pk-`, `key-`, `api-`, `token-`, `secret-`) + 8+ alphanumeric
+- **Hex strings** — 32+ consecutive hex characters
+- **Base64 strings** — 32+ base64 characters (distinguished from hex)
+- **Long numbers** — 6+ consecutive digits (credit cards, account IDs)
+
+Retention cleanup runs daily via the daemon scheduler. Timer is unreferenced (`.unref()`) so it doesn't prevent daemon exit.
+
+---
+
+## Undercover Mode
+
+Best-effort suppression of all AI/succ attribution in commits, PRs, branch names, code comments, and user-visible output. Multi-layer defense: config flag + Claude Code settings sync + XML hook injections.
+
+```json
+{
+  "undercover": true
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `undercover` | boolean | false | Hide all AI/succ attribution |
+
+### What Gets Suppressed
+
+- `Co-Authored-By` trailers in git commits
+- "Generated with Claude Code" and similar attribution
+- AI model names in commit messages and PR descriptions
+- AI-related labels on branches and PRs
+- succ branding in code comments
+
+### How It Works
+
+1. **Session-start hook** injects `<undercover priority="critical">` XML block — highest-priority context
+2. **Pre-tool hook** injects `<undercover-reminder>` for `git commit` and `gh pr` commands
+3. **Settings sync** writes `.claude/settings.local.json` with `includeGitInstructions: false`, `includeCoAuthoredBy: false`
+4. Original settings are snapshotted on enable and restored on disable
+
+### Safety
+
+- Symlink/junction detection via `lstat()` prevents writes through dangling symlinks
+- Containment check: all write targets must resolve within project directory
+- Windows 8.3 path normalization via `fs.realpathSync.native()`
+- Skips self-heal when `.claude/` directory doesn't exist (prevents new git-tracked artifacts)
+- JSON parse results validated with type guards
+
+Enable via MCP: `succ_config action="set" key="undercover" value="true"`
+
+---
+
 ## Full Example Configuration
 
 ```json
@@ -1882,7 +2063,7 @@ succ_config action="set" key="error_reporting.level" value="error"
   "dead_end_boost": 0.15,
 
   "includeCoAuthoredBy": true,
-  "preCommitReview": false,
+  "preCommitReview": true,
   "communicationAutoAdapt": true,
   "communicationTrackHistory": false,
 
@@ -1898,8 +2079,12 @@ succ_config action="set" key="error_reporting.level" value="error"
   "daemon": {
     "enabled": true,
     "watch": {
-      "auto_start": false,
+      "auto_start": true,
+      "include_code": true,
       "patterns": ["**/*.md"]
+    },
+    "analyze": {
+      "auto_start": true
     }
   },
 
@@ -1910,7 +2095,7 @@ succ_config action="set" key="error_reporting.level" value="error"
 
   "idle_watcher": {
     "enabled": true,
-    "idle_minutes": 2
+    "idle_minutes": 5
   },
 
   "idle_reflection": {
@@ -1932,7 +2117,7 @@ succ_config action="set" key="error_reporting.level" value="error"
     "enabled": true,
     "format": "structured",
     "include_memories": true,
-    "max_memories": 3
+    "max_memories": 5
   },
 
   "skills": {
@@ -1942,7 +2127,7 @@ succ_config action="set" key="error_reporting.level" value="error"
       "min_confidence": 0.7
     },
     "skyll": {
-      "enabled": true,
+      "enabled": false,
       "only_when_no_local": true
     }
   },
@@ -1974,7 +2159,36 @@ succ_config action="set" key="error_reporting.level" value="error"
     "enabled": true,
     "level": "warn",
     "max_file_size_mb": 5
-  }
+  },
+
+  "auto_compact": {
+    "enabled": true,
+    "threshold_percent": 15,
+    "cooldown_seconds": 90,
+    "preemptive_extract": true
+  },
+
+  "retrieval": {
+    "quality_boost_enabled": true,
+    "mmr_enabled": true,
+    "query_expansion_enabled": true,
+    "query_decomposition_enabled": true,
+    "graph_ppr_enabled": false,
+    "graph_ppr_weight": 0.3
+  },
+
+  "auto_memory": {
+    "enabled": true,
+    "extraction_consolidation": false
+  },
+
+  "privacy": {
+    "recall": {
+      "retention_days": 30
+    }
+  },
+
+  "undercover": false
 }
 ```
 

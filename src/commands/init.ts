@@ -991,13 +991,13 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
           description: 'Full automation: watch + periodic discovery',
         },
       ],
-      default: 'none',
+      default: 'both',
     });
 
     // Initialize daemon config
     const daemonConfig: any = {
       enabled: true,
-      watch: { auto_start: false },
+      watch: { auto_start: false, include_code: true },
       analyze: { auto_start: false },
     };
 

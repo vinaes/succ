@@ -53,12 +53,16 @@ succ analyze
 
 | Feature | Description |
 |---------|-------------|
-| **Hybrid Search** | Semantic embeddings + BM25 keyword matching with cross-encoder reranking and AST symbol boost |
+| **Hybrid Search** | BM25 + vector + PPR graph traversal with cross-encoder reranking and AST symbol boost |
 | **Structural Pattern Search** | ast-grep structural matching across 20 languages — find code by AST shape, not just text (e.g. `try { $$$BODY } catch ($ERR) { }`) |
+| **Context Pressure Monitor** | Per-session context window tracking with escalating advisories — auto-suggests `/compact` before quality degrades |
+| **Undercover Mode** | Best-effort suppression of AI/succ attribution in commits, PRs, branches, and code comments |
+| **Smart Memory Consolidation** | LLM-driven ADD/UPDATE/DELETE decisions on extracted facts — replaces naive dedup with semantic understanding |
+| **Bi-Temporal Documents** | Soft-delete versioning for code chunks with `superseded_at` tracking and configurable retention TTL |
 | **AST Code Indexing** | Tree-sitter parsing for 21 languages — 13 with full symbol extraction, 8 grammar-only |
 | **Code Scanning** | Recursive code discovery and indexing via `succ_index action="scan"` with .succignore support |
 | **Brain Vault** | Obsidian-compatible markdown knowledge base with hierarchical summaries |
-| **Persistent Memory** | Decisions, learnings, patterns across sessions with auto-extraction |
+| **Persistent Memory** | Decisions, learnings, patterns across sessions with auto-extraction and intelligent consolidation |
 | **Cross-Project** | Global memories shared between all projects; cross-repo search |
 | **Knowledge Graph** | Directed graph with PPR, SCC, articulation points, bridge edges (code↔memory), LLM-enriched relations |
 | **Graph Algorithms** | Personalized PageRank, Louvain communities, Dijkstra shortest path, betweenness centrality, co-change analysis |
@@ -95,7 +99,12 @@ succ analyze
 - **Hierarchical Summaries (RAPTOR-style)** — bottom-up LLM summarization at file → directory → module → repo zoom levels with query routing
 - **Code Scanning** — `succ_index action="scan"` recursively discovers and indexes code files via git ls-files / directory walk with .succignore, size filtering, symlink rejection
 - **Observability** — search latency, embedding times, LLM call metrics; retrieval feedback loop for ranking adjustment
-- **Auto-memory Extraction** — session-end fact extraction via LLM with quality gate + periodic dimension-bucketed consolidation
+- **Auto-memory Extraction** — session-end fact extraction via LLM with quality gate + intelligent consolidation (ADD/UPDATE/DELETE/NONE decisions per fact via LLM)
+- **Context Pressure Monitoring** — per-session context window tracking with escalating advisory tiers; preemptive memory extraction at high pressure; configurable threshold, cooldown, and explicit context limit override
+- **Undercover Mode** — best-effort suppression of AI/succ attribution in commits, PRs, branches, and code comments; multi-layer (XML hook injection + Claude settings sync + runtime suppression); symlink-safe, snapshot/restore on disable
+- **Bi-Temporal Document Tracking** — soft-delete versioning with `superseded_at` timestamps; retention-based cleanup; all queries filter stale versions automatically
+- **Recall Query Sanitization** — PII/secret masking (email, URL, JWT, API key, hex, base64) in recall events before persistent storage; ReDoS-safe patterns; configurable retention TTL
+- **Lazy Daemon Startup** — non-blocking `ensureDaemonLazy()` for per-tool hooks; atomic spawn lock; hooks fire in <100ms instead of 2–5s
 - **Cross-repo Search** — search across multiple succ-indexed repositories
 - **Diff-brain Analysis** — LLM-powered diff analysis for brain vault document changes
 - **LSP Integration** — language server protocol client, installer, and server registry (Kotlin + Swift added)

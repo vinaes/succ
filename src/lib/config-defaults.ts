@@ -26,7 +26,7 @@ export const DEFAULT_READINESS_GATE_CONFIG = {
 // Default idle watcher config
 export const DEFAULT_IDLE_WATCHER_CONFIG: Required<IdleWatcherConfig> = {
   enabled: true,
-  idle_minutes: 2,
+  idle_minutes: 5,
   check_interval: 30,
   min_conversation_length: 5,
   reflection_cooldown_minutes: 30,
@@ -61,7 +61,7 @@ export const DEFAULT_COMPACT_BRIEFING_CONFIG: Required<CompactBriefingConfig> = 
   format: 'structured',
   include_learnings: true,
   include_memories: true,
-  max_memories: 3,
+  max_memories: 5,
   timeout_ms: 15000,
 };
 
@@ -94,7 +94,7 @@ export const DEFAULT_AUTO_MEMORY_CONFIG: Required<AutoMemoryConfig> = {
 export const DEFAULT_IDLE_REFLECTION_CONFIG: Required<IdleReflectionConfig> = {
   enabled: true,
   operations: {
-    memory_consolidation: false,
+    memory_consolidation: true,
     graph_refinement: true,
     graph_enrichment: true,
     session_summary: true,
