@@ -154,7 +154,7 @@ function getSkyllConfig(): SkyllConfig {
   const skyllConfig = config.skills?.skyll || {};
 
   return {
-    enabled: skyllConfig.enabled === true,
+    enabled: skyllConfig.enabled ?? DEFAULT_SKYLL_CONFIG.enabled,
     endpoint: skyllConfig.endpoint || DEFAULT_SKYLL_CONFIG.endpoint,
     apiKey: skyllConfig.api_key || process.env.SKYLL_API_KEY,
     cacheTtl: skyllConfig.cache_ttl || DEFAULT_SKYLL_CONFIG.cacheTtl,

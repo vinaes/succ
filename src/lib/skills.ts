@@ -408,7 +408,7 @@ export async function suggestSkills(
 
       // Skyll fallback: if no local candidates or onlyWhenNoLocal is false
       const skyllConfig = config?.skyll || {};
-      const skyllEnabled = skyllConfig.enabled === true;
+      const skyllEnabled = skyllConfig.enabled !== false;
       const onlyWhenNoLocal = skyllConfig.only_when_no_local !== false;
 
       let candidates = candidateSkills;

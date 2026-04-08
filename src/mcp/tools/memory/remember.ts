@@ -13,6 +13,7 @@ import { scoreMemory, passesQualityThreshold, formatQualityScore } from '../../.
 import { scanSensitive, formatMatches } from '../../../lib/sensitive-filter.js';
 import { parseDuration } from '../../../lib/temporal.js';
 import { logWarn } from '../../../lib/fault-logger.js';
+import { createToolResponse } from '../../helpers.js';
 import { getErrorMessage } from '../../../lib/errors.js';
 import { projectPathParam, applyProjectPath } from '../../helpers.js';
 import { rememberWithLLMExtraction } from './memory-helpers.js';
@@ -199,14 +200,9 @@ export function registerRememberTool(server: McpServer): void {
 
           // Check if it passes the threshold
           if (!passesQualityThreshold(qualityScore)) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0.3) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`,
-                },
-              ],
-            };
+            return createToolResponse(
+              `⚠ Memory quality too low: ${formatQualityScore(qualityScore)}\nThreshold: ${((config.quality_scoring_threshold ?? 0.3) * 100).toFixed(0)}%\nContent: "${content.substring(0, 100)}..."`
+            );
           }
         }
 

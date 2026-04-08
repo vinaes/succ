@@ -94,7 +94,7 @@ export const DEFAULT_AUTO_MEMORY_CONFIG: Required<AutoMemoryConfig> = {
 export const DEFAULT_IDLE_REFLECTION_CONFIG: Required<IdleReflectionConfig> = {
   enabled: true,
   operations: {
-    memory_consolidation: true,
+    memory_consolidation: false,
     graph_refinement: true,
     graph_enrichment: true,
     session_summary: true,

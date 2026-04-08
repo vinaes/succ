@@ -654,11 +654,13 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Inject succ section into CLAUDE.md (idempotent, uses markers)
   injectClaudeMdSection(projectRoot);
 
+  const localDev = isLocalDev(projectRoot);
+
   // Check if already initialized (after hooks/settings so re-runs always refresh them)
   if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
     // Always reconcile MCP server config even if DB exists — ensures older installs
     // or previous failures get the Claude entry added.
-    addMcpServer(projectRoot);
+    addMcpServer(projectRoot, localDev);
     spinner.succeed('succ hooks/settings refreshed (already initialized).');
     return;
   }
@@ -666,12 +668,10 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Note: All hooks are now created in the earlier block using copyFileSync from hooks/ directory
 
   // Add MCP server to Claude Code config
-  const mcpResult = addMcpServer(projectRoot);
+  const mcpResult = addMcpServer(projectRoot, localDev);
 
   // Stop spinner with success message
   spinner.succeed('succ initialized successfully!');
-
-  const localDev = isLocalDev(projectRoot);
   if (mcpResult === 'added') {
     if (localDev) {
       console.log('  MCP server added to .mcp.json (local dev mode).');
@@ -1153,9 +1153,11 @@ function validateMcpServer(projectRoot: string, localDev: boolean): string | nul
         timeout: 5000,
         stdio: 'pipe',
       });
-      if (result.status !== 0) {
-        const stderr = result.stderr?.toString().trim() || 'unknown error';
-        return `MCP server has syntax errors: ${stderr}`;
+      if (result.status !== 0 || result.status === null) {
+        const stderr = result.stderr?.toString().trim() || '';
+        const signal = result.signal ? `killed by ${result.signal}` : '';
+        const detail = stderr || signal || 'unknown error';
+        return `MCP server validation failed: ${detail}`;
       }
       return null;
     }
@@ -1180,9 +1182,7 @@ function validateMcpServer(projectRoot: string, localDev: boolean): string | nul
  *
  * The old ~/.claude/mcp_servers.json format is deprecated.
  */
-function addMcpServer(projectRoot: string): 'added' | 'exists' | 'failed' {
-  const localDev = isLocalDev(projectRoot);
-
+function addMcpServer(projectRoot: string, localDev: boolean): 'added' | 'exists' | 'failed' {
   // Validate server can start
   const validationError = validateMcpServer(projectRoot, localDev);
   if (validationError) {
@@ -1349,7 +1349,8 @@ function injectClaudeMdSection(projectRoot: string): void {
     } else {
       // Strip orphan markers before appending fresh section
       content = content.replace(CLAUDE_MD_START, '').replace(CLAUDE_MD_END, '');
-      content = content.trimEnd() + '\n\n' + CLAUDE_MD_SECTION + '\n';
+      const trimmed = content.trimEnd();
+      content = trimmed ? trimmed + '\n\n' + CLAUDE_MD_SECTION + '\n' : CLAUDE_MD_SECTION + '\n';
     }
 
     fs.writeFileSync(claudeMdPath, content);
