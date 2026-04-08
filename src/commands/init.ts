@@ -1005,13 +1005,13 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
           description: 'Full automation: watch + periodic discovery',
         },
       ],
-      default: 'both',
+      default: 'none',
     });
 
     // Initialize daemon config
     const daemonConfig: any = {
       enabled: true,
-      watch: { auto_start: false, include_code: true },
+      watch: { auto_start: false, include_code: false },
       analyze: { auto_start: false },
     };
 
@@ -1148,11 +1148,17 @@ function validateMcpServer(projectRoot: string, localDev: boolean): string | nul
       if (!fs.existsSync(mcpServerPath)) {
         return `dist/mcp-server.js not found — run \`npm run build\` first`;
       }
-      // Spawn briefly to verify it doesn't crash on import
-      const result = spawnSync('node', ['--check', mcpServerPath], {
-        timeout: 5000,
+      // Spawn server briefly — if it's still alive after 3s, it started OK
+      const result = spawnSync('node', [mcpServerPath], {
+        timeout: 3000,
         stdio: 'pipe',
+        env: { ...process.env, SUCC_PROJECT_PATH: projectRoot },
       });
+      // SIGTERM from timeout means process was still running = healthy
+      if (result.signal === 'SIGTERM') {
+        return null;
+      }
+      // Process exited on its own — check if it crashed
       if (result.status !== 0 || result.status === null) {
         const stderr = result.stderr?.toString().trim() || '';
         const signal = result.signal ? `killed by ${result.signal}` : '';
@@ -1206,7 +1212,12 @@ function addMcpServerLocal(projectRoot: string): 'added' | 'exists' | 'failed' {
     let config: Record<string, any> = { mcpServers: {} };
     if (fs.existsSync(mcpJsonPath)) {
       try {
-        config = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf-8'));
+        const parsed = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf-8'));
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          config = parsed;
+        } else {
+          logWarn('init', '.mcp.json is not an object, overwriting');
+        }
         if (!config.mcpServers) config.mcpServers = {};
         if (config.mcpServers.succ) {
           return 'exists';
@@ -1246,8 +1257,12 @@ function addMcpServerGlobal(_projectRoot: string): 'added' | 'exists' | 'failed'
   try {
     let claudeConfig: Record<string, any> = {};
     if (fs.existsSync(claudeConfigPath)) {
-      const content = fs.readFileSync(claudeConfigPath, 'utf-8');
-      claudeConfig = JSON.parse(content);
+      const parsed = JSON.parse(fs.readFileSync(claudeConfigPath, 'utf-8'));
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        claudeConfig = parsed;
+      } else {
+        logWarn('init', `${claudeConfigPath} is not an object, using empty config`);
+      }
     }
 
     if (!claudeConfig.mcpServers) {
