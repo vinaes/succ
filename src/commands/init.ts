@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import isInstalledGlobally from 'is-installed-globally';
@@ -648,6 +648,12 @@ export async function init(options: InitOptions = {}): Promise<void> {
     );
   }
 
+  // Generate .claude/skills/succ.md for on-demand tool guidance
+  writeSkillFile(projectRoot);
+
+  // Inject succ section into CLAUDE.md (idempotent, uses markers)
+  injectClaudeMdSection(projectRoot);
+
   // Check if already initialized (after hooks/settings so re-runs always refresh them)
   if (fs.existsSync(path.join(succDir, 'succ.db')) && !options.force) {
     // Always reconcile MCP server config even if DB exists — ensures older installs
@@ -665,8 +671,16 @@ export async function init(options: InitOptions = {}): Promise<void> {
   // Stop spinner with success message
   spinner.succeed('succ initialized successfully!');
 
-  if (verbose && mcpResult === 'added') {
-    console.log('  MCP server added to Claude Code config.');
+  const localDev = isLocalDev(projectRoot);
+  if (mcpResult === 'added') {
+    if (localDev) {
+      console.log('  MCP server added to .mcp.json (local dev mode).');
+      console.log('  Claude Code will prompt to approve the project MCP server on next start.');
+    } else {
+      console.log('  MCP server added to ~/.claude.json (global).');
+    }
+  } else if (verbose && mcpResult === 'exists') {
+    console.log('  MCP server already configured.');
   }
 
   // Interactive configuration
@@ -1108,45 +1122,148 @@ async function runInteractiveSetup(projectRoot: string, _verbose: boolean = fals
 }
 
 /**
- * Add succ MCP server to Claude Code config
+ * Detect if running from local succ development repo (not an npm install).
+ */
+function isLocalDev(projectRoot: string): boolean {
+  try {
+    const pkgPath = path.join(projectRoot, 'package.json');
+    if (!fs.existsSync(pkgPath)) return false;
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    return pkg.name === '@vinaes/succ';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate that the MCP server can actually start.
+ * Spawns the server briefly and checks for immediate crash.
+ * Returns null on success, error message on failure.
+ */
+function validateMcpServer(projectRoot: string, localDev: boolean): string | null {
+  try {
+    const mcpServerPath = path.join(projectRoot, 'dist', 'mcp-server.js');
+
+    if (localDev) {
+      if (!fs.existsSync(mcpServerPath)) {
+        return `dist/mcp-server.js not found — run \`npm run build\` first`;
+      }
+      // Spawn briefly to verify it doesn't crash on import
+      const result = spawnSync('node', ['--check', mcpServerPath], {
+        timeout: 5000,
+        stdio: 'pipe',
+      });
+      if (result.status !== 0) {
+        const stderr = result.stderr?.toString().trim() || 'unknown error';
+        return `MCP server has syntax errors: ${stderr}`;
+      }
+      return null;
+    }
+
+    // For global install: npx --yes will install on demand, no validation needed
+    return null;
+  } catch (error) {
+    logWarn('init', 'MCP server validation failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/**
+ * Add succ MCP server to Claude Code config.
  *
- * Claude Code stores MCP servers in ~/.claude.json under the root "mcpServers" key
- * for global scope (works everywhere including remote sessions via Happy).
+ * Two modes:
+ * - **Local dev** (running from succ repo): writes project-scoped `.mcp.json`
+ *   pointing to `./dist/mcp-server.js` with explicit cwd.
+ * - **Normal install**: writes global `~/.claude.json` with `npx succ-mcp`.
  *
  * The old ~/.claude/mcp_servers.json format is deprecated.
  */
-function addMcpServer(_projectRoot: string): 'added' | 'exists' | 'failed' {
-  // Claude Code main config location
+function addMcpServer(projectRoot: string): 'added' | 'exists' | 'failed' {
+  const localDev = isLocalDev(projectRoot);
+
+  // Validate server can start
+  const validationError = validateMcpServer(projectRoot, localDev);
+  if (validationError) {
+    console.warn(`  Warning: MCP server validation failed: ${validationError}`);
+    console.warn('  MCP config will be written anyway — fix the issue, then restart Claude Code.');
+  }
+
+  if (localDev) {
+    return addMcpServerLocal(projectRoot);
+  }
+  return addMcpServerGlobal(projectRoot);
+}
+
+/**
+ * Write project-scoped .mcp.json for local development.
+ */
+function addMcpServerLocal(projectRoot: string): 'added' | 'exists' | 'failed' {
+  const mcpJsonPath = path.join(projectRoot, '.mcp.json');
+
+  try {
+    let config: Record<string, any> = { mcpServers: {} };
+    if (fs.existsSync(mcpJsonPath)) {
+      try {
+        config = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf-8'));
+        if (!config.mcpServers) config.mcpServers = {};
+        if (config.mcpServers.succ) {
+          return 'exists';
+        }
+      } catch {
+        logWarn('init', 'Existing .mcp.json is invalid, overwriting');
+        config = { mcpServers: {} };
+      }
+    }
+
+    config.mcpServers.succ = {
+      command: 'node',
+      args: ['./dist/mcp-server.js'],
+      cwd: projectRoot,
+      env: {
+        SUCC_PROJECT_PATH: projectRoot,
+      },
+    };
+
+    fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + '\n');
+    return 'added';
+  } catch (error) {
+    logWarn('init', `Failed to write .mcp.json at ${mcpJsonPath}`, { error: String(error) });
+    console.warn(
+      `  Warning: Failed to write ${mcpJsonPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return 'failed';
+  }
+}
+
+/**
+ * Write global ~/.claude.json for npm-installed succ.
+ */
+function addMcpServerGlobal(_projectRoot: string): 'added' | 'exists' | 'failed' {
   const claudeConfigPath = path.join(os.homedir(), '.claude.json');
 
   try {
-    // Read existing config or create new
     let claudeConfig: Record<string, any> = {};
     if (fs.existsSync(claudeConfigPath)) {
       const content = fs.readFileSync(claudeConfigPath, 'utf-8');
       claudeConfig = JSON.parse(content);
     }
 
-    // Initialize mcpServers at root level if not exists
     if (!claudeConfig.mcpServers) {
       claudeConfig.mcpServers = {};
     }
 
-    // Check if already configured
     if (claudeConfig.mcpServers.succ) {
       return 'exists';
     }
 
-    // Add succ MCP server to global scope
-    // No cwd specified - MCP server will use Claude Code's current working directory
-    // This allows it to work with whichever project Claude is currently in
     // Windows: npx is a .cmd script, needs cmd /c wrapper for spawn
     claudeConfig.mcpServers.succ =
       process.platform === 'win32'
         ? { command: 'cmd', args: ['/c', 'npx', '--yes', 'succ-mcp'] }
         : { command: 'npx', args: ['--yes', 'succ-mcp'] };
 
-    // Write config
     fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeConfig, null, 2));
     return 'added';
   } catch (error) {
@@ -1157,6 +1274,90 @@ function addMcpServer(_projectRoot: string): 'added' | 'exists' | 'failed' {
     logWarn('init', 'You can add it manually: succ init --force');
     console.warn('  You can add it manually: succ init --force');
     return 'failed';
+  }
+}
+
+// ============================================================================
+// Skill file & CLAUDE.md injection
+// ============================================================================
+
+const SKILL_CONTENT = `---
+name: succ-tools
+description: When to use succ semantic search, memory, and knowledge graph tools instead of built-in Grep/Glob/Read
+---
+
+# succ tool selection guide
+
+| Need | Use | NOT |
+|------|-----|-----|
+| Find code by meaning/intent | succ_search_code | Grep (regex only) |
+| Find past decisions/context | succ_recall | Grep on files |
+| Search project knowledge | succ_search | Read + Glob |
+| Save important learning | succ_remember | \u2014 |
+| Explore code relationships | succ_link | manual file reads |
+| Debug systematically | succ_debug | ad-hoc Bash |
+
+succ_search_code and succ_recall are the two most commonly needed tools.
+Always pass project_path parameter to all succ_* calls.
+`;
+
+function writeSkillFile(projectRoot: string): void {
+  const skillDir = path.join(projectRoot, '.claude', 'skills');
+  const skillPath = path.join(skillDir, 'succ.md');
+  try {
+    if (!fs.existsSync(skillDir)) {
+      fs.mkdirSync(skillDir, { recursive: true });
+    }
+    fs.writeFileSync(skillPath, SKILL_CONTENT);
+  } catch (error) {
+    logWarn(
+      'init',
+      `Failed to write skill file: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+const CLAUDE_MD_START = '<!-- succ:start -->';
+const CLAUDE_MD_END = '<!-- succ:end -->';
+const CLAUDE_MD_SECTION = `${CLAUDE_MD_START}
+## succ \u2014 Semantic Memory & Code Search
+
+This project uses [succ](https://succ.ai) for persistent memory and semantic code search.
+- **succ_search_code** for semantic code discovery (better than Grep for intent-based queries)
+- **succ_recall** for past decisions and cross-session memory
+- **succ_remember** to save important learnings
+- Use built-in Grep/Read for precise, known-path operations
+${CLAUDE_MD_END}`;
+
+function injectClaudeMdSection(projectRoot: string): void {
+  const claudeMdPath = path.join(projectRoot, 'CLAUDE.md');
+  try {
+    let content = '';
+    if (fs.existsSync(claudeMdPath)) {
+      content = fs.readFileSync(claudeMdPath, 'utf-8');
+    }
+
+    const startIdx = content.indexOf(CLAUDE_MD_START);
+    const endIdx = content.indexOf(CLAUDE_MD_END);
+
+    if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
+      // Replace existing section
+      content =
+        content.slice(0, startIdx) +
+        CLAUDE_MD_SECTION +
+        content.slice(endIdx + CLAUDE_MD_END.length);
+    } else {
+      // Strip orphan markers before appending fresh section
+      content = content.replace(CLAUDE_MD_START, '').replace(CLAUDE_MD_END, '');
+      content = content.trimEnd() + '\n\n' + CLAUDE_MD_SECTION + '\n';
+    }
+
+    fs.writeFileSync(claudeMdPath, content);
+  } catch (error) {
+    logWarn(
+      'init',
+      `Failed to inject CLAUDE.md section: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 

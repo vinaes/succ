@@ -143,10 +143,16 @@ if (projectArgIdx !== -1 && process.argv[projectArgIdx + 1]) {
 }
 
 // Create MCP server
-const server = new McpServer({
-  name: 'succ',
-  version,
-});
+const MCP_INSTRUCTIONS = `succ provides persistent memory, semantic code search, and knowledge graph for this project.
+WHEN TO USE succ tools instead of built-in tools:
+- Code search → succ_search_code (semantic + AST, not just regex like Grep)
+- Knowledge/docs → succ_search (searches indexed project docs, not raw files)
+- Past decisions → succ_recall (cross-session memory, Grep can't do this)
+- Save learnings → succ_remember (persists across sessions, unlike conversation context)
+- Code exploration → succ_link (knowledge graph traversal)
+succ tools find MEANING, built-in tools find TEXT. Use both — succ for discovery, built-in for precise edits.`;
+
+const server = new McpServer({ name: 'succ', version }, { instructions: MCP_INSTRUCTIONS });
 
 // ---------------------------------------------------------------------------
 // Register all tools — capture RegisteredTool references for profile gating
