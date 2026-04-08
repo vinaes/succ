@@ -1021,11 +1021,11 @@ export function getRetrievalConfig(): Required<RetrievalConfig> {
     quality_boost_weight: userConfig.quality_boost_weight ?? 0.15,
     mmr_enabled: userConfig.mmr_enabled ?? true,
     mmr_lambda: userConfig.mmr_lambda ?? 0.8,
-    query_expansion_enabled: userConfig.query_expansion_enabled ?? false,
+    query_expansion_enabled: userConfig.query_expansion_enabled ?? true,
     query_expansion_mode: userConfig.query_expansion_mode ?? (getConfig().llm?.type || 'api'),
     graph_ppr_enabled: userConfig.graph_ppr_enabled ?? false,
     graph_ppr_weight: userConfig.graph_ppr_weight ?? 0.3,
-    query_decomposition_enabled: userConfig.query_decomposition_enabled ?? false,
+    query_decomposition_enabled: userConfig.query_decomposition_enabled ?? true,
     rrf_k: userConfig.rrf_k ?? 60,
     adaptive_alpha: userConfig.adaptive_alpha ?? true,
   };
