@@ -531,7 +531,7 @@ function loadConfig(projectDir) {
       customPatterns: Array.isArray(csg.customPatterns) ? csg.customPatterns : [],
     },
     undercover: merged.undercover === true,
-    includeCoAuthoredBy: merged.includeCoAuthoredBy !== false,
+    includeCoAuthoredBy: !merged.undercover && merged.includeCoAuthoredBy !== false,
     preCommitReview: merged.preCommitReview === true,
   };
 }
@@ -892,7 +892,8 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
         contextParts.push(`<undercover-reminder>
 UNDERCOVER: No AI attribution, no "Generated with", no "Co-Authored-By", no tool names, no AI labels.
 No AI-revealing branch names (claude/, copilot/, ai/).
-Write as a human developer. Match existing project style.
+No em dashes, no en dashes, no "Certainly!", no corporate filler. Write like a human dev.
+Match existing project style.
 </undercover-reminder>`);
         // Still inject pre-commit-review if enabled (independent of undercover)
         if (/\bgit\s+commit\b/.test(command) && config.preCommitReview) {

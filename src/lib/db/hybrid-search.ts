@@ -560,12 +560,17 @@ export function hybridSearchMemories(
         )
         .all(...docIds) as MemoryRow[];
     },
-    loadBruteForceRows: () =>
-      cachedPrepare(
+    loadBruteForceRows: () => {
+      const { count } = cachedPrepare(
+        'SELECT COUNT(*) as count FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1'
+      ).get() as { count: number };
+      if (count > BRUTE_FORCE_MAX_ROWS) return null;
+      return cachedPrepare(
         `SELECT id, content, tags, source, type, created_at, embedding,
                 last_accessed, access_count, valid_from, valid_until, quality_score
          FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1 LIMIT ?`
-      ).all(BRUTE_FORCE_MAX_ROWS) as (MemoryRow & { embedding: Buffer })[],
+      ).all(BRUTE_FORCE_MAX_ROWS) as (MemoryRow & { embedding: Buffer })[];
+    },
     fetchMissingRows: (ids) => {
       const placeholders = ids.map(() => '?').join(',');
       return database
@@ -579,7 +584,37 @@ export function hybridSearchMemories(
     },
   });
 
-  if (!pipeline || pipeline.combined.length === 0) return [];
+  // BM25-only fallback when too many memories for brute-force
+  if (pipeline === null) {
+    const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+    const docIds = bm25Results.slice(0, limit).map((r) => r.docId);
+    if (docIds.length === 0) return [];
+    const placeholders = docIds.map(() => '?').join(',');
+    const rows = database
+      .prepare(
+        `SELECT id, content, tags, source, type, created_at,
+                last_accessed, access_count, valid_from, valid_until, quality_score
+         FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
+      )
+      .all(...docIds) as MemoryRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      tags: parseTags(row.tags),
+      source: row.source,
+      type: parseMemoryType(row.type),
+      created_at: row.created_at,
+      similarity: bm25Map.get(row.id) ?? 0,
+      bm25Score: bm25Map.get(row.id),
+      last_accessed: row.last_accessed,
+      access_count: row.access_count,
+      valid_from: row.valid_from,
+      valid_until: row.valid_until,
+      quality_score: row.quality_score,
+    }));
+  }
+
+  if (pipeline.combined.length === 0) return [];
 
   const { combined, rowMap, bm25Map, vectorMap } = pipeline;
   const results: HybridMemoryResult[] = [];
@@ -729,7 +764,7 @@ export function hybridSearchGlobalMemories(
     const bm25Ids = bm25Raw.map((r) => r.docId);
     const placeholders = bm25Ids.map(() => '?').join(',');
     let filterSql = `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
-    const filterParams: any[] = [...bm25Ids];
+    const filterParams: (string | number)[] = [...bm25Ids];
     if (since) {
       filterSql += ' AND created_at >= ?';
       filterParams.push(since.toISOString());
@@ -762,7 +797,7 @@ export function hybridSearchGlobalMemories(
     filterVecRows: (docIds) => {
       const placeholders = docIds.map(() => '?').join(',');
       let whereClause = `id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
-      const params: any[] = [...docIds];
+      const params: (string | number)[] = [...docIds];
       if (since) {
         whereClause += ' AND created_at >= ?';
         params.push(since.toISOString());
@@ -775,13 +810,18 @@ export function hybridSearchGlobalMemories(
         .all(...params) as GlobalMemRow[];
     },
     loadBruteForceRows: () => {
-      let sql =
-        'SELECT id, content, tags, source, project, type, embedding, created_at FROM memories WHERE embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1';
-      const params: any[] = [];
+      let whereClauses = 'embedding IS NOT NULL AND COALESCE(is_latest, 1) = 1';
+      const countParams: (string | number)[] = [];
       if (since) {
-        sql += ' AND created_at >= ?';
-        params.push(since.toISOString());
+        whereClauses += ' AND created_at >= ?';
+        countParams.push(since.toISOString());
       }
+      const { count } = database
+        .prepare(`SELECT COUNT(*) as count FROM memories WHERE ${whereClauses}`)
+        .get(...countParams) as { count: number };
+      if (count > BRUTE_FORCE_MAX_ROWS) return null;
+      let sql = `SELECT id, content, tags, source, project, type, embedding, created_at FROM memories WHERE ${whereClauses}`;
+      const params: (string | number)[] = [...countParams];
       sql += ' LIMIT ?';
       params.push(BRUTE_FORCE_MAX_ROWS);
       return database.prepare(sql).all(...params) as (GlobalMemRow & { embedding: Buffer })[];
@@ -790,7 +830,7 @@ export function hybridSearchGlobalMemories(
       const placeholders = ids.map(() => '?').join(',');
       let sql = `SELECT id, content, tags, source, project, type, created_at
            FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
-      const params: any[] = [...ids];
+      const params: (string | number)[] = [...ids];
       if (since) {
         sql += ' AND created_at >= ?';
         params.push(since.toISOString());
@@ -799,7 +839,46 @@ export function hybridSearchGlobalMemories(
     },
   });
 
-  if (!pipeline || pipeline.combined.length === 0) return [];
+  // BM25-only fallback when too many global memories for brute-force
+  if (pipeline === null) {
+    const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+    const docIds = bm25Results.slice(0, limit).map((r) => r.docId);
+    if (docIds.length === 0) return [];
+    const placeholders = docIds.map(() => '?').join(',');
+    let sql = `SELECT id, content, tags, source, project, type, created_at
+         FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
+    const params: (string | number)[] = [...docIds];
+    if (since) {
+      sql += ' AND created_at >= ?';
+      params.push(since.toISOString());
+    }
+    const rows = database.prepare(sql).all(...params) as GlobalMemRow[];
+    const results: HybridGlobalMemoryResult[] = [];
+    for (const row of rows) {
+      const rowTags: string[] = parseTags(row.tags);
+      if (tags && tags.length > 0) {
+        const hasMatchingTag = tags.some((t) =>
+          rowTags.some((rt) => rt.toLowerCase().includes(t.toLowerCase()))
+        );
+        if (!hasMatchingTag) continue;
+      }
+      results.push({
+        id: row.id,
+        content: row.content,
+        tags: rowTags,
+        source: row.source,
+        project: row.project,
+        type: parseMemoryType(row.type),
+        created_at: row.created_at,
+        similarity: bm25Map.get(row.id) ?? 0,
+        bm25Score: bm25Map.get(row.id),
+        isGlobal: true,
+      });
+    }
+    return results;
+  }
+
+  if (pipeline.combined.length === 0) return [];
 
   const { combined, rowMap, bm25Map, vectorMap } = pipeline;
   const results: HybridGlobalMemoryResult[] = [];
@@ -818,7 +897,7 @@ export function hybridSearchGlobalMemories(
     results.push({
       id: row.id,
       content: row.content,
-      tags: parseTags(row.tags),
+      tags: rowTags,
       source: row.source,
       project: row.project,
       type: parseMemoryType(row.type),
