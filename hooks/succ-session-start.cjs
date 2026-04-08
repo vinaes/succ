@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemon } = require('./core/daemon-boot.cjs');
+const { ensureDaemon, daemonFetch } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
@@ -102,13 +102,19 @@ BAD commit messages:
       try {
         normalizedProjectDir = fs.realpathSync.native(projectDir);
       } catch (e) {
-        log(`[undercover] realpathSync.native failed for projectDir, falling back to path.resolve: ${e.message || e}`);
+        log(
+          `[undercover] realpathSync.native failed for projectDir, falling back to path.resolve: ${e.message || e}`
+        );
         normalizedProjectDir = path.resolve(projectDir);
       }
       /** Check if path is a symlink or NTFS junction */
       function isSymlinkOrJunction(p) {
-        try { return fs.lstatSync(p).isSymbolicLink(); }
-        catch (e) { log(`[undercover] lstatSync failed for ${p}: ${e.message || e}`); return false; }
+        try {
+          return fs.lstatSync(p).isSymbolicLink();
+        } catch (e) {
+          log(`[undercover] lstatSync failed for ${p}: ${e.message || e}`);
+          return false;
+        }
       }
 
       /** Verify resolved path is a child of base directory */
@@ -188,11 +194,15 @@ BAD commit messages:
       // Check if settings.local.json is already tracked by git (hoisted for use in both gitignore and settings blocks)
       let isTracked = false;
       try {
-        require('child_process').execFileSync('git', ['ls-files', '--error-unmatch', '.claude/settings.local.json'], {
-          cwd: projectDir,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          windowsHide: true,
-        });
+        require('child_process').execFileSync(
+          'git',
+          ['ls-files', '--error-unmatch', '.claude/settings.local.json'],
+          {
+            cwd: projectDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            windowsHide: true,
+          }
+        );
         isTracked = true;
       } catch (e) {
         // Not tracked — this is the expected case
@@ -202,10 +212,14 @@ BAD commit messages:
       // Ensure .claude/.gitignore guards settings.local.json from being tracked (unconditional)
       try {
         if (isTracked) {
-          log('[undercover] settings.local.json is already tracked by git — skipping .gitignore mutation');
+          log(
+            '[undercover] settings.local.json is already tracked by git — skipping .gitignore mutation'
+          );
         } else {
           if (!fs.existsSync(claudeDir)) {
-            log('[undercover] .claude/ does not exist — skipping .gitignore ensure to avoid creating repo-visible artifacts');
+            log(
+              '[undercover] .claude/ does not exist — skipping .gitignore ensure to avoid creating repo-visible artifacts'
+            );
           } else {
             if (isSafeWriteTarget(claudeGitignore, 'claudeGitignore')) {
               let gitignoreContent = '';
@@ -259,7 +273,9 @@ BAD commit messages:
         if (needsSync) {
           // Lightweight inline sync — write undercover values
           if (!fs.existsSync(claudeDir)) {
-            log('[undercover] .claude/ does not exist — skipping self-heal to avoid creating repo-visible artifacts');
+            log(
+              '[undercover] .claude/ does not exist — skipping self-heal to avoid creating repo-visible artifacts'
+            );
             // Don't proceed with write — would create visible artifacts
           } else {
             let settings = {};
@@ -299,7 +315,9 @@ BAD commit messages:
                 }
               }
             } catch (snapshotErr) {
-              log(`[undercover] Failed to snapshot Claude settings (best-effort): ${snapshotErr.message || snapshotErr}`);
+              log(
+                `[undercover] Failed to snapshot Claude settings (best-effort): ${snapshotErr.message || snapshotErr}`
+              );
             }
             settings.includeGitInstructions = false;
             settings.includeCoAuthoredBy = false;
@@ -831,12 +849,16 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   if (isCompactEvent && daemonPort && hookInput.transcript_path && !isServiceSession) {
     log(`Generating compact briefing for ${hookInput.transcript_path}`);
     try {
-      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/briefing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
-        signal: AbortSignal.timeout(8000), // 8s timeout - must complete before 10s hook timeout
-      });
+      const response = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/briefing`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript_path: hookInput.transcript_path }),
+          signal: AbortSignal.timeout(8000), // 8s timeout - must complete before 10s hook timeout
+        },
+        succDir
+      );
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.briefing) {
@@ -863,9 +885,13 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
     // Phase 1: Pinned memories (Tier 1 — correction_count >= 2 or is_invariant)
     // Filter: skip observations (noisy subagent reports), limit to top 10 by priority_score
     try {
-      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/pinned`, {
-        signal: AbortSignal.timeout(3000),
-      });
+      const response = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/pinned`,
+        {
+          signal: AbortSignal.timeout(3000),
+        },
+        succDir
+      );
       if (response.ok) {
         const data = await response.json();
         const allPinned = data.results || [];
@@ -894,12 +920,16 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
 
     // Phase 2: Recent memories (excluding pinned to avoid duplication)
     try {
-      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/recall`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: '', limit: 5 }),
-        signal: AbortSignal.timeout(3000),
-      });
+      const response = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/recall`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: '', limit: 5 }),
+          signal: AbortSignal.timeout(3000),
+        },
+        succDir
+      );
       if (response.ok) {
         const data = await response.json();
         const memories = (data.results || []).filter((m) => !pinnedIds.has(m.id));
@@ -922,9 +952,13 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   // Knowledge base stats via daemon API
   if (daemonPort) {
     try {
-      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/status`, {
-        signal: AbortSignal.timeout(3000),
-      });
+      const response = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/status`,
+        {
+          signal: AbortSignal.timeout(3000),
+        },
+        succDir
+      );
       if (response.ok) {
         const status = await response.json();
         const docs = status.documents || 0;
@@ -965,7 +999,9 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
               const pkgPath = require.resolve('@vinaes/succ/package.json', { paths: [__dirname] });
               installedVersion = require(pkgPath).version;
             } catch (_resolveErr) {
-              log(`require.resolve @vinaes/succ/package.json failed: ${_resolveErr.message || _resolveErr}`);
+              log(
+                `require.resolve @vinaes/succ/package.json failed: ${_resolveErr.message || _resolveErr}`
+              );
               try {
                 // .package-root breadcrumb (matches daemon-boot.cjs pattern)
                 const pkgRootFile = path.join(succDir, '.package-root');
@@ -1062,16 +1098,20 @@ Place them BEFORE the succ lines. The only hard rule: succ is always the last fo
   // transcriptPath and canonicalSessionId derived early — reuse here for consistency
   if (daemonPort) {
     try {
-      const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: canonicalSessionId,
-          transcript_path: transcriptPath,
-          is_service: isServiceSession,
-        }),
-        signal: AbortSignal.timeout(3000),
-      });
+      const res = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/session/register`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: canonicalSessionId,
+            transcript_path: transcriptPath,
+            is_service: isServiceSession,
+          }),
+          signal: AbortSignal.timeout(3000),
+        },
+        succDir
+      );
       if (!res.ok) {
         log(
           `Session register failed: ${res.status} ${res.statusText} session=${canonicalSessionId}`

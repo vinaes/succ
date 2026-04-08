@@ -15,6 +15,7 @@
  */
 
 import http from 'http';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -142,14 +143,25 @@ export function readTailTranscript(
   return firstNewline > 0 ? content.slice(firstNewline + 1) : content;
 }
 
-function getDaemonPortFile(): string {
+function getDaemonTmpDir(): string {
   const succDir = getSuccDir();
   const tmpDir = path.join(succDir, '.tmp');
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
-  return path.join(tmpDir, 'daemon.port');
+  return tmpDir;
 }
+
+function getDaemonPortFile(): string {
+  return path.join(getDaemonTmpDir(), 'daemon.port');
+}
+
+function getDaemonTokenFile(): string {
+  return path.join(getDaemonTmpDir(), 'daemon.token');
+}
+
+// Auth token generated per daemon lifetime — written to .succ/.tmp/daemon.token
+let daemonToken: string | null = null;
 
 function getDaemonLogFile(): string {
   const succDir = getSuccDir();
@@ -222,14 +234,43 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const reqUrl = new URL(req.url || '/', `http://localhost`);
   const method = req.method || 'GET';
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Restrict CORS to localhost origins only — daemon should never be accessible from arbitrary sites
+  const origin = req.headers.origin;
+  if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
     return;
+  }
+
+  // Auth token check — skip for health/status/version (needed for discovery)
+  const pathname = reqUrl.pathname.replace(/^\/v1/, '');
+  const isPublicEndpoint =
+    pathname === '/health' ||
+    pathname === '/api/status' ||
+    pathname === '/api/version' ||
+    pathname === '/api/health';
+  if (daemonToken && !isPublicEndpoint) {
+    const authHeader = req.headers.authorization;
+    const providedToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (
+      !providedToken ||
+      Buffer.byteLength(providedToken) !== Buffer.byteLength(daemonToken) ||
+      !crypto.timingSafeEqual(Buffer.from(providedToken), Buffer.from(daemonToken))
+    ) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Unauthorized. Provide daemon token via Authorization: Bearer <token>',
+        })
+      );
+      return;
+    }
   }
 
   let body: unknown = null;
@@ -594,8 +635,10 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   };
   cachedRoutes = null;
 
-  // PID already written at startup (atomic mutex). Write port now that we know it.
+  // PID already written at startup (atomic mutex). Write port and auth token now.
   fs.writeFileSync(getDaemonPortFile(), String(port));
+  daemonToken = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(getDaemonTokenFile(), daemonToken, { mode: 0o600 });
 
   idleWatcher = createIdleWatcher({
     sessionManager,
@@ -766,6 +809,15 @@ export async function shutdownDaemon(): Promise<void> {
       log(`[shutdown] Port file removal failed: ${getErrorMessage(err)}`);
     }
   }
+
+  try {
+    fs.unlinkSync(getDaemonTokenFile());
+  } catch (err: unknown) {
+    if (!isErrnoException(err) || err.code !== 'ENOENT') {
+      log(`[shutdown] Token file removal failed: ${getErrorMessage(err)}`);
+    }
+  }
+  daemonToken = null;
 
   log('[daemon] Shutdown complete');
   process.exit(0);

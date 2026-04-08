@@ -304,4 +304,44 @@ function ensureDaemonLazy(projectDir, succDir, logFn) {
   return null;
 }
 
-module.exports = { ensureDaemon, ensureDaemonLazy, getDaemonPort, checkDaemon, startDaemon };
+/**
+ * Read daemon auth token from .succ/.tmp/daemon.token.
+ * @param {string} succDir - Path to .succ directory
+ * @returns {string|null}
+ */
+function getDaemonToken(succDir) {
+  try {
+    const tokenFile = path.join(succDir, '.tmp', 'daemon.token');
+    if (fs.existsSync(tokenFile)) {
+      return fs.readFileSync(tokenFile, 'utf8').trim();
+    }
+  } catch (e) {
+    console.error(`[succ:daemon] Token file read failed: ${errMsg(e)}`);
+  }
+  return null;
+}
+
+/**
+ * Fetch wrapper that auto-injects daemon auth token.
+ * @param {string} url - Full URL
+ * @param {object} opts - Standard fetch options
+ * @param {string} succDir - Path to .succ directory
+ * @returns {Promise<Response>}
+ */
+function daemonFetch(url, opts, succDir) {
+  const token = getDaemonToken(succDir);
+  if (token) {
+    opts = { ...opts, headers: { ...opts.headers, Authorization: `Bearer ${token}` } };
+  }
+  return fetch(url, opts);
+}
+
+module.exports = {
+  ensureDaemon,
+  ensureDaemonLazy,
+  getDaemonPort,
+  checkDaemon,
+  startDaemon,
+  getDaemonToken,
+  daemonFetch,
+};

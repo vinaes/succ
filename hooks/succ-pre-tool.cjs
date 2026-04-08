@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
@@ -704,12 +704,16 @@ async function recallFileMemories(projectDir, succDir, fileName) {
   if (!port) return [];
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/recall-by-tag`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: `file:${fileName}`, limit: 5 }),
-      signal: AbortSignal.timeout(2000),
-    });
+    const res = await daemonFetch(
+      `http://127.0.0.1:${port}/api/recall-by-tag`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: `file:${fileName}`, limit: 5 }),
+        signal: AbortSignal.timeout(2000),
+      },
+      succDir
+    );
     if (!res.ok) return [];
     const data = await res.json();
     return data.results || [];
@@ -724,12 +728,16 @@ async function fetchHookRules(projectDir, succDir, toolName, toolInput) {
   if (!port) return [];
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/hook-rules`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool_name: toolName, tool_input: toolInput || {} }),
-      signal: AbortSignal.timeout(2000),
-    });
+    const res = await daemonFetch(
+      `http://127.0.0.1:${port}/api/hook-rules`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_name: toolName, tool_input: toolInput || {} }),
+        signal: AbortSignal.timeout(2000),
+      },
+      succDir
+    );
     if (!res.ok) return [];
     const data = await res.json();
     return data.rules || [];

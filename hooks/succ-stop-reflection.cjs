@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 
 adapter.runHook('stop-reflection', async ({ hookInput, projectDir, succDir }) => {
   const tmpDir = path.join(succDir, '.tmp');
@@ -38,17 +38,21 @@ adapter.runHook('stop-reflection', async ({ hookInput, projectDir, succDir }) =>
     if (!daemonPort) return;
 
     try {
-      await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          type: 'stop',
-          transcript_path: transcriptPath,
-          is_service: isServiceSession,
-        }),
-        signal: AbortSignal.timeout(2000),
-      });
+      await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/session/activity`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            type: 'stop',
+            transcript_path: transcriptPath,
+            is_service: isServiceSession,
+          }),
+          signal: AbortSignal.timeout(2000),
+        },
+        succDir
+      );
     } catch (e) {
       console.error(`[succ:stop] Daemon stop notification failed: ${e.message || e}`);
     }
