@@ -762,7 +762,7 @@ export function getOperationAssignments(): OperationAssignmentType[] {
       operation: 'memory_consolidation',
       // Offload to sleep agent if enabled and configured to handle it
       agent: sleepEnabled && sleepOps?.memory_consolidation ? 'sleep' : 'claude',
-      enabled: ops?.memory_consolidation ?? true,
+      enabled: ops?.memory_consolidation ?? false,
     },
     {
       operation: 'graph_refinement',

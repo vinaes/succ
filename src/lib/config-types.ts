@@ -383,7 +383,7 @@ export interface DaemonConfig {
   watch?: {
     auto_start?: boolean; // Auto-start watch service (default: false)
     patterns?: string[]; // Patterns to watch (default: ['**/*.md'])
-    include_code?: boolean; // Also watch code files (default: true)
+    include_code?: boolean; // Also watch code files (runtime default: true, wizard default: false — opt-in)
     debounce_ms?: number; // Debounce interval (default: 500)
   };
   analyze?: {

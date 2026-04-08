@@ -14,7 +14,7 @@ import {
 import { enrichExistingLinks } from './llm-relations.js';
 import { detectCommunities, type CommunityResult } from './community-detection.js';
 import { updateCentralityCache } from './centrality.js';
-import { getIdleReflectionConfig } from '../config.js';
+import { getIdleReflectionConfig, getConfig } from '../config.js';
 
 export interface CleanupOptions {
   /** Prune similar_to links below this weight (default 0.75) */
@@ -135,8 +135,9 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
 
   // Step 5 & 6: Rebuild communities and centrality
   if (!skipFinalize) {
+    const communityEnabled = getConfig().graph_community_detection?.enabled !== false;
     onProgress?.('communities', 'Detecting communities...');
-    if (!dryRun) {
+    if (!dryRun && communityEnabled) {
       const communityResult = await detectCommunities();
       result.communitiesDetected = communityResult.communities.length;
       result.communityResult = communityResult;
@@ -144,9 +145,12 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
         'communities',
         `Detected ${result.communitiesDetected} communities (${communityResult.isolated} isolated)`
       );
-    } else {
-      result.communitiesDetected = -1; // unknown in dry-run
+    } else if (dryRun) {
+      result.communitiesDetected = -1;
       onProgress?.('communities', 'Skipped (dry-run)');
+    } else {
+      result.communitiesDetected = -1;
+      onProgress?.('communities', 'Skipped (disabled)');
     }
 
     onProgress?.('centrality', 'Updating centrality scores...');

@@ -605,7 +605,10 @@ export function registerRecallTool(server: McpServer): void {
         if ((config.graph_centrality?.enabled ?? true) && allResults.length > 0) {
           try {
             const { applyCentralityBoost } = await import('../../../lib/graph/centrality.js');
-            allResults = await applyCentralityBoost(allResults, config.graph_centrality ?? {});
+            allResults = await applyCentralityBoost(allResults, {
+              enabled: true,
+              ...config.graph_centrality,
+            });
           } catch (error) {
             logWarn('mcp-memory', 'Centrality boost skipped due runtime error', {
               error: getErrorMessage(error),
