@@ -149,7 +149,7 @@ export async function graphCleanup(options: CleanupOptions = {}): Promise<Cleanu
       result.communitiesDetected = -1;
       onProgress?.('communities', 'Skipped (dry-run)');
     } else {
-      result.communitiesDetected = 0;
+      result.communitiesDetected = -1;
       onProgress?.('communities', 'Skipped (disabled)');
     }
 
