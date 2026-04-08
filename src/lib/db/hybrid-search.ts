@@ -438,10 +438,15 @@ export function hybridSearchDocs(
         )
         .all(...docIds) as DocRow[];
     },
-    loadBruteForceRows: () =>
-      cachedPrepare(
+    loadBruteForceRows: () => {
+      const { count } = cachedPrepare(
+        "SELECT COUNT(*) as count FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL"
+      ).get() as { count: number };
+      if (count > BRUTE_FORCE_MAX_ROWS) return null;
+      return cachedPrepare(
         "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL LIMIT ?"
-      ).all(BRUTE_FORCE_MAX_ROWS) as (DocRow & { embedding: Buffer })[],
+      ).all(BRUTE_FORCE_MAX_ROWS) as (DocRow & { embedding: Buffer })[];
+    },
     fetchMissingRows: (ids) => {
       const placeholders = ids.map(() => '?').join(',');
       return database
@@ -453,7 +458,29 @@ export function hybridSearchDocs(
     },
   });
 
-  if (!pipeline || pipeline.combined.length === 0) return [];
+  // BM25-only fallback when too many docs for brute-force
+  if (pipeline === null) {
+    const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
+    const docIds = bm25Results.slice(0, limit).map((r) => r.docId);
+    if (docIds.length === 0) return [];
+    const placeholders = docIds.map(() => '?').join(',');
+    const rows = database
+      .prepare(
+        `SELECT id, file_path, content, start_line, end_line
+         FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL`
+      )
+      .all(...docIds) as DocRow[];
+    return rows.map((row) => ({
+      file_path: row.file_path,
+      content: row.content,
+      start_line: row.start_line,
+      end_line: row.end_line,
+      similarity: bm25Map.get(row.id) ?? 0,
+      bm25Score: bm25Map.get(row.id),
+    }));
+  }
+
+  if (pipeline.combined.length === 0) return [];
 
   const { combined, rowMap, bm25Map, vectorMap } = pipeline;
   const results: HybridSearchResult[] = [];
@@ -701,11 +728,13 @@ export function hybridSearchGlobalMemories(
   if (bm25Raw.length > 0) {
     const bm25Ids = bm25Raw.map((r) => r.docId);
     const placeholders = bm25Ids.map(() => '?').join(',');
-    const latestRows = database
-      .prepare(
-        `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
-      )
-      .all(...bm25Ids) as Array<{ id: number }>;
+    let filterSql = `SELECT id FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
+    const filterParams: any[] = [...bm25Ids];
+    if (since) {
+      filterSql += ' AND created_at >= ?';
+      filterParams.push(since.toISOString());
+    }
+    const latestRows = database.prepare(filterSql).all(...filterParams) as Array<{ id: number }>;
     const latestSet = new Set(latestRows.map((r) => r.id));
     bm25Results = bm25Raw.filter((r) => latestSet.has(r.docId));
   }
@@ -753,17 +782,20 @@ export function hybridSearchGlobalMemories(
         sql += ' AND created_at >= ?';
         params.push(since.toISOString());
       }
-      sql += ` LIMIT ${BRUTE_FORCE_MAX_ROWS}`;
+      sql += ' LIMIT ?';
+      params.push(BRUTE_FORCE_MAX_ROWS);
       return database.prepare(sql).all(...params) as (GlobalMemRow & { embedding: Buffer })[];
     },
     fetchMissingRows: (ids) => {
       const placeholders = ids.map(() => '?').join(',');
-      return database
-        .prepare(
-          `SELECT id, content, tags, source, project, type, created_at
-           FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
-        )
-        .all(...ids) as GlobalMemRow[];
+      let sql = `SELECT id, content, tags, source, project, type, created_at
+           FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`;
+      const params: any[] = [...ids];
+      if (since) {
+        sql += ' AND created_at >= ?';
+        params.push(since.toISOString());
+      }
+      return database.prepare(sql).all(...params) as GlobalMemRow[];
     },
   });
 

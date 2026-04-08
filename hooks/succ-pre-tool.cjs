@@ -927,9 +927,10 @@ MEDIUM and below — commit is OK, mention findings in summary.
   try {
     const port = ensureDaemonLazy(projectDir, succDir);
     if (port && hookInput.session_id) {
-      const usageRes = await fetch(
+      const usageRes = await daemonFetch(
         `http://127.0.0.1:${port}/api/context-usage?session_id=${encodeURIComponent(hookInput.session_id)}`,
-        { signal: AbortSignal.timeout(500) }
+        { signal: AbortSignal.timeout(500) },
+        succDir
       );
       if (usageRes.ok) {
         const usage = await usageRes.json();
@@ -939,9 +940,10 @@ MEDIUM and below — commit is OK, mention findings in summary.
             contextParts.push(advisory);
             // ACK: mark cooldown AFTER successful advisory push (prevents consumed cooldown on hook failure)
             // Store promise so we can await it before process.exit (unawaited fetch gets killed on exit)
-            contextUsageAckPromise = fetch(
+            contextUsageAckPromise = daemonFetch(
               `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
-              { method: 'POST', signal: AbortSignal.timeout(300) }
+              { method: 'POST', signal: AbortSignal.timeout(300) },
+              succDir
             ).catch((e) => {
               console.error('[succ:pre-tool] context-usage ack failed:', e.message || e);
             });
