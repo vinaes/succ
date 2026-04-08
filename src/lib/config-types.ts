@@ -479,11 +479,11 @@ export interface RetrievalConfig {
   quality_boost_weight?: number; // Weight for quality boost: 0=no effect, 1=full effect (default: 0.15)
   mmr_enabled?: boolean; // Maximal Marginal Relevance diversity reranking (default: true)
   mmr_lambda?: number; // MMR balance: 1=pure relevance, 0=pure diversity (default: 0.8)
-  query_expansion_enabled?: boolean; // LLM-based query expansion for richer recall (default: true)
+  query_expansion_enabled?: boolean; // LLM-based query expansion for richer recall (default: false, opt-in)
   query_expansion_mode?: 'claude' | 'api'; // LLM backend for expansion (default: from llm.type)
   graph_ppr_enabled?: boolean; // Use PPR graph traversal as 3rd RRF signal in memory search (default: false)
   graph_ppr_weight?: number; // Weight for PPR signal in RRF fusion (default: 0.3)
-  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: true)
+  query_decomposition_enabled?: boolean; // Split complex multi-concept queries into sub-queries (default: false, opt-in)
   rrf_k?: number; // RRF constant: lower (20-40) favors top results, 60 is standard (default: 60)
   adaptive_alpha?: boolean; // Auto-detect query type and adjust BM25/vector balance (default: true)
 }
