@@ -156,19 +156,19 @@ function runHybridPipeline<TRow extends { id: number }>(
   if (vectorResults.length === 0) {
     const bruteForceRows = loadBruteForceRows();
     if (bruteForceRows === null) return null;
-    if (bruteForceRows.length === 0) {
-      return { combined: [], rowMap, bm25Map: new Map(), vectorMap: new Map() };
-    }
 
-    rowMap = new Map(bruteForceRows.map((r) => [r.id, r]));
-    for (const row of bruteForceRows) {
-      const embedding = bufferToFloatArray(row.embedding);
-      const similarity = cosineSimilarity(queryEmbedding, embedding);
-      if (similarity >= threshold) {
-        vectorResults.push({ docId: row.id, score: similarity });
+    if (bruteForceRows.length > 0) {
+      rowMap = new Map(bruteForceRows.map((r) => [r.id, r]));
+      for (const row of bruteForceRows) {
+        const embedding = bufferToFloatArray(row.embedding);
+        const similarity = cosineSimilarity(queryEmbedding, embedding);
+        if (similarity >= threshold) {
+          vectorResults.push({ docId: row.id, score: similarity });
+        }
       }
+      vectorResults.sort((a, b) => b.score - a.score);
     }
-    vectorResults.sort((a, b) => b.score - a.score);
+    // Empty bruteForceRows: let RRF combine BM25 with empty vector results
   }
 
   const topVectorResults = vectorResults.slice(0, limit * 3);
@@ -332,7 +332,14 @@ export function hybridSearchCode(
       }
     }
 
-    // Preserve BM25 ranking with symbol/regex filtering
+    // Symbol name boost tokens (same logic as normal path)
+    const queryTokens = query
+      .toLowerCase()
+      .trim()
+      .split(/[\s,]+/)
+      .filter(Boolean);
+
+    // Preserve BM25 ranking with symbol/regex filtering and boost
     const rowById = new Map(rows.map((r) => [r.id, r]));
     const results: HybridSearchResult[] = [];
     for (const id of docIds) {
@@ -342,12 +349,27 @@ export function hybridSearchCode(
       const sym = symbolMap.get(id);
       if (filters?.symbolType && sym?.symbol_type !== filters.symbolType) continue;
       if (regexFilter && !regexFilter.test(row.content)) continue;
+
+      let score = bm25Map.get(id) ?? 0;
+      if (sym?.symbol_name) {
+        const symLower = sym.symbol_name.toLowerCase();
+        for (const token of queryTokens) {
+          if (symLower === token) {
+            score += 0.15;
+            break;
+          } else if (symLower.includes(token) || token.includes(symLower)) {
+            score += 0.08;
+            break;
+          }
+        }
+      }
+
       results.push({
         file_path: row.file_path,
         content: row.content,
         start_line: row.start_line,
         end_line: row.end_line,
-        similarity: bm25Map.get(id) ?? 0,
+        similarity: Math.min(score, 1.0),
         bm25Score: bm25Map.get(id),
         symbol_name: sym?.symbol_name ?? undefined,
         symbol_type: sym?.symbol_type ?? undefined,

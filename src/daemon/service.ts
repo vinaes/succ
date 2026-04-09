@@ -252,10 +252,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // Auth token check — skip for health/status/version (needed for discovery)
   const pathname = reqUrl.pathname.replace(/^\/v1/, '');
   const isPublicEndpoint =
-    pathname === '/health' ||
-    pathname === '/api/status' ||
-    pathname === '/api/version' ||
-    pathname === '/api/health';
+    pathname === '/health' || pathname === '/api/status' || pathname === '/api/version';
   if (daemonToken && !isPublicEndpoint) {
     const authHeader = req.headers.authorization;
     const providedToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -891,7 +888,7 @@ function checkShutdown(): void {
     log(`[daemon] No more sessions and no pending work, scheduling shutdown`);
     setTimeout(() => {
       if (sessionManager?.canShutdown()) {
-        shutdownDaemon();
+        shutdownDaemon().catch((err) => log(`[daemon] shutdown failed: ${err}`));
       }
     }, 5000);
   }
@@ -904,7 +901,7 @@ function scheduleMaxUptimeGuard(logFn: (msg: string) => void): void {
     const uptime = Date.now() - state.startedAt;
     if (uptime > MAX_IDLE_UPTIME_MS) {
       logFn(`[daemon] Max idle uptime exceeded (${Math.round(uptime / 3600_000)}h), shutting down`);
-      shutdownDaemon();
+      shutdownDaemon().catch((err) => logFn(`[daemon] shutdown failed: ${err}`));
     }
   }, 3600_000); // Check every hour
   maxUptimeTimer.unref();
