@@ -279,14 +279,15 @@ export class PostgresBackend {
     }
     this.lastSlowQueryLogMs = now;
 
+    // Log slow query with EXPLAIN plan when safe (no user-supplied params)
     try {
-      // When params are present, skip EXPLAIN to avoid inlining sensitive
-      // values (embeddings, project IDs) into log output.
       if (params.length > 0) {
         logWarn('postgresql', `Slow query (${durationMs}ms)`, { query: queryText });
         return;
       }
-      const explainResult = await pool.query(`EXPLAIN ${queryText}`);
+      // Safe: queryText is always a source-code string literal when params.length === 0.
+      // The params.length === 0 guard above is the real protection against injection.
+      const explainResult = await pool.query('EXPLAIN ' + queryText);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {

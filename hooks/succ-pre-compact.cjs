@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
+const { daemonFetch } = require('./core/daemon-boot.cjs');
 
 // Logging helper
 function log(succDir, message) {
@@ -241,12 +242,16 @@ process.stdin.on('end', async () => {
       const portFile = path.join(tmpDir, 'daemon.port');
       if (fs.existsSync(portFile)) {
         const port = fs.readFileSync(portFile, 'utf8').trim();
-        fetch(`http://127.0.0.1:${port}/api/hooks/pre-compact`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(stats),
-          signal: AbortSignal.timeout(2000),
-        })
+        daemonFetch(
+          `http://127.0.0.1:${port}/api/hooks/pre-compact`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(stats),
+            signal: AbortSignal.timeout(2000),
+          },
+          succDir
+        )
           .then((res) => {
             if (!res.ok) {
               log(succDir, `Daemon notify failed: ${res.status} ${res.statusText}`);

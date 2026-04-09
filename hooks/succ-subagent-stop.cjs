@@ -7,7 +7,7 @@
  */
 
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 
 adapter.runHook('subagent-stop', async ({ hookInput, projectDir, succDir }) => {
   const daemonPort = ensureDaemonLazy(projectDir, succDir);
@@ -17,12 +17,16 @@ adapter.runHook('subagent-stop', async ({ hookInput, projectDir, succDir }) => {
   }
 
   try {
-    await fetch(`http://127.0.0.1:${daemonPort}/api/hooks/subagent-stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(hookInput),
-      signal: AbortSignal.timeout(2000),
-    });
+    await daemonFetch(
+      `http://127.0.0.1:${daemonPort}/api/hooks/subagent-stop`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hookInput),
+        signal: AbortSignal.timeout(2000),
+      },
+      succDir
+    );
   } catch (err) {
     console.error(`[succ:subagent-stop] Daemon proxy failed: ${err.message || err}`);
   }

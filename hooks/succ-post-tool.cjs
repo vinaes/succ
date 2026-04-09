@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 
 const SOURCE_CONTEXT_MAX_CHARS = 2000;
 
@@ -152,12 +152,16 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
           payload.source_context = sourceContext;
         }
       }
-      const response = await fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(3000),
-      });
+      const response = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/remember`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(3000),
+        },
+        succDir
+      );
       if (!response.ok) {
         console.error(
           `[succ:post-tool] succRemember failed: ${response.status} ${response.statusText}`
@@ -310,16 +314,20 @@ adapter.runHook('post-tool', async ({ agent, hookInput, projectDir, succDir }) =
                 console.error('[succ] MEMORY.md bullet blocked: injection detected');
                 return Promise.resolve();
               }
-              return fetch(`http://127.0.0.1:${daemonPort}/api/remember`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  content: bullet.text,
-                  tags: bullet.tags,
-                  source: 'memory-md-sync',
-                }),
-                signal: AbortSignal.timeout(5000),
-              })
+              return daemonFetch(
+                `http://127.0.0.1:${daemonPort}/api/remember`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    content: bullet.text,
+                    tags: bullet.tags,
+                    source: 'memory-md-sync',
+                  }),
+                  signal: AbortSignal.timeout(5000),
+                },
+                succDir
+              )
                 .then((res) => {
                   if (!res.ok) {
                     console.error(

@@ -97,6 +97,27 @@ function getDaemonPidFile(projectDir?: string): string {
   return path.join(succDir, '.tmp', 'daemon.pid');
 }
 
+function getDaemonTokenFile(projectDir?: string): string {
+  const succDir = projectDir ? path.join(projectDir, '.succ') : getSuccDir();
+  return path.join(succDir, '.tmp', 'daemon.token');
+}
+
+/**
+ * Read daemon auth token from token file
+ */
+function getDaemonToken(projectDir?: string): string | null {
+  const tokenFile = getDaemonTokenFile(projectDir);
+  if (!fs.existsSync(tokenFile)) return null;
+  try {
+    return fs.readFileSync(tokenFile, 'utf8').trim();
+  } catch (err) {
+    logWarn('daemon-client', 'Daemon token file exists but unreadable', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 // ============================================================================
 // Port Detection
 // ============================================================================
@@ -153,13 +174,19 @@ export function getDaemonPid(projectDir?: string): number | null {
 // HTTP Helpers
 // ============================================================================
 
-async function httpGet(port: number, path: string): Promise<any> {
+function buildAuthHeaders(projectDir?: string): Record<string, string> {
+  const token = getDaemonToken(projectDir);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function httpGet(port: number, urlPath: string, projectDir?: string): Promise<any> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    const response = await fetch(`http://127.0.0.1:${port}${urlPath}`, {
       method: 'GET',
+      headers: buildAuthHeaders(projectDir),
       signal: controller.signal,
     });
 
@@ -173,14 +200,19 @@ async function httpGet(port: number, path: string): Promise<any> {
   }
 }
 
-async function httpPost(port: number, path: string, body: any): Promise<any> {
+async function httpPost(
+  port: number,
+  urlPath: string,
+  body: any,
+  projectDir?: string
+): Promise<any> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    const response = await fetch(`http://127.0.0.1:${port}${urlPath}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(projectDir) },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -216,7 +248,7 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return false;
 
       try {
-        const health = await httpGet(port, '/health');
+        const health = await httpGet(port, '/health', resolvedProjectDir);
         return health?.status === 'ok';
       } catch (err) {
         logWarn('daemon-client', 'Daemon health check failed (isRunning)', {
@@ -231,7 +263,7 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return null;
 
       try {
-        return await httpGet(port, '/health');
+        return await httpGet(port, '/health', resolvedProjectDir);
       } catch (err) {
         logWarn('daemon-client', 'Daemon call failed: getHealth', {
           error: err instanceof Error ? err.message : String(err),
@@ -250,11 +282,16 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return false;
 
       try {
-        const result = await httpPost(port, '/api/session/register', {
-          session_id: sessionId,
-          transcript_path: transcriptPath,
-          is_service: isService,
-        });
+        const result = await httpPost(
+          port,
+          '/api/session/register',
+          {
+            session_id: sessionId,
+            transcript_path: transcriptPath,
+            is_service: isService,
+          },
+          resolvedProjectDir
+        );
         return result?.success === true;
       } catch (err) {
         logWarn('daemon-client', 'Daemon call failed: registerSession', {
@@ -272,10 +309,15 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return { success: false, remaining_sessions: -1 };
 
       try {
-        return await httpPost(port, '/api/session/unregister', {
-          session_id: sessionId,
-          run_reflection: runReflection,
-        });
+        return await httpPost(
+          port,
+          '/api/session/unregister',
+          {
+            session_id: sessionId,
+            run_reflection: runReflection,
+          },
+          resolvedProjectDir
+        );
       } catch (error) {
         logWarn('client', 'Daemon call failed: unregisterSession', {
           error: error instanceof Error ? error.message : String(error),
@@ -294,12 +336,17 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return false;
 
       try {
-        const result = await httpPost(port, '/api/session/activity', {
-          session_id: sessionId,
-          type,
-          transcript_path: transcriptPath,
-          is_service: isService,
-        });
+        const result = await httpPost(
+          port,
+          '/api/session/activity',
+          {
+            session_id: sessionId,
+            type,
+            transcript_path: transcriptPath,
+            is_service: isService,
+          },
+          resolvedProjectDir
+        );
         return result?.success === true;
       } catch (error) {
         logWarn('client', 'Daemon call failed: sessionActivity', {
@@ -315,7 +362,7 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
 
       try {
         const endpoint = includeService ? '/api/sessions?includeService=true' : '/api/sessions';
-        const result = await httpGet(port, endpoint);
+        const result = await httpGet(port, endpoint, resolvedProjectDir);
         return result?.sessions || {};
       } catch (error) {
         logWarn('client', 'Daemon call failed: getSessions', {
@@ -331,7 +378,12 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return [];
 
       try {
-        const result = await httpPost(port, '/api/search', { query, limit, threshold });
+        const result = await httpPost(
+          port,
+          '/api/search',
+          { query, limit, threshold },
+          resolvedProjectDir
+        );
         return result?.results || [];
       } catch (error) {
         logWarn('client', 'Daemon call failed: search', {
@@ -346,7 +398,12 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return [];
 
       try {
-        const result = await httpPost(port, '/api/search-code', { query, limit });
+        const result = await httpPost(
+          port,
+          '/api/search-code',
+          { query, limit },
+          resolvedProjectDir
+        );
         return result?.results || [];
       } catch (error) {
         logWarn('client', 'Daemon call failed: searchCode', {
@@ -361,7 +418,12 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return [];
 
       try {
-        const result = await httpPost(port, '/api/recall', { query, ...options });
+        const result = await httpPost(
+          port,
+          '/api/recall',
+          { query, ...options },
+          resolvedProjectDir
+        );
         return result?.results || [];
       } catch (err) {
         logWarn('daemon-client', 'Daemon call failed: recall', {
@@ -379,7 +441,7 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return { success: false };
 
       try {
-        return await httpPost(port, '/api/remember', { content, ...options });
+        return await httpPost(port, '/api/remember', { content, ...options }, resolvedProjectDir);
       } catch (err) {
         logWarn('daemon-client', 'Daemon call failed: remember', {
           error: err instanceof Error ? err.message : String(err),
@@ -394,7 +456,12 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return false;
 
       try {
-        const result = await httpPost(port, '/api/reflect', { session_id: sessionId, force });
+        const result = await httpPost(
+          port,
+          '/api/reflect',
+          { session_id: sessionId, force },
+          resolvedProjectDir
+        );
         return result?.success === true;
       } catch (error) {
         logWarn('client', 'Daemon call failed: triggerReflection', {
@@ -410,7 +477,7 @@ export function createDaemonClient(projectDir?: string): DaemonClient {
       if (!port) return null;
 
       try {
-        return await httpGet(port, '/api/status');
+        return await httpGet(port, '/api/status', resolvedProjectDir);
       } catch (err) {
         logWarn('daemon-client', 'Daemon call failed: getStatus', {
           error: err instanceof Error ? err.message : String(err),

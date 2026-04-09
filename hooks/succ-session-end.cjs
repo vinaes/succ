@@ -11,7 +11,7 @@
 
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 
 adapter.runHook('session-end', async ({ hookInput, projectDir, succDir }) => {
@@ -41,16 +41,20 @@ adapter.runHook('session-end', async ({ hookInput, projectDir, succDir }) => {
   // Tell daemon to unregister and process session
   // Daemon will handle transcript parsing, summarization, and memory saving asynchronously
   try {
-    const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/unregister`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: sessionId,
-        transcript_path: transcriptPath,
-        run_reflection: !isServiceSession, // Don't run reflection for service sessions
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
+    const res = await daemonFetch(
+      `http://127.0.0.1:${daemonPort}/api/session/unregister`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          transcript_path: transcriptPath,
+          run_reflection: !isServiceSession, // Don't run reflection for service sessions
+        }),
+        signal: AbortSignal.timeout(5000),
+      },
+      succDir
+    );
     if (!res.ok) {
       log(`Unregister failed: ${res.status} ${res.statusText} for session ${sessionId}`);
     }

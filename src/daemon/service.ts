@@ -15,6 +15,7 @@
  */
 
 import http from 'http';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -142,14 +143,25 @@ export function readTailTranscript(
   return firstNewline > 0 ? content.slice(firstNewline + 1) : content;
 }
 
-function getDaemonPortFile(): string {
+function getDaemonTmpDir(): string {
   const succDir = getSuccDir();
   const tmpDir = path.join(succDir, '.tmp');
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
-  return path.join(tmpDir, 'daemon.port');
+  return tmpDir;
 }
+
+function getDaemonPortFile(): string {
+  return path.join(getDaemonTmpDir(), 'daemon.port');
+}
+
+function getDaemonTokenFile(): string {
+  return path.join(getDaemonTmpDir(), 'daemon.token');
+}
+
+// Auth token generated per daemon lifetime — written to .succ/.tmp/daemon.token
+let daemonToken: string | null = null;
 
 function getDaemonLogFile(): string {
   const succDir = getSuccDir();
@@ -191,6 +203,7 @@ function createRouteContext(): RouteContext {
     sessionManager,
     log,
     checkShutdown,
+    requestShutdown: shutdownDaemon,
     clearBriefingCache,
     appendToProgressFile,
     readTailTranscript,
@@ -222,14 +235,40 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const reqUrl = new URL(req.url || '/', `http://localhost`);
   const method = req.method || 'GET';
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Restrict CORS to localhost origins only — daemon should never be accessible from arbitrary sites
+  const origin = req.headers.origin;
+  if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
     return;
+  }
+
+  // Auth token check — skip for health/status/version (needed for discovery)
+  const pathname = reqUrl.pathname.replace(/^\/v1/, '');
+  const isPublicEndpoint =
+    pathname === '/health' || pathname === '/api/status' || pathname === '/api/version';
+  if (daemonToken && !isPublicEndpoint) {
+    const authHeader = req.headers.authorization;
+    const providedToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (
+      !providedToken ||
+      Buffer.byteLength(providedToken) !== Buffer.byteLength(daemonToken) ||
+      !crypto.timingSafeEqual(Buffer.from(providedToken), Buffer.from(daemonToken))
+    ) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Unauthorized. Provide daemon token via Authorization: Bearer <token>',
+        })
+      );
+      return;
+    }
   }
 
   let body: unknown = null;
@@ -414,6 +453,145 @@ function scheduleUpdateCheck(logFn: (msg: string) => void): void {
   updateCheckTimer.unref(); // Don't prevent process exit
 }
 
+// ---------------------------------------------------------------------------
+// Port acquisition helpers
+// ---------------------------------------------------------------------------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Try to bind a server to a port. Returns { ok: true } or { ok: false, code }. */
+async function tryListen(
+  server: http.Server,
+  port: number
+): Promise<{ ok: true } | { ok: false; code: string }> {
+  return new Promise((resolve) => {
+    const onError = (err: NodeJS.ErrnoException) => {
+      server.removeListener('listening', onListening);
+      resolve({ ok: false, code: err.code || 'UNKNOWN' });
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve({ ok: true });
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+/**
+ * Probe the occupant of the stable port and decide what to do.
+ * Returns:
+ *   'exit'    — healthy daemon for this project, caller should exit
+ *   'killed'  — old daemon killed, caller should retry listen
+ *   'foreign' — port occupied by a non-succ process, caller should fallback
+ */
+async function reclaimStablePort(
+  stablePort: number,
+  ourCwd: string,
+  logFn: (msg: string) => void
+): Promise<'exit' | 'killed' | 'foreign'> {
+  // Probe health with retries (2 attempts, 1s apart) to survive GC pauses
+  let health: { status?: string; pid?: number; cwd?: string } | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const resp = await fetch(`http://127.0.0.1:${stablePort}/health`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        health = (await resp.json()) as { status?: string; pid?: number; cwd?: string };
+        break;
+      }
+    } catch (probeErr) {
+      logFn(
+        `[daemon] Health probe attempt ${attempt + 1} failed: ${probeErr instanceof Error ? probeErr.message : String(probeErr)}`
+      );
+      if (attempt === 0) await sleep(1000);
+    }
+  }
+
+  if (!health || health.status !== 'ok') {
+    // Port occupied by something that doesn't respond to /health — foreign process
+    logFn(`[daemon] Stable port ${stablePort} occupied by non-succ process`);
+    return 'foreign';
+  }
+
+  // Normalize cwd for comparison (lowercase + forward slashes on Windows)
+  const normCwd = (p: string) =>
+    (process.platform === 'win32' ? p.toLowerCase() : p).replace(/\\/g, '/');
+
+  if (normCwd(health.cwd || '') !== normCwd(ourCwd)) {
+    logFn(
+      `[daemon] Stable port ${stablePort} used by different project: ${health.cwd} (ours: ${ourCwd})`
+    );
+    return 'foreign';
+  }
+
+  // Same project — try graceful HTTP shutdown first, then force kill
+  const occupantPid = health.pid;
+
+  // Read old daemon's auth token for authenticated shutdown request
+  let tokenHeader: Record<string, string> = {};
+  let hasToken = false;
+  try {
+    const tokenPath = getDaemonTokenFile();
+    if (fs.existsSync(tokenPath)) {
+      const token = fs.readFileSync(tokenPath, 'utf8').trim();
+      if (token) {
+        tokenHeader = { Authorization: `Bearer ${token}` };
+        hasToken = true;
+      }
+    }
+  } catch {
+    logFn(`[daemon] Could not read old daemon token, shutdown request may be rejected`);
+  }
+
+  logFn(
+    `[daemon] Stale daemon on port ${stablePort} (pid=${occupantPid}), requesting shutdown${hasToken ? '' : ' (no auth token, may be rejected)'}`
+  );
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    await fetch(`http://127.0.0.1:${stablePort}/api/shutdown`, {
+      method: 'POST',
+      headers: tokenHeader,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    // Wait for graceful exit
+    await sleep(2000);
+  } catch {
+    logFn(`[daemon] HTTP shutdown request failed, proceeding to kill`);
+  }
+
+  // Check if it's gone
+  if (occupantPid) {
+    try {
+      process.kill(occupantPid, 0);
+      // Still alive — force kill (on Windows, SIGKILL maps to TerminateProcess)
+      logFn(`[daemon] Daemon pid=${occupantPid} still alive after shutdown request, killing`);
+      try {
+        process.kill(occupantPid, 'SIGKILL');
+      } catch (killErr) {
+        logWarn('daemon', `Failed to kill stale daemon pid=${occupantPid}`, {
+          error: killErr instanceof Error ? killErr.message : String(killErr),
+        });
+      }
+      await sleep(500);
+    } catch {
+      logFn(`[daemon] Occupant pid=${occupantPid} already exited`);
+    }
+  }
+
+  return 'killed';
+}
+
 export async function startDaemon(): Promise<{ port: number; pid: number }> {
   if (state?.server) {
     return { port: state.port, pid: process.pid };
@@ -430,35 +608,38 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
       try {
         const existingPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
         if (!isNaN(existingPid) && existingPid && existingPid !== process.pid) {
+          let processAlive = false;
           try {
-            process.kill(existingPid, 0); // alive?
-            log(`[daemon] Another daemon running or initializing (pid=${existingPid}), exiting`);
-            process.exit(0);
+            process.kill(existingPid, 0);
+            processAlive = true;
           } catch (killErr) {
-            // Only reclaim on ESRCH (no such process).
-            // EPERM means the process exists but we lack permission — do NOT reclaim.
             const killCode = (killErr as NodeJS.ErrnoException).code;
             if (killCode !== 'ESRCH') {
               throw killErr;
             }
-            // Dead PID — atomic reclaim: unlink + exclusive create
-            log(`[daemon] PID ${existingPid} not running (${killCode}), reclaiming`);
-            try {
-              fs.unlinkSync(pidFile);
-            } catch (unlinkErr) {
-              if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw unlinkErr;
-              }
+          }
+          // Reclaim PID file regardless — port acquisition will health-check the occupant
+          log(
+            processAlive
+              ? `[daemon] Existing daemon pid=${existingPid} alive, reclaiming PID (port acquisition will resolve)`
+              : `[daemon] PID ${existingPid} not running, reclaiming`
+          );
+          try {
+            fs.unlinkSync(pidFile);
+          } catch (unlinkErr) {
+            if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+              throw unlinkErr;
             }
-            try {
-              fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' });
-            } catch (reclaimErr) {
-              log(
-                `[daemon] Lost PID reclaim race (${(reclaimErr as NodeJS.ErrnoException).code || 'unknown'}), exiting`
-              );
-              process.exit(0);
-            }
-            // Also clean stale port file
+          }
+          try {
+            fs.writeFileSync(pidFile, String(process.pid), { flag: 'wx' });
+          } catch (reclaimErr) {
+            log(
+              `[daemon] Lost PID reclaim race (${(reclaimErr as NodeJS.ErrnoException).code || 'unknown'}), exiting`
+            );
+            process.exit(0);
+          }
+          if (!processAlive) {
             const portFile = getDaemonPortFile();
             try {
               fs.unlinkSync(portFile);
@@ -551,32 +732,48 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   const fallbackStart = config.daemon?.port_range_start ?? DEFAULT_PORT_RANGE_START;
 
   let port = stablePort;
-  let portAttempts = 0;
-  const maxAttempts = 1 + MAX_PORT_ATTEMPTS; // 1 stable + 100 fallback
 
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') {
-          portAttempts++;
-          if (portAttempts === 1) {
-            // Stable port busy — switch to fallback range
-            port = fallbackStart;
-          } else {
-            port++;
+  // Attempt to bind the stable port. If occupied, probe occupant before falling back.
+  const stableBindResult = await tryListen(server, port);
+  if (!stableBindResult.ok) {
+    if (stableBindResult.code === 'EADDRINUSE') {
+      const reclaimed = await reclaimStablePort(stablePort, cwd, log);
+      if (reclaimed === 'exit') {
+        // Healthy daemon for this project already running — exit silently
+        log(`[daemon] Healthy daemon already on port ${stablePort}, exiting`);
+        process.exit(0);
+      }
+      if (reclaimed === 'killed') {
+        // Old daemon killed — retry listen with exponential backoff
+        let bound = false;
+        const delays = [100, 200, 400, 800, 1600];
+        for (const delay of delays) {
+          await sleep(delay);
+          const retry = await tryListen(server, stablePort);
+          if (retry.ok) {
+            bound = true;
+            break;
           }
-          resolve();
-        } else {
-          reject(err);
+          log(`[daemon] Stable port ${stablePort} still busy after ${delay}ms, retrying...`);
         }
-      });
-      server.listen(port, '127.0.0.1', () => {
-        resolve();
-      });
-    });
-
-    if (server.listening) {
-      break;
+        if (!bound) {
+          log(`[daemon] Could not reclaim stable port ${stablePort} after kill, falling back`);
+        }
+      }
+      // reclaimed === 'foreign' or retry exhausted — fall back to port scan
+      if (!server.listening) {
+        log(
+          `[daemon] Stable port ${stablePort} occupied by another process, scanning fallback range`
+        );
+        port = fallbackStart;
+        for (let i = 0; i < MAX_PORT_ATTEMPTS; i++) {
+          const result = await tryListen(server, port);
+          if (result.ok) break;
+          port++;
+        }
+      }
+    } else {
+      throw new NetworkError(`Failed to bind port ${port}: ${stableBindResult.code}`);
     }
   }
 
@@ -594,8 +791,10 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
   };
   cachedRoutes = null;
 
-  // PID already written at startup (atomic mutex). Write port now that we know it.
+  // PID already written at startup (atomic mutex). Write port and auth token now.
   fs.writeFileSync(getDaemonPortFile(), String(port));
+  daemonToken = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(getDaemonTokenFile(), daemonToken, { mode: 0o600 });
 
   idleWatcher = createIdleWatcher({
     sessionManager,
@@ -617,6 +816,9 @@ export async function startDaemon(): Promise<{ port: number; pid: number }> {
 
   // Daily recall event retention cleanup
   scheduleRecallCleanup(log);
+
+  // Max uptime guard — exit if idle for 24h+ so stale orphans self-terminate
+  scheduleMaxUptimeGuard(log);
 
   // Pre-warm WS transport if configured (eliminates cold-start on first LLM call)
   if (getClaudeMode() === 'ws') {
@@ -678,15 +880,31 @@ function setupShutdownHandlers(): void {
   });
 }
 
+const MAX_IDLE_UPTIME_MS = 24 * 3600_000; // 24 hours
+let maxUptimeTimer: ReturnType<typeof setInterval> | null = null;
+
 function checkShutdown(): void {
   if (sessionManager?.canShutdown()) {
     log(`[daemon] No more sessions and no pending work, scheduling shutdown`);
     setTimeout(() => {
       if (sessionManager?.canShutdown()) {
-        shutdownDaemon();
+        shutdownDaemon().catch((err) => log(`[daemon] shutdown failed: ${err}`));
       }
     }, 5000);
   }
+}
+
+/** Periodic check: if daemon is idle and has exceeded max uptime, exit cleanly. */
+function scheduleMaxUptimeGuard(logFn: (msg: string) => void): void {
+  maxUptimeTimer = setInterval(() => {
+    if (!state?.startedAt || !sessionManager?.canShutdown()) return;
+    const uptime = Date.now() - state.startedAt;
+    if (uptime > MAX_IDLE_UPTIME_MS) {
+      logFn(`[daemon] Max idle uptime exceeded (${Math.round(uptime / 3600_000)}h), shutting down`);
+      shutdownDaemon().catch((err) => logFn(`[daemon] shutdown failed: ${err}`));
+    }
+  }, 3600_000); // Check every hour
+  maxUptimeTimer.unref();
 }
 
 export async function shutdownDaemon(): Promise<void> {
@@ -705,6 +923,11 @@ export async function shutdownDaemon(): Promise<void> {
   if (recallCleanupStartupTimer) {
     clearTimeout(recallCleanupStartupTimer);
     recallCleanupStartupTimer = null;
+  }
+
+  if (maxUptimeTimer) {
+    clearInterval(maxUptimeTimer);
+    maxUptimeTimer = null;
   }
 
   if (recallCleanupTimer) {
@@ -766,6 +989,15 @@ export async function shutdownDaemon(): Promise<void> {
       log(`[shutdown] Port file removal failed: ${getErrorMessage(err)}`);
     }
   }
+
+  try {
+    fs.unlinkSync(getDaemonTokenFile());
+  } catch (err: unknown) {
+    if (!isErrnoException(err) || err.code !== 'ENOENT') {
+      log(`[shutdown] Token file removal failed: ${getErrorMessage(err)}`);
+    }
+  }
+  daemonToken = null;
 
   log('[daemon] Shutdown complete');
   process.exit(0);

@@ -13,7 +13,7 @@
 const path = require('path');
 const fs = require('fs');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 const { log: _log } = require('./core/log.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
@@ -62,17 +62,21 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
   let daemonAlive = false;
   if (daemonPort && sessionId) {
     try {
-      const res = await fetch(`http://127.0.0.1:${daemonPort}/api/session/activity`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          type: 'user_prompt',
-          transcript_path: transcriptPath,
-          is_service: isServiceSession,
-        }),
-        signal: AbortSignal.timeout(2000),
-      });
+      const res = await daemonFetch(
+        `http://127.0.0.1:${daemonPort}/api/session/activity`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            type: 'user_prompt',
+            transcript_path: transcriptPath,
+            is_service: isServiceSession,
+          }),
+          signal: AbortSignal.timeout(2000),
+        },
+        succDir
+      );
       if (res.ok) daemonAlive = true;
     } catch (e) {
       log(`Daemon activity notification failed: ${e.message || e}`);
@@ -114,12 +118,16 @@ adapter.runHook('user-prompt', async ({ agent, hookInput, projectDir, succDir })
       // Only suggest if cooldown has passed
       if (promptsSinceLastSuggestion >= cooldownPrompts || promptsSinceLastSuggestion === 0) {
         try {
-          const response = await fetch(`http://127.0.0.1:${daemonPort}/api/skills/suggest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt }),
-            signal: AbortSignal.timeout(15000), // 15s timeout for 2 LLM calls (extraction + ranking)
-          });
+          const response = await daemonFetch(
+            `http://127.0.0.1:${daemonPort}/api/skills/suggest`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt }),
+              signal: AbortSignal.timeout(15000), // 15s timeout for 2 LLM calls (extraction + ranking)
+            },
+            succDir
+          );
 
           if (response.ok) {
             const data = await response.json();

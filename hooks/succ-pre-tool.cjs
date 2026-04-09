@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const adapter = require('./core/adapter.cjs');
-const { ensureDaemonLazy } = require('./core/daemon-boot.cjs');
+const { ensureDaemonLazy, daemonFetch } = require('./core/daemon-boot.cjs');
 const { loadMergedConfig } = require('./core/config.cjs');
 
 // ─── Dangerous command patterns ──────────────────────────────────────
@@ -531,7 +531,7 @@ function loadConfig(projectDir) {
       customPatterns: Array.isArray(csg.customPatterns) ? csg.customPatterns : [],
     },
     undercover: merged.undercover === true,
-    includeCoAuthoredBy: merged.includeCoAuthoredBy !== false,
+    includeCoAuthoredBy: !merged.undercover && merged.includeCoAuthoredBy !== false,
     preCommitReview: merged.preCommitReview === true,
   };
 }
@@ -704,12 +704,16 @@ async function recallFileMemories(projectDir, succDir, fileName) {
   if (!port) return [];
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/recall-by-tag`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: `file:${fileName}`, limit: 5 }),
-      signal: AbortSignal.timeout(2000),
-    });
+    const res = await daemonFetch(
+      `http://127.0.0.1:${port}/api/recall-by-tag`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: `file:${fileName}`, limit: 5 }),
+        signal: AbortSignal.timeout(2000),
+      },
+      succDir
+    );
     if (!res.ok) return [];
     const data = await res.json();
     return data.results || [];
@@ -724,12 +728,16 @@ async function fetchHookRules(projectDir, succDir, toolName, toolInput) {
   if (!port) return [];
 
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/hook-rules`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool_name: toolName, tool_input: toolInput || {} }),
-      signal: AbortSignal.timeout(2000),
-    });
+    const res = await daemonFetch(
+      `http://127.0.0.1:${port}/api/hook-rules`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_name: toolName, tool_input: toolInput || {} }),
+        signal: AbortSignal.timeout(2000),
+      },
+      succDir
+    );
     if (!res.ok) return [];
     const data = await res.json();
     return data.rules || [];
@@ -884,7 +892,8 @@ adapter.runHook('pre-tool', async ({ agent, hookInput, projectDir, succDir }) =>
         contextParts.push(`<undercover-reminder>
 UNDERCOVER: No AI attribution, no "Generated with", no "Co-Authored-By", no tool names, no AI labels.
 No AI-revealing branch names (claude/, copilot/, ai/).
-Write as a human developer. Match existing project style.
+No em dashes, no en dashes, no "Certainly!", no corporate filler. Write like a human dev.
+Match existing project style.
 </undercover-reminder>`);
         // Still inject pre-commit-review if enabled (independent of undercover)
         if (/\bgit\s+commit\b/.test(command) && config.preCommitReview) {
@@ -919,9 +928,10 @@ MEDIUM and below — commit is OK, mention findings in summary.
   try {
     const port = ensureDaemonLazy(projectDir, succDir);
     if (port && hookInput.session_id) {
-      const usageRes = await fetch(
+      const usageRes = await daemonFetch(
         `http://127.0.0.1:${port}/api/context-usage?session_id=${encodeURIComponent(hookInput.session_id)}`,
-        { signal: AbortSignal.timeout(500) }
+        { signal: AbortSignal.timeout(500) },
+        succDir
       );
       if (usageRes.ok) {
         const usage = await usageRes.json();
@@ -931,9 +941,10 @@ MEDIUM and below — commit is OK, mention findings in summary.
             contextParts.push(advisory);
             // ACK: mark cooldown AFTER successful advisory push (prevents consumed cooldown on hook failure)
             // Store promise so we can await it before process.exit (unawaited fetch gets killed on exit)
-            contextUsageAckPromise = fetch(
+            contextUsageAckPromise = daemonFetch(
               `http://127.0.0.1:${port}/api/context-usage/ack?session_id=${encodeURIComponent(hookInput.session_id)}`,
-              { method: 'POST', signal: AbortSignal.timeout(300) }
+              { method: 'POST', signal: AbortSignal.timeout(300) },
+              succDir
             ).catch((e) => {
               console.error('[succ:pre-tool] context-usage ack failed:', e.message || e);
             });
