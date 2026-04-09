@@ -37,6 +37,7 @@ export interface RouteContext {
   sessionManager: SessionManager | null;
   log: (message: string) => void;
   checkShutdown: () => void;
+  requestShutdown: () => Promise<void>;
   clearBriefingCache: (sessionId: string) => void;
   appendToProgressFile: (sessionId: string, briefing: string) => void;
   readTailTranscript: (transcriptPath: string, maxBytes?: number) => string;

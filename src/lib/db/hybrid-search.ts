@@ -299,14 +299,22 @@ export function hybridSearchCode(
          FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL`
       )
       .all(...docIds) as CodeRow[];
-    return rows.map((row) => ({
-      file_path: row.file_path,
-      content: row.content,
-      start_line: row.start_line,
-      end_line: row.end_line,
-      similarity: bm25Map.get(row.id) ?? 0,
-      bm25Score: bm25Map.get(row.id),
-    }));
+    // Preserve BM25 ranking — IN (...) returns rows in nondeterministic order
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    return docIds
+      .map((id) => {
+        const row = rowById.get(id);
+        if (!row) return null;
+        return {
+          file_path: row.file_path,
+          content: row.content,
+          start_line: row.start_line,
+          end_line: row.end_line,
+          similarity: bm25Map.get(row.id) ?? 0,
+          bm25Score: bm25Map.get(row.id),
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
   }
 
   const { combined, rowMap, bm25Map, vectorMap } = pipeline;
@@ -470,14 +478,21 @@ export function hybridSearchDocs(
          FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL`
       )
       .all(...docIds) as DocRow[];
-    return rows.map((row) => ({
-      file_path: row.file_path,
-      content: row.content,
-      start_line: row.start_line,
-      end_line: row.end_line,
-      similarity: bm25Map.get(row.id) ?? 0,
-      bm25Score: bm25Map.get(row.id),
-    }));
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    return docIds
+      .map((id) => {
+        const row = rowById.get(id);
+        if (!row) return null;
+        return {
+          file_path: row.file_path,
+          content: row.content,
+          start_line: row.start_line,
+          end_line: row.end_line,
+          similarity: bm25Map.get(row.id) ?? 0,
+          bm25Score: bm25Map.get(row.id),
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
   }
 
   if (pipeline.combined.length === 0) return [];
@@ -597,21 +612,28 @@ export function hybridSearchMemories(
          FROM memories WHERE id IN (${placeholders}) AND COALESCE(is_latest, 1) = 1`
       )
       .all(...docIds) as MemoryRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      content: row.content,
-      tags: parseTags(row.tags),
-      source: row.source,
-      type: parseMemoryType(row.type),
-      created_at: row.created_at,
-      similarity: bm25Map.get(row.id) ?? 0,
-      bm25Score: bm25Map.get(row.id),
-      last_accessed: row.last_accessed,
-      access_count: row.access_count,
-      valid_from: row.valid_from,
-      valid_until: row.valid_until,
-      quality_score: row.quality_score,
-    }));
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    return docIds
+      .map((id) => {
+        const row = rowById.get(id);
+        if (!row) return null;
+        return {
+          id: row.id,
+          content: row.content,
+          tags: parseTags(row.tags),
+          source: row.source,
+          type: parseMemoryType(row.type),
+          created_at: row.created_at,
+          similarity: bm25Map.get(row.id) ?? 0,
+          bm25Score: bm25Map.get(row.id),
+          last_accessed: row.last_accessed,
+          access_count: row.access_count,
+          valid_from: row.valid_from,
+          valid_until: row.valid_until,
+          quality_score: row.quality_score,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
   }
 
   if (pipeline.combined.length === 0) return [];
@@ -853,8 +875,11 @@ export function hybridSearchGlobalMemories(
       params.push(since.toISOString());
     }
     const rows = database.prepare(sql).all(...params) as GlobalMemRow[];
+    const rowById = new Map(rows.map((r) => [r.id, r]));
     const results: HybridGlobalMemoryResult[] = [];
-    for (const row of rows) {
+    for (const id of docIds) {
+      const row = rowById.get(id);
+      if (!row) continue;
       const rowTags: string[] = parseTags(row.tags);
       if (tags && tags.length > 0) {
         const hasMatchingTag = tags.some((t) =>

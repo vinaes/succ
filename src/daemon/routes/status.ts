@@ -70,6 +70,13 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
       };
     },
 
+    'POST /api/shutdown': async () => {
+      ctx.log('[shutdown] Shutdown requested via API');
+      // Respond before shutting down so the caller gets an ack
+      setTimeout(() => ctx.requestShutdown(), 100);
+      return { success: true, message: 'Shutting down' };
+    },
+
     'GET /api/services': async () => {
       const manager = requireSessionManager(ctx);
       return {

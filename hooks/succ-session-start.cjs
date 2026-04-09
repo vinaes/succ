@@ -94,7 +94,7 @@ AI-generated text has recognizable stylistic tells. Avoid ALL of these:
 - **Paired conjunctions overuse**: "both X and Y", "not only X but also Y" in every other sentence
 
 Write the way a tired developer writes at 2am: short, direct, no flourishes.
-Dashes in code (hyphens in CLI flags, minus signs, etc.) are fine — only typographic em/en dashes in prose are banned.
+Dashes in code (hyphens in CLI flags, minus signs, etc.) are fine - only typographic em/en dashes in prose are banned.
 
 ## Issue Comments
 Write issue and PR review comments as a developer, not an assistant.
