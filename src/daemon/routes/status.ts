@@ -73,7 +73,9 @@ export function statusRoutes(ctx: RouteContext): RouteMap {
     'POST /api/shutdown': async () => {
       ctx.log('[shutdown] Shutdown requested via API');
       // Respond before shutting down so the caller gets an ack
-      setTimeout(() => ctx.requestShutdown(), 100);
+      setTimeout(() => {
+        ctx.requestShutdown().catch((err) => ctx.log(`[shutdown] shutdown failed: ${err}`));
+      }, 100);
       return { success: true, message: 'Shutting down' };
     },
 

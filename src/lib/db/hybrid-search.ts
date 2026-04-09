@@ -269,11 +269,11 @@ export function hybridSearchCode(
     },
     loadBruteForceRows: () => {
       const { count } = cachedPrepare(
-        "SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL"
+        "SELECT COUNT(*) as count FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL AND embedding IS NOT NULL"
       ).get() as { count: number };
       if (count > BRUTE_FORCE_MAX_ROWS) return null;
       return cachedPrepare(
-        "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL LIMIT ?"
+        "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path LIKE 'code:%' AND superseded_at IS NULL AND embedding IS NOT NULL LIMIT ?"
       ).all(BRUTE_FORCE_MAX_ROWS) as (CodeRow & { embedding: Buffer })[];
     },
     fetchMissingRows: (ids) => {
@@ -290,7 +290,9 @@ export function hybridSearchCode(
   // BM25-only fallback when too many docs for brute-force
   if (pipeline === null) {
     const bm25Map = new Map(bm25Results.map((r) => [r.docId, r.score]));
-    const docIds = bm25Results.slice(0, limit).map((r) => r.docId);
+    // Fetch extra candidates since regex/symbolType filtering may remove some
+    const candidateCount = filters?.regex || filters?.symbolType ? limit * 3 : limit;
+    const docIds = bm25Results.slice(0, candidateCount).map((r) => r.docId);
     if (docIds.length === 0) return [];
     const placeholders = docIds.map(() => '?').join(',');
     const rows = database
@@ -299,22 +301,59 @@ export function hybridSearchCode(
          FROM documents WHERE id IN (${placeholders}) AND superseded_at IS NULL`
       )
       .all(...docIds) as CodeRow[];
-    // Preserve BM25 ranking — IN (...) returns rows in nondeterministic order
+
+    // Symbol lookup for filtering and boosting
+    const symbolMap = new Map<number, { symbol_name: string | null; symbol_type: string | null }>();
+    if (docIds.length > 0) {
+      const symRows = database
+        .prepare(`SELECT id, symbol_name, symbol_type FROM documents WHERE id IN (${placeholders})`)
+        .all(...docIds) as Array<{
+        id: number;
+        symbol_name: string | null;
+        symbol_type: string | null;
+      }>;
+      for (const sr of symRows) {
+        symbolMap.set(sr.id, { symbol_name: sr.symbol_name, symbol_type: sr.symbol_type });
+      }
+    }
+
+    // Regex filter (same validation as normal path)
+    let regexFilter: RegExp | null = null;
+    if (filters?.regex && filters.regex.length <= 500) {
+      const hasNestedQuantifiers = /(\+|\*|\{)\s*\)(\+|\*|\?)|\(\?[^)]*(\+|\*)\)(\+|\*|\?)/.test(
+        filters.regex
+      );
+      if (!hasNestedQuantifiers) {
+        try {
+          regexFilter = new RegExp(filters.regex, 'i');
+        } catch {
+          logWarn('hybrid-search', 'Invalid regex filter in BM25 fallback, skipping');
+        }
+      }
+    }
+
+    // Preserve BM25 ranking with symbol/regex filtering
     const rowById = new Map(rows.map((r) => [r.id, r]));
-    return docIds
-      .map((id) => {
-        const row = rowById.get(id);
-        if (!row) return null;
-        return {
-          file_path: row.file_path,
-          content: row.content,
-          start_line: row.start_line,
-          end_line: row.end_line,
-          similarity: bm25Map.get(row.id) ?? 0,
-          bm25Score: bm25Map.get(row.id),
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null);
+    const results: HybridSearchResult[] = [];
+    for (const id of docIds) {
+      if (results.length >= limit) break;
+      const row = rowById.get(id);
+      if (!row) continue;
+      const sym = symbolMap.get(id);
+      if (filters?.symbolType && sym?.symbol_type !== filters.symbolType) continue;
+      if (regexFilter && !regexFilter.test(row.content)) continue;
+      results.push({
+        file_path: row.file_path,
+        content: row.content,
+        start_line: row.start_line,
+        end_line: row.end_line,
+        similarity: bm25Map.get(id) ?? 0,
+        bm25Score: bm25Map.get(id),
+        symbol_name: sym?.symbol_name ?? undefined,
+        symbol_type: sym?.symbol_type ?? undefined,
+      });
+    }
+    return results;
   }
 
   const { combined, rowMap, bm25Map, vectorMap } = pipeline;
@@ -448,11 +487,11 @@ export function hybridSearchDocs(
     },
     loadBruteForceRows: () => {
       const { count } = cachedPrepare(
-        "SELECT COUNT(*) as count FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL"
+        "SELECT COUNT(*) as count FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL AND embedding IS NOT NULL"
       ).get() as { count: number };
       if (count > BRUTE_FORCE_MAX_ROWS) return null;
       return cachedPrepare(
-        "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL LIMIT ?"
+        "SELECT id, file_path, content, start_line, end_line, embedding FROM documents WHERE file_path NOT LIKE 'code:%' AND superseded_at IS NULL AND embedding IS NOT NULL LIMIT ?"
       ).all(BRUTE_FORCE_MAX_ROWS) as (DocRow & { embedding: Buffer })[];
     },
     fetchMissingRows: (ids) => {

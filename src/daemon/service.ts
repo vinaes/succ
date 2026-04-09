@@ -537,19 +537,26 @@ async function reclaimStablePort(
 
   // Same project — try graceful HTTP shutdown first, then force kill
   const occupantPid = health.pid;
-  logFn(`[daemon] Stale daemon on port ${stablePort} (pid=${occupantPid}), requesting shutdown`);
 
   // Read old daemon's auth token for authenticated shutdown request
   let tokenHeader: Record<string, string> = {};
+  let hasToken = false;
   try {
     const tokenPath = getDaemonTokenFile();
     if (fs.existsSync(tokenPath)) {
       const token = fs.readFileSync(tokenPath, 'utf8').trim();
-      if (token) tokenHeader = { Authorization: `Bearer ${token}` };
+      if (token) {
+        tokenHeader = { Authorization: `Bearer ${token}` };
+        hasToken = true;
+      }
     }
   } catch {
     logFn(`[daemon] Could not read old daemon token, shutdown request may be rejected`);
   }
+
+  logFn(
+    `[daemon] Stale daemon on port ${stablePort} (pid=${occupantPid}), requesting shutdown${hasToken ? '' : ' (no auth token, may be rejected)'}`
+  );
 
   try {
     const controller = new AbortController();

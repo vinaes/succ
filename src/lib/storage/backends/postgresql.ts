@@ -286,8 +286,8 @@ export class PostgresBackend {
         return;
       }
       // Safe: queryText is always a source-code string literal when params.length === 0.
-      // Using query object for defensive consistency.
-      const explainResult = await pool.query({ text: 'EXPLAIN ' + queryText });
+      // The params.length === 0 guard above is the real protection against injection.
+      const explainResult = await pool.query('EXPLAIN ' + queryText);
       const plan = explainResult.rows.map((r) => Object.values(r)[0]).join('\n');
       logWarn('postgresql', `Slow query (${durationMs}ms):\n${queryText}\nEXPLAIN:\n${plan}`);
     } catch (error) {
